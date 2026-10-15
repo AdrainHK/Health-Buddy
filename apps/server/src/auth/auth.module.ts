@@ -16,5 +16,6 @@ import { SessionService } from './session.service.js';
     { provide: LoginRateLimiter, useFactory: () => new LoginRateLimiter() },
     { provide: APP_GUARD, useClass: SessionGuard },
   ],
+  exports: [SessionService],
 })
 export class AuthModule {}

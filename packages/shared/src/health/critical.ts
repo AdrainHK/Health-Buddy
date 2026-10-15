@@ -102,6 +102,7 @@ export interface Observation {
 
 /**
  * 识别危急指标（M1 规格第五节之二）：每个指标在每个来源里取最近一次数值，逐条和启用的规则比对。
+ * observations 需按时间升序传入。
  * 命中的规则以快照形式写进结果，阈值以后改了也能追溯。需尽快就医的排在前面。
  */
 export function detectCriticalFlags(
@@ -112,7 +113,8 @@ export function detectCriticalFlags(
   for (const o of observations) {
     const key = `${o.source}:${o.metric}`;
     const current = latest.get(key);
-    if (!current || o.observedOn > current.observedOn) latest.set(key, o);
+    // 同一天的多条数值，取输入里靠后的一条（调用方按时间升序传入）
+    if (!current || o.observedOn >= current.observedOn) latest.set(key, o);
   }
   const flags: CriticalFlag[] = [];
   for (const o of latest.values()) {

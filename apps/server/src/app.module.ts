@@ -13,6 +13,7 @@ import { DbModule } from './db/db.provider.js';
 import { HealthController } from './health/health.controller.js';
 import { SkillsController } from './skills/skills.controller.js';
 import { TasksModule } from './tasks/tasks.module.js';
+import { WorkbenchModule } from './workbench/workbench.module.js';
 
 export interface AppOptions {
   /** 测试用：替换大模型厂商适配器 */
@@ -32,6 +33,7 @@ export class AppModule {
         CriticalThresholdsModule,
         TasksModule,
         ArtifactsModule,
+        WorkbenchModule,
         AiModule,
       ],
       controllers: [HealthController, SkillsController],

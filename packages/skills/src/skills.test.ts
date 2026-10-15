@@ -13,6 +13,7 @@ import {
   finalizeClientText,
   redactClientIdentity,
 } from './guardrails.js';
+import { ASK_NOTICE, criticalNotice, suggestSkill } from './ask.js';
 import { getSkill, skillSummaries } from './registry.js';
 
 describe('skill metadata', () => {
@@ -217,5 +218,32 @@ describe('client-recent-summary', () => {
       crisisSignal: true,
     });
     expect(artifact.professional.startsWith(`## 心理危机提示\n${CRISIS_NOTICE}`)).toBe(true);
+  });
+});
+
+describe('ask mode helpers', () => {
+  it('suggests the summary skill for natural-language requests only', () => {
+    expect(suggestSkill('帮我给张阿姨写个近况小结')).toBe('client-recent-summary');
+    expect(suggestSkill('血压 150 要紧吗')).toBeUndefined();
+  });
+
+  it('builds a fixed critical notice for the manager', () => {
+    expect(
+      criticalNotice([
+        {
+          metric: 'sbp',
+          value: 185,
+          unit: 'mmHg',
+          observedOn: '2026-10-01',
+          source: 'monitoring',
+          rule: { comparator: 'gte', value: 180, level: 'urgent' },
+        },
+      ]),
+    ).toContain('收缩压 185 mmHg（2026-10-01，日常监测）：需尽快就医');
+    expect(criticalNotice([])).toBe('');
+  });
+
+  it('ends the ask notice with the disclaimer wording', () => {
+    expect(ASK_NOTICE).toContain(DISCLAIMER);
   });
 });
