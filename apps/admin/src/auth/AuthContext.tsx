@@ -1,7 +1,7 @@
 import { meResponseSchema, type CurrentUser } from '@health-buddy/shared';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { ApiError, apiRequest } from '../api/http';
+import { ApiError, apiRequest, setUnauthenticatedHandler } from '../api/http';
 
 export type AuthState =
   { status: 'loading' } | { status: 'anonymous' } | { status: 'authenticated'; user: CurrentUser };
@@ -16,6 +16,11 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ status: 'loading' });
+
+  useEffect(() => {
+    setUnauthenticatedHandler(() => setState({ status: 'anonymous' }));
+    return () => setUnauthenticatedHandler(null);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

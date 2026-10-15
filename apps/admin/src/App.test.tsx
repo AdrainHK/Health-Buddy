@@ -62,4 +62,12 @@ describe('后台登录和角色分流', () => {
     await user.click(screen.getByRole('button', { name: '退出登录' }));
     expect(await screen.findByRole('heading', { name: '登录后台' })).toBeInTheDocument();
   });
+
+  it('会话中途过期时回到登录页', async () => {
+    mockApi(USERS.platform_admin, {
+      'GET /critical-thresholds': () => json(401, { error: 'unauthenticated' }),
+    });
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: '登录后台' })).toBeInTheDocument();
+  });
 });

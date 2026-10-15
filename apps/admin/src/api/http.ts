@@ -22,6 +22,13 @@ export interface RequestOptions {
   body?: unknown;
 }
 
+let onUnauthenticated: (() => void) | null = null;
+
+/** 登录状态由 AuthProvider 管；会话中途过期（非 /auth 接口返回 401）时通知它回到登录页。 */
+export function setUnauthenticatedHandler(handler: (() => void) | null): void {
+  onUnauthenticated = handler;
+}
+
 /** 调用后端接口。和后端同源（后台挂在同一个后端的 /admin/ 下），Cookie 自动带上。 */
 export async function apiRequest<T>(
   path: string,
@@ -40,6 +47,7 @@ export async function apiRequest<T>(
     throw new ApiError('network', 0);
   }
   if (!res.ok) {
+    if (res.status === 401 && !path.startsWith('/auth/')) onUnauthenticated?.();
     const parsed = apiErrorSchema.safeParse(await res.json().catch(() => null));
     throw new ApiError(parsed.success ? parsed.data.error : 'internal_error', res.status);
   }
