@@ -4,6 +4,7 @@ import {
   INDICATOR_CODES,
   THRESHOLD_BOUNDS,
   indicatorUnit,
+  detectCriticalFlags,
   matchesRule,
 } from './critical.js';
 
@@ -38,5 +39,59 @@ describe('critical thresholds', () => {
   it('reads units from the catalog', () => {
     expect(indicatorUnit('fpg')).toBe('mmol/L');
     expect(indicatorUnit('uric_acid')).toBe('umol/L');
+  });
+});
+
+describe('detectCriticalFlags', () => {
+  const obs = (
+    metric: string,
+    value: number,
+    observedOn: string,
+    source: 'monitoring' | 'report' = 'monitoring',
+  ) => ({ metric, value, unit: indicatorUnit(metric as never), observedOn, source });
+
+  it('uses only the latest value of each metric in each source', () => {
+    const flags = detectCriticalFlags(DEFAULT_CRITICAL_RULES, [
+      obs('sbp', 190, '2026-10-01'),
+      obs('sbp', 150, '2026-10-05'),
+      obs('fpg', 2.8, '2026-09-01', 'report'),
+    ]);
+    expect(flags).toEqual([
+      {
+        metric: 'fpg',
+        value: 2.8,
+        unit: 'mmol/L',
+        observedOn: '2026-09-01',
+        source: 'report',
+        rule: { comparator: 'lt', value: 3, level: 'urgent' },
+      },
+    ]);
+  });
+
+  it('skips disabled rules and puts urgent flags first', () => {
+    const rules = [
+      ...DEFAULT_CRITICAL_RULES,
+      {
+        metric: 'sbp' as const,
+        comparator: 'gte' as const,
+        value: 160,
+        level: 'attention' as const,
+        enabled: false,
+      },
+    ];
+    const flags = detectCriticalFlags(rules, [
+      obs('uric_acid', 600, '2026-10-01'),
+      obs('sbp', 185, '2026-10-02'),
+    ]);
+    expect(flags.map((f) => [f.metric, f.rule.level])).toEqual([
+      ['sbp', 'urgent'],
+      ['uric_acid', 'attention'],
+    ]);
+  });
+
+  it('returns nothing for normal values', () => {
+    expect(detectCriticalFlags(DEFAULT_CRITICAL_RULES, [obs('sbp', 120, '2026-10-01')])).toEqual(
+      [],
+    );
   });
 });

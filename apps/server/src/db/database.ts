@@ -26,6 +26,9 @@ export function createDb(connectionString: string, maxConnections = 10): Db {
  *
  * set_config 的第三个参数为 true，表示只在本事务内有效：事务结束后连接回到连接池时
  * 上下文自动清空，不会串到下一个请求。所有业务查询都必须经过这里。
+ *
+ * 隔离级别用 PostgreSQL 默认的 READ COMMITTED：产物的并发控制（先加行锁、再查是否最新版）
+ * 依赖每条语句重新取快照。改成更高的隔离级别前，要先改那里的处理。
  */
 export async function withTenant<T>(
   db: Db,

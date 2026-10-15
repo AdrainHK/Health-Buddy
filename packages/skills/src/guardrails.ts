@@ -43,10 +43,13 @@ export function buildSystemPrompt(skill: Pick<SkillDefinition, 'prompt'>): strin
   return `${GUARDRAILS}\n\n---\n\n${skill.prompt}`;
 }
 
-// 逗号全角半角都认，模型和健管师都可能写成半角
-const escaped = DISCLAIMER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace('，', '[，,]\\s*');
+// 免责声明的各种写法都认：字之间夹空白或零宽字符，逗号写成全角、半角或句号
+const GAP = '[\\s\\u200B-\\u200D\\u2060\\uFEFF]*';
+const [head = '', tail = ''] = DISCLAIMER.split('，');
+const spaced = (part: string) => [...part].join(GAP);
+const escaped = `${spaced(head)}${GAP}[，,。.]?${GAP}${spaced(tail)}`;
 /** 免责声明连同包着它的括号和紧跟的句号，出现在哪里都去掉 */
-const DISCLAIMER_ANYWHERE = new RegExp(`[（(【\\[]?\\s*${escaped}\\s*[）)】\\]]?[。.]?`, 'g');
+const DISCLAIMER_ANYWHERE = new RegExp(`[（(【\\[]?${GAP}${escaped}${GAP}[）)】\\]]?[。.]?`, 'g');
 
 /**
  * 去掉正文里所有的免责声明（模型自己写的、健管师编辑时挪动过的），再由后端统一拼在末尾（规格 3.6）。

@@ -44,6 +44,11 @@ export const artifactSchema = artifactSummarySchema.extend({
   clientId: z.uuid().nullable(),
   parentId: z.uuid().nullable(),
   content: artifactContentSchema,
+  /**
+   * 内容指纹。修改和确认时必须带上健管师预览时的指纹，
+   * 保证确认的内容和预览一致（别的窗口改过就拒绝）。
+   */
+  contentHash: z.string(),
   criticalFlags: z.array(criticalFlagSchema),
 });
 export type Artifact = z.infer<typeof artifactSchema>;
@@ -70,8 +75,16 @@ export const artifactEventSchema = z.object({
 });
 export type ArtifactEvent = z.infer<typeof artifactEventSchema>;
 
+/** 通俗版的提示项：只提示、不拦截（规格 3.6），位置按原文的 UTF-16 下标 */
+export const clientTextHintsSchema = z.object({
+  /** 疾病名称和“患有”“有……风险”这类判断句式 */
+  judgementHints: z.array(z.object({ text: z.string(), index: z.number().int() })),
+});
+export type ClientTextHints = z.infer<typeof clientTextHintsSchema>;
+
 export const artifactDetailResponseSchema = z.object({
   artifact: artifactSchema,
+  hints: clientTextHintsSchema,
   /** 同一产物链上的所有版本，按版本号升序 */
   versions: z.array(artifactSummarySchema),
   events: z.array(artifactEventSchema),
@@ -81,8 +94,11 @@ export type ArtifactDetailResponse = z.infer<typeof artifactDetailResponseSchema
 export const ARTIFACT_TEXT_MAX = 20000;
 export const RETURN_REASON_MAX = 500;
 
+const contentHashField = z.string().min(1).max(128);
+
 export const updateArtifactRequestSchema = z.object({
   version: z.number().int().positive(),
+  contentHash: contentHashField,
   content: z.object({
     professional: z.string().max(ARTIFACT_TEXT_MAX),
     clientFacing: z.string().max(ARTIFACT_TEXT_MAX),
@@ -93,6 +109,8 @@ export type UpdateArtifactRequest = z.infer<typeof updateArtifactRequestSchema>;
 export const approveArtifactRequestSchema = z.object({
   /** 必须等于最新草稿的版本号 */
   version: z.number().int().positive(),
+  /** 必须等于健管师预览时的内容指纹 */
+  contentHash: contentHashField,
   /** 有危急指标时必须为 true */
   acknowledgedCritical: z.boolean().default(false),
 });
@@ -117,10 +135,17 @@ export const approveRejectionSchema = z.object({
       'not_latest_draft',
       'banned_terms',
       'missing_disclaimer',
+      'duplicate_disclaimer',
+      'empty_client_text',
       'critical_not_acknowledged',
+      /** 通俗版里出现了危急指标的数值，危急指标永远不进通俗版 */
+      'critical_value_in_client_text',
       'read_only',
     ]),
   ),
   bannedTerms: z.array(z.object({ term: z.string(), index: z.number().int() })).optional(),
+  criticalValueMentions: z
+    .array(z.object({ metric: z.string(), index: z.number().int() }))
+    .optional(),
 });
 export type ApproveRejection = z.infer<typeof approveRejectionSchema>;

@@ -2,6 +2,7 @@ import type { Provider as LlmProvider, ProviderName } from '@health-buddy/ai-eng
 import { Module, type DynamicModule } from '@nestjs/common';
 import { APP_FILTER } from '@nestjs/core';
 import { AiModule } from './ai/ai.module.js';
+import { ArtifactsModule } from './artifacts/artifacts.module.js';
 import { LLM_PROVIDERS } from './ai/gateway.provider.js';
 import { AuthModule } from './auth/auth.module.js';
 import { ClientsModule } from './clients/clients.module.js';
@@ -11,6 +12,7 @@ import { APP_CONFIG, type AppConfig } from './config.js';
 import { DbModule } from './db/db.provider.js';
 import { HealthController } from './health/health.controller.js';
 import { SkillsController } from './skills/skills.controller.js';
+import { TasksModule } from './tasks/tasks.module.js';
 
 export interface AppOptions {
   /** 测试用：替换大模型厂商适配器 */
@@ -23,7 +25,15 @@ export class AppModule {
     return {
       module: AppModule,
       global: true,
-      imports: [DbModule, AuthModule, ClientsModule, CriticalThresholdsModule, AiModule],
+      imports: [
+        DbModule,
+        AuthModule,
+        ClientsModule,
+        CriticalThresholdsModule,
+        TasksModule,
+        ArtifactsModule,
+        AiModule,
+      ],
       controllers: [HealthController, SkillsController],
       providers: [
         { provide: APP_CONFIG, useValue: config },

@@ -63,7 +63,7 @@ export function describeClient(input: SkillInput): string {
     }
   }
 
-  lines.push('', '### 危急指标（由系统按协会设定的阈值识别）');
+  lines.push('', '### 危急指标（由系统按平台设定的阈值识别）');
   if (!client.criticalFlags.length) lines.push('无。');
   for (const f of client.criticalFlags) {
     lines.push(
