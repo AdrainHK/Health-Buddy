@@ -8,7 +8,7 @@ import {
   type SkillEvalCase,
 } from '@health-buddy/skills';
 import { runAskOnce } from './ask.js';
-import { gradeRecentSummary, type Finding } from './graders.js';
+import { describeError, gradeRecentSummary, type Finding } from './graders.js';
 import { judgeClientText } from './judge.js';
 
 export interface RunResult {
@@ -67,8 +67,7 @@ async function runOnce(
       findings.push(...(await judgeClientText(gateway, EVAL_CTX, result.data.clientFacing)));
     return { ...base, findings, output: result.data };
   } catch (err) {
-    const kind = err && typeof err === 'object' && 'kind' in err ? String(err.kind) : 'error';
-    return { ...base, findings: [{ rule: 'output.error', detail: kind }] };
+    return { ...base, findings: [{ rule: 'output.error', detail: describeError(err) }] };
   }
 }
 

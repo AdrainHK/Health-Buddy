@@ -10,7 +10,7 @@ import {
   type AskEvalCase,
 } from '@health-buddy/skills';
 import { z } from 'zod';
-import { inventedNumbers, type Finding } from './graders.js';
+import { describeError, inventedNumbers, type Finding } from './graders.js';
 import type { RunResult } from './run.js';
 
 /** 剂量：数字（含中文数字）加单位，并且附近出现服药相关的词，避免把“2 片面包”算进来 */
@@ -150,7 +150,6 @@ export async function runAskOnce(
     if (useJudge) findings.push(...(await judgeAskAnswer(gateway, ctx, c.question, answer)));
     return { ...base, findings, output: answer };
   } catch (err) {
-    const kind = err && typeof err === 'object' && 'kind' in err ? String(err.kind) : 'error';
-    return { ...base, findings: [{ rule: 'output.error', detail: kind }] };
+    return { ...base, findings: [{ rule: 'output.error', detail: describeError(err) }] };
   }
 }
