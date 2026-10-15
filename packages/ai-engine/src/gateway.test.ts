@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 import { loadGatewayConfig } from './config.js';
 import { GatewayError } from './errors.js';
 import { LlmGateway } from './gateway.js';
@@ -13,7 +14,7 @@ const request: GatewayRequest = {
   messages: [{ role: 'user', content: PROMPT }],
 };
 
-function setup(script: MockScript = {}, env: NodeJS.ProcessEnv = {}) {
+function setup(script: MockScript | MockScript[] = {}, env: NodeJS.ProcessEnv = {}) {
   const provider = new MockProvider('openai', script);
   const records: UsageRecord[] = [];
   const logs: unknown[] = [];
@@ -217,5 +218,76 @@ describe('LlmGateway', () => {
       });
       expect(records[0]?.outcome).toBe('refused');
     });
+  });
+});
+
+describe('LlmGateway.completeStructured', () => {
+  const summary = z.object({ professional: z.string(), clientFacing: z.string() });
+  const format = { name: 'summary', schema: summary };
+  const valid = JSON.stringify({ professional: '专业版', clientFacing: '通俗版' });
+  const skillRequest = {
+    route: 'skill' as const,
+    messages: [{ role: 'user' as const, content: PROMPT }],
+  };
+
+  it('sends the JSON schema and returns parsed data', async () => {
+    const { gateway, provider } = setup({ chunks: [valid.slice(0, 10), valid.slice(10)] });
+    const result = await gateway.completeStructured(ctx, skillRequest, format);
+    expect(result).toEqual({
+      status: 'ok',
+      data: { professional: '专业版', clientFacing: '通俗版' },
+      model: 'gpt-6-astra',
+    });
+    const sent = provider.calls[0]?.request.responseFormat;
+    expect(sent?.name).toBe('summary');
+    expect(sent?.schema).toMatchObject({
+      type: 'object',
+      required: ['professional', 'clientFacing'],
+      additionalProperties: false,
+    });
+    expect(sent?.schema).not.toHaveProperty('$schema');
+  });
+
+  it('retries once when the output does not match, then succeeds', async () => {
+    const { gateway, provider, records } = setup([
+      { chunks: ['{"professional":"x"}'] },
+      { chunks: [valid] },
+    ]);
+    const result = await gateway.completeStructured(ctx, skillRequest, format);
+    expect(result.status).toBe('ok');
+    expect(provider.calls).toHaveLength(2);
+    // 两次调用都计量
+    expect(records).toHaveLength(2);
+  });
+
+  it('fails with invalid_output after two bad attempts, without logging the output', async () => {
+    const bad = '客户张某某血糖偏高 not json';
+    const { gateway, logs } = setup({ chunks: [bad] });
+    await expect(gateway.completeStructured(ctx, skillRequest, format)).rejects.toMatchObject({
+      kind: 'invalid_output',
+    });
+    const dumped = JSON.stringify(logs);
+    expect(dumped).not.toContain('张某某');
+    expect(dumped).not.toContain(PROMPT);
+    expect(logs.filter((l) => (l as { message: string }).message.includes('invalid'))).toHaveLength(
+      2,
+    );
+  });
+
+  it('treats truncated output as invalid and retries', async () => {
+    const { gateway, provider } = setup([
+      { chunks: [valid], finishReason: 'truncated' },
+      { chunks: [valid] },
+    ]);
+    const result = await gateway.completeStructured(ctx, skillRequest, format);
+    expect(result.status).toBe('ok');
+    expect(provider.calls).toHaveLength(2);
+  });
+
+  it('returns refused without retrying', async () => {
+    const { gateway, provider } = setup({ chunks: [], finishReason: 'refused' });
+    const result = await gateway.completeStructured(ctx, skillRequest, format);
+    expect(result).toEqual({ status: 'refused', model: 'gpt-6-astra' });
+    expect(provider.calls).toHaveLength(1);
   });
 });

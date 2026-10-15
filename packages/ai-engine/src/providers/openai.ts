@@ -26,6 +26,18 @@ export class OpenAIProvider implements Provider {
         store: false,
         ...(request.system ? { instructions: request.system } : {}),
         input: request.messages.map((m) => ({ role: m.role, content: m.content })),
+        ...(request.responseFormat
+          ? {
+              text: {
+                format: {
+                  type: 'json_schema' as const,
+                  name: request.responseFormat.name,
+                  schema: request.responseFormat.schema,
+                  strict: true,
+                },
+              },
+            }
+          : {}),
       },
       signal ? { signal } : undefined,
     );

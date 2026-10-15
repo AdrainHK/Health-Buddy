@@ -10,6 +10,7 @@ export type Effort = 'low' | 'medium' | 'high';
 export const ROUTES = [
   'smoke', // 部署后的连通性检查
   'chat', // 工作台对话（M1）
+  'skill', // 工作台技能执行（M1）
   'report_interpretation', // 体检报告解读（M2）
   'expert', // 专家智能体（M3）
   'companion', // AI 健康伴侣（M6）
@@ -21,11 +22,19 @@ export interface ChatMessage {
   content: string;
 }
 
+/** 结构化输出：要求模型按 JSON Schema 输出。两家都用各自的原生能力约束。 */
+export interface ResponseFormat {
+  /** 只含字母、数字、下划线和短横线，OpenAI 要求 */
+  name: string;
+  schema: Record<string, unknown>;
+}
+
 export interface GatewayRequest {
   route: Route;
   system?: string;
   messages: ChatMessage[];
   maxOutputTokens?: number;
+  responseFormat?: ResponseFormat;
 }
 
 /** 谁发起的调用，用于计量和成本归属。只放 id，不放任何个人信息。 */

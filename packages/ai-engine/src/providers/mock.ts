@@ -22,10 +22,16 @@ export interface MockScript {
 export class MockProvider implements Provider {
   readonly calls: { request: GatewayRequest; route: ResolvedRoute }[] = [];
 
+  /** 传一组脚本时，第 n 次调用用第 n 个（超出后重复最后一个），用来模拟重试 */
   constructor(
     readonly name: ProviderName = 'openai',
-    private readonly script: MockScript = {},
+    private readonly scripts: MockScript | MockScript[] = {},
   ) {}
+
+  private get script(): MockScript {
+    if (!Array.isArray(this.scripts)) return this.scripts;
+    return this.scripts[Math.min(this.calls.length - 1, this.scripts.length - 1)] ?? {};
+  }
 
   async *stream(request: GatewayRequest, route: ResolvedRoute): AsyncIterable<GatewayEvent> {
     this.calls.push({ request, route });
