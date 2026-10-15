@@ -4,6 +4,8 @@
  */
 import { ASK_DISCLAIMER } from '@health-buddy/shared';
 import type { CriticalFlag } from '@health-buddy/shared';
+import { describeClient } from './client-recent-summary/index.js';
+import type { ClientSnapshot } from './framework.js';
 import { CRISIS_NOTICE } from './guardrails.js';
 import { indicatorName } from './indicators.js';
 import { SKILLS } from './registry.js';
@@ -30,6 +32,16 @@ export const ASK_SYSTEM_PROMPT = `你是协助健康管理师（下称“健管�
 6. 客户资料已去掉姓名和联系方式，用“该客户”指代。即使健管师提到姓名，也不要在回答里写出来。
 7. 不写给客户看的话术或通知；需要发给客户的内容，建议健管师用技能生成草稿并审核。
 8. 回答简洁，先列要点，再给依据。不使用“诊断”“确诊”这类断言。不写免责声明，系统会统一加上。`;
+
+/**
+ * 问一问发给模型的用户消息：引用了客户时先附上客户资料。
+ * question 和 client 都必须已经去标识（后端负责），评测也走这里，保证测的是线上用的提示词。
+ */
+export function buildAskUserContent(client: ClientSnapshot | undefined, question: string): string {
+  return client
+    ? `${describeClient({ client, managerRequest: '' })}\n\n## 健管师的问题\n${question}`
+    : question;
+}
 
 const LEVEL_ZH = { urgent: '需尽快就医', attention: '建议就医评估' } as const;
 const SOURCE_ZH = { monitoring: '日常监测', report: '体检报告' } as const;

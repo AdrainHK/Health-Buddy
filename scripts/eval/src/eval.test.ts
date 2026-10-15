@@ -1,13 +1,16 @@
 import { LlmGateway, MockProvider, loadGatewayConfig } from '@health-buddy/ai-engine';
 import {
   SNAPSHOTS,
+  askEvalCases,
   recentSummaryEvalCases,
+  type AskEvalCase,
   type RecentSummaryOutput,
   type SkillEvalCase,
 } from '@health-buddy/skills';
 import { describe, expect, it } from 'vitest';
 import { gradeRecentSummary, inventedNumbers } from './graders.js';
-import { runEval, summarize } from './run.js';
+import { gradeAskAnswer } from './ask.js';
+import { runAskEval, runEval, summarize } from './run.js';
 
 const good: RecentSummaryOutput = {
   professional: {
@@ -136,5 +139,64 @@ describe('runEval', () => {
       useJudge: false,
     });
     expect(result?.findings.map((f) => f.rule)).toEqual(['output.refused']);
+  });
+});
+
+const askCase = (id: string) => askEvalCases.find((c) => c.id === id) as AskEvalCase;
+
+describe('gradeAskAnswer', () => {
+  it('passes compliant answers', () => {
+    expect(
+      gradeAskAnswer(
+        askCase('ask-acute-symptoms'),
+        '请立即建议客户拨打 120 急救电话，不要自行前往医院。',
+      ),
+    ).toEqual([]);
+    expect(
+      gradeAskAnswer(
+        askCase('ask-critical-values'),
+        '- 收缩压 185 mmHg（2026-09-24，日常监测）：需尽快就医。该客户 60-69 岁。',
+      ),
+    ).toEqual([]);
+  });
+
+  it('flags missing openings, levels, doses, invented numbers and identity leaks', () => {
+    const rules = (id: string, answer: string) =>
+      gradeAskAnswer(askCase(id), answer).map((f) => f.rule);
+    expect(rules('ask-acute-symptoms', '可以先让客户多休息。')).toContain(
+      'expect.opens_with_emergency',
+    );
+    expect(rules('ask-crisis-earlier-turn', '饮食上建议清淡。')).toContain(
+      'expect.opens_with_crisis',
+    );
+    expect(rules('ask-critical-values', '收缩压 192 mmHg，偏高。')).toEqual(
+      expect.arrayContaining(['expect.critical_level', 'accuracy.invented_numbers']),
+    );
+    expect(rules('ask-drug-dose', '一般每天 5mg。')).toContain('ask.dose');
+    expect(rules('ask-missing-data', '血糖正常。')).toContain('expect.missing_data');
+    expect(rules('ask-de-identification', '张建国最近血压偏高。')).toContain('ask.identity_leak');
+  });
+});
+
+describe('runAskEval', () => {
+  it('uses the chat route and the live system prompt, and accepts refusals only where allowed', async () => {
+    const provider = new MockProvider('openai', { chunks: [], finishReason: 'refused' });
+    const gateway = new LlmGateway({
+      config: loadGatewayConfig({}),
+      providers: { openai: provider },
+    });
+    const results = await runAskEval({
+      gateway,
+      provider: 'openai',
+      cases: [askCase('ask-override-rules'), askCase('ask-acute-symptoms')],
+      runs: 1,
+      useJudge: false,
+      concurrency: 1,
+    });
+    expect(results.map((r) => [r.caseId, r.findings.map((f) => f.rule)])).toEqual([
+      ['ask-acute-symptoms', ['output.refused']],
+      ['ask-override-rules', []],
+    ]);
+    expect(provider.calls[0]?.request.route).toBe('chat');
   });
 });

@@ -12,3 +12,4 @@ export {
 export * from './eval-types.js';
 export { SNAPSHOTS } from './fixtures.js';
 export { recentSummaryEvalCases } from './client-recent-summary/evals/cases.js';
+export { askEvalCases } from './ask-evals.js';

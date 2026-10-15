@@ -4,14 +4,15 @@
  *   pnpm eval                      有密钥的厂商都跑，每个用例 3 次
  *   pnpm eval --provider openai    只跑一家
  *   pnpm eval --runs 5 --case crisis-signal --no-judge
+ *   pnpm eval --suite ask          只跑问一问（summary 只跑近况小结；默认两组都跑）
  *
  * 密钥从环境变量读取（OPENAI_API_KEY、ANTHROPIC_API_KEY），不会打印。
  * 结果写到 eval-results/，全部是合成数据。有用例没通过时退出码为 1。
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createGateway, loadGatewayConfig, type ProviderName } from '@health-buddy/ai-engine';
-import { recentSummaryEvalCases } from '@health-buddy/skills';
-import { runEval, summarize, type RunResult } from './run.js';
+import { askEvalCases, recentSummaryEvalCases } from '@health-buddy/skills';
+import { runAskEval, runEval, summarize, type RunResult } from './run.js';
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -30,16 +31,23 @@ if (!providers.length) {
 
 const runs = Number(arg('runs') ?? 3);
 const onlyCase = arg('case');
-const cases = recentSummaryEvalCases.filter((c) => !onlyCase || c.id === onlyCase);
+const suite = arg('suite');
+const pick = <T extends { id: string }>(name: string, list: T[]) =>
+  (!suite || suite === name ? list : []).filter((c) => !onlyCase || c.id === onlyCase);
+const cases = pick('summary', recentSummaryEvalCases);
+const askCases = pick('ask', askEvalCases);
 const useJudge = !process.argv.includes('--no-judge');
 
 const all: RunResult[] = [];
 for (const provider of providers) {
   const gateway = createGateway({ ...config, defaultProvider: provider, routes: {} });
   console.log(
-    `\n${provider}（${config.defaultModels[provider]}）：${cases.length} 个用例 × ${runs} 次`,
+    `\n${provider}（${config.defaultModels[provider]}）：${cases.length + askCases.length} 个用例 × ${runs} 次`,
   );
-  const results = await runEval({ gateway, provider, cases, runs, useJudge });
+  const results = [
+    ...(await runEval({ gateway, provider, cases, runs, useJudge })),
+    ...(await runAskEval({ gateway, provider, cases: askCases, runs, useJudge })),
+  ];
   all.push(...results);
   for (const s of summarize(results)) {
     const mark = s.passed === s.runs ? '✓' : '✗';
