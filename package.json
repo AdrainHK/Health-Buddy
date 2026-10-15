@@ -15,7 +15,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:migrate": "turbo run build --filter=@health-buddy/server && pnpm --filter @health-buddy/server migrate",
-    "seed": "turbo run build --filter=@health-buddy/seed && pnpm --filter @health-buddy/seed seed"
+    "seed": "turbo run build --filter=@health-buddy/seed && pnpm --filter @health-buddy/seed seed",
+    "eval": "turbo run build --filter=@health-buddy/eval... && pnpm --filter @health-buddy/eval eval"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
