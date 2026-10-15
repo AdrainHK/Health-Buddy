@@ -71,7 +71,7 @@ export interface ClientTextCheck {
   hasDisclaimer: boolean;
   /** 只提示：疾病名称和判断句式 */
   judgementHints: { text: string; index: number }[];
-  /** 只提示：通俗版里出现了危急指标的数值 */
+  /** 有就不能确认：通俗版里出现了危急指标的数值 */
   criticalValueMentions: { metric: string; value: number; index: number }[];
 }
 

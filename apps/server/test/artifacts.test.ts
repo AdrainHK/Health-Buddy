@@ -63,6 +63,17 @@ describe('产物接口', () => {
       .where('artifact_id', '=', id)
       .orderBy('created_at')
       .execute();
+  /** 导出接口返回二进制文件，按原样收下 */
+  const exportAs = (agent: Agent, id: string, format: string) =>
+    agent
+      .post(`/api/artifacts/${id}/export`)
+      .send({ format })
+      .buffer(true)
+      .parse((res, done) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => done(null, Buffer.concat(chunks)));
+      });
   const actionsOf = async (id: string) => (await eventsOf(id)).map((e) => e.action);
 
   /** 健管师预览时拿到的内容指纹 */
@@ -249,6 +260,39 @@ describe('产物接口', () => {
     expect(await actionsOf(id)).toEqual(['approved', 'copied', 'copied']);
   });
 
+  it('导出图片和 PDF：只有已审核的可以，文件名不带客户姓名，每次都有记录', async () => {
+    const { id } = await draftA1({ criticalFlags: [SBP_FLAG] });
+    const agent = await loginAs(app, f.users.managerA1.email);
+    await exportAs(agent, id, 'png').expect(409);
+
+    expect((await approve(agent, id, { acknowledgedCritical: true })).status).toBe(200);
+    const png = await exportAs(agent, id, 'png').expect(200);
+    expect(png.headers['content-type']).toBe('image/png');
+    expect(png.headers['cache-control']).toBe('no-store');
+    expect((png.body as Buffer).subarray(1, 4).toString()).toBe('PNG');
+    const disposition = decodeURIComponent(png.headers['content-disposition'] ?? '');
+    expect(disposition).toMatch(/近况小结-\d{4}-\d{2}-\d{2}\.png/);
+    expect(disposition).not.toContain('测试客户');
+
+    const pdf = await exportAs(agent, id, 'pdf').expect(200);
+    expect(pdf.headers['content-type']).toBe('application/pdf');
+    expect((pdf.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
+
+    await exportAs(agent, id, 'docx').expect(400);
+    await agent.post(`/api/artifacts/${id}/export`).send({}).expect(400);
+    const events = await owner
+      .selectFrom('artifact_events')
+      .select(['action', 'format'])
+      .where('artifact_id', '=', id)
+      .orderBy('created_at')
+      .execute();
+    expect(events.map((e) => [e.action, e.format])).toEqual([
+      ['approved', null],
+      ['exported', 'png'],
+      ['exported', 'pdf'],
+    ]);
+  });
+
   it('基于已审核产物修改：生成新版本草稿，旧版本和记录保留', async () => {
     const { id } = await draftA1();
     const agent = await loginAs(app, f.users.managerA1.email);
@@ -308,6 +352,7 @@ describe('产物接口', () => {
       agent.post(`/api/artifacts/${id}/approve`).send(body),
       agent.post(`/api/artifacts/${id}/revise`),
       agent.post(`/api/artifacts/${id}/copy`),
+      exportAs(agent, id, 'pdf'),
     ];
     for (const [email, id] of cases) {
       const agent = await loginAs(app, email);
@@ -343,6 +388,7 @@ describe('产物接口', () => {
       await agent.post(`/api/artifacts/${id}/approve`).send(body).expect(404);
       await agent.post(`/api/artifacts/${id}/revise`).expect(404);
       await agent.post(`/api/artifacts/${id}/copy`).expect(404);
+      await exportAs(agent, id, 'png').expect(404);
     }
     const http = request(app.getHttpServer());
     await http.get(`/api/artifacts/${id}`).expect(401);
@@ -377,6 +423,7 @@ describe('产物接口', () => {
       })
       .expect(409);
     await agent.post(`/api/artifacts/${approved}/copy`).expect(409);
+    await exportAs(agent, approved, 'pdf').expect(409);
     await agent.post(`/api/artifacts/${approved}/revise`).expect(409);
     // 原健管师仍能在记录里看到
     const detail = await agent.get(`/api/artifacts/${approved}`).expect(200);
@@ -387,6 +434,20 @@ describe('产物接口', () => {
     await a2.get(`/api/artifacts/${approved}`).expect(404);
     await a2.post(`/api/artifacts/${approved}/copy`).expect(404);
     await a2.post(`/api/artifacts/${approved}/revise`).expect(404);
+    await exportAs(a2, approved, 'pdf').expect(404);
+    expect(await actionsOf(approved)).toEqual(['approved']);
+  });
+
+  it('发给客户前再查一遍：通俗版里有危急指标数值的已审核产物不能复制或导出', async () => {
+    const { id } = await draftA1({
+      criticalFlags: [SBP_FLAG],
+      clientFacing: `您最近一次收缩压 185，请留意休息。\n\n${DISCLAIMER}`,
+    });
+    await owner.updateTable('artifacts').set({ status: 'approved' }).where('id', '=', id).execute();
+    const agent = await loginAs(app, f.users.managerA1.email);
+    await agent.post(`/api/artifacts/${id}/copy`).expect(409);
+    await exportAs(agent, id, 'png').expect(409);
+    expect(await actionsOf(id)).toEqual([]);
   });
 
   it('请求体不合法返回 400', async () => {

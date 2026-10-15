@@ -12,14 +12,16 @@ import {
   type ArtifactDetailResponse,
   type ArtifactEvent,
   type CriticalFlag,
+  type ExportFormat,
   type UpdateArtifactRequest,
 } from '@health-buddy/shared';
-import { checkClientText, finalizeClientText } from '@health-buddy/skills';
+import { checkClientText, finalizeClientText, getSkill } from '@health-buddy/skills';
 import { ApiException, conflict } from '../common/api-error.js';
 import { dbErrorCode } from '../common/db-error.js';
 import { DB } from '../db/db.provider.js';
 import { withTenant, type Db, type TenantContext, type TenantTransaction } from '../db/database.js';
 import { selectArtifactSummary, toArtifactSummary } from '../tasks/tasks.repository.js';
+import { renderPdf, renderPng } from './export-renderer.js';
 
 type RejectReason = ApproveRejection['reasons'][number];
 
@@ -178,11 +180,36 @@ export class ArtifactsRepository {
       if (!row) return undefined;
       if (row.detached) throw readOnly();
       if (row.status !== 'approved') throw conflict();
-      // 已审核内容数据库层不能再改，这里再查一遍只是多一道保险
-      const text = row.content.clientFacing;
-      if (findBannedTerms(text).length || !endsWithDisclaimer(text)) throw conflict();
+      const text = deliverableText(row);
       await recordEvent(trx, ctx, row, 'copied');
       return buildClientDeliverable(text);
+    });
+  }
+
+  /**
+   * 导出已审核产物的通俗版（图片或 PDF），并记一条导出记录（谁、什么时候、什么格式，不记内容）。
+   * 检查和复制相同，另外标题也要合规；文件在同一个事务里生成，生成失败就不留记录。
+   */
+  exportClientText(
+    ctx: TenantContext,
+    id: string,
+    format: ExportFormat,
+  ): Promise<{ file: Buffer; filename: string } | undefined> {
+    return this.write(ctx, async (trx) => {
+      const row = await loadArtifact(trx, id, 'share');
+      if (!row) return undefined;
+      if (row.detached) throw readOnly();
+      if (row.status !== 'approved') throw conflict();
+      const text = deliverableText(row);
+      // 标题会印在文件上、写进文件名，找不到技能或标题不合规就不导出
+      const title = getSkill(row.skill_id)?.title;
+      if (!title || findBannedTerms(title).length) throw conflict();
+      const date = shanghaiDate(new Date());
+      const doc = { title, date, body: buildClientDeliverable(text) };
+      const file = format === 'pdf' ? await renderPdf(doc) : renderPng(doc);
+      await recordEvent(trx, ctx, row, 'exported', null, format);
+      // 文件名不带客户姓名（规格 3.6）
+      return { file, filename: `${title}-${date}.${format}` };
     });
   }
 
@@ -293,8 +320,9 @@ async function recordEvent(
   trx: TenantTransaction,
   ctx: TenantContext,
   row: Pick<ArtifactRow, 'id'>,
-  action: 'created' | 'edited' | 'approved' | 'copied',
+  action: 'created' | 'edited' | 'approved' | 'copied' | 'exported',
   reason: string | null = null,
+  format: ExportFormat | null = null,
 ): Promise<void> {
   await trx
     .insertInto('artifact_events')
@@ -306,7 +334,7 @@ async function recordEvent(
       actor_id: ctx.userId,
       action,
       reason,
-      format: null,
+      format,
     })
     .execute();
 }
@@ -356,4 +384,26 @@ async function buildDetail(
       createdAt: e.created_at.toISOString(),
     })),
   };
+}
+
+/**
+ * 发给客户前再查一遍通俗版：已审核内容数据库层不能再改，这里是多一道保险。
+ * 和确认时的检查一致：无禁用词、免责声明恰好一次且在末尾、不含危急指标数值。
+ */
+function deliverableText(row: ArtifactRow): string {
+  const text = row.content.clientFacing;
+  if (
+    findBannedTerms(text).length ||
+    !endsWithDisclaimer(text) ||
+    countDisclaimers(text) !== 1 ||
+    checkClientText(text, row.critical_flags).criticalValueMentions.length
+  ) {
+    throw conflict();
+  }
+  return text;
+}
+
+/** 导出文件上的日期按北京时间 */
+function shanghaiDate(d: Date): string {
+  return new Date(d.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }

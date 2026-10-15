@@ -1,6 +1,7 @@
 ---
 id: client-recent-summary
 kind: recent_summary
+title: 近况小结
 requiresClient: true
 modes: plan,craft
 clientFacing: true
