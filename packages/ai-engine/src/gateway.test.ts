@@ -140,6 +140,33 @@ describe('LlmGateway', () => {
     expect(records[0]).toMatchObject({ outcome: 'error', errorType: 'rate_limited' });
   });
 
+  it('keeps the provider status and error code, and logs them', async () => {
+    const badKey = Object.assign(new Error('Incorrect API key provided: sk-...'), {
+      status: 401,
+      code: 'invalid_api_key',
+    });
+    const { gateway, logs } = setup({ failWith: badKey });
+    await expect(collect(gateway.stream(ctx, request))).rejects.toMatchObject({
+      kind: 'provider_error',
+      status: 401,
+      code: 'invalid_api_key',
+    });
+    expect(logs).toContainEqual({
+      message: 'llm call failed',
+      fields: expect.objectContaining({ status: 401, code: 'invalid_api_key' }) as unknown,
+    });
+    expect(JSON.stringify(logs)).not.toContain('sk-');
+  });
+
+  it('drops an error code that is not a plain identifier', async () => {
+    const odd = Object.assign(new Error('x'), { status: 400, code: `bad input: ${PROMPT}` });
+    const { gateway, logs } = setup({ failWith: odd });
+    const err: unknown = await collect(gateway.stream(ctx, request)).catch((e: unknown) => e);
+    expect(err).toMatchObject({ kind: 'provider_error', status: 400 });
+    expect((err as GatewayError).code).toBeUndefined();
+    expect(JSON.stringify(logs)).not.toContain('张某某');
+  });
+
   it('does not keep the provider error, which may echo the prompt', async () => {
     const { gateway } = setup({ failWith: new Error(`upstream echoed: ${PROMPT}`) });
     const err: unknown = await collect(gateway.stream(ctx, request)).catch((e: unknown) => e);
