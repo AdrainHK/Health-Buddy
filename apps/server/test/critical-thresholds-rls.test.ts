@@ -131,6 +131,20 @@ describe('危急指标阈值的行级安全', () => {
     ).rejects.toMatchObject({ code: '42501' });
   });
 
+  it('平台管理员修改时也不能把操作人写成别人', async () => {
+    const [rule] = await thresholdsOf(platform());
+    if (!rule) throw new Error('no rule');
+    await expect(
+      withTenant(app, platform(), (trx) =>
+        trx
+          .updateTable('critical_thresholds')
+          .set({ value: 170, updated_by: f.users.operatorAdminA.id })
+          .where('id', '=', rule.id)
+          .execute(),
+      ),
+    ).rejects.toMatchObject({ code: '42501' });
+  });
+
   it('应用角色不能直接写修改记录', async () => {
     await expect(
       withTenant(app, platform(), (trx) =>

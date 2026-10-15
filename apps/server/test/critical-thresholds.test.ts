@@ -127,11 +127,24 @@ describe('危急指标阈值接口', () => {
   it('恢复为默认值', async () => {
     const agent = await loginAs(app, f.users.platform.email);
     await agent.post('/api/critical-thresholds').send(newRule).expect(201);
+    const before = await owner.selectFrom('critical_threshold_events').select('id').execute();
     const res = await agent.post('/api/critical-thresholds/reset').expect(200);
     expect(res.body.thresholds).toHaveLength(DEFAULT_CRITICAL_RULES.length);
     expect(res.body.thresholds.some((t: { metric: string }) => t.metric === 'creatinine')).toBe(
       false,
     );
+    // 删掉的和重新写入的规则都有记录，操作人是平台管理员
+    const seen = new Set(before.map((e) => e.id));
+    const events = (
+      await owner.selectFrom('critical_threshold_events').selectAll().execute()
+    ).filter((e) => !seen.has(e.id));
+    expect(events.filter((e) => e.action === 'deleted')).toHaveLength(
+      DEFAULT_CRITICAL_RULES.length + 1,
+    );
+    expect(events.filter((e) => e.action === 'created')).toHaveLength(
+      DEFAULT_CRITICAL_RULES.length,
+    );
+    expect(events.every((e) => e.actor_id === f.users.platform.id)).toBe(true);
   });
 });
 

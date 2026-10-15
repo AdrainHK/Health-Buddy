@@ -9,9 +9,11 @@ import { z } from 'zod';
 import type { ResolvedSession } from '../auth/auth.repository.js';
 import { CurrentSession } from '../auth/decorators.js';
 import { badRequest, notFound } from '../common/api-error.js';
+import type { Role } from '../db/types.js';
 import { CriticalThresholdsRepository } from './critical-thresholds.repository.js';
 
 const idSchema = z.uuid();
+const READERS: readonly Role[] = ['platform_admin', 'operator_admin', 'org_admin', 'manager'];
 
 /** 改阈值只对平台管理员开放，其他角色按“不存在”处理。行级安全是第二道防线。 */
 function requirePlatformAdmin(session: ResolvedSession): void {
@@ -25,6 +27,8 @@ export class CriticalThresholdsController {
 
   @Get()
   async list(@CurrentSession() session: ResolvedSession): Promise<CriticalThresholdListResponse> {
+    // 显式列出能读的角色：以后加客户账号时，客户不会落到“200 和空列表”
+    if (!READERS.includes(session.role)) throw notFound();
     return { thresholds: await this.repo.list(session) };
   }
 
