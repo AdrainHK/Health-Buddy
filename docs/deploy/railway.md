@@ -32,13 +32,15 @@ Redis 在用到队列和定时任务的里程碑（M5 随访、M10 自动化）�
 
 ## 每次部署做什么
 
-`railway.json` 规定了部署流程：
+`railway.json` 指定用 `Dockerfile` 构建，容器启动入口是 `scripts/deploy/start.sh`：
 
 1. 用 `Dockerfile` 构建镜像（安装依赖、构建全部包）。
-2. 部署前运行 `scripts/deploy/predeploy.sh`：
+2. 容器启动时先运行 `scripts/deploy/predeploy.sh`（不依赖 Railway 的 Pre-deploy 设置）：
    - 执行数据库迁移，第一次部署时创建平台管理员；
    - `SEED_ALLOW=yes` 时，如果还没有演示数据就生成一套，已有就跳过。
 3. 启动服务，用 `/api/health` 做健康检查。
+
+如果 Railway 把仓库识别成多个服务（server、workbench、seed），只保留一个服务，在 Settings 里清空 Custom Build Command、Custom Start Command 和 Watch Paths，Builder 选 Dockerfile。
 
 ## 演示账号
 

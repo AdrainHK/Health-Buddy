@@ -1,5 +1,5 @@
 #!/bin/sh
-# Railway 每次部署前运行：先迁移数据库，预览环境再补齐演示数据。
+# 每次容器启动时由 start.sh 调用：先迁移数据库，预览环境再补齐演示数据。
 set -eu
 
 node --enable-source-maps apps/server/dist/db/migrate-cli.js
