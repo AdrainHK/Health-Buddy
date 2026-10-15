@@ -43,4 +43,9 @@ describe('gateway config', () => {
       expect(String(err)).not.toContain(secret);
     }
   });
+
+  it('treats an empty key as not configured', () => {
+    const config = loadGatewayConfig({ OPENAI_API_KEY: 'sk-test', ANTHROPIC_API_KEY: '' });
+    expect(config.apiKeys).toEqual({ openai: 'sk-test' });
+  });
 });

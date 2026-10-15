@@ -1,0 +1,73 @@
+name: AI 评测
+
+# 改提示词、技能、网关或评测本身时自动跑一次；也可以在 Actions 页面手动运行。
+# 会真实调用大模型并产生费用，所以只在相关文件变动时触发。
+on:
+  pull_request:
+    paths:
+      - packages/skills/**
+      - packages/ai-engine/**
+      - packages/shared/src/compliance/**
+      - scripts/eval/**
+      - .github/workflows/eval.yml
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: 每个用例跑几次
+        default: '3'
+      provider:
+        description: openai、anthropic，留空表示有密钥的都跑
+        default: ''
+
+concurrency:
+  group: eval-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - name: 检查密钥
+        id: keys
+        run: |
+          if [ -z "$OPENAI_API_KEY" ] && [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::warning::仓库还没有配置 OPENAI_API_KEY 或 ANTHROPIC_API_KEY，AI 评测未运行。"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.keys.outputs.ready == 'true'
+      - uses: pnpm/action-setup@v4
+        if: steps.keys.outputs.ready == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.keys.outputs.ready == 'true'
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - if: steps.keys.outputs.ready == 'true'
+        run: pnpm install --frozen-lockfile
+      - name: 运行评测
+        if: steps.keys.outputs.ready == 'true'
+        # 手动输入经环境变量传入，不直接拼进脚本
+        env:
+          RUNS: ${{ inputs.runs || '3' }}
+          PROVIDER: ${{ inputs.provider }}
+        run: |
+          case "$RUNS" in ''|*[!0-9]*) echo "runs 必须是数字"; exit 1;; esac
+          if [ -n "$PROVIDER" ]; then
+            pnpm eval --runs "$RUNS" --provider "$PROVIDER"
+          else
+            pnpm eval --runs "$RUNS"
+          fi
+      - name: 上传报告
+        if: always() && steps.keys.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: scripts/eval/eval-results/
+          retention-days: 30
