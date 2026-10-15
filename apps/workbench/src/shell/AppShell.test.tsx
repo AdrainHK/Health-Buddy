@@ -1,6 +1,19 @@
+import type { TaskDetailResponse, TaskMessage } from '@health-buddy/shared';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { CLIENTS, SKILL, emptyDetail, ids, json, makeTask, mockApi } from '../test/mockApi';
+import {
+  CLIENTS,
+  NOW,
+  SKILL,
+  emptyDetail,
+  ids,
+  json,
+  makeArtifactDetail,
+  makeArtifactSummary,
+  makeTask,
+  mockApi,
+  sseResponse,
+} from '../test/mockApi';
 import { AppShell } from './AppShell';
 
 const TASKS = [
@@ -159,6 +172,80 @@ describe('AppShell (wide screen)', () => {
 
     await user.click(screen.getByRole('button', { name: '返回任务列表' }));
     expect(await screen.findByRole('group', { name: '未关联客户' })).toBeInTheDocument();
+  });
+});
+
+describe('AppShell return and rewrite', () => {
+  beforeEach(() => setViewport(false));
+
+  it('reloads the conversation after an artifact is returned for rewriting', async () => {
+    const message = (id: string, role: TaskMessage['role'], content: string): TaskMessage => ({
+      id,
+      role,
+      mode: 'craft',
+      content,
+      skillId: SKILL.id,
+      clientRefs: [],
+      status: 'complete',
+      createdAt: NOW,
+    });
+    let detail: TaskDetailResponse = {
+      ...emptyDetail(TASKS[0]),
+      messages: [
+        message(ids.managerMsg, 'manager', '合成请求：写个近况小结'),
+        message(ids.assistantMsg, 'assistant', '合成回答：已生成第 1 版'),
+      ],
+      artifacts: [makeArtifactSummary()],
+    };
+    const api = mockApi({
+      'GET /tasks': () => json(200, { tasks: TASKS }),
+      'GET /clients': () => json(200, { clients: CLIENTS }),
+      'GET /skills': () => json(200, { skills: [SKILL] }),
+      [`GET /tasks/${ids.task}`]: () => json(200, detail),
+      [`GET /artifacts/${ids.artifact}`]: () => json(200, makeArtifactDetail()),
+      [`GET /artifacts/${ids.artifact2}`]: () =>
+        json(200, makeArtifactDetail({ id: ids.artifact2, version: 2, parentId: ids.artifact })),
+      [`POST /artifacts/${ids.artifact}/return`]: () => {
+        // 后端把退回重写记成对话里的新一轮
+        detail = {
+          ...detail,
+          messages: [
+            ...detail.messages,
+            message(ids.assistantMsg2, 'assistant', '合成回答：已按退回原因重写第 2 版'),
+          ],
+          artifacts: [
+            makeArtifactSummary({ status: 'returned' }),
+            makeArtifactSummary({ id: ids.artifact2, version: 2 }),
+          ],
+        };
+        return sseResponse([
+          {
+            type: 'text',
+            messageId: ids.assistantMsg2,
+            delta: '合成回答：已按退回原因重写第 2 版',
+          },
+          { type: 'artifact', artifact: makeArtifactSummary({ id: ids.artifact2, version: 2 }) },
+          { type: 'done', messageId: ids.assistantMsg2, reason: 'complete' },
+        ]);
+      },
+    });
+    const user = userEvent.setup();
+    render(<AppShell />);
+    await user.click(await screen.findByRole('button', { name: '甲的小结' }));
+    expect(await screen.findByText('合成回答：已生成第 1 版')).toBeInTheDocument();
+
+    const results = screen.getByRole('complementary', { name: '结果' });
+    await user.click(await within(results).findByRole('button', { name: /第 1 版/ }));
+    const bar = await within(results).findByRole('region', { name: '审核' });
+    await user.click(within(bar).getByRole('button', { name: '退回重写' }));
+    await user.type(within(bar).getByRole('textbox', { name: /退回原因/ }), '语气再温和一些');
+    await user.click(within(bar).getByRole('button', { name: '退回并重写' }));
+
+    expect(await within(results).findByRole('heading', { name: /第 2 版/ })).toBeInTheDocument();
+    expect(await screen.findByText('合成回答：已按退回原因重写第 2 版')).toBeInTheDocument();
+    // 静默重新加载：原来的对话还在
+    expect(screen.getByText('合成回答：已生成第 1 版')).toBeInTheDocument();
+    expect(api.callsTo('GET', `/tasks/${ids.task}`).length).toBeGreaterThanOrEqual(3);
   });
 });
 

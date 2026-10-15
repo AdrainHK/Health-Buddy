@@ -31,6 +31,8 @@ export interface ResultsPanelProps {
   refreshKey?: string;
   /** 结果区里的操作改变了产物或任务状态（确认、退回、发现任务只读等） */
   onArtifactsChanged?: () => void;
+  /** 退回重写跑完了一轮生成，对话区需要重新加载 */
+  onConversationChanged?: () => void;
 }
 
 /** 右侧结果区：产物预览和审核、客户档案、修改记录（M1 规格 3.1、3.6） */
@@ -41,6 +43,7 @@ export function ResultsPanel({
   task = null,
   refreshKey,
   onArtifactsChanged,
+  onConversationChanged,
 }: ResultsPanelProps) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('artifacts');
@@ -63,6 +66,18 @@ export function ResultsPanel({
   });
   /** 已经拿到的详情（如“基于此版修改”的响应），打开时不再请求 */
   const preloadedRef = useRef<ArtifactDetailResponse | null>(null);
+  /** 当前打开的产物有未保存的修改时，不自动切到新产物，只提示 */
+  const dirtyRef = useRef(false);
+  const selectedRef = useRef<string | null>(null);
+  const [newerId, setNewerId] = useState<string | null>(null);
+
+  useEffect(() => {
+    selectedRef.current = selectedId;
+  }, [selectedId]);
+
+  const onDirtyChange = useCallback((dirty: boolean) => {
+    dirtyRef.current = dirty;
+  }, []);
 
   const readOnly = task !== null && (isReadOnlyTask(task) || readOnlyTaskId === task.id);
 
@@ -76,6 +91,7 @@ export function ResultsPanel({
       setArtifacts([]);
       setSelectedId(null);
       setDetail(null);
+      setNewerId(null);
       setListState('loading');
     }
     if (taskId === null) return;
@@ -86,6 +102,13 @@ export function ResultsPanel({
         setListState('ready');
         const latest = sortArtifacts(items)[0];
         if (openLatest && latest) {
+          const current = selectedRef.current;
+          if (dirtyRef.current && current !== null && current !== latest.id) {
+            // 不覆盖健管师未保存的修改：留在当前产物，提示有新版本
+            setNewerId(latest.id);
+            return;
+          }
+          setNewerId(null);
           setSelectedId(latest.id);
           setDetailVersion((v) => v + 1);
           setTab('artifacts');
@@ -128,6 +151,7 @@ export function ResultsPanel({
 
   const openArtifact = useCallback((id: string, preloaded?: ArtifactDetailResponse) => {
     preloadedRef.current = preloaded ?? null;
+    setNewerId((current) => (current === id ? null : current));
     setSelectedId(id);
     setDetailVersion((v) => v + 1);
   }, []);
@@ -174,6 +198,9 @@ export function ResultsPanel({
               onArtifactsChanged?.();
             }}
             onBack={() => setSelectedId(null)}
+            newerArtifactId={newerId}
+            onDirtyChange={onDirtyChange}
+            {...(onConversationChanged ? { onRegenerated: onConversationChanged } : {})}
           />
         );
       }

@@ -131,6 +131,35 @@ describe('artifact list', () => {
     view.rerenderWith({ refreshKey: `${ids.task}:1` });
     expect(await screen.findByRole('heading', { name: /第 2 版/ })).toBeInTheDocument();
   });
+
+  it('does not switch away from unsaved edits when a newer artifact is generated', async () => {
+    let artifacts = [makeArtifactSummary()];
+    mockApi({
+      [`GET ${TASK_PATH}`]: () => json(200, { ...emptyDetail(), artifacts }),
+      [`GET ${ART_PATH}`]: () => json(200, makeArtifactDetail()),
+      [`GET /artifacts/${ids.artifact2}`]: () =>
+        json(200, makeArtifactDetail({ id: ids.artifact2, version: 2 })),
+    });
+    const user = userEvent.setup();
+    const view = await openArtifact(user);
+    const editor = screen.getByRole('textbox', { name: '通俗版内容' });
+    await user.type(editor, '补充一句');
+
+    artifacts = [
+      ...artifacts,
+      makeArtifactSummary({ id: ids.artifact2, version: 2, createdAt: '2026-10-15T09:00:00.000Z' }),
+    ];
+    view.rerenderWith({ refreshKey: `${ids.task}:1` });
+    const notice = await within(reviewBar()).findByText(/已生成新的版本/);
+    expect(notice.closest('[role="alert"]')).not.toBeNull();
+    expect(screen.getByRole('heading', { name: /第 1 版/ })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '通俗版内容' })).toHaveValue(
+      makeArtifactDetail().artifact.content.clientFacing + '补充一句',
+    );
+
+    await user.click(button('打开新版本'));
+    expect(await screen.findByRole('heading', { name: /第 2 版/ })).toBeInTheDocument();
+  });
 });
 
 describe('review bar on a draft', () => {
@@ -259,19 +288,145 @@ describe('review bar on a draft', () => {
     await user.type(editor, '补充一句');
     await user.click(button('保存修改'));
 
-    expect(await within(reviewBar()).findByRole('status')).toHaveTextContent(
-      '内容已在别处修改，已刷新',
-    );
+    // 本地有未保存的修改：重新加载后不覆盖，提示有更新的内容，由健管师选择
+    const newer = await within(reviewBar()).findByText(/这份草稿已在别处更新/);
+    expect(newer.closest('[role="alert"]')).not.toBeNull();
     expect(api.callsTo('PATCH', ART_PATH)[0]?.body).toMatchObject({
       version: 1,
       contentHash: 'hash-1',
     });
+    expect(api.callsTo('GET', ART_PATH).length).toBeGreaterThanOrEqual(2);
+    const local = makeArtifactDetail().artifact.content.clientFacing + '补充一句';
+    expect(screen.getByRole('textbox', { name: '通俗版内容' })).toHaveValue(local);
+    expect(button('保存修改')).toBeDisabled();
+    expect(button('确认')).toBeDisabled();
+
+    await user.click(button('载入最新内容'));
+    expect(screen.getByRole('textbox', { name: '通俗版内容' })).toHaveValue(
+      fresh.artifact.content.clientFacing,
+    );
+    expect(within(reviewBar()).queryByText(/这份草稿已在别处更新/)).not.toBeInTheDocument();
+  });
+
+  it('reloads silently when there are no local edits', async () => {
+    let loads = 0;
+    const fresh = makeArtifactDetail({
+      contentHash: 'hash-2',
+      content: {
+        professional: '合成专业版',
+        clientFacing: `合成通俗版：另一个窗口改过的内容。\n\n${SYNTHETIC_DISCLAIMER}`,
+      },
+    });
+    mockApi({
+      [`GET ${TASK_PATH}`]: () => json(200, taskDetail(fresh)),
+      [`GET ${ART_PATH}`]: () => json(200, loads++ === 0 ? makeArtifactDetail() : fresh),
+      [`POST ${ART_PATH}/approve`]: () =>
+        json(409, { error: 'conflict', reasons: ['not_latest_draft'] }),
+    });
+    const user = userEvent.setup();
+    await openArtifact(user);
+
+    await user.click(button('确认'));
+    expect(await within(reviewBar()).findByRole('status')).toHaveTextContent(
+      '内容已在别处修改，已刷新',
+    );
     await waitFor(() =>
       expect(screen.getByRole('textbox', { name: '通俗版内容' })).toHaveValue(
         fresh.artifact.content.clientFacing,
       ),
     );
-    expect(api.callsTo('GET', ART_PATH).length).toBeGreaterThanOrEqual(2);
+    expect(within(reviewBar()).queryByText(/这份草稿已在别处更新/)).not.toBeInTheDocument();
+  });
+
+  it('keeps local edits on request and saves them against the newer version', async () => {
+    let loads = 0;
+    const fresh = makeArtifactDetail({
+      contentHash: 'hash-2',
+      content: {
+        professional: '合成专业版',
+        clientFacing: `合成通俗版：另一个窗口改过的内容。\n\n${SYNTHETIC_DISCLAIMER}`,
+      },
+    });
+    const api = mockApi({
+      [`GET ${TASK_PATH}`]: () => json(200, taskDetail(fresh)),
+      [`GET ${ART_PATH}`]: () => json(200, loads++ === 0 ? makeArtifactDetail() : fresh),
+      [`PATCH ${ART_PATH}`]: (call) => {
+        const body = call.body as { contentHash: string; content: { clientFacing: string } };
+        if (body.contentHash !== 'hash-2') {
+          return json(409, { error: 'conflict', reasons: ['not_latest_draft'] });
+        }
+        return json(
+          200,
+          makeArtifactDetail({
+            contentHash: 'hash-3',
+            content: { professional: '合成专业版', clientFacing: body.content.clientFacing },
+          }),
+        );
+      },
+    });
+    const user = userEvent.setup();
+    await openArtifact(user);
+
+    await user.type(screen.getByRole('textbox', { name: '通俗版内容' }), '补充一句');
+    await user.click(button('保存修改'));
+    await within(reviewBar()).findByText(/这份草稿已在别处更新/);
+
+    await user.click(button('保留我的修改'));
+    expect(button('保存修改')).toBeEnabled();
+    await user.click(button('保存修改'));
+    expect(await within(reviewBar()).findByRole('status')).toHaveTextContent('已保存');
+    const patches = api.callsTo('PATCH', ART_PATH);
+    expect(patches).toHaveLength(2);
+    expect(patches[1]?.body).toMatchObject({ contentHash: 'hash-2' });
+    expect(screen.getByRole('textbox', { name: '通俗版内容' })).toHaveValue(
+      makeArtifactDetail().artifact.content.clientFacing + '补充一句',
+    );
+    expect(within(reviewBar()).queryByText(/这份草稿已在别处更新/)).not.toBeInTheDocument();
+  });
+
+  it('marks critical values from the detail hints as soon as the draft opens', async () => {
+    const clientFacing = `合成通俗版：最近一次收缩压 185，请注意休息。\n\n${SYNTHETIC_DISCLAIMER}`;
+    const detail = makeArtifactDetail(
+      {
+        content: { professional: '合成专业版', clientFacing },
+        criticalFlags: [CRITICAL],
+        hasCriticalFlags: true,
+      },
+      {
+        hints: {
+          judgementHints: [],
+          criticalValueMentions: [{ metric: 'sbp', index: clientFacing.indexOf('185') }],
+        },
+      },
+    );
+    const api = mockApi({
+      [`GET ${TASK_PATH}`]: () => json(200, taskDetail(detail)),
+      [`GET ${ART_PATH}`]: () => json(200, detail),
+    });
+    const user = userEvent.setup();
+    await openArtifact(user);
+
+    expect(screen.getByText(/通俗版里出现了危急指标的数值（已标出）/)).toHaveAttribute(
+      'role',
+      'alert',
+    );
+    const marks = screen.getByRole('list', { name: '需要注意的位置' });
+    expect(marks).toHaveTextContent('危急指标数值（收缩压）');
+    expect(within(marks).getByText('185', { selector: 'mark' })).toHaveAttribute(
+      'data-kind',
+      'critical',
+    );
+    // 勾选“已知悉”也不能确认：数值要先删掉
+    await user.click(screen.getByRole('checkbox', { name: /已知悉/ }));
+    expect(button('确认')).toBeDisabled();
+    expect(reviewBar()).toHaveTextContent('通俗版含危急指标数值，删去并保存后才能确认');
+    expect(api.callsTo('POST', `${ART_PATH}/approve`)).toHaveLength(0);
+
+    // 删掉数值后标记消失
+    const editor = screen.getByRole('textbox', { name: '通俗版内容' });
+    await user.clear(editor);
+    await user.type(editor, `合成通俗版：最近血压偏高，请注意休息。\n\n${SYNTHETIC_DISCLAIMER}`);
+    expect(screen.queryByText(/通俗版里出现了危急指标的数值（已标出）/)).not.toBeInTheDocument();
   });
 
   it('requires a reason before returning, then streams the rewrite and opens the new version', async () => {
@@ -304,7 +459,8 @@ describe('review bar on a draft', () => {
         ]),
     });
     const user = userEvent.setup();
-    await openArtifact(user);
+    const onConversationChanged = vi.fn();
+    await openArtifact(user, { onConversationChanged });
 
     await user.click(button('退回重写'));
     const form = within(reviewBar()).getByRole('group', { name: '退回重写' });
@@ -325,6 +481,8 @@ describe('review bar on a draft', () => {
     expect(api.callsTo('POST', `${ART_PATH}/return`)[0]?.body).toEqual({
       reason: '语气再温和一些',
     });
+    // 退回重写在对话里多了一轮，通知对话区重新加载
+    expect(onConversationChanged).toHaveBeenCalledTimes(1);
   });
 
   it('offers no copy or export on a draft, in either view', async () => {

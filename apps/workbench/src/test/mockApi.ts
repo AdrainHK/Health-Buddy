@@ -219,7 +219,7 @@ export function makeArtifactDetail(
   const { id, taskId, skillId, version, status, hasCriticalFlags, createdAt } = artifact;
   return {
     artifact,
-    hints: { judgementHints: [] },
+    hints: { judgementHints: [], criticalValueMentions: [] },
     versions: [{ id, taskId, skillId, version, status, hasCriticalFlags, createdAt }],
     events: [
       {
