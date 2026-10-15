@@ -23,6 +23,7 @@ describe('大模型网关接入', () => {
   let f: Fixtures;
   let app: INestApplication;
   let unconfigured: INestApplication;
+  let badKey: INestApplication;
   const provider = new MockProvider('openai', {
     chunks: ['Hello', ' there'],
     usage: { inputTokens: 20, outputTokens: 5 },
@@ -32,6 +33,20 @@ describe('大模型网关接入', () => {
     f = await seedFixtures(owner);
     app = await createTestApp({}, { llmProviders: { openai: provider } });
     unconfigured = await createTestApp();
+    badKey = await createTestApp(
+      {},
+      {
+        llmProviders: {
+          openai: new MockProvider('openai', {
+            chunks: [],
+            failWith: Object.assign(new Error('Incorrect API key provided'), {
+              status: 401,
+              code: 'invalid_api_key',
+            }),
+          }),
+        },
+      },
+    );
   });
 
   beforeEach(async () => {
@@ -41,6 +56,7 @@ describe('大模型网关接入', () => {
   afterAll(async () => {
     await app.close();
     await unconfigured.close();
+    await badKey.close();
     await owner.destroy();
   });
 
@@ -94,6 +110,15 @@ describe('大模型网关接入', () => {
     expect(parseSse(res.text)).toEqual([{ type: 'error', kind: 'not_configured' }]);
     const rows = await owner.selectFrom('llm_usage').select(['outcome', 'error_type']).execute();
     expect(rows).toEqual([{ outcome: 'error', error_type: 'not_configured' }]);
+  });
+
+  it('厂商报错时返回状态码和错误码，不返回厂商的错误信息', async () => {
+    const agent = await loginAs(badKey, f.users.platform.email);
+    const res = await agent.post('/api/ai/smoke').expect(200);
+    expect(parseSse(res.text)).toEqual([
+      { type: 'error', kind: 'provider_error', status: 401, code: 'invalid_api_key' },
+    ]);
+    expect(res.text).not.toContain('Incorrect API key');
   });
 
   describe('用量表的行级安全', () => {

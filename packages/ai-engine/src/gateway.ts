@@ -66,6 +66,7 @@ export class LlmGateway<C extends CallContext = CallContext> {
       model: string,
       usage: Usage,
       errorType?: string,
+      detail?: { status?: number | undefined; code?: string | undefined },
     ) => {
       finished = true;
       const record: UsageRecord = {
@@ -87,6 +88,8 @@ export class LlmGateway<C extends CallContext = CallContext> {
         inputTokens: record.inputTokens,
         outputTokens: record.outputTokens,
         errorType: record.errorType ?? null,
+        ...(detail?.status ? { status: detail.status } : {}),
+        ...(detail?.code ? { code: detail.code } : {}),
       };
       if (outcome === 'error') this.options.logger?.error('llm call failed', fields);
       else this.options.logger?.info('llm call', fields);
@@ -113,7 +116,10 @@ export class LlmGateway<C extends CallContext = CallContext> {
     } catch (err) {
       const classified = classifyError(err);
       if (!finished)
-        await finish('error', route.model, { inputTokens: 0, outputTokens: 0 }, classified.kind);
+        await finish('error', route.model, { inputTokens: 0, outputTokens: 0 }, classified.kind, {
+          status: classified.status,
+          code: classified.code,
+        });
       throw classified;
     } finally {
       // 调用方提前停止读取（例如用户关掉页面）

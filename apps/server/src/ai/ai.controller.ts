@@ -3,6 +3,7 @@ import type { Response } from 'express';
 import type { ResolvedSession } from '../auth/auth.repository.js';
 import { CurrentSession } from '../auth/decorators.js';
 import { notFound } from '../common/api-error.js';
+import { GatewayError } from '@health-buddy/ai-engine';
 import { LLM_GATEWAY, type AppGateway } from './gateway.provider.js';
 
 /** 部署后检查大模型是否连通。提示词固定，不含任何客户数据。 */
@@ -41,9 +42,17 @@ export class AiController {
         send(event);
       }
     } catch (err) {
-      const kind =
-        err && typeof err === 'object' && 'kind' in err ? String(err.kind) : 'provider_error';
-      send({ type: 'error', kind });
+      // 只给平台管理员看的连通性检查：带上厂商的状态码和错误码（如 401 invalid_api_key），便于排查配置
+      if (err instanceof GatewayError) {
+        send({
+          type: 'error',
+          kind: err.kind,
+          ...(err.status ? { status: err.status } : {}),
+          ...(err.code ? { code: err.code } : {}),
+        });
+      } else {
+        send({ type: 'error', kind: 'provider_error' });
+      }
     }
     res.end();
   }
