@@ -14,7 +14,7 @@ describe('迁移和平台管理员初始化', () => {
   });
 
   it('没有平台管理员时创建一个，之后不再改动', async () => {
-    await sql`truncate llm_usage, sessions, clients, users, organizations, operators cascade`.execute(
+    await sql`truncate llm_usage, monitoring_readings, report_indicators, health_reports, sessions, clients, users, organizations, operators cascade`.execute(
       owner,
     );
     const admin = { email: 'root@test.example', password: 'initial-password-1' };

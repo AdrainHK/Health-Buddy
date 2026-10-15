@@ -62,10 +62,42 @@ export interface LlmUsageTable {
   created_at: Timestamp;
 }
 
+export interface HealthReportsTable {
+  id: Generated<string>;
+  client_id: string;
+  report_date: ColumnType<Date, Date | string, Date | string>;
+  title: string;
+  source: 'synthetic' | 'upload' | 'manual';
+  created_at: Timestamp;
+}
+
+export interface ReportIndicatorsTable {
+  id: Generated<string>;
+  report_id: string;
+  client_id: string;
+  code: string;
+  /** numeric 列，pg 驱动返回字符串，避免精度丢失 */
+  value: ColumnType<string, number | string, number | string>;
+  unit: string;
+}
+
+export interface MonitoringReadingsTable {
+  id: Generated<string>;
+  client_id: string;
+  metric: string;
+  value: ColumnType<string, number | string, number | string>;
+  unit: string;
+  measured_at: Timestamp;
+  source: 'synthetic' | 'device' | 'manual' | 'companion';
+}
+
 export interface Database {
   operators: OperatorsTable;
   organizations: OrganizationsTable;
   users: UsersTable;
   clients: ClientsTable;
   llm_usage: LlmUsageTable;
+  health_reports: HealthReportsTable;
+  report_indicators: ReportIndicatorsTable;
+  monitoring_readings: MonitoringReadingsTable;
 }

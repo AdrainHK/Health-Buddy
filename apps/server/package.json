@@ -28,6 +28,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@health-buddy/seed": "workspace:*",
     "@nestjs/testing": "11.2.7",
     "@swc/core": "1.16.18",
     "@types/cookie-parser": "1.4.10",

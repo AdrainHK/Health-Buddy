@@ -44,7 +44,16 @@ describe('数据库行级安全', () => {
   const managerA1 = () => ctxOf(f.users.managerA1.id, 'manager', f.operatorA, f.orgA);
 
   it('没有租户上下文时，应用角色查不到任何业务数据', async () => {
-    for (const table of ['operators', 'organizations', 'users', 'clients', 'llm_usage'] as const) {
+    for (const table of [
+      'operators',
+      'organizations',
+      'users',
+      'clients',
+      'llm_usage',
+      'health_reports',
+      'report_indicators',
+      'monitoring_readings',
+    ] as const) {
       const rows = await app
         .selectFrom(table)
         .select(sql`1`.as('x'))
@@ -154,6 +163,77 @@ describe('数据库行级安全', () => {
         .where('id', '=', managerA2)
         .execute();
     }
+  });
+
+  it('报告、指标和监测数据跟随客户的可见范围', async () => {
+    const tables = ['health_reports', 'report_indicators', 'monitoring_readings'] as const;
+    const clientIdsSeenBy = async (ctx: TenantContext) =>
+      withTenant(app, ctx, async (trx) => {
+        const seen: Record<string, string[]> = {};
+        for (const t of tables) {
+          const rows = await trx.selectFrom(t).select('client_id').execute();
+          seen[t] = rows.map((r) => r.client_id);
+        }
+        return seen;
+      });
+
+    const only = (id: string) => ({
+      health_reports: [id],
+      report_indicators: [id],
+      monitoring_readings: [id],
+    });
+    const none = { health_reports: [], report_indicators: [], monitoring_readings: [] };
+
+    expect(await clientIdsSeenBy(managerA1())).toEqual(only(f.clients.a1[0]));
+    expect(
+      await clientIdsSeenBy(ctxOf(f.users.managerB1.id, 'manager', f.operatorB, f.orgB)),
+    ).toEqual(only(f.clients.b1));
+    expect(
+      await clientIdsSeenBy(ctxOf(f.users.orgAdminA.id, 'org_admin', f.operatorA, f.orgA)),
+    ).toEqual(only(f.clients.a1[0]));
+    // 同协会的其他健管师、其他机构、运营商、平台都看不到
+    expect(
+      await clientIdsSeenBy(ctxOf(f.users.managerA2.id, 'manager', f.operatorA, f.orgA)),
+    ).toEqual(none);
+    expect(
+      await clientIdsSeenBy(ctxOf(f.users.orgAdminA2.id, 'org_admin', f.operatorA, f.orgA2)),
+    ).toEqual(none);
+    expect(
+      await clientIdsSeenBy(ctxOf(f.users.operatorAdminA.id, 'operator_admin', f.operatorA, null)),
+    ).toEqual(none);
+    expect(await clientIdsSeenBy(ctxOf(f.users.platform.id, 'platform_admin', null, null))).toEqual(
+      none,
+    );
+  });
+
+  it('只有服务该客户的健管师能写入报告和监测数据', async () => {
+    const reading = (clientId: string) => ({
+      client_id: clientId,
+      metric: 'weight',
+      value: 60,
+      unit: 'kg',
+      measured_at: new Date(),
+      source: 'manual' as const,
+    });
+    const orgAdmin = ctxOf(f.users.orgAdminA.id, 'org_admin', f.operatorA, f.orgA);
+    for (const [ctx, clientId] of [
+      [managerA1(), f.clients.b1],
+      [managerA1(), f.clients.a2],
+      [orgAdmin, f.clients.a1[0]],
+    ] as const) {
+      await expect(
+        withTenant(app, ctx, (trx) =>
+          trx.insertInto('monitoring_readings').values(reading(clientId)).execute(),
+        ),
+      ).rejects.toMatchObject({ code: '42501' });
+    }
+    const deleted = await withTenant(app, managerA1(), (trx) =>
+      trx.deleteFrom('health_reports').where('client_id', '=', f.clients.b1).executeTakeFirst(),
+    );
+    expect(deleted.numDeletedRows).toBe(0n);
+    await withTenant(app, managerA1(), (trx) =>
+      trx.insertInto('monitoring_readings').values(reading(f.clients.a1[0])).execute(),
+    );
   });
 
   it('健管师改不了、删不了别人的客户', async () => {
