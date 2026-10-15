@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@health-buddy/ai-engine": "workspace:*",
     "@health-buddy/shared": "workspace:*",
     "@nestjs/common": "11.2.7",
     "@nestjs/core": "11.2.7",

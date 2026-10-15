@@ -44,7 +44,7 @@ describe('数据库行级安全', () => {
   const managerA1 = () => ctxOf(f.users.managerA1.id, 'manager', f.operatorA, f.orgA);
 
   it('没有租户上下文时，应用角色查不到任何业务数据', async () => {
-    for (const table of ['operators', 'organizations', 'users', 'clients'] as const) {
+    for (const table of ['operators', 'organizations', 'users', 'clients', 'llm_usage'] as const) {
       const rows = await app
         .selectFrom(table)
         .select(sql`1`.as('x'))

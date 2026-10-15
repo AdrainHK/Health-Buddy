@@ -46,9 +46,26 @@ export interface ClientsTable {
   created_at: Timestamp;
 }
 
+export interface LlmUsageTable {
+  id: Generated<string>;
+  operator_id: string | null;
+  user_id: string;
+  route: string;
+  provider: 'openai' | 'anthropic';
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: string | null;
+  duration_ms: number;
+  outcome: 'complete' | 'truncated' | 'refused' | 'error';
+  error_type: string | null;
+  created_at: Timestamp;
+}
+
 export interface Database {
   operators: OperatorsTable;
   organizations: OrganizationsTable;
   users: UsersTable;
   clients: ClientsTable;
+  llm_usage: LlmUsageTable;
 }

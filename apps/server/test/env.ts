@@ -1,3 +1,4 @@
+import { loadGatewayConfig } from '@health-buddy/ai-engine';
 import { deriveAppDatabaseUrl, type AppConfig } from '../src/config.js';
 
 /** 测试库连接串（所有者）。CI 和本地都用一个专门的测试库，每次运行前重建。 */
@@ -19,6 +20,8 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     workbenchDist: undefined,
     secureCookies: false,
     platformAdmin: undefined,
+    // 测试里不配置任何密钥，大模型调用一律用模拟厂商
+    llm: loadGatewayConfig({}),
     ...overrides,
   };
 }
