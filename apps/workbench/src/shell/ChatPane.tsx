@@ -39,6 +39,11 @@ export interface ChatPaneProps {
   onTaskChanged?: () => void;
   /** 生成了草稿，结果区需要刷新 */
   onArtifact?: (artifact: ArtifactSummary) => void;
+  /**
+   * 对话在对话区之外有了变化（如结果区里的退回重写生成了新一轮）时改变，
+   * 对话区据此重新加载当前任务的对话。
+   */
+  conversationVersion?: number;
 }
 
 interface Draft {
@@ -81,6 +86,7 @@ export function ChatPane({
   onTaskCreated,
   onTaskChanged,
   onArtifact,
+  conversationVersion = 0,
 }: ChatPaneProps) {
   const { t } = useTranslation();
   const [conversation, dispatch] = useReducer(conversationReducer, emptyConversation);
@@ -142,6 +148,26 @@ export function ChatPane({
       });
     return () => controller.abort();
   }, [taskId, reloadKey]);
+
+  // 对话在别处有了变化（退回重写）：静默重新加载，不清空已显示的内容，避免闪烁。
+  // 本地正在生成时跳过（退回重写和对话生成互斥，后端会拒绝其中一个）。
+  const seenConversationVersion = useRef(conversationVersion);
+  useEffect(() => {
+    if (seenConversationVersion.current === conversationVersion) return;
+    seenConversationVersion.current = conversationVersion;
+    if (taskId === null || generatingRef.current) return;
+    const controller = new AbortController();
+    getTask(taskId, controller.signal)
+      .then((detail) => {
+        if (generatingRef.current || detail.task.id !== taskId) return;
+        dispatch({ type: 'load', detail });
+        setLoadState('idle');
+      })
+      .catch(() => {
+        // 静默刷新失败时保留当前内容，切换任务或刷新页面后可以看到
+      });
+    return () => controller.abort();
+  }, [conversationVersion, taskId]);
 
   // 离开页面时停止正在进行的流
   useEffect(() => () => abortRef.current?.abort(), []);

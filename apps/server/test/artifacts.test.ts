@@ -237,6 +237,41 @@ describe('产物接口', () => {
     expect(res.body.criticalValueMentions).toEqual([{ metric: 'sbp', index: 9 }]);
   });
 
+  it('详情里提前返回通俗版中危急指标数值的位置（不含数值），别人的产物仍然 404', async () => {
+    const { id } = await draftA1({
+      criticalFlags: [SBP_FLAG],
+      clientFacing: `您最近一次收缩压 185，请注意休息。\n\n${DISCLAIMER}`,
+    });
+    const agent = await loginAs(app, f.users.managerA1.email);
+    const detail = await agent.get(`/api/artifacts/${id}`).expect(200);
+    expect(detail.body.hints.criticalValueMentions).toEqual([{ metric: 'sbp', index: 9 }]);
+
+    // 改掉数值后提示消失
+    const contentHash = detail.body.artifact.contentHash as string;
+    const edited = await agent.patch(`/api/artifacts/${id}`).send({
+      version: 1,
+      contentHash,
+      content: { professional: '专业版', clientFacing: '您最近血压偏高，请注意休息。' },
+    });
+    expect(edited.status).toBe(200);
+    expect(edited.body.hints.criticalValueMentions).toEqual([]);
+
+    // 同机构的另一位健管师、其他机构的健管师都看不到
+    for (const email of [f.users.managerA2.email, f.users.managerB1.email]) {
+      const other = await loginAs(app, email);
+      const res = await other.get(`/api/artifacts/${id}`);
+      expect(res.status, email).toBe(404);
+      expect(res.body).not.toHaveProperty('hints');
+    }
+  });
+
+  it('没有危急指标时详情里的危急指标提示为空', async () => {
+    const { id } = await draftA1({ clientFacing: `您最近一次收缩压 185。\n\n${DISCLAIMER}` });
+    const agent = await loginAs(app, f.users.managerA1.email);
+    const detail = await agent.get(`/api/artifacts/${id}`).expect(200);
+    expect(detail.body.hints.criticalValueMentions).toEqual([]);
+  });
+
   it('详情里返回通俗版的疾病名称提示，只提示不拦截', async () => {
     const { id } = await draftA1({ clientFacing: `您的血压偏高，有高血压风险。\n\n${DISCLAIMER}` });
     const agent = await loginAs(app, f.users.managerA1.email);

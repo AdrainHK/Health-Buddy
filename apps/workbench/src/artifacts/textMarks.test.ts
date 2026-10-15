@@ -1,12 +1,33 @@
 import { filenameFromDisposition } from '../api/artifacts';
 import { parseBlocks } from './PlainMarkdown';
-import { bannedTermMarks, criticalMarks, judgementMarks, segmentText } from './textMarks';
+import {
+  bannedTermMarks,
+  criticalMarks,
+  hintCriticalMarks,
+  judgementMarks,
+  segmentText,
+} from './textMarks';
 
 describe('textMarks', () => {
   it('covers banned terms split by spaces or zero-width characters', () => {
     const text = '合成：可以根​治，也能筛 查。仅供参考，非医疗诊断';
     const marks = bannedTermMarks(text);
     expect(marks.map((m) => text.slice(m.start, m.end))).toEqual(['根​治', '筛 查']);
+  });
+
+  it('relocates critical value hints after a local edit and drops removed values', () => {
+    const saved = '收缩压 185，注意休息';
+    const mentions = [{ metric: 'sbp', index: 4 }];
+    expect(hintCriticalMarks(saved, mentions, saved)).toEqual([
+      { kind: 'critical', start: 4, end: 7, label: 'sbp' },
+    ]);
+    expect(hintCriticalMarks(`补充。${saved}`, mentions, saved)[0]).toMatchObject({
+      start: 7,
+      end: 10,
+    });
+    // 数值改成别的（1850 不算 185）或删掉后不再标出
+    expect(hintCriticalMarks('收缩压 1850，注意休息', mentions, saved)).toEqual([]);
+    expect(hintCriticalMarks('收缩压偏高，注意休息', mentions, saved)).toEqual([]);
   });
 
   it('marks the digits of a critical value', () => {

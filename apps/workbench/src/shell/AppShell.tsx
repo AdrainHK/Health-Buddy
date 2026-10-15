@@ -31,6 +31,8 @@ export function AppShell({ account }: AppShellProps = {}) {
   const [clients, setClients] = useState<ClientSummary[] | null>(null);
   const [skills, setSkills] = useState<SkillSummary[]>([]);
   const [artifactsVersion, setArtifactsVersion] = useState(0);
+  /** 对话在对话区之外有了变化（结果区里退回重写），对话区据此重新加载 */
+  const [conversationVersion, setConversationVersion] = useState(0);
 
   // 技能和客户列表：/ 和 @ 补全、任务按客户分组都要用
   useEffect(() => {
@@ -96,6 +98,11 @@ export function AppShell({ account }: AppShellProps = {}) {
     if (view === 'active') refreshTasks();
     else changeView('active');
   };
+
+  const onConversationChanged = useCallback(() => {
+    setConversationVersion((v) => v + 1);
+    refreshTasks();
+  }, [refreshTasks]);
 
   const onArtifact = useCallback(() => {
     // 结果区自动打开并刷新（规格 3.2）
@@ -172,6 +179,7 @@ export function AppShell({ account }: AppShellProps = {}) {
         onTaskCreated={onTaskCreated}
         onTaskChanged={refreshTasks}
         onArtifact={onArtifact}
+        conversationVersion={conversationVersion}
       />
       <ResultsPanel
         mode={narrow ? 'sheet' : 'docked'}
@@ -179,6 +187,7 @@ export function AppShell({ account }: AppShellProps = {}) {
         onClose={() => setResultsOpen(false)}
         task={activeTask}
         onArtifactsChanged={refreshTasks}
+        onConversationChanged={onConversationChanged}
         refreshKey={`${activeTask?.id ?? 'none'}:${artifactsVersion}`}
       />
       {overlayOpen && (

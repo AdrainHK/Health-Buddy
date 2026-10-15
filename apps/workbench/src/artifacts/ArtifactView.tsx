@@ -27,6 +27,7 @@ import { type ArtifactErrorKey, classifyArtifactError } from './errors';
 import {
   bannedTermMarks,
   criticalMarks,
+  hintCriticalMarks,
   judgementMarks,
   segmentText,
   serverBannedMarks,
@@ -80,6 +81,15 @@ export interface ArtifactViewProps {
   /** 后端报告任务只读 */
   onReadOnly: () => void;
   onBack: () => void;
+  /**
+   * 生成了更新的产物，但因为这里有未保存的修改没有自动打开。
+   * 显示提示，由健管师决定是否打开（打开会放弃修改）。
+   */
+  newerArtifactId?: string | null;
+  /** 编辑框里有没有未保存的修改 */
+  onDirtyChange?: (dirty: boolean) => void;
+  /** 退回重写结束（不论是否生成了新版本）：对话里多了这一轮，对话区需要重新加载 */
+  onRegenerated?: () => void;
 }
 
 /** 产物预览和审核栏（M1 规格 3.6） */
@@ -92,6 +102,9 @@ export function ArtifactView({
   onChanged,
   onReadOnly,
   onBack,
+  newerArtifactId = null,
+  onDirtyChange,
+  onRegenerated,
 }: ArtifactViewProps) {
   const { t } = useTranslation();
   const skillName = useSkillName();
@@ -101,6 +114,11 @@ export function ArtifactView({
   const [view, setView] = useState<View>('clientFacing');
   const [text, setText] = useState(saved);
   const [baseHash, setBaseHash] = useState(artifact.contentHash);
+  /** 本地编辑基于的已保存内容 */
+  const [baseText, setBaseText] = useState(saved);
+  /** 服务端内容在别处变了，而本地还有未保存的修改：等健管师选择 */
+  const [newerLoaded, setNewerLoaded] = useState(false);
+  const [dismissedNewerId, setDismissedNewerId] = useState<string | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [rejection, setRejection] = useState<Rejection | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -113,22 +131,40 @@ export function ArtifactView({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const tabRefs = useRef<Partial<Record<View, HTMLButtonElement | null>>>({});
   const abortRef = useRef<AbortController | null>(null);
-
-  // 服务端内容变了（保存、刷新），本地编辑和上一次的检查结果都以新内容为准
-  if (baseHash !== artifact.contentHash) {
-    setBaseHash(artifact.contentHash);
-    setText(saved);
-    setRejection(null);
-    setAcknowledged(false);
-  }
-
-  useEffect(() => () => abortRef.current?.abort(), []);
+  /** 自己保存后服务端返回的内容指纹：这次变化来自本地，直接采用 */
+  const ownHashRef = useRef<string | null>(null);
 
   const isDraft = artifact.status === 'draft';
   const hasCritical = artifact.criticalFlags.length > 0;
   const working = busy !== null;
   const editable = isDraft && !readOnly;
+
+  // 服务端内容变了（保存、刷新），上一次的检查结果以新内容为准。
+  // 别处改过、而本地有未保存的修改时，不悄悄覆盖本地修改，提示健管师选择。
+  if (baseHash !== artifact.contentHash) {
+    const keepEdits = ownHashRef.current !== artifact.contentHash && editable && text !== baseText;
+    setBaseHash(artifact.contentHash);
+    setBaseText(saved);
+    setRejection(null);
+    setAcknowledged(false);
+    if (keepEdits) {
+      setNewerLoaded(true);
+      if (notice?.kind === 'stale') setNotice(null);
+    } else {
+      setText(saved);
+      setNewerLoaded(false);
+    }
+  }
+
+  useEffect(() => () => abortRef.current?.abort(), []);
+
   const dirty = text !== saved;
+  const unsavedEdits = editable && dirty;
+
+  useEffect(() => {
+    onDirtyChange?.(unsavedEdits);
+  }, [onDirtyChange, unsavedEdits]);
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
   const marks = useMemo(() => {
     const result: TextMark[] = bannedTermMarks(text);
@@ -138,22 +174,45 @@ export function ArtifactView({
       }
       result.push(...criticalMarks(text, rejection.criticalValueMentions));
     }
+    // 详情里提前给出的危急指标数值位置（打开草稿就标出，不必等确认被拒绝）
+    for (const mark of hintCriticalMarks(text, hints.criticalValueMentions, saved)) {
+      if (!result.some((m) => m.kind === 'critical' && m.start === mark.start)) result.push(mark);
+    }
     result.push(...judgementMarks(text, hints.judgementHints, saved));
     return result.sort((a, b) => a.start - b.start);
-  }, [text, rejection, hints.judgementHints, saved]);
+  }, [text, rejection, hints.judgementHints, hints.criticalValueMentions, saved]);
 
   const localBanned = marks.some((m) => m.kind === 'banned');
+  const hasCriticalValue = marks.some((m) => m.kind === 'critical');
   const hasJudgement = marks.some((m) => m.kind === 'judgement');
 
-  const approveBlock: 'unsaved' | 'bannedBlock' | 'criticalBlock' | null = !editable
-    ? null
-    : localBanned
-      ? 'bannedBlock'
-      : dirty
-        ? 'unsaved'
-        : hasCritical && !acknowledged
-          ? 'criticalBlock'
-          : null;
+  const approveBlock:
+    'newerBlock' | 'unsaved' | 'bannedBlock' | 'criticalValueBlock' | 'criticalBlock' | null =
+    !editable
+      ? null
+      : newerLoaded
+        ? 'newerBlock'
+        : localBanned
+          ? 'bannedBlock'
+          : dirty
+            ? 'unsaved'
+            : hasCriticalValue
+              ? 'criticalValueBlock'
+              : hasCritical && !acknowledged
+                ? 'criticalBlock'
+                : null;
+
+  const showNewerArtifact =
+    newerArtifactId !== null &&
+    newerArtifactId !== artifact.id &&
+    dismissedNewerId !== newerArtifactId;
+
+  /** 放弃本地修改，载入服务端的最新内容 */
+  const reloadLatest = () => {
+    setText(saved);
+    setNewerLoaded(false);
+    setNotice(null);
+  };
 
   const handleError = (err: unknown) => {
     if (isAbortError(err)) return;
@@ -189,6 +248,8 @@ export function ArtifactView({
         contentHash: artifact.contentHash,
         content: { professional: artifact.content.professional, clientFacing: text },
       });
+      ownHashRef.current = next.artifact.contentHash;
+      setNewerLoaded(false);
       onDetail(next);
       setNotice({ kind: 'saved' });
     });
@@ -269,10 +330,12 @@ export function ArtifactView({
     };
     void run('return', async () => {
       setProgress({ steps: [] });
+      let opened = false;
       try {
         await returnArtifact(artifact.id, trimmed, {
           signal: controller.signal,
           onOpen: () => {
+            opened = true;
             setReturnOpen(false);
             setReason('');
             setReasonTouched(false);
@@ -292,11 +355,14 @@ export function ArtifactView({
         });
       } catch (err) {
         setProgress(null);
+        // 流打开后断开：后端可能已经保存了这一轮的部分内容
+        if (opened) onRegenerated?.();
         throw err;
       } finally {
         abortRef.current = null;
       }
       onChanged();
+      onRegenerated?.();
       if (result.created) {
         setProgress(null);
         onOpen(result.created);
@@ -419,6 +485,11 @@ export function ArtifactView({
               </div>
             )}
             {editable && <p className={styles.note}>{t('results.artifacts.disclaimerNote')}</p>}
+            {hasCriticalValue && (
+              <p className={styles.criticalNote} role="alert">
+                {t('results.artifacts.marks.criticalNote')}
+              </p>
+            )}
             {hasJudgement && (
               <p className={styles.hintNote} role="note">
                 {t('results.artifacts.marks.judgementNote')}
@@ -447,6 +518,38 @@ export function ArtifactView({
         )}
 
         {statusNote && <p className={styles.statusNote}>{statusNote}</p>}
+
+        {newerLoaded && editable && (
+          <div className={styles.newer} role="alert">
+            <p>{t('results.artifacts.newer.loaded')}</p>
+            <div className={styles.actions}>
+              <Button disabled={working} onClick={reloadLatest}>
+                {t('results.artifacts.newer.reload')}
+              </Button>
+              <Button variant="ghost" disabled={working} onClick={() => setNewerLoaded(false)}>
+                {t('results.artifacts.newer.keep')}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {showNewerArtifact && newerArtifactId && (
+          <div className={styles.newer} role="alert">
+            <p>{t('results.artifacts.newer.generated')}</p>
+            <div className={styles.actions}>
+              <Button disabled={working} onClick={() => onOpen(newerArtifactId)}>
+                {t('results.artifacts.newer.open')}
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={working}
+                onClick={() => setDismissedNewerId(newerArtifactId)}
+              >
+                {t('results.artifacts.newer.stay')}
+              </Button>
+            </div>
+          </div>
+        )}
 
         {rejection && <RejectionList reasons={rejection.reasons} />}
 
@@ -504,7 +607,7 @@ export function ArtifactView({
               <p className={styles.blockNote}>{t(`results.artifacts.review.${approveBlock}`)}</p>
             )}
             <div className={styles.actions}>
-              <Button disabled={!editable || working || !dirty} onClick={save}>
+              <Button disabled={!editable || working || !dirty || newerLoaded} onClick={save}>
                 {busy === 'save'
                   ? t('results.artifacts.review.saving')
                   : t('results.artifacts.review.save')}

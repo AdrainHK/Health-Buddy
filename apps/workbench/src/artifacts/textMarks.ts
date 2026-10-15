@@ -79,6 +79,38 @@ export function criticalMarks(
 }
 
 /**
+ * 详情里给出的危急指标数值位置。位置是按服务端保存的文本算的；本地改过文字后，
+ * 在新文本里找离原位置最近的同一个数值（前后不紧挨数字），找不到就不再标出。
+ */
+export function hintCriticalMarks(
+  text: string,
+  mentions: readonly { metric: string; index: number }[],
+  sourceText: string,
+): TextMark[] {
+  const source = criticalMarks(sourceText, mentions);
+  if (text === sourceText) return source;
+  const out: TextMark[] = [];
+  for (const mark of source) {
+    const value = sourceText.slice(mark.start, mark.end);
+    let start = -1;
+    let best = Infinity;
+    for (let i = text.indexOf(value); i !== -1; i = text.indexOf(value, i + 1)) {
+      const before = text[i - 1] ?? '';
+      const after = text[i + value.length] ?? '';
+      if (/[0-9０-９.．]/.test(before) || /[0-9０-９]/.test(after)) continue;
+      const distance = Math.abs(i - mark.start);
+      if (distance < best) {
+        best = distance;
+        start = i;
+      }
+    }
+    if (start < 0 || out.some((m) => m.start === start)) continue;
+    out.push({ ...mark, start, end: start + value.length });
+  }
+  return out;
+}
+
+/**
  * 判断句式提示。提示是按服务端保存的文本算的；本地改过文字后，
  * 在新文本里找离原位置最近的同一片段，找不到就不再标出。
  */
