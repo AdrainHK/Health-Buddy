@@ -34,6 +34,8 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      # 导出图片和 PDF 的测试需要中文字体
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
       - run: pnpm lint

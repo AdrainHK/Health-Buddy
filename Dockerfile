@@ -4,6 +4,11 @@ FROM node:22.20.0-bookworm-slim
 ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH CI=true
 RUN corepack enable
 
+# 导出图片和 PDF 用的中文字体
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # 先只复制依赖清单，依赖不变时可以复用这一层缓存

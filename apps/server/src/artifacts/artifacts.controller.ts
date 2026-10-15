@@ -1,6 +1,19 @@
-import { Body, Controller, Get, Header, HttpCode, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Res,
+  StreamableFile,
+} from '@nestjs/common';
+import type { Response } from 'express';
 import {
   approveArtifactRequestSchema,
+  exportArtifactRequestSchema,
   updateArtifactRequestSchema,
   type ArtifactDetailResponse,
   type ClientTextResponse,
@@ -72,6 +85,30 @@ export class ArtifactsController {
   ): Promise<ArtifactDetailResponse> {
     requireManager(session);
     return found(await this.artifacts.revise(session, parseId(id)));
+  }
+
+  /** 导出通俗版图片或 PDF。会记一条导出记录，所以用 POST，并且不允许缓存。 */
+  @Post(':id/export')
+  @HttpCode(200)
+  async export(
+    @CurrentSession() session: ResolvedSession,
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    requireManager(session);
+    const artifactId = parseId(id);
+    const parsed = exportArtifactRequestSchema.safeParse(body);
+    if (!parsed.success) throw badRequest();
+    const { file, filename } = found(
+      await this.artifacts.exportClientText(session, artifactId, parsed.data.format),
+    );
+    res.setHeader('Cache-Control', 'no-store');
+    return new StreamableFile(file, {
+      type: parsed.data.format === 'pdf' ? 'application/pdf' : 'image/png',
+      disposition: `attachment; filename="export.${parsed.data.format}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      length: file.length,
+    });
   }
 
   /** 复制通俗版。会记一条复制记录，所以用 POST，并且不允许缓存。 */

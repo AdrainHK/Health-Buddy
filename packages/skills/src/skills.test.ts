@@ -21,6 +21,7 @@ describe('skill metadata', () => {
     expect(clientRecentSummary).toMatchObject({
       id: 'client-recent-summary',
       kind: 'recent_summary',
+      title: '近况小结',
       requiresClient: true,
       modes: ['plan', 'craft'],
       clientFacing: true,
@@ -33,6 +34,7 @@ describe('skill metadata', () => {
     const ok = {
       id: 'demo',
       kind: 'k',
+      title: '示例',
       requiresClient: 'true',
       modes: 'craft',
       clientFacing: 'false',
@@ -42,6 +44,7 @@ describe('skill metadata', () => {
     expect(() => parseSkillMeta({ ...ok, id: 'Bad Id' })).toThrow();
     expect(() => parseSkillMeta({ ...ok, modes: 'ask' })).toThrow();
     expect(() => parseSkillMeta({ ...ok, clientFacing: 'yes' })).toThrow();
+    expect(() => parseSkillMeta({ ...ok, title: '' })).toThrow();
   });
 
   it('lists skills for the API and looks them up by id', () => {

@@ -124,6 +124,10 @@ export type ReturnArtifactRequest = z.infer<typeof returnArtifactRequestSchema>;
 export const exportFormatSchema = z.enum(['png', 'pdf']);
 export type ExportFormat = z.infer<typeof exportFormatSchema>;
 
+/** POST /api/artifacts/:id/export：会写导出记录，所以用 POST；响应是文件 */
+export const exportArtifactRequestSchema = z.object({ format: exportFormatSchema });
+export type ExportArtifactRequest = z.infer<typeof exportArtifactRequestSchema>;
+
 export const clientTextResponseSchema = z.object({ text: z.string() });
 export type ClientTextResponse = z.infer<typeof clientTextResponseSchema>;
 

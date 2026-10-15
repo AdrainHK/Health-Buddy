@@ -231,7 +231,7 @@ M1 的示例技能是 **“客户近况小结”**（Q8），用来跑通“引�
 | `POST /api/artifacts/:id/return` | 退回重写，带原因；响应是 SSE 事件流，推送新版本的生成过程 |
 | `POST /api/artifacts/:id/revise` | 基于已审核产物新建一个草稿版本 |
 | `POST /api/artifacts/:id/copy` | 取已审核产物的通俗版文本（带免责声明和 Health Buddy 名称）用于复制，并记一条复制记录。会写记录，所以用 POST，响应不缓存 |
-| `GET /api/artifacts/:id/export?format=png\|pdf` | 导出已审核产物的通俗版图片或 PDF，并记一条导出记录 |
+| `POST /api/artifacts/:id/export` `{format: png\|pdf}` | 导出已审核产物的通俗版图片或 PDF，并记一条导出记录（有记录所以用 POST，不缓存） |
 | `GET /api/critical-thresholds` | 全平台的阈值（平台管理员、协会管理员、机构管理员、健管师都能读） |
 | `POST`、`PATCH /api/critical-thresholds[/:id]` | 平台管理员新增、修改、停用规则 |
 | `POST /api/critical-thresholds/reset` | 平台管理员恢复为默认阈值 |

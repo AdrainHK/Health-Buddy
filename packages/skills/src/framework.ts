@@ -20,6 +20,8 @@ export interface SkillMeta {
   id: string;
   /** 产物类型，写进 artifacts.kind */
   kind: string;
+  /** 产物标题，用于导出文件的标题和文件名（不含客户姓名） */
+  title: string;
   requiresClient: boolean;
   modes: SkillMode[];
   /** 是否有给客户看的通俗版 */
@@ -110,9 +112,11 @@ export function parseSkillMeta(meta: Record<string, string>): SkillMeta {
     throw new Error('skill.md 的 modes 只能是 plan、craft');
   }
   if (!meta.kind) throw new Error('skill.md 缺少 kind');
+  if (!meta.title) throw new Error('skill.md 缺少 title');
   return {
     id,
     kind: meta.kind,
+    title: meta.title,
     requiresClient: bool('requiresClient'),
     modes: modes as SkillMode[],
     clientFacing: bool('clientFacing'),
