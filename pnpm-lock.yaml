@@ -78,6 +78,9 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
     devDependencies:
+      '@health-buddy/seed':
+        specifier: workspace:*
+        version: link:../../scripts/seed
       '@nestjs/testing':
         specifier: 11.2.7
         version: 11.2.7(@nestjs/common@11.2.7(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.2.7)(@nestjs/platform-express@11.2.7)
@@ -216,6 +219,34 @@ importers:
       react-dom:
         specifier: 19.1.10
         version: 19.1.10(react@19.1.10)
+      vitest:
+        specifier: 3.2.7
+        version: 3.2.7(@types/node@22.20.5)(jsdom@26.1.0)
+
+  scripts/seed:
+    dependencies:
+      '@health-buddy/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@node-rs/argon2':
+        specifier: 2.2.2
+        version: 2.2.2
+      kysely:
+        specifier: 0.29.6
+        version: 0.29.6
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@types/node':
+        specifier: 22.20.5
+        version: 22.20.5
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
       vitest:
         specifier: 3.2.7
         version: 3.2.7(@types/node@22.20.5)(jsdom@26.1.0)

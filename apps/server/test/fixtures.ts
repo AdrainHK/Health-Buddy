@@ -55,7 +55,7 @@ export function ownerDb(): Owner {
  * 全部是虚构数据。
  */
 export async function seedFixtures(db: Owner): Promise<Fixtures> {
-  await sql`truncate llm_usage, sessions, clients, users, organizations, operators cascade`.execute(
+  await sql`truncate llm_usage, monitoring_readings, report_indicators, health_reports, sessions, clients, users, organizations, operators cascade`.execute(
     db,
   );
   const passwordHash = await hashPassword(PASSWORD);
@@ -146,6 +146,41 @@ export async function seedFixtures(db: Owner): Promise<Fixtures> {
     a3: await client(users.managerA3, operatorA, orgA2, '测试客户 A3-1'),
     b1: await client(users.managerB1, operatorB, orgB, '测试客户 B1-1'),
   };
+
+  // 每位“A1 第一位客户”和“B1 客户”各一份报告、一项指标和一条监测数据
+  for (const clientId of [clients.a1[0], clients.b1]) {
+    const report = await db
+      .insertInto('health_reports')
+      .values({
+        client_id: clientId,
+        report_date: '2026-01-01',
+        title: '测试报告',
+        source: 'synthetic',
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    await db
+      .insertInto('report_indicators')
+      .values({
+        report_id: report.id,
+        client_id: clientId,
+        code: 'fpg',
+        value: 5.5,
+        unit: 'mmol/L',
+      })
+      .execute();
+    await db
+      .insertInto('monitoring_readings')
+      .values({
+        client_id: clientId,
+        metric: 'sbp',
+        value: 120,
+        unit: 'mmHg',
+        measured_at: new Date(),
+        source: 'synthetic',
+      })
+      .execute();
+  }
 
   return { operatorA, operatorB, orgA, orgA2, orgB, users, clients };
 }

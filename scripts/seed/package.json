@@ -1,0 +1,32 @@
+{
+  "name": "@health-buddy/seed",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "seed": "node --enable-source-maps dist/cli.js"
+  },
+  "dependencies": {
+    "@health-buddy/shared": "workspace:*",
+    "@node-rs/argon2": "2.2.2",
+    "kysely": "0.29.6",
+    "pg": "8.23.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "@types/pg": "8.23.1",
+    "vitest": "3.2.7"
+  }
+}
