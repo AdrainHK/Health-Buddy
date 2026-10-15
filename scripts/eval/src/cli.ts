@@ -63,6 +63,14 @@ mkdirSync('eval-results', { recursive: true });
 const file = `eval-results/${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
 writeFileSync(file, JSON.stringify({ runs, results: all }, null, 2));
 const failed = summarize(all).filter((s) => s.passed < s.runs);
+// 在 GitHub Actions 里把未通过的用例写成注解，不下载报告也能看到是哪条规则（只有用例名和规则名）
+if (process.env.GITHUB_ACTIONS) {
+  for (const s of failed) {
+    console.log(
+      `::error title=eval ${s.provider} ${s.caseId}::${s.passed}/${s.runs} 通过；${s.rules.join(' ')}`,
+    );
+  }
+}
 console.log(`\n报告：${file}`);
 console.log(failed.length ? `未通过：${failed.length} 项` : '全部通过');
 process.exit(failed.length ? 1 : 0);
