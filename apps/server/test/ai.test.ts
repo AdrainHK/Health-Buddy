@@ -71,7 +71,7 @@ describe('大模型网关接入', () => {
         type: 'done',
         finishReason: 'complete',
         usage: { inputTokens: 20, outputTokens: 5 },
-        model: 'gpt-5',
+        model: 'gpt-6-astra',
       },
     ]);
 
@@ -82,7 +82,7 @@ describe('大模型网关接入', () => {
       operator_id: null,
       route: 'smoke',
       provider: 'openai',
-      model: 'gpt-5',
+      model: 'gpt-6-astra',
       input_tokens: 20,
       output_tokens: 5,
       outcome: 'complete',
@@ -137,7 +137,7 @@ describe('大模型网关接入', () => {
       operator_id: operatorId,
       route: 'chat',
       provider: 'openai' as const,
-      model: 'gpt-5',
+      model: 'gpt-6-astra',
       input_tokens: 1,
       output_tokens: 1,
       duration_ms: 1,

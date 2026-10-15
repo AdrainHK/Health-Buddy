@@ -54,7 +54,7 @@ describe('LlmGateway', () => {
         type: 'done',
         finishReason: 'complete',
         usage: { inputTokens: 100, outputTokens: 20 },
-        model: 'gpt-5',
+        model: 'gpt-6-astra',
       },
     ]);
   });
@@ -68,12 +68,12 @@ describe('LlmGateway', () => {
       {
         route: 'report_interpretation',
         provider: 'openai',
-        model: 'gpt-5',
+        model: 'gpt-6-astra',
         operatorId: 'op-1',
         userId: 'user-1',
         inputTokens: 1_000_000,
         outputTokens: 100_000,
-        costUsd: 2.25,
+        costUsd: 15,
         durationMs: 50,
         outcome: 'complete',
       },

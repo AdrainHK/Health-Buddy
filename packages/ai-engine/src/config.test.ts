@@ -6,7 +6,7 @@ describe('gateway config', () => {
     const config = loadGatewayConfig({});
     expect(resolveRoute(config, 'chat')).toEqual({
       provider: 'openai',
-      model: 'gpt-5',
+      model: 'gpt-6-astra',
       effort: 'medium',
     });
   });
