@@ -63,13 +63,21 @@ mkdirSync('eval-results', { recursive: true });
 const file = `eval-results/${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
 writeFileSync(file, JSON.stringify({ runs, results: all }, null, 2));
 const failed = summarize(all).filter((s) => s.passed < s.runs);
-// 在 GitHub Actions 里把未通过的用例写成注解，不下载报告也能看到是哪条规则（只有用例名和规则名）
-if (process.env.GITHUB_ACTIONS) {
-  for (const s of failed) {
-    console.log(
-      `::error title=eval ${s.provider} ${s.caseId}::${s.passed}/${s.runs} 通过；${s.rules.join(' ')}`,
-    );
-  }
+// 在 GitHub Actions 里把未通过的用例写成一条注解（注解每步最多 10 条），不下载报告也能看到
+// 是哪条规则；只有用例名、规则名和错误类别，没有模型输出
+if (process.env.GITHUB_ACTIONS && failed.length) {
+  const errorKinds = (s: { caseId: string; provider: string }) => [
+    ...new Set(
+      all
+        .filter((r) => r.caseId === s.caseId && r.provider === s.provider)
+        .flatMap((r) => r.findings.filter((f) => f.rule === 'output.error').map((f) => f.detail)),
+    ),
+  ];
+  const lines = failed.map((s) => {
+    const kinds = errorKinds(s);
+    return `${s.provider} ${s.caseId} ${s.passed}/${s.runs} ${s.rules.join(' ')}${kinds.length ? `（错误：${kinds.join(' ')}）` : ''}`;
+  });
+  console.log(`::error title=eval 未通过 ${failed.length} 项::${lines.join('%0A')}`);
 }
 console.log(`\n报告：${file}`);
 console.log(failed.length ? `未通过：${failed.length} 项` : '全部通过');
