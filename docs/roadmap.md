@@ -29,7 +29,7 @@
 | 后端 | Node.js + NestJS + TypeScript |
 | 数据库 | PostgreSQL（行级安全做租户隔离）+ pgvector（知识库检索） |
 | 队列和定时任务 | Redis + BullMQ |
-| 大模型 | Claude API，经自建大模型网关调用；复杂分析和专家用能力强的型号，伴侣日常陪聊和批量任务用速度快、成本低的型号 |
+| 大模型 | Claude API（默认 Claude Opus 5.5），经自建大模型网关调用；可按用途切换型号，是否给伴侣陪聊等高频用途换成本更低的型号由 Adrain 决定 |
 | 报告识别 | Claude 直接读取报告图片和 PDF，提取结构化指标 |
 | 测试 | Vitest、Playwright、自建 AI 评测集 |
 | 部署 | Docker；预览环境和正式环境在第0个里程碑时确定云服务商 |
