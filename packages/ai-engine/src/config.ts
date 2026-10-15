@@ -12,9 +12,12 @@ const routeOverrideSchema = z
   })
   .strict();
 
+/** 空字符串按“没有配置”处理：CI 里没设置的密钥会以空字符串传进来 */
+const optionalKey = z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional());
+
 const envSchema = z.object({
-  OPENAI_API_KEY: z.string().min(1).optional(),
-  ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  OPENAI_API_KEY: optionalKey,
+  ANTHROPIC_API_KEY: optionalKey,
   /** 没有单独配置的用途默认用哪家。Claude API 开通前先用 OpenAI。 */
   LLM_DEFAULT_PROVIDER: providerSchema.default('openai'),
   /** 两家各自的默认型号。 */
