@@ -25,4 +25,4 @@ ENV NODE_ENV=production \
 EXPOSE 3000
 
 USER node
-CMD ["node", "--enable-source-maps", "apps/server/dist/main.js"]
+CMD ["sh", "scripts/deploy/start.sh"]
