@@ -1,0 +1,129 @@
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--hb-surface);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--hb-space-2);
+  height: 52px;
+  padding: 0 var(--hb-space-3);
+  border-bottom: 1px solid var(--hb-border);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--hb-text-md);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: var(--hb-space-6) var(--hb-space-4);
+  overflow-y: auto;
+}
+
+.welcome {
+  width: 100%;
+  max-width: 720px;
+}
+
+.greeting {
+  margin: 0 0 var(--hb-space-2);
+  font-size: var(--hb-text-2xl);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+
+.subtitle {
+  margin: 0 0 var(--hb-space-6);
+  color: var(--hb-text-2);
+  text-align: center;
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-3);
+  padding: var(--hb-space-3);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-lg);
+  background: var(--hb-surface);
+  box-shadow: var(--hb-shadow-md);
+}
+
+.input {
+  width: 100%;
+  min-height: 72px;
+  padding: var(--hb-space-1) var(--hb-space-1) 0;
+  border: 0;
+  background: transparent;
+  resize: none;
+}
+
+.input:focus-visible {
+  box-shadow: none;
+}
+
+.input::placeholder {
+  color: var(--hb-text-3);
+}
+
+.composerBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hb-space-2);
+}
+
+.modes {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--hb-radius-md);
+  background: var(--hb-surface-2);
+}
+
+.mode {
+  height: 28px;
+  padding: 0 var(--hb-space-3);
+  border: 0;
+  border-radius: var(--hb-radius-sm);
+  background: transparent;
+  color: var(--hb-text-2);
+  font-size: var(--hb-text-sm);
+  cursor: pointer;
+}
+
+.mode[aria-checked='true'] {
+  background: var(--hb-surface);
+  color: var(--hb-text);
+  font-weight: 600;
+  box-shadow: var(--hb-shadow-sm);
+}
+
+.mode:disabled {
+  cursor: not-allowed;
+}
+
+.hint {
+  margin: var(--hb-space-3) 0 0;
+  font-size: var(--hb-text-xs);
+  color: var(--hb-text-3);
+  text-align: center;
+}

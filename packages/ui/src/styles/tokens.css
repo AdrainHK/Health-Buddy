@@ -1,0 +1,117 @@
+/*
+ * Health Buddy 设计规范（设计令牌）
+ *
+ * 所有颜色、字体、间距都从这里取，组件里不写死数值。
+ * 运营商品牌定制只需要覆盖 --hb-brand 一个变量，其余品牌相关颜色自动推导。
+ */
+
+:root {
+  /* 品牌色：运营商可覆盖 */
+  --hb-brand: #0e7c6b;
+  --hb-brand-hover: color-mix(in oklab, var(--hb-brand) 86%, black);
+  --hb-brand-soft: color-mix(in oklab, var(--hb-brand) 12%, var(--hb-surface));
+  --hb-brand-contrast: #ffffff;
+
+  /* 中性色（浅色模式） */
+  --hb-bg: #f6f7f6;
+  --hb-surface: #ffffff;
+  --hb-surface-2: #f0f2f1;
+  --hb-surface-3: #e7eae8;
+  --hb-border: #e1e5e3;
+  --hb-border-strong: #c9cfcc;
+  --hb-text: #17201c;
+  --hb-text-2: #55615c;
+  --hb-text-3: #87918d;
+  --hb-overlay: rgb(15 20 18 / 40%);
+
+  /* 状态色：与数字孪生的红黄绿状态一致 */
+  --hb-success: #1e8a4c;
+  --hb-warning: #b7791f;
+  --hb-danger: #c0392b;
+  --hb-info: #2f6fbf;
+
+  /* 字体：中文优先用系统字体 */
+  --hb-font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Noto Sans SC', 'Helvetica Neue', Arial, sans-serif;
+  --hb-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --hb-text-xs: 12px;
+  --hb-text-sm: 13px;
+  --hb-text-md: 14px;
+  --hb-text-lg: 16px;
+  --hb-text-xl: 20px;
+  --hb-text-2xl: 26px;
+  --hb-leading: 1.6;
+
+  /* 间距：4px 基准 */
+  --hb-space-1: 4px;
+  --hb-space-2: 8px;
+  --hb-space-3: 12px;
+  --hb-space-4: 16px;
+  --hb-space-5: 20px;
+  --hb-space-6: 24px;
+  --hb-space-8: 32px;
+  --hb-space-10: 40px;
+
+  --hb-radius-sm: 6px;
+  --hb-radius-md: 10px;
+  --hb-radius-lg: 14px;
+  --hb-radius-full: 999px;
+
+  --hb-shadow-sm: 0 1px 2px rgb(16 24 20 / 6%);
+  --hb-shadow-md: 0 4px 16px rgb(16 24 20 / 8%);
+  --hb-shadow-lg: 0 12px 40px rgb(16 24 20 / 14%);
+
+  --hb-focus-ring: 0 0 0 3px color-mix(in oklab, var(--hb-brand) 35%, transparent);
+  --hb-duration: 160ms;
+
+  color-scheme: light;
+}
+
+/* 深色模式：跟随系统，可用 data-theme 强制指定 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --hb-brand: #2bb39a;
+    --hb-brand-contrast: #06120f;
+    --hb-bg: #0e1311;
+    --hb-surface: #151b18;
+    --hb-surface-2: #1b2320;
+    --hb-surface-3: #232c28;
+    --hb-border: #28322e;
+    --hb-border-strong: #36423d;
+    --hb-text: #e7ecea;
+    --hb-text-2: #a7b2ad;
+    --hb-text-3: #74807b;
+    --hb-overlay: rgb(0 0 0 / 55%);
+    --hb-success: #3cbf73;
+    --hb-warning: #e0a43a;
+    --hb-danger: #e5675a;
+    --hb-info: #5c9be3;
+    --hb-shadow-md: 0 4px 16px rgb(0 0 0 / 35%);
+    --hb-shadow-lg: 0 12px 40px rgb(0 0 0 / 50%);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --hb-brand: #2bb39a;
+  --hb-brand-contrast: #06120f;
+  --hb-bg: #0e1311;
+  --hb-surface: #151b18;
+  --hb-surface-2: #1b2320;
+  --hb-surface-3: #232c28;
+  --hb-border: #28322e;
+  --hb-border-strong: #36423d;
+  --hb-text: #e7ecea;
+  --hb-text-2: #a7b2ad;
+  --hb-text-3: #74807b;
+  --hb-overlay: rgb(0 0 0 / 55%);
+  --hb-success: #3cbf73;
+  --hb-warning: #e0a43a;
+  --hb-danger: #e5675a;
+  --hb-info: #5c9be3;
+  --hb-shadow-md: 0 4px 16px rgb(0 0 0 / 35%);
+  --hb-shadow-lg: 0 12px 40px rgb(0 0 0 / 50%);
+  color-scheme: dark;
+}
