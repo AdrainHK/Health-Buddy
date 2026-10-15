@@ -4,12 +4,13 @@
 大模型同时支持 OpenAI（ChatGPT）和 Anthropic（Claude），所有调用经 packages/ai-engine 的大模型网关，业务代码不直接调用厂商 SDK。产品界面名称只用英文名 Health Buddy。
 产品理念：AI 负责收集、分析和起草，健管师负责判断和决策。
 
-## 目录结构（M0 完成后生效，当前仓库只有文档和配置）
+## 目录结构（M0 进行中，标注的目录陆续建立）
 - apps/workbench   健管师工作台（React + Vite），WorkBuddy 式三栏布局
 - apps/admin       平台总后台 + 运营商（协会）后台
 - apps/client      客户端（先做 H5，后做微信小程序），含 AI 健康伴侣
 - apps/server      后端 API（NestJS）
 - packages/shared  共享类型和接口契约（zod），前后端都从这里引用
+- packages/ui      设计令牌（styles/tokens.css）和基础组件；颜色、间距等一律用 --hb-* 变量，不写死数值
 - packages/ai-engine  大模型网关、主智能体、技能框架、专家智能体引擎
 - packages/experts    专家智能体定义（每个专家一个目录：expert.md、sources.md、evals/）
 - packages/skills     工作台技能定义
@@ -20,6 +21,7 @@
 - pnpm test          单元测试（Vitest）
 - pnpm typecheck     类型检查
 - pnpm lint
+- pnpm format        Prettier 格式化（Markdown 不参与格式化）
 - pnpm e2e           端到端测试（Playwright）
 - pnpm eval          AI 评测集（改提示词、专家、模型版本后必须跑）
 - pnpm db:migrate    数据库迁移
@@ -36,6 +38,7 @@
 - 先读 docs/specs 里对应的规格；规格不清楚时先提问，不要猜。
 - 改动较大或涉及数据库、租户、安全时，先用计划模式给出方案。
 - 接口先改 packages/shared 里的契约，再改前后端。
-- 每次改动都要带测试；完成前运行 pnpm typecheck、pnpm test。
+- 每次改动都要带测试；完成前运行 pnpm format:check、pnpm lint、pnpm typecheck、pnpm test。
+- 界面文字一律走 i18n（apps/*/src/i18n/locales），不在组件里写死中文。
 - 涉及租户或权限的改动，提交前调用 tenant-isolation-reviewer 子代理；涉及面向客户的文案或提示词，调用 compliance-reviewer 子代理。
 - 代码注释和提交信息用中文或英文均可，但同一文件保持一致。

@@ -1,0 +1,49 @@
+{
+  "nav": {
+    "newTask": "新建任务",
+    "tasks": "任务",
+    "noTasks": "还没有任务",
+    "skills": "技能",
+    "experts": "专家中心",
+    "automations": "自动化",
+    "settings": "设置",
+    "collapseSidebar": "收起侧栏",
+    "expandSidebar": "展开侧栏",
+    "openMenu": "打开菜单",
+    "closeMenu": "关闭菜单"
+  },
+  "chat": {
+    "untitled": "新任务",
+    "greeting": "今天想让我帮你做什么？",
+    "subtitle": "你可以让我解读体检报告、生成方案、准备随访，或者向专家提问。",
+    "placeholder": "描述你的需求，输入 / 调用技能，输入 @ 引用客户或专家",
+    "comingSoon": "对话功能将在下一个里程碑开放",
+    "send": "发送",
+    "modes": {
+      "label": "工作模式",
+      "ask": "问一问",
+      "plan": "想一想",
+      "craft": "做一做"
+    }
+  },
+  "results": {
+    "title": "结果",
+    "open": "打开结果区",
+    "close": "关闭结果区",
+    "tabs": {
+      "artifacts": "产物",
+      "client": "客户",
+      "history": "记录"
+    },
+    "empty": {
+      "artifacts": "还没有产物",
+      "artifactsHint": "解读报告、方案和文章生成后会出现在这里，审核通过后才会发给客户。",
+      "client": "未选择客户",
+      "clientHint": "在对话中 @ 一位客户，这里会显示 TA 的档案和数字孪生。",
+      "history": "还没有修改记录"
+    }
+  },
+  "common": {
+    "disclaimer": "仅供参考，非医疗诊断"
+  }
+}
