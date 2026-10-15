@@ -177,6 +177,8 @@ export function AppShell({ account }: AppShellProps = {}) {
         mode={narrow ? 'sheet' : 'docked'}
         open={resultsOpen}
         onClose={() => setResultsOpen(false)}
+        task={activeTask}
+        onArtifactsChanged={refreshTasks}
         refreshKey={`${activeTask?.id ?? 'none'}:${artifactsVersion}`}
       />
       {overlayOpen && (
