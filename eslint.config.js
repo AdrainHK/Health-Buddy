@@ -16,4 +16,39 @@ export default tseslint.config(
     plugins: { 'react-hooks': reactHooks },
     rules: reactHooks.configs.recommended.rules,
   },
+  {
+    // 红线 1：业务代码只能经过带租户上下文的仓储层访问数据库。
+    // 原始 SQL 和 pg 驱动只允许出现在 db 目录和 auth.repository.ts（调用登录函数）里。
+    files: ['apps/server/src/**/*.ts'],
+    ignores: ['apps/server/src/db/**', 'apps/server/src/auth/auth.repository.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'kysely',
+              importNames: ['sql'],
+              message: '业务代码用 Kysely 查询构造器并经过 withTenant，不写原始 SQL。',
+            },
+            { name: 'pg', message: '只能在 db 目录里直接使用数据库驱动。' },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // 租户上下文只能由 withTenant 根据已验证的会话设置，其他地方出现 set_config 一律报错。
+    files: ['apps/server/src/**/*.ts'],
+    ignores: ['apps/server/src/db/database.ts', 'apps/server/src/db/migrations/**'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'TemplateElement[value.raw=/set_config/i], Literal[value=/set_config/i]',
+          message: '租户上下文只能在 db/database.ts 的 withTenant 里设置。',
+        },
+      ],
+    },
+  },
 );
