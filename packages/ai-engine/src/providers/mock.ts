@@ -13,6 +13,8 @@ export interface MockScript {
   usage?: { inputTokens: number; outputTokens: number };
   /** 输出若干块之后抛出这个错误，模拟中途断开 */
   failWith?: unknown;
+  /** 每块之间等待的毫秒数，用来测试停止 */
+  delayMs?: number;
 }
 
 /**
@@ -33,18 +35,25 @@ export class MockProvider implements Provider {
     return this.scripts[Math.min(this.calls.length - 1, this.scripts.length - 1)] ?? {};
   }
 
-  async *stream(request: GatewayRequest, route: ResolvedRoute): AsyncIterable<GatewayEvent> {
+  async *stream(
+    request: GatewayRequest,
+    route: ResolvedRoute,
+    signal?: AbortSignal,
+  ): AsyncIterable<GatewayEvent> {
     this.calls.push({ request, route });
-    const chunks = this.script.chunks ?? ['你好', '，我是', ' Health Buddy。'];
+    const script = this.script;
+    const chunks = script.chunks ?? ['你好', '，我是', ' Health Buddy。'];
     for (const delta of chunks) {
-      await Promise.resolve();
+      if (script.delayMs) await new Promise((r) => setTimeout(r, script.delayMs));
+      else await Promise.resolve();
+      if (signal?.aborted) throw Object.assign(new Error('aborted'), { name: 'AbortError' });
       yield { type: 'text', delta };
     }
-    if (this.script.failWith !== undefined) throw this.script.failWith;
+    if (script.failWith !== undefined) throw script.failWith;
     yield {
       type: 'done',
-      finishReason: this.script.finishReason ?? 'complete',
-      usage: this.script.usage ?? { inputTokens: 12, outputTokens: chunks.length * 3 },
+      finishReason: script.finishReason ?? 'complete',
+      usage: script.usage ?? { inputTokens: 12, outputTokens: chunks.length * 3 },
       model: route.model,
     };
   }

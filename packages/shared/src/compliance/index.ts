@@ -25,6 +25,9 @@ export const BANNED_TERMS: readonly BannedTerm[] = [
 /** 标准免责声明，所有分析、预测、专家意见都要带上。 */
 export const DISCLAIMER = '仅供参考，非医疗诊断';
 
+/** 问一问的回答不经过审核，固定加这段提示（M1 规格 7.3） */
+export const ASK_DISCLAIMER = '仅供健管师参考，非医疗诊断，请勿直接转发给客户';
+
 export interface ComplianceIssue {
   term: string;
   reason: string;

@@ -102,12 +102,17 @@ export function checkClientText(
 }
 
 /** 心理危机关键词。不依赖模型：模型拒答时也要能提示健管师（规格 7.3、Q13） */
-const CRISIS_KEYWORDS = /轻生|自杀|自尽|自残|自伤|不想活|活着没意思|想不开|结束生命|寻死/;
+const CRISIS_KEYWORDS =
+  /轻生|自杀|自尽|自残|自伤|不想活|活着没意思|活不下去|想死|死了算了|不想拖累|想不开|结束生命|寻死|跳楼|割腕|攒.{0,4}安眠药|遗书/;
 
 /** 健管师的要求、退回原因、本任务的历史消息里有没有心理危机信号 */
 export function detectCrisisKeywords(texts: readonly string[]): boolean {
   return texts.some((t) => CRISIS_KEYWORDS.test(t.replace(/\s+/g, '')));
 }
+
+/** 身份证号（18 位，末位可为 X）和大陆手机号 */
+const ID_NUMBER = /(?<!\d)\d{17}[\dXx](?!\d)/g;
+const PHONE = /(?<!\d)(?:\+?86[-\s]?)?1[3-9]\d[-\s]?\d{4}[-\s]?\d{4}(?!\d)/g;
 
 /**
  * Q9：健管师的要求原样进入提示词，里面可能带客户姓名或联系方式。
@@ -130,5 +135,6 @@ export function redactClientIdentity(text: string, identifiers: readonly string[
       );
     }
   }
-  return out;
+  // 不管有没有引用客户，手机号、身份证号都按格式替换掉
+  return out.replace(ID_NUMBER, '[证件号]').replace(PHONE, '[电话]');
 }

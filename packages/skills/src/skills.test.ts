@@ -13,6 +13,7 @@ import {
   finalizeClientText,
   redactClientIdentity,
 } from './guardrails.js';
+import { ASK_NOTICE, criticalNotice, suggestSkill, withAskNotice } from './ask.js';
 import { getSkill, skillSummaries } from './registry.js';
 
 describe('skill metadata', () => {
@@ -113,6 +114,9 @@ describe('guardrails', () => {
   it('detects crisis keywords without relying on the model', () => {
     expect(detectCrisisKeywords(['帮我写小结', '她说最近活着 没意思'])).toBe(true);
     expect(detectCrisisKeywords(['帮我写小结，她最近睡得少'])).toBe(false);
+    for (const phrase of ['活不下去了', '她说想死', '攒了一些安眠药', '不想拖累家人', '写了遗书']) {
+      expect(detectCrisisKeywords([phrase]), phrase).toBe(true);
+    }
   });
 
   it('removes the client name, nicknames and phone number from manager text', () => {
@@ -120,6 +124,13 @@ describe('guardrails', () => {
     expect(redactClientIdentity(text, ['张秀英', '小英', '13800001234'])).toBe(
       '帮我给该客户写个小结，该客户电话 该客户，该客户最近忙',
     );
+  });
+
+  it('removes phone and ID numbers even without known identifiers', () => {
+    expect(redactClientIdentity('电话 138-0000-1234，身份证 11010519491231002X', [])).toBe(
+      '电话 [电话]，身份证 [证件号]',
+    );
+    expect(redactClientIdentity('空腹血糖 7.8，收缩压 185', [])).toBe('空腹血糖 7.8，收缩压 185');
   });
 
   it('uses the generic crisis wording until hotlines are provided', () => {
@@ -217,5 +228,34 @@ describe('client-recent-summary', () => {
       crisisSignal: true,
     });
     expect(artifact.professional.startsWith(`## 心理危机提示\n${CRISIS_NOTICE}`)).toBe(true);
+  });
+});
+
+describe('ask mode helpers', () => {
+  it('suggests the summary skill for natural-language requests only', () => {
+    expect(suggestSkill('帮我给张阿姨写个近况小结')).toBe('client-recent-summary');
+    expect(suggestSkill('血压 150 要紧吗')).toBeUndefined();
+  });
+
+  it('builds a fixed critical notice for the manager', () => {
+    expect(
+      criticalNotice([
+        {
+          metric: 'sbp',
+          value: 185,
+          unit: 'mmHg',
+          observedOn: '2026-10-01',
+          source: 'monitoring',
+          rule: { comparator: 'gte', value: 180, level: 'urgent' },
+        },
+      ]),
+    ).toContain('收缩压 185 mmHg（2026-10-01，日常监测）：需尽快就医');
+    expect(criticalNotice([])).toBe('');
+  });
+
+  it('uses the exact ask label from the spec', () => {
+    expect(ASK_NOTICE).toBe('仅供健管师参考，非医疗诊断，请勿直接转发给客户');
+    expect(withAskNotice('要点。')).toBe(`要点。\n\n${ASK_NOTICE}`);
+    expect(withAskNotice('  ')).toBe('');
   });
 });
