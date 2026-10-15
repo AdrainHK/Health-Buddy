@@ -91,3 +91,22 @@
   color: var(--hb-text-3);
   background: var(--hb-bg);
 }
+
+/* 管理员登录工作台时“前往后台”的主按钮样式链接 */
+.primaryLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 0 var(--hb-space-4);
+  border-radius: var(--hb-radius-md);
+  font-weight: 500;
+  text-decoration: none;
+  background: var(--hb-brand);
+  color: var(--hb-brand-contrast);
+  transition: background var(--hb-duration);
+}
+
+.primaryLink:hover {
+  background: var(--hb-brand-hover);
+}

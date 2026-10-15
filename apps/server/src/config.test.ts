@@ -20,6 +20,13 @@ describe('config', () => {
     expect(loadConfig({ ...base, NODE_ENV: 'production' }).secureCookies).toBe(true);
   });
 
+  it('reads the workbench and admin dist directories', () => {
+    const config = loadConfig({ ...base, WORKBENCH_DIST: '/w', ADMIN_DIST: '/a' });
+    expect(config.workbenchDist).toBe('/w');
+    expect(config.adminDist).toBe('/a');
+    expect(loadConfig({ ...base }).adminDist).toBeUndefined();
+  });
+
   it('requires both platform admin variables', () => {
     expect(loadConfig({ ...base, PLATFORM_ADMIN_EMAIL: 'a@x.com' }).platformAdmin).toBeUndefined();
   });

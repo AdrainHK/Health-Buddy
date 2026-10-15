@@ -1,6 +1,7 @@
 import { applyBrandColor } from '@health-buddy/ui';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { AdminNotice } from './auth/AdminNotice';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { LoginPage } from './auth/LoginPage';
 import loginStyles from './auth/LoginPage.module.css';
@@ -35,5 +36,7 @@ function Gate() {
     );
   }
   if (state.status === 'anonymous') return <LoginPage />;
+  // 工作台只给健管师用，管理员账号引导去后台。真正的权限由后端按角色控制。
+  if (state.user.role !== 'manager') return <AdminNotice onLogout={() => void logout()} />;
   return <AppShell account={{ name: state.user.displayName, onLogout: () => void logout() }} />;
 }

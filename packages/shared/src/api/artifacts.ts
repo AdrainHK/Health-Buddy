@@ -79,6 +79,11 @@ export type ArtifactEvent = z.infer<typeof artifactEventSchema>;
 export const clientTextHintsSchema = z.object({
   /** 疾病名称和“患有”“有……风险”这类判断句式 */
   judgementHints: z.array(z.object({ text: z.string(), index: z.number().int() })),
+  /**
+   * 通俗版里出现的危急指标数值（只给指标编码和位置，不给数值）。
+   * 有就不能确认；详情里提前给出，打开草稿时就能标出，不必等确认被拒绝。
+   */
+  criticalValueMentions: z.array(z.object({ metric: z.string(), index: z.number().int() })),
 });
 export type ClientTextHints = z.infer<typeof clientTextHintsSchema>;
 

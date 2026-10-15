@@ -10,20 +10,110 @@
     "collapseSidebar": "收起侧栏",
     "expandSidebar": "展开侧栏",
     "openMenu": "打开菜单",
-    "closeMenu": "关闭菜单"
+    "closeMenu": "关闭菜单",
+    "archived": "已归档",
+    "noArchived": "没有已归档的任务",
+    "backToTasks": "返回任务列表",
+    "archive": "归档“{{title}}”",
+    "unarchive": "取消归档“{{title}}”",
+    "readOnly": "只读",
+    "readOnlyHint": "客户已转出或删除，任务只读",
+    "loadingTasks": "正在加载任务…",
+    "loadFailed": "任务列表加载失败",
+    "retry": "重试",
+    "groups": {
+      "unlinked": "未关联客户",
+      "detached": "已转出或删除的客户"
+    }
   },
   "chat": {
     "untitled": "新任务",
     "greeting": "今天想让我帮你做什么？",
     "subtitle": "你可以让我解读体检报告、生成方案、准备随访，或者向专家提问。",
-    "placeholder": "描述你的需求，输入 / 调用技能，输入 @ 引用客户或专家",
-    "comingSoon": "对话功能将在下一个里程碑开放",
+    "placeholder": "描述你的需求，输入 / 调用技能，输入 @ 引用客户",
+    "readOnlyPlaceholder": "客户已转出或删除，此任务只读",
     "send": "发送",
+    "stop": "停止生成",
+    "loading": "正在加载对话…",
+    "loadFailed": "对话加载失败",
+    "retry": "重试",
+    "generating": "正在生成…",
+    "queued": "将在当前回答结束后发送",
+    "cancelQueued": "取消",
+    "messages": "对话记录",
+    "you": "我",
+    "assistant": "AI 助手",
+    "removeSkill": "移除技能 {{name}}",
+    "removeClient": "移除客户 {{name}}",
+    "skillMenu": "选择技能",
+    "clientMenu": "选择客户",
+    "noMatch": "没有匹配项",
     "modes": {
       "label": "工作模式",
       "ask": "问一问",
       "plan": "想一想",
       "craft": "做一做"
+    },
+    "status": {
+      "stopped": "已停止",
+      "refused": "模型未作答，请换个说法再试",
+      "error": "生成失败"
+    },
+    "hints": {
+      "askSkill": "技能需要在做一做或想一想模式下使用",
+      "switchToCraft": "切换到做一做",
+      "needClient": "请先 @ 客户",
+      "otherClient": "该任务已关联其他客户，如需引用请新建任务",
+      "newTask": "新建任务"
+    },
+    "steps": {
+      "title": "执行步骤",
+      "progress": "{{done}}/{{total}}",
+      "running": "进行中",
+      "done": "已完成",
+      "failed": "失败"
+    },
+    "plan": {
+      "title": "执行计划",
+      "readClient": "读取客户档案",
+      "runSkill": "调用技能：{{name}}",
+      "confirm": "确认执行",
+      "confirmed": "已确认",
+      "revised": "已修改"
+    },
+    "suggestion": "使用 /{{name}}",
+    "artifactDrafted": "已生成草稿，请在右侧结果区审核",
+    "errors": {
+      "busy": "上一条回答还在生成，请稍候再发",
+      "tooMany": "操作太频繁，请稍后再试",
+      "readOnly": "客户已转出或删除，此任务只读",
+      "badRequest": "请求无效，请检查后重试",
+      "notFound": "任务或客户不存在",
+      "conflict": "任务状态已变化，请刷新后重试",
+      "network": "网络连接失败，请检查网络后重试",
+      "unknown": "出错了，请稍后再试"
+    },
+    "streamErrors": {
+      "not_configured": "AI 服务尚未配置，请联系管理员",
+      "rate_limited": "AI 服务繁忙，请稍后再试",
+      "timeout": "AI 响应超时，请重试",
+      "provider_error": "AI 服务暂时不可用，请稍后再试",
+      "invalid_output": "AI 输出格式不合格，未生成草稿，请重试",
+      "internal_error": "出错了，请稍后再试",
+      "network": "连接中断，刷新后可查看已保存的内容"
+    }
+  },
+  "steps": {
+    "readClient": "读取客户档案",
+    "detectCritical": "识别危急指标",
+    "runSkill": "执行技能",
+    "answer": "生成回答",
+    "unknown": "处理中"
+  },
+  "skills": {
+    "client-recent-summary": {
+      "name": "客户近况小结",
+      "description": "根据最近 30 天的监测数据和最近一份体检报告，生成专业版小结和通俗版"
     }
   },
   "results": {
@@ -41,6 +131,154 @@
       "client": "未选择客户",
       "clientHint": "在对话中 @ 一位客户，这里会显示 TA 的档案和数字孪生。",
       "history": "还没有修改记录"
+    },
+    "artifacts": {
+      "list": "本任务的产物",
+      "loading": "正在加载产物…",
+      "loadFailed": "产物加载失败",
+      "retry": "重试",
+      "item": "{{name}} · 第 {{version}} 版",
+      "version": "第 {{version}} 版",
+      "back": "返回产物列表",
+      "criticalBadge": "含危急指标",
+      "status": {
+        "draft": "草稿",
+        "approved": "已审核",
+        "returned": "已退回",
+        "voided": "已作废"
+      },
+      "statusNote": {
+        "approved": "已审核，可以复制或导出通俗版发给客户。如需修改，请基于此版生成新版本。",
+        "returned": "此版本已退回重写，只读。新版本见版本列表。",
+        "voided": "客户已转出或删除，此草稿已作废，只读。",
+        "readOnlyTask": "客户已转出或删除，任务只读，所有操作已禁用。"
+      },
+      "views": {
+        "label": "产物版本",
+        "professional": "专业版",
+        "clientFacing": "通俗版"
+      },
+      "professionalNote": "专业版只给健管师看，不会发给客户，也不提供复制和导出。",
+      "clientFacingLabel": "通俗版内容",
+      "disclaimerNote": "末尾的免责声明由系统维护，删改后保存会自动恢复。",
+      "marks": {
+        "title": "需要注意的位置",
+        "banned": "禁用词“{{term}}”",
+        "critical": "危急指标数值（{{metric}}）",
+        "judgement": "判断性表述“{{text}}”",
+        "locate": "定位",
+        "judgementNote": "通俗版含疾病名称或判断性表述，请确认措辞合适。仅提示，不影响确认。",
+        "criticalNote": "通俗版里出现了危急指标的数值（已标出）。危急指标不能写进通俗版，删去并保存后才能确认。"
+      },
+      "newer": {
+        "loaded": "这份草稿已在别处更新。你未保存的修改仍保留在编辑框里，请选择载入最新内容（放弃你的修改），或保留你的修改继续编辑（保存时以你的内容为准）。",
+        "generated": "已生成新的版本。你在当前版本上还有未保存的修改，打开新版本会放弃这些修改。",
+        "reload": "载入最新内容",
+        "keep": "保留我的修改",
+        "open": "打开新版本",
+        "stay": "留在当前版本"
+      },
+      "review": {
+        "label": "审核",
+        "save": "保存修改",
+        "saving": "正在保存…",
+        "saved": "已保存",
+        "approve": "确认",
+        "approving": "正在确认…",
+        "approved": "已确认",
+        "return": "退回重写",
+        "copy": "复制通俗版",
+        "copied": "已复制通俗版",
+        "exportPng": "导出图片",
+        "exportPdf": "导出 PDF",
+        "exporting": "正在导出…",
+        "exported": "已导出 {{filename}}",
+        "revise": "基于此版修改",
+        "revised": "已生成新版本草稿",
+        "unsaved": "有未保存的修改，保存后才能确认",
+        "bannedBlock": "通俗版含禁用词，修改并保存后才能确认",
+        "criticalBlock": "请先勾选“已知悉”危急指标",
+        "criticalValueBlock": "通俗版含危急指标数值，删去并保存后才能确认",
+        "newerBlock": "请先选择载入最新内容或保留你的修改"
+      },
+      "critical": {
+        "title": "危急指标",
+        "item": "{{metric}} {{value}} {{unit}}",
+        "observed": "{{date}} · {{source}}",
+        "source": {
+          "monitoring": "日常监测",
+          "report": "体检报告"
+        },
+        "level": {
+          "urgent": "需尽快就医",
+          "attention": "建议就医评估"
+        },
+        "acknowledge": "已知悉以上危急指标，会及时联系客户",
+        "note": "危急指标只给健管师看，不会进入通俗版。"
+      },
+      "rejected": "无法确认：",
+      "reasons": {
+        "not_latest_draft": "内容已在别处修改，已刷新",
+        "banned_terms": "通俗版含禁用词，请修改标出的位置",
+        "missing_disclaimer": "通俗版缺少免责声明",
+        "duplicate_disclaimer": "免责声明重复出现",
+        "empty_client_text": "通俗版正文为空",
+        "critical_not_acknowledged": "请先勾选“已知悉”危急指标",
+        "critical_value_in_client_text": "通俗版里出现了危急指标的数值，请删去标出的位置",
+        "read_only": "客户已转出或删除，任务只读",
+        "unknown": "未通过确认检查，请刷新后重试"
+      },
+      "stale": "内容已在别处修改，已刷新",
+      "returnDialog": {
+        "title": "退回重写",
+        "label": "退回原因（必填）",
+        "placeholder": "说明需要怎样修改，AI 会据此重写一个新版本",
+        "required": "请填写退回原因",
+        "submit": "退回并重写",
+        "cancel": "取消",
+        "progress": "正在根据退回原因重写…",
+        "done": "已生成新版本",
+        "noArtifact": "本次重写没有生成新版本"
+      },
+      "errors": {
+        "busy": "当前任务正在生成，请稍候再试",
+        "tooMany": "操作太频繁，请稍后再试",
+        "readOnly": "客户已转出或删除，任务只读",
+        "badRequest": "请求无效，请检查后重试",
+        "notFound": "产物不存在或已不可见",
+        "conflict": "产物状态已变化，已刷新",
+        "network": "网络连接失败，请检查网络后重试",
+        "unknown": "出错了，请稍后再试",
+        "copyFailed": "无法写入剪贴板，请重试"
+      }
+    },
+    "history": {
+      "versions": "版本",
+      "events": "记录",
+      "current": "当前查看",
+      "open": "查看第 {{version}} 版",
+      "actorSelf": "我",
+      "actorSystem": "系统",
+      "entry": "{{actor}} · {{action}}",
+      "versionTag": "第 {{version}} 版",
+      "acknowledged": "已知悉危急指标",
+      "format": {
+        "png": "图片",
+        "pdf": "PDF"
+      },
+      "actions": {
+        "created": "生成",
+        "edited": "修改",
+        "approved": "确认",
+        "returned": "退回重写",
+        "voided": "作废",
+        "copied": "复制通俗版",
+        "exported": "导出"
+      },
+      "noEvents": "还没有记录",
+      "selectArtifact": "打开一个产物后，这里显示它的版本和记录",
+      "withDetail": "{{action}}（{{detail}}）",
+      "separator": "，"
     }
   },
   "common": {
@@ -60,6 +298,32 @@
       "too_many_requests": "尝试次数过多，请稍后再试",
       "network": "网络连接失败，请检查网络后重试",
       "unknown": "登录失败，请稍后再试"
+    },
+    "adminNotice": {
+      "title": "请前往后台",
+      "body": "你登录的是管理员账号。工作台供健管师使用，管理功能在后台。",
+      "goToAdmin": "前往后台"
     }
+  },
+  "indicators": {
+    "height": "身高",
+    "weight": "体重",
+    "bmi": "体质指数",
+    "waist": "腰围",
+    "sbp": "收缩压",
+    "dbp": "舒张压",
+    "fpg": "空腹血糖",
+    "hba1c": "糖化血红蛋白",
+    "tc": "总胆固醇",
+    "tg": "甘油三酯",
+    "ldl_c": "低密度脂蛋白胆固醇",
+    "hdl_c": "高密度脂蛋白胆固醇",
+    "alt": "谷丙转氨酶",
+    "ast": "谷草转氨酶",
+    "creatinine": "肌酐",
+    "uric_acid": "尿酸",
+    "heart_rate": "心率",
+    "steps": "步数",
+    "sleep_hours": "睡眠时长"
   }
 }

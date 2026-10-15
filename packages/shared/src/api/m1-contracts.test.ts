@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   approveArtifactRequestSchema,
+  clientTextHintsSchema,
   createCriticalThresholdRequestSchema,
   sendMessageRequestSchema,
   taskStreamEventSchema,
@@ -95,5 +96,19 @@ describe('critical threshold requests', () => {
   it('requires something to update', () => {
     expect(updateCriticalThresholdRequestSchema.safeParse({}).success).toBe(false);
     expect(updateCriticalThresholdRequestSchema.safeParse({ enabled: false }).success).toBe(true);
+  });
+});
+
+describe('clientTextHintsSchema', () => {
+  it('carries critical value positions without the values themselves', () => {
+    const hints = clientTextHintsSchema.parse({
+      judgementHints: [],
+      criticalValueMentions: [{ metric: 'sbp', index: 9, value: 185 }],
+    });
+    expect(hints.criticalValueMentions).toEqual([{ metric: 'sbp', index: 9 }]);
+  });
+
+  it('requires criticalValueMentions', () => {
+    expect(clientTextHintsSchema.safeParse({ judgementHints: [] }).success).toBe(false);
   });
 });

@@ -372,7 +372,7 @@ async function buildDetail(
       contentHash: contentHash(row.content),
       criticalFlags: row.critical_flags,
     },
-    hints: { judgementHints: checkClientText(row.content.clientFacing).judgementHints },
+    hints: clientTextHints(row),
     versions: versions.map(toArtifactSummary),
     events: events.map((e): ArtifactEvent => ({
       id: e.id,
@@ -382,6 +382,21 @@ async function buildDetail(
       reason: e.reason,
       format: e.format,
       createdAt: e.created_at.toISOString(),
+    })),
+  };
+}
+
+/**
+ * 详情里的通俗版提示。危急指标只给编码和位置，不给数值（数值在 criticalFlags 里，
+ * 只给健管师看）。打开草稿就能标出，不必等确认被拒绝。
+ */
+function clientTextHints(row: ArtifactRow): ArtifactDetailResponse['hints'] {
+  const check = checkClientText(row.content.clientFacing, row.critical_flags);
+  return {
+    judgementHints: check.judgementHints,
+    criticalValueMentions: check.criticalValueMentions.map((m) => ({
+      metric: m.metric,
+      index: m.index,
     })),
   };
 }

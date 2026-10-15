@@ -10,6 +10,8 @@ const envSchema = z.object({
   APP_DATABASE_PASSWORD: z.string().min(16, 'APP_DATABASE_PASSWORD 至少 16 位'),
   /** 工作台前端构建产物目录；设置后由后端一并提供静态页面。 */
   WORKBENCH_DIST: z.string().optional(),
+  /** 后台（apps/admin）前端构建产物目录；设置后由后端在 /admin/ 下提供页面。 */
+  ADMIN_DIST: z.string().optional(),
   /** 首次部署时创建平台管理员；已有平台管理员时忽略。 */
   PLATFORM_ADMIN_EMAIL: z.email().optional(),
   PLATFORM_ADMIN_PASSWORD: z.string().min(12).optional(),
@@ -24,6 +26,7 @@ export interface AppConfig {
   appDatabaseUrl: string;
   appDatabasePassword: string;
   workbenchDist: string | undefined;
+  adminDist: string | undefined;
   secureCookies: boolean;
   platformAdmin: { email: string; password: string } | undefined;
   /** 大模型网关配置（厂商密钥、默认型号、按用途覆盖） */
@@ -55,6 +58,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     appDatabaseUrl: deriveAppDatabaseUrl(env.DATABASE_URL, env.APP_DATABASE_PASSWORD),
     appDatabasePassword: env.APP_DATABASE_PASSWORD,
     workbenchDist: env.WORKBENCH_DIST,
+    adminDist: env.ADMIN_DIST,
     secureCookies: env.NODE_ENV === 'production',
     platformAdmin:
       env.PLATFORM_ADMIN_EMAIL && env.PLATFORM_ADMIN_PASSWORD

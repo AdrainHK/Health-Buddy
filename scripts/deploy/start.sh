@@ -9,5 +9,12 @@ set -eu
 # 从任何目录调用都切到仓库根目录
 cd "$(dirname "$0")/../.."
 
+# 后台页面（/admin/）：没有显式设置 ADMIN_DIST 时，用仓库里构建好的 apps/admin/dist（存在才用，
+# 本地没构建后台时照常启动）。Dockerfile 里也设置了同样的值。
+if [ -z "${ADMIN_DIST:-}" ] && [ -f apps/admin/dist/index.html ]; then
+  ADMIN_DIST="$(pwd)/apps/admin/dist"
+  export ADMIN_DIST
+fi
+
 sh scripts/deploy/predeploy.sh
 exec node --enable-source-maps apps/server/dist/main.js

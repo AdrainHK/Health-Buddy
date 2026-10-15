@@ -94,6 +94,30 @@ describe('App login flow', () => {
     );
   });
 
+  it.each(['platform_admin', 'operator_admin', 'org_admin'])(
+    'sends a signed-in %s to the admin console instead of the manager UI',
+    async (role) => {
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === '/api/auth/me') return json(200, { user: { ...USER, role } });
+        if (url === '/api/auth/logout') return new Response(null, { status: 204 });
+        return json(404, { error: 'not_found' });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      const user = userEvent.setup();
+      render(<App />);
+
+      expect(await screen.findByRole('heading', { name: '请前往后台' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: '前往后台' })).toHaveAttribute('href', '/admin/');
+      expect(screen.queryByText('今天想让我帮你做什么？')).not.toBeInTheDocument();
+      // 不加载健管师界面的任何数据
+      expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual(['/api/auth/me']);
+
+      await user.click(screen.getByRole('button', { name: '退出登录' }));
+      expect(await screen.findByRole('heading', { name: '登录' })).toBeInTheDocument();
+    },
+  );
+
   it('shows a network error when the server is unreachable', async () => {
     const fetchMock = mockServer();
     const user = userEvent.setup();
