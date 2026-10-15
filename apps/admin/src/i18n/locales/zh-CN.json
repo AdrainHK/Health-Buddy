@@ -1,0 +1,157 @@
+{
+  "auth": {
+    "title": "登录后台",
+    "subtitle": "平台和协会管理后台",
+    "email": "邮箱",
+    "password": "密码",
+    "submit": "登录",
+    "submitting": "正在登录…",
+    "loading": "正在加载…",
+    "logout": "退出登录",
+    "errors": {
+      "invalid_credentials": "邮箱或密码不正确",
+      "too_many_requests": "尝试次数过多，请稍后再试",
+      "network": "网络连接失败，请检查网络后重试",
+      "unknown": "登录失败，请稍后再试"
+    }
+  },
+  "shell": {
+    "console": "管理后台",
+    "nav": "后台导航",
+    "roles": {
+      "platform_admin": "平台管理员",
+      "operator_admin": "协会管理员",
+      "org_admin": "机构管理员",
+      "manager": "健管师"
+    }
+  },
+  "managerNotice": {
+    "title": "后台仅供管理员使用",
+    "body": "你登录的是健管师账号，请前往工作台开展工作。",
+    "goToWorkbench": "前往工作台"
+  },
+  "thresholds": {
+    "nav": "危急指标设置",
+    "title": "危急指标设置",
+    "disclaimer": "默认值参照国际通用标准，仅供参考，请由医学顾问审定。",
+    "readOnlyHint": "阈值由平台统一设置，全平台只有一套。你可以查看，不能修改。",
+    "editHint": "全平台只有一套阈值，修改后对所有协会和机构立即生效。",
+    "loading": "正在加载阈值…",
+    "loadFailed": "阈值加载失败",
+    "retry": "重试",
+    "empty": "还没有任何规则",
+    "add": "新增规则",
+    "reset": "恢复为默认值",
+    "columns": {
+      "metric": "指标",
+      "direction": "方向",
+      "value": "阈值",
+      "unit": "单位",
+      "level": "级别",
+      "enabled": "是否启用",
+      "updated": "最后修改",
+      "actions": "操作"
+    },
+    "comparators": {
+      "gte": "高于或等于",
+      "gt": "高于",
+      "lte": "低于或等于",
+      "lt": "低于"
+    },
+    "symbols": {
+      "gte": "≥",
+      "gt": ">",
+      "lte": "≤",
+      "lt": "<"
+    },
+    "levels": {
+      "urgent": "需尽快就医",
+      "attention": "建议就医评估"
+    },
+    "status": {
+      "enabled": "启用",
+      "disabled": "已停用"
+    },
+    "updatedBy": {
+      "self": "我",
+      "platform": "平台管理员",
+      "system": "系统默认"
+    },
+    "actions": {
+      "edit": "修改",
+      "disable": "停用",
+      "enable": "启用",
+      "editRule": "修改{{metric}}（{{direction}}）",
+      "disableRule": "停用{{metric}}（{{direction}}）",
+      "enableRule": "启用{{metric}}（{{direction}}）"
+    },
+    "form": {
+      "createTitle": "新增规则",
+      "editTitle": "修改规则",
+      "metric": "指标",
+      "direction": "方向",
+      "value": "阈值",
+      "unit": "单位",
+      "unitHint": "单位跟随指标目录，不能修改",
+      "range": "合理范围 {{min}}–{{max}} {{unit}}",
+      "level": "级别",
+      "enabled": "启用这条规则",
+      "metricLocked": "修改时不能更换指标；需要其他指标请新增规则",
+      "save": "保存",
+      "saving": "正在保存…",
+      "cancel": "取消"
+    },
+    "resetConfirm": {
+      "title": "恢复为默认值？",
+      "body": "当前全部规则（包括新增和修改过的）都会被删除，按参照国际通用标准的默认阈值重新写入。修改记录会保留。",
+      "confirm": "确定恢复",
+      "cancel": "取消",
+      "working": "正在恢复…"
+    },
+    "saved": "已保存",
+    "resetDone": "已恢复为默认值",
+    "errors": {
+      "invalid_value": "请填写数字阈值",
+      "out_of_range": "阈值超出该指标的合理范围（{{min}}–{{max}} {{unit}}），请检查后再保存",
+      "bad_request": "填写的内容不符合要求，请检查后再保存",
+      "duplicate": "这个指标在这个方向上已有规则，请直接修改已有的规则",
+      "not_found": "规则不存在或你没有修改权限，请刷新页面后再试",
+      "network": "网络连接失败，请检查网络后重试",
+      "unknown": "操作失败，请稍后再试"
+    }
+  },
+  "indicators": {
+    "height": "身高",
+    "weight": "体重",
+    "bmi": "BMI",
+    "waist": "腰围",
+    "sbp": "收缩压",
+    "dbp": "舒张压",
+    "fpg": "空腹血糖",
+    "hba1c": "糖化血红蛋白",
+    "tc": "总胆固醇",
+    "tg": "甘油三酯",
+    "ldl_c": "低密度脂蛋白胆固醇",
+    "hdl_c": "高密度脂蛋白胆固醇",
+    "alt": "谷丙转氨酶",
+    "ast": "谷草转氨酶",
+    "creatinine": "血肌酐",
+    "uric_acid": "血尿酸",
+    "heart_rate": "静息心率",
+    "steps": "步数",
+    "sleep_hours": "睡眠时长"
+  },
+  "units": {
+    "cm": "cm",
+    "kg": "kg",
+    "kg/m2": "kg/m²",
+    "mmHg": "mmHg",
+    "mmol/L": "mmol/L",
+    "%": "%",
+    "U/L": "U/L",
+    "umol/L": "μmol/L",
+    "bpm": "次/分",
+    "steps": "步",
+    "h": "小时"
+  }
+}

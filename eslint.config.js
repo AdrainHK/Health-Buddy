@@ -19,7 +19,11 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
   },
   {
-    files: ['apps/workbench/**/*.{ts,tsx}', 'packages/ui/**/*.{ts,tsx}'],
+    files: [
+      'apps/workbench/**/*.{ts,tsx}',
+      'apps/admin/**/*.{ts,tsx}',
+      'packages/ui/**/*.{ts,tsx}',
+    ],
     plugins: { 'react-hooks': reactHooks },
     rules: reactHooks.configs.recommended.rules,
   },

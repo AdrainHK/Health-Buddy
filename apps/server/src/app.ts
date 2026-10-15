@@ -30,6 +30,8 @@ export async function createApp(
   app.use(bodyParseErrorHandler);
   app.setGlobalPrefix('api');
 
+  // 后台先注册：/admin 下的请求由后台处理，不会落到工作台的单页回落里。
+  if (config.adminDist) serveAdmin(app, resolve(config.adminDist));
   if (config.workbenchDist) serveWorkbench(app, resolve(config.workbenchDist));
 
   await app.init();
@@ -47,6 +49,30 @@ function bodyParseErrorHandler(err: unknown, _req: Request, res: Response, next:
   }
   const status = typeof err === 'object' && 'status' in err && err.status === 413 ? 413 : 400;
   res.status(status).json({ error: 'bad_request' });
+}
+
+/**
+ * 由后端在 /admin/ 下提供后台页面（apps/admin，Vite base 为 /admin/）。
+ * 和工作台、接口同源，共用同一个会话 Cookie。/admin 下的未知路径回落到后台首页。
+ * 页面本身不含数据，能看什么、能改什么由接口按角色控制。
+ */
+function serveAdmin(app: NestExpressApplication, dist: string): void {
+  const indexHtml = join(dist, 'index.html');
+  if (!existsSync(indexHtml)) throw new Error('ADMIN_DIST 目录下找不到 index.html');
+  app.use('/admin', express.static(dist, { index: false, redirect: false, maxAge: '1h' }));
+  app.use('/admin', (req: Request, res: Response, next: NextFunction) => {
+    if (req.method !== 'GET') {
+      next();
+      return;
+    }
+    // /admin 补上斜杠，页面里的相对资源路径才对
+    if (req.originalUrl === '/admin' || req.originalUrl.startsWith('/admin?')) {
+      res.redirect(301, `/admin/${req.originalUrl.slice('/admin'.length)}`);
+      return;
+    }
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(indexHtml);
+  });
 }
 
 /** 由后端一并提供工作台页面，前后端同源，会话 Cookie 不需要跨站。 */

@@ -1,0 +1,122 @@
+.root {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--hb-bg);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hb-space-3);
+  padding: var(--hb-space-2) var(--hb-space-4);
+  background: var(--hb-surface);
+  border-bottom: 1px solid var(--hb-border);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--hb-space-2);
+  min-width: 0;
+  font-weight: 600;
+}
+
+.logo {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: var(--hb-radius-sm);
+  background: var(--hb-brand);
+  color: var(--hb-brand-contrast);
+}
+
+.console {
+  padding: 0 var(--hb-space-2);
+  font-size: var(--hb-text-xs);
+  font-weight: 500;
+  color: var(--hb-text-2);
+  background: var(--hb-surface-2);
+  border-radius: var(--hb-radius-full);
+  white-space: nowrap;
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  gap: var(--hb-space-2);
+  min-width: 0;
+  font-size: var(--hb-text-sm);
+}
+
+.accountName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role {
+  color: var(--hb-text-3);
+  white-space: nowrap;
+}
+
+.body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.nav {
+  flex: none;
+  width: 200px;
+  padding: var(--hb-space-3);
+  border-right: 1px solid var(--hb-border);
+  background: var(--hb-surface);
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: var(--hb-space-2);
+  padding: var(--hb-space-2) var(--hb-space-3);
+  border-radius: var(--hb-radius-md);
+  color: var(--hb-text);
+  text-decoration: none;
+  font-size: var(--hb-text-sm);
+}
+
+.navItem[aria-current='page'] {
+  background: var(--hb-brand-soft);
+  color: var(--hb-brand);
+  font-weight: 500;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  padding: var(--hb-space-6);
+}
+
+/* 窄屏：导航移到顶部，内容区不横向滚动 */
+@media (max-width: 720px) {
+  .body {
+    flex-direction: column;
+  }
+
+  .nav {
+    width: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--hb-border);
+  }
+
+  .main {
+    padding: var(--hb-space-4);
+  }
+
+  .role {
+    display: none;
+  }
+}
