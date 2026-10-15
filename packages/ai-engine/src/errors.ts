@@ -1,5 +1,11 @@
 export type GatewayErrorKind =
-  'not_configured' | 'provider_error' | 'rate_limited' | 'timeout' | 'aborted';
+  | 'not_configured'
+  | 'provider_error'
+  | 'rate_limited'
+  | 'timeout'
+  | 'aborted'
+  /** 结构化输出重试后仍不符合约定的结构 */
+  | 'invalid_output';
 
 /**
  * 网关错误。只带类别、厂商返回的 HTTP 状态码和厂商错误码（如 invalid_api_key），不保留原始异常：

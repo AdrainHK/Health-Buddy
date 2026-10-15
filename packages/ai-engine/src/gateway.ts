@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { resolveRoute, type GatewayConfig } from './config.js';
 import { classifyError, GatewayError } from './errors.js';
 import { estimateCostUsd } from './pricing.js';
@@ -23,6 +24,19 @@ export interface GatewayOptions<C extends CallContext = CallContext> {
   recordUsage?: (record: UsageRecord, ctx: C) => Promise<void> | void;
   logger?: GatewayLogger;
   now?: () => number;
+}
+
+const STRUCTURED_ATTEMPTS = 2;
+
+export type StructuredResult<T> =
+  { status: 'ok'; data: T; model: string } | { status: 'refused'; model: string };
+
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
 }
 
 export interface CompleteResult {
@@ -126,6 +140,36 @@ export class LlmGateway<C extends CallContext = CallContext> {
       if (!finished)
         await finish('error', route.model, { inputTokens: 0, outputTokens: 0 }, 'aborted');
     }
+  }
+
+  /**
+   * 结构化输出：按 zod 结构要求模型输出 JSON，并在本地再校验一次。
+   * 不合格（解析失败、结构不符、被截断）时重试一次，仍不合格抛出 invalid_output。
+   * 拒答直接返回 refused，不重试。不合格的原文不进日志。
+   */
+  async completeStructured<S extends z.ZodType>(
+    ctx: C,
+    request: Omit<GatewayRequest, 'responseFormat'>,
+    format: { name: string; schema: S },
+    signal?: AbortSignal,
+  ): Promise<StructuredResult<z.output<S>>> {
+    const jsonSchema: Record<string, unknown> = z.toJSONSchema(format.schema, { io: 'output' });
+    // 厂商不需要元数据字段
+    delete jsonSchema.$schema;
+    const responseFormat = { name: format.name, schema: jsonSchema };
+    for (let attempt = 1; attempt <= STRUCTURED_ATTEMPTS; attempt++) {
+      const result = await this.complete(ctx, { ...request, responseFormat }, signal);
+      if (result.finishReason === 'refused') return { status: 'refused', model: result.model };
+      const data = result.finishReason === 'complete' ? parseJson(result.text) : undefined;
+      const parsed = data === undefined ? undefined : format.schema.safeParse(data);
+      if (parsed?.success) return { status: 'ok', data: parsed.data, model: result.model };
+      this.options.logger?.error('llm structured output invalid', {
+        route: request.route,
+        attempt,
+        finishReason: result.finishReason,
+      });
+    }
+    throw new GatewayError('invalid_output');
   }
 
   /** 非流式调用：读完整个流再返回。 */

@@ -32,7 +32,12 @@ export class AnthropicProvider implements Provider {
         model: route.model,
         max_tokens: request.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
         thinking: { type: 'adaptive' },
-        output_config: { effort: route.effort },
+        output_config: {
+          effort: route.effort,
+          ...(request.responseFormat
+            ? { format: { type: 'json_schema' as const, schema: request.responseFormat.schema } }
+            : {}),
+        },
         betas: ['server-side-fallback-2026-07-01'],
         fallbacks: 'default',
         ...(request.system ? { system: request.system } : {}),

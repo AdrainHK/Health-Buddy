@@ -182,3 +182,88 @@ describe('OpenAIProvider', () => {
     expect(events.at(-1)).toMatchObject({ finishReason: 'truncated' });
   });
 });
+
+describe('structured output', () => {
+  const schema = { type: 'object', properties: { a: { type: 'string' } }, required: ['a'] };
+  const structured: GatewayRequest = { ...request, responseFormat: { name: 'demo', schema } };
+
+  it('OpenAI uses a strict json_schema text format', async () => {
+    const calls: unknown[] = [];
+    const client = {
+      responses: {
+        stream: (params: unknown) => {
+          calls.push(params);
+          return fakeStream([], 'finalResponse', {
+            model: 'gpt-6-astra',
+            status: 'completed',
+            incomplete_details: null,
+            usage: { input_tokens: 1, output_tokens: 1 },
+          });
+        },
+      },
+    } as unknown as OpenAI;
+    await collect(
+      new OpenAIProvider('unused', client).stream(structured, {
+        provider: 'openai',
+        model: 'gpt-6-astra',
+        effort: 'medium',
+      }),
+    );
+    expect(calls[0]).toMatchObject({
+      text: { format: { type: 'json_schema', name: 'demo', schema, strict: true } },
+    });
+  });
+
+  it('Claude uses output_config.format alongside effort', async () => {
+    const calls: unknown[] = [];
+    const client = {
+      beta: {
+        messages: {
+          stream: (params: unknown) => {
+            calls.push(params);
+            return fakeStream([], 'finalMessage', {
+              model: 'claude-opus-5-5',
+              stop_reason: 'end_turn',
+              usage: { input_tokens: 1, output_tokens: 1 },
+            });
+          },
+        },
+      },
+    } as unknown as Anthropic;
+    await collect(
+      new AnthropicProvider('unused', client).stream(structured, {
+        provider: 'anthropic',
+        model: 'claude-opus-5-5',
+        effort: 'high',
+      }),
+    );
+    expect(calls[0]).toMatchObject({
+      output_config: { effort: 'high', format: { type: 'json_schema', schema } },
+    });
+  });
+
+  it('plain requests send no format', async () => {
+    const calls: unknown[] = [];
+    const client = {
+      responses: {
+        stream: (params: unknown) => {
+          calls.push(params);
+          return fakeStream([], 'finalResponse', {
+            model: 'gpt-6-astra',
+            status: 'completed',
+            incomplete_details: null,
+            usage: { input_tokens: 1, output_tokens: 1 },
+          });
+        },
+      },
+    } as unknown as OpenAI;
+    await collect(
+      new OpenAIProvider('unused', client).stream(request, {
+        provider: 'openai',
+        model: 'gpt-6-astra',
+        effort: 'medium',
+      }),
+    );
+    expect(calls[0]).not.toHaveProperty('text');
+  });
+});
