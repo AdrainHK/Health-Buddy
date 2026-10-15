@@ -1,7 +1,7 @@
-# 健管AI助手（项目说明，供 Claude Code 读取）
+# Health Buddy（项目说明，供 Claude Code 读取）
 
 健康管理师的 AI 智能体工作平台，SaaS 多租户。功能清单见 docs/feature-list.md，里程碑路线图见 docs/roadmap.md，需求规格在 docs/specs/。
-大模型使用 Claude API，所有调用经 packages/ai-engine 的大模型网关。
+大模型同时支持 OpenAI（ChatGPT）和 Anthropic（Claude），所有调用经 packages/ai-engine 的大模型网关，业务代码不直接调用厂商 SDK。产品界面名称只用英文名 Health Buddy。
 产品理念：AI 负责收集、分析和起草，健管师负责判断和决策。
 
 ## 目录结构（M0 完成后生效，当前仓库只有文档和配置）

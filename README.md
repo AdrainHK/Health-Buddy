@@ -1,4 +1,4 @@
-# Health Buddy · 健管AI助手
+# Health Buddy
 
 面向健康管理师的 AI 智能体工作平台（SaaS）。AI 负责收集、分析和起草，健管师负责判断和决策。
 
