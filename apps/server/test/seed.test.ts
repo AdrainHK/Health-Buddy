@@ -49,6 +49,58 @@ describe('合成数据生成器', () => {
     expect(kept).toHaveLength(1);
   });
 
+  it('演示协会里有工作台数据和改过的阈值时，也能重新生成', async () => {
+    await writeDemoData(owner, data, SEED_PASSWORD);
+    const c = await owner
+      .selectFrom('clients')
+      .innerJoin('operators', 'operators.id', 'clients.operator_id')
+      .select(['clients.id', 'clients.operator_id', 'clients.org_id', 'clients.manager_id'])
+      .where('operators.slug', '=', 'demo-assoc-a')
+      .executeTakeFirstOrThrow();
+    const scope = { operator_id: c.operator_id, org_id: c.org_id, manager_id: c.manager_id };
+    const task = await owner
+      .insertInto('tasks')
+      .values({ ...scope, client_id: c.id, title: '演示任务' })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    const artifactId = crypto.randomUUID();
+    await owner
+      .insertInto('artifacts')
+      .values({
+        ...scope,
+        id: artifactId,
+        task_id: task.id,
+        client_id: c.id,
+        skill_id: 'client-recent-summary',
+        kind: 'summary',
+        lineage_id: artifactId,
+        version: 1,
+        status: 'draft',
+        content: JSON.stringify({ professional: 'x', clientFacing: 'y' }),
+      })
+      .execute();
+    await owner
+      .updateTable('artifacts')
+      .set({ status: 'approved' })
+      .where('id', '=', artifactId)
+      .execute();
+    await owner
+      .insertInto('artifact_events')
+      .values({ ...scope, artifact_id: artifactId, actor_id: c.manager_id, action: 'approved' })
+      .execute();
+    await owner
+      .updateTable('critical_thresholds')
+      .set({ value: 170 })
+      .where('operator_id', '=', c.operator_id)
+      .where('metric', '=', 'sbp')
+      .where('comparator', '=', 'gte')
+      .execute();
+
+    await expect(writeDemoData(owner, data, SEED_PASSWORD)).resolves.toMatchObject({ clients: 60 });
+    const left = await owner.selectFrom('tasks').select('id').where('id', '=', task.id).execute();
+    expect(left).toHaveLength(0);
+  });
+
   it('全部客户都标记为合成数据', async () => {
     const real = await owner
       .selectFrom('clients')

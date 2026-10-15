@@ -1,3 +1,4 @@
+import { DEFAULT_CRITICAL_RULES } from '@health-buddy/shared';
 import { Kysely, PostgresDialect, sql } from 'kysely';
 import pg from 'pg';
 import { hashPassword } from '../src/auth/password.js';
@@ -55,9 +56,16 @@ export function ownerDb(): Owner {
  * 全部是虚构数据。
  */
 export async function seedFixtures(db: Owner): Promise<Fixtures> {
-  await sql`truncate llm_usage, monitoring_readings, report_indicators, health_reports, sessions, clients, users, organizations, operators cascade`.execute(
+  await sql`truncate artifact_events, artifacts, task_plans, task_steps, task_messages, tasks, critical_threshold_events, critical_thresholds, critical_threshold_defaults, llm_usage, monitoring_readings, report_indicators, health_reports, sessions, clients, users, organizations, operators cascade`.execute(
     db,
   );
+  // 默认阈值由迁移写入，清空后补回来；新建协会时触发器会各复制一份
+  for (const r of DEFAULT_CRITICAL_RULES) {
+    await db
+      .insertInto('critical_threshold_defaults')
+      .values({ metric: r.metric, comparator: r.comparator, value: r.value, level: r.level })
+      .execute();
+  }
   const passwordHash = await hashPassword(PASSWORD);
 
   const op = async (name: string, slug: string, status = 'active') =>
