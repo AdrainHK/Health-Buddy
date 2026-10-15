@@ -99,8 +99,10 @@ describe('任务接口', () => {
       const agent = await loginAs(app, email);
       await agent.get(`/api/tasks/${taskId}`).expect(404);
       await agent.patch(`/api/tasks/${taskId}`).send({ title: '改名' }).expect(404);
-      const list = await agent.get('/api/tasks').expect(200);
-      expect(list.body.tasks.map((t: { id: string }) => t.id)).not.toContain(taskId);
+      for (const path of ['/api/tasks', '/api/tasks?archived=true']) {
+        const list = await agent.get(path).expect(200);
+        expect(list.body.tasks.map((t: { id: string }) => t.id)).not.toContain(taskId);
+      }
     }
     const unchanged = await owner
       .selectFrom('tasks')

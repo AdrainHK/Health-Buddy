@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, Param, Patch, Post } from '@nestjs/common';
 import {
   approveArtifactRequestSchema,
   updateArtifactRequestSchema,
@@ -74,12 +74,15 @@ export class ArtifactsController {
     return found(await this.artifacts.revise(session, parseId(id)));
   }
 
-  @Get(':id/client-text')
-  async clientText(
+  /** 复制通俗版。会记一条复制记录，所以用 POST，并且不允许缓存。 */
+  @Post(':id/copy')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  async copy(
     @CurrentSession() session: ResolvedSession,
     @Param('id') id: string,
   ): Promise<ClientTextResponse> {
     requireManager(session);
-    return { text: found(await this.artifacts.clientText(session, parseId(id))) };
+    return { text: found(await this.artifacts.copyClientText(session, parseId(id))) };
   }
 }

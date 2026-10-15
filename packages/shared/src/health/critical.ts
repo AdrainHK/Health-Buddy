@@ -4,6 +4,7 @@
  * 阈值是医学判断，由运营人员在后台审定。这里只放默认值和合理范围：
  * 默认值参照国际通用标准，合理范围用来挡住明显的误填（比如把 180 写成 1800）。
  */
+import type { CriticalFlag } from '../api/artifacts.js';
 import { REPORT_INDICATORS, MONITORING_METRICS } from './catalog.js';
 
 export const CRITICAL_COMPARATORS = ['gte', 'gt', 'lte', 'lt'] as const;
@@ -87,4 +88,51 @@ export function matchesRule(
     case 'lt':
       return value < rule.value;
   }
+}
+
+/** 客户档案里的一个数值，用来识别危急指标 */
+export interface Observation {
+  metric: string;
+  value: number;
+  unit: string;
+  /** YYYY-MM-DD */
+  observedOn: string;
+  source: 'monitoring' | 'report';
+}
+
+/**
+ * 识别危急指标（M1 规格第五节之二）：每个指标在每个来源里取最近一次数值，逐条和启用的规则比对。
+ * 命中的规则以快照形式写进结果，阈值以后改了也能追溯。需尽快就医的排在前面。
+ */
+export function detectCriticalFlags(
+  rules: readonly (CriticalRule & { enabled?: boolean })[],
+  observations: readonly Observation[],
+): CriticalFlag[] {
+  const latest = new Map<string, Observation>();
+  for (const o of observations) {
+    const key = `${o.source}:${o.metric}`;
+    const current = latest.get(key);
+    if (!current || o.observedOn > current.observedOn) latest.set(key, o);
+  }
+  const flags: CriticalFlag[] = [];
+  for (const o of latest.values()) {
+    for (const r of rules) {
+      if (r.enabled === false || r.metric !== o.metric || !matchesRule(r, o.value)) continue;
+      flags.push({
+        metric: o.metric,
+        value: o.value,
+        unit: o.unit,
+        observedOn: o.observedOn,
+        source: o.source,
+        rule: { comparator: r.comparator, value: r.value, level: r.level },
+      });
+    }
+  }
+  const rank = { urgent: 0, attention: 1 } as const;
+  return flags.sort(
+    (a, b) =>
+      rank[a.rule.level] - rank[b.rule.level] ||
+      a.metric.localeCompare(b.metric) ||
+      a.source.localeCompare(b.source),
+  );
 }

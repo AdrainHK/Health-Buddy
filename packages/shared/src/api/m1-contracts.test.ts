@@ -54,9 +54,12 @@ describe('updateTaskRequestSchema', () => {
 });
 
 describe('approveArtifactRequestSchema', () => {
-  it('requires a version and defaults the acknowledgement to false', () => {
+  it('requires a version and content hash, and defaults the acknowledgement to false', () => {
     expect(approveArtifactRequestSchema.safeParse({}).success).toBe(false);
-    expect(approveArtifactRequestSchema.parse({ version: 2 }).acknowledgedCritical).toBe(false);
+    expect(approveArtifactRequestSchema.safeParse({ version: 2 }).success).toBe(false);
+    expect(
+      approveArtifactRequestSchema.parse({ version: 2, contentHash: 'abc' }).acknowledgedCritical,
+    ).toBe(false);
   });
 });
 

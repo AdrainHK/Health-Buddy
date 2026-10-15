@@ -76,6 +76,16 @@ describe('guardrails', () => {
       `您好多走路。\n\n${DISCLAIMER}`,
     );
     expect(finalizeClientText('您好。仅供参考,非医疗诊断。')).toBe(`您好。\n\n${DISCLAIMER}`);
+    // 夹空格、零宽字符、逗号写成句号，都不会留下重复的声明
+    for (const variant of [
+      '仅供参考 ，非医疗诊断',
+      '仅供参考，非医疗 诊\u200B断',
+      '仅供参考。非医疗诊断',
+    ]) {
+      expect(finalizeClientText(`您好。${variant}。多走路。`), variant).toBe(
+        `您好。多走路。\n\n${DISCLAIMER}`,
+      );
+    }
   });
 
   it('checks banned terms and the disclaimer', () => {

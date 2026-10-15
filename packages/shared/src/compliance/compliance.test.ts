@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { DISCLAIMER, endsWithDisclaimer, findBannedTerms } from './index.js';
+import {
+  DISCLAIMER,
+  buildClientDeliverable,
+  countDisclaimers,
+  endsWithDisclaimer,
+  findBannedTerms,
+} from './index.js';
 
 describe('findBannedTerms', () => {
   it('returns nothing for compliant copy', () => {
@@ -28,7 +34,7 @@ describe('findBannedTerms', () => {
 
 describe('findBannedTerms normalization', () => {
   it('flags terms split by spaces, zero-width characters or line breaks', () => {
-    const text = '可以筛 查，也能根​治，还能确\n诊。';
+    const text = '可以筛 查，也能根\u200B治，还能确\n诊。';
     expect(findBannedTerms(text).map((i) => i.term)).toEqual(['筛查', '根治', '确诊']);
   });
 
@@ -52,5 +58,38 @@ describe('endsWithDisclaimer', () => {
   it('requires the disclaimer at the end', () => {
     expect(endsWithDisclaimer(`建议多走路。\n${DISCLAIMER}\n`)).toBe(true);
     expect(endsWithDisclaimer(`${DISCLAIMER}。建议多走路。`)).toBe(false);
+  });
+});
+
+describe('findBannedTerms separators and traditional characters', () => {
+  it('flags terms split by in-word punctuation', () => {
+    expect(findBannedTerms('诊·断、根-治、筛、查').map((i) => i.term)).toEqual([
+      '诊断',
+      '根治',
+      '筛查',
+    ]);
+  });
+
+  it('flags traditional-character variants', () => {
+    expect(findBannedTerms('已確診，可治癒').map((i) => i.term)).toEqual(['确诊', '治愈']);
+  });
+
+  it('does not join words across commas or full stops', () => {
+    expect(findBannedTerms('扎根，治理。根。治')).toEqual([]);
+  });
+});
+
+describe('countDisclaimers', () => {
+  it('counts spaced and zero-width variants as the same disclaimer', () => {
+    expect(countDisclaimers(`正文。\n\n${DISCLAIMER}`)).toBe(1);
+    expect(countDisclaimers(`仅供参考 ，非医疗\u200B诊断。正文。\n\n${DISCLAIMER}`)).toBe(2);
+  });
+});
+
+describe('buildClientDeliverable', () => {
+  it('appends the product name after the disclaimer', () => {
+    expect(buildClientDeliverable(`正文。\n\n${DISCLAIMER}\n`)).toBe(
+      `正文。\n\n${DISCLAIMER}\n\n— Health Buddy`,
+    );
   });
 });
