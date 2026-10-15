@@ -18,6 +18,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     appDatabaseUrl: TEST_APP_URL,
     appDatabasePassword: TEST_APP_PASSWORD,
     workbenchDist: undefined,
+    adminDist: undefined,
     secureCookies: false,
     platformAdmin: undefined,
     // 测试里不配置任何密钥，大模型调用一律用模拟厂商

@@ -287,6 +287,11 @@
       "too_many_requests": "尝试次数过多，请稍后再试",
       "network": "网络连接失败，请检查网络后重试",
       "unknown": "登录失败，请稍后再试"
+    },
+    "adminNotice": {
+      "title": "请前往后台",
+      "body": "你登录的是管理员账号。工作台供健管师使用，管理功能在后台。",
+      "goToAdmin": "前往后台"
     }
   },
   "indicators": {
