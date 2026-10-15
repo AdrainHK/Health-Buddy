@@ -3,14 +3,19 @@ import { useTranslation } from 'react-i18next';
 import styles from './AppShell.module.css';
 import { ChatPane } from './ChatPane';
 import { ResultsPanel } from './ResultsPanel';
-import { Sidebar } from './Sidebar';
+import { Sidebar, type SidebarAccount } from './Sidebar';
 import { NARROW_QUERY, useMediaQuery } from './useMediaQuery';
 
 /**
  * 工作台三栏布局：左侧栏、中间对话区、右侧结果区。
  * 宽屏时三栏并排；窄屏时侧栏和结果区都改为浮层，同一时间最多打开一个。
  */
-export function AppShell() {
+export interface AppShellProps {
+  /** 当前登录的账号，显示在侧栏底部。 */
+  account?: SidebarAccount;
+}
+
+export function AppShell({ account }: AppShellProps = {}) {
   const { t } = useTranslation();
   const narrow = useMediaQuery(NARROW_QUERY);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -57,6 +62,7 @@ export function AppShell() {
         open={narrow ? drawerOpen : true}
         onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
         onClose={() => setDrawerOpen(false)}
+        {...(account ? { account } : {})}
       />
       <ChatPane
         narrow={narrow}
