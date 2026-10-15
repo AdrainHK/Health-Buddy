@@ -131,6 +131,12 @@ export class GenerationService {
         await steps.finish(step, 'failed');
         return await this.finish(ctx, messageId, withAskNotice(notices), 'refused', io);
       }
+      // 保存前重新确认会话（退出登录、停用、调岗都算失效）
+      if (io.signal.aborted) throw new GatewayError('aborted');
+      if (!(await io.sessionValid())) {
+        await steps.finish(step, 'failed');
+        return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
+      }
       const final = withAskNotice(text);
       if (final) io.emit({ type: 'text', messageId, delta: `\n\n${ASK_NOTICE}` });
       await steps.finish(step, 'done');

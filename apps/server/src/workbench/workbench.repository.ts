@@ -92,7 +92,9 @@ export class WorkbenchRepository {
         // 每个任务只关联一位客户（Q6）；看不到的客户和别的客户都按“不存在”处理
         if (clientId && ref !== clientId) throw notFound();
         if (!clientId) {
-          if (!(await clientVisible(trx, ref))) throw notFound();
+          // 锁住客户行：同时进行的转出要等这里提交后才执行，触发器就能看到并断开这个任务；
+          // 转出已经提交的话，等锁后重新按行级安全判断，读不到，返回 404
+          if (!(await clientVisible(trx, ref, true))) throw notFound();
           await trx
             .updateTable('tasks')
             .set({ client_id: ref })

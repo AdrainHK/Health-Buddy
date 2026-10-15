@@ -219,7 +219,13 @@ export class WorkbenchController {
       sessionValid: async () => {
         if (typeof token !== 'string') return false;
         const current = await this.sessions.resolve(token);
-        return current?.userId === session.userId && current.role === 'manager';
+        // 机构或协会变了（调岗）也算失效：本轮用的是请求开始时的租户上下文
+        return (
+          current?.userId === session.userId &&
+          current.role === 'manager' &&
+          current.orgId === session.orgId &&
+          current.operatorId === session.operatorId
+        );
       },
     };
     try {

@@ -186,13 +186,17 @@ function selectTask(trx: TenantTransaction) {
   return trx.selectFrom('tasks').select(TASK_COLUMNS);
 }
 
-/** 客户是否对当前账号可见（客户表的行级安全决定） */
-export async function clientVisible(trx: TenantTransaction, clientId: string): Promise<boolean> {
-  const row = await trx
-    .selectFrom('clients')
-    .select('id')
-    .where('id', '=', clientId)
-    .executeTakeFirst();
+/**
+ * 客户是否对当前账号可见（客户表的行级安全决定）。
+ * lock 为 true 时加共享锁，挡住同时进行的客户转出，直到本事务提交。
+ */
+export async function clientVisible(
+  trx: TenantTransaction,
+  clientId: string,
+  lock = false,
+): Promise<boolean> {
+  const query = trx.selectFrom('clients').select('id').where('id', '=', clientId);
+  const row = await (lock ? query.forShare() : query).executeTakeFirst();
   return Boolean(row);
 }
 

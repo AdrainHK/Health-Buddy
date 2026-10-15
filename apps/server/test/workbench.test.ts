@@ -386,8 +386,74 @@ describe('对话和生成接口', () => {
       const agent = await loginAs(app, u.email);
       await send(agent, taskA1, { mode: 'ask', content: 'x' }).expect(404);
       await agent.post(`/api/tasks/${taskA1}/stop`).expect(404);
+      await agent.post(`/api/tasks/${taskA1}/plans/${crypto.randomUUID()}/confirm`).expect(404);
+      await agent
+        .post(`/api/artifacts/${crypto.randomUUID()}/return`)
+        .send({ reason: 'x' })
+        .expect(404);
     }
     await request(app.getHttpServer()).post(`/api/tasks/${taskA1}/messages`).send({}).expect(401);
+  });
+
+  it('计划只能在它所属的任务上确认：拿别的任务（自己的或别人的）的计划返回 404', async () => {
+    const planIn = async (agent: Agent, taskId: string) => {
+      const res = await send(agent, taskId, {
+        mode: 'plan',
+        content: '写个近况小结',
+        skillId: 'client-recent-summary',
+      }).expect(200);
+      const plan = parseSse(res.text).find((e) => e.type === 'plan');
+      if (plan?.type !== 'plan') throw new Error('no plan');
+      return plan.plan.id;
+    };
+    const agentA = await loginAs(app, f.users.managerA1.email);
+    const agentB = await loginAs(app, f.users.managerB1.email);
+    const taskA = await newTask(agentA, f.clients.a1[0]);
+    const otherTaskA = await newTask(agentA, f.clients.a1[1]);
+    const planA = await planIn(agentA, taskA);
+    const planB = await planIn(agentB, await newTask(agentB, f.clients.b1));
+
+    await agentA.post(`/api/tasks/${otherTaskA}/plans/${planA}/confirm`).expect(404);
+    await agentA.post(`/api/tasks/${taskA}/plans/${planB}/confirm`).expect(404);
+    expect(provider.calls).toHaveLength(0);
+    const statuses = await owner
+      .selectFrom('task_plans')
+      .select('status')
+      .where('id', 'in', [planA, planB])
+      .execute();
+    expect(statuses.map((p) => p.status)).toEqual(['proposed', 'proposed']);
+  });
+
+  it('别人停止不了我正在进行的生成', async () => {
+    const agentB = await loginAs(app, f.users.managerB1.email);
+    const agentA = await loginAs(app, f.users.managerA1.email);
+    const taskB = await newTask(agentB);
+    provider.queue.push({ chunks: ['第一段。', '第二段。', '第三段。'], delayMs: 100 });
+    const pending = send(agentB, taskB, { mode: 'ask', content: '讲讲饮食' }).then((r) => r);
+    await new Promise((r) => setTimeout(r, 120));
+    await agentA.post(`/api/tasks/${taskB}/stop`).expect(404);
+    const res = await pending;
+    expect(parseSse(res.text).at(-1)).toMatchObject({ type: 'done', reason: 'complete' });
+  });
+
+  it('生成过程中客户被转出：不留下产物', async () => {
+    const agent = await loginAs(app, f.users.managerA1.email);
+    const taskId = await newTask(agent, f.clients.a1[0]);
+    provider.queue.push({ chunks: [summaryJson()], delayMs: 300 });
+    const pending = send(agent, taskId, {
+      mode: 'craft',
+      content: '写个近况小结',
+      skillId: 'client-recent-summary',
+    }).then((r) => r);
+    await new Promise((r) => setTimeout(r, 120));
+    await owner
+      .updateTable('clients')
+      .set({ manager_id: f.users.managerA2.id })
+      .where('id', '=', f.clients.a1[0])
+      .execute();
+    const res = await pending;
+    expect(parseSse(res.text).at(-1)).toMatchObject({ type: 'done', reason: 'error' });
+    expect(await artifactsOf(taskId)).toHaveLength(0);
   });
 
   it('停止：生成立即中止，已生成的文本保留并带固定提示，不生成产物', async () => {
