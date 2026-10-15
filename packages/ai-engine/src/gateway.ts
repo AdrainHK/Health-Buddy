@@ -153,7 +153,9 @@ export class LlmGateway<C extends CallContext = CallContext> {
     format: { name: string; schema: S },
     signal?: AbortSignal,
   ): Promise<StructuredResult<z.output<S>>> {
-    const { $schema: _ignored, ...jsonSchema } = z.toJSONSchema(format.schema, { io: 'output' });
+    const jsonSchema: Record<string, unknown> = z.toJSONSchema(format.schema, { io: 'output' });
+    // 厂商不需要元数据字段
+    delete jsonSchema.$schema;
     const responseFormat = { name: format.name, schema: jsonSchema };
     for (let attempt = 1; attempt <= STRUCTURED_ATTEMPTS; attempt++) {
       const result = await this.complete(ctx, { ...request, responseFormat }, signal);
