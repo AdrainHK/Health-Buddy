@@ -2,7 +2,7 @@ import { Kysely, PostgresDialect } from 'kysely';
 import pg from 'pg';
 import { z } from 'zod';
 import { generateDemoData } from './generate.js';
-import { assertSchemaReady, writeDemoData } from './write.js';
+import { assertSchemaReady, demoDataExists, writeDemoData } from './write.js';
 
 const env = z
   .object({
@@ -24,20 +24,31 @@ if (!env.success) {
   process.exit(1);
 }
 
+const config = env.data;
+
 const db = new Kysely({
   dialect: new PostgresDialect({
-    pool: new pg.Pool({ connectionString: env.data.DATABASE_URL, max: 1 }),
+    pool: new pg.Pool({ connectionString: config.DATABASE_URL, max: 1 }),
   }),
 });
-try {
+async function run(): Promise<void> {
   await assertSchemaReady(db);
-  const summary = await writeDemoData(db, generateDemoData(), env.data.SEED_PASSWORD);
+  // --if-missing：演示协会已经存在就跳过。预览环境每次部署都会调用，这样不会把测试中录入的数据冲掉。
+  if (process.argv.includes('--if-missing') && (await demoDataExists(db))) {
+    console.log('演示数据已存在，跳过');
+    return;
+  }
+  const summary = await writeDemoData(db, generateDemoData(), config.SEED_PASSWORD);
   console.log(
     `演示数据已生成：${summary.operators} 个协会、${summary.managers} 名健管师、${summary.clients} 位客户、` +
       `${summary.reports} 份报告（${summary.indicators} 项指标）、${summary.readings} 条监测数据`,
   );
   console.log('演示账号（密码为 SEED_PASSWORD）：');
   for (const a of summary.accounts) console.log(`  ${a.role.padEnd(15)} ${a.email}`);
+}
+
+try {
+  await run();
 } catch (err) {
   const code = err && typeof err === 'object' && 'code' in err ? ` (${String(err.code)})` : '';
   console.error(`生成失败：${err instanceof Error ? err.message : 'unknown'}${code}`);
