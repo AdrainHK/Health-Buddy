@@ -178,15 +178,11 @@ interface CriticalRuleColumns {
   updated_at: Timestamp;
 }
 
-export type CriticalThresholdDefaultsTable = CriticalRuleColumns;
-
-export interface CriticalThresholdsTable extends CriticalRuleColumns {
-  operator_id: string;
-}
+/** 全平台唯一的一套阈值，只有平台管理员能改（Q12） */
+export type CriticalThresholdsTable = CriticalRuleColumns;
 
 export interface CriticalThresholdEventsTable {
   id: Generated<string>;
-  operator_id: string | null;
   threshold_id: string;
   actor_id: string | null;
   action: 'created' | 'updated' | 'deleted';
@@ -210,7 +206,6 @@ export interface Database {
   task_plans: TaskPlansTable;
   artifacts: ArtifactsTable;
   artifact_events: ArtifactEventsTable;
-  critical_threshold_defaults: CriticalThresholdDefaultsTable;
   critical_thresholds: CriticalThresholdsTable;
   critical_threshold_events: CriticalThresholdEventsTable;
 }

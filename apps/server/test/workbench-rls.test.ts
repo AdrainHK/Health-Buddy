@@ -139,7 +139,6 @@ describe('工作台数据表的行级安全和约束', () => {
     for (const table of [
       ...WORK_TABLES,
       'critical_thresholds',
-      'critical_threshold_defaults',
       'critical_threshold_events',
     ] as const) {
       const rows = await app
