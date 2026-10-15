@@ -55,7 +55,9 @@ export function ownerDb(): Owner {
  * 全部是虚构数据。
  */
 export async function seedFixtures(db: Owner): Promise<Fixtures> {
-  await sql`truncate sessions, clients, users, organizations, operators cascade`.execute(db);
+  await sql`truncate llm_usage, sessions, clients, users, organizations, operators cascade`.execute(
+    db,
+  );
   const passwordHash = await hashPassword(PASSWORD);
 
   const op = async (name: string, slug: string, status = 'active') =>

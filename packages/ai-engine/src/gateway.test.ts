@@ -1,0 +1,194 @@
+import { describe, expect, it, vi } from 'vitest';
+import { loadGatewayConfig } from './config.js';
+import { GatewayError } from './errors.js';
+import { LlmGateway } from './gateway.js';
+import { MockProvider, type MockScript } from './providers/mock.js';
+import type { GatewayEvent, GatewayLogger, GatewayRequest, UsageRecord } from './types.js';
+
+const PROMPT = '客户张某某空腹血糖 7.8 mmol/L，请解读';
+const ctx = { operatorId: 'op-1', userId: 'user-1' };
+const request: GatewayRequest = {
+  route: 'report_interpretation',
+  system: '你是健康管理助手',
+  messages: [{ role: 'user', content: PROMPT }],
+};
+
+function setup(script: MockScript = {}, env: NodeJS.ProcessEnv = {}) {
+  const provider = new MockProvider('openai', script);
+  const records: UsageRecord[] = [];
+  const logs: unknown[] = [];
+  const logger: GatewayLogger = {
+    info: (message, fields) => logs.push({ message, fields }),
+    error: (message, fields) => logs.push({ message, fields }),
+  };
+  let t = 1000;
+  const gateway = new LlmGateway({
+    config: loadGatewayConfig(env),
+    providers: { openai: provider },
+    recordUsage: (r) => {
+      records.push(r);
+    },
+    logger,
+    now: () => (t += 50),
+  });
+  return { gateway, provider, records, logs };
+}
+
+async function collect(stream: AsyncIterable<GatewayEvent>) {
+  const events: GatewayEvent[] = [];
+  for await (const e of stream) events.push(e);
+  return events;
+}
+
+describe('LlmGateway', () => {
+  it('streams text deltas and finishes with usage', async () => {
+    const { gateway } = setup({
+      chunks: ['a', 'b'],
+      usage: { inputTokens: 100, outputTokens: 20 },
+    });
+    const events = await collect(gateway.stream(ctx, request));
+    expect(events).toEqual([
+      { type: 'text', delta: 'a' },
+      { type: 'text', delta: 'b' },
+      {
+        type: 'done',
+        finishReason: 'complete',
+        usage: { inputTokens: 100, outputTokens: 20 },
+        model: 'gpt-5',
+      },
+    ]);
+  });
+
+  it('records usage with tenant, route, model, tokens and cost', async () => {
+    const { gateway, records } = setup({
+      usage: { inputTokens: 1_000_000, outputTokens: 100_000 },
+    });
+    await collect(gateway.stream(ctx, request));
+    expect(records).toEqual([
+      {
+        route: 'report_interpretation',
+        provider: 'openai',
+        model: 'gpt-5',
+        operatorId: 'op-1',
+        userId: 'user-1',
+        inputTokens: 1_000_000,
+        outputTokens: 100_000,
+        costUsd: 2.25,
+        durationMs: 50,
+        outcome: 'complete',
+      },
+    ]);
+  });
+
+  it('never puts prompt or response text in logs or usage records', async () => {
+    const reply = ['空腹血糖偏高', '，建议复查'];
+    const { gateway, records, logs } = setup({ chunks: reply });
+    await collect(gateway.stream(ctx, request));
+    const {
+      gateway: failing,
+      records: r2,
+      logs: l2,
+    } = setup({
+      chunks: reply,
+      failWith: new Error(`upstream echoed: ${PROMPT}`),
+    });
+    await expect(collect(failing.stream(ctx, request))).rejects.toBeInstanceOf(GatewayError);
+
+    const dump = JSON.stringify([records, logs, r2, l2]);
+    for (const secret of [PROMPT, '张某某', '7.8', '健康管理助手', ...reply]) {
+      expect(dump).not.toContain(secret);
+    }
+    expect(logs).toHaveLength(1);
+  });
+
+  it('applies per-route provider, model and effort overrides', async () => {
+    const { gateway, provider } = setup(
+      {},
+      {
+        OPENAI_MODEL: 'gpt-test',
+        LLM_DEFAULT_EFFORT: 'low',
+        LLM_ROUTES: JSON.stringify({ report_interpretation: { effort: 'high' } }),
+      },
+    );
+    await collect(gateway.stream(ctx, request));
+    await collect(gateway.stream(ctx, { ...request, route: 'chat' }));
+    expect(provider.calls.map((c) => c.route)).toEqual([
+      { provider: 'openai', model: 'gpt-test', effort: 'high' },
+      { provider: 'openai', model: 'gpt-test', effort: 'low' },
+    ]);
+  });
+
+  it('fails clearly when the configured provider has no key', async () => {
+    const { gateway, records } = setup({}, { LLM_DEFAULT_PROVIDER: 'anthropic' });
+    await expect(collect(gateway.stream(ctx, request))).rejects.toMatchObject({
+      kind: 'not_configured',
+    });
+    expect(records[0]).toMatchObject({
+      provider: 'anthropic',
+      outcome: 'error',
+      errorType: 'not_configured',
+    });
+  });
+
+  it('classifies provider errors and records them', async () => {
+    const rateLimited = Object.assign(new Error('429'), { status: 429 });
+    const { gateway, records } = setup({ failWith: rateLimited });
+    await expect(collect(gateway.stream(ctx, request))).rejects.toMatchObject({
+      kind: 'rate_limited',
+    });
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ outcome: 'error', errorType: 'rate_limited' });
+  });
+
+  it('does not keep the provider error, which may echo the prompt', async () => {
+    const { gateway } = setup({ failWith: new Error(`upstream echoed: ${PROMPT}`) });
+    const err: unknown = await collect(gateway.stream(ctx, request)).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(GatewayError);
+    expect((err as Error).cause).toBeUndefined();
+    expect(JSON.stringify(err) + String(err)).not.toContain('张某某');
+  });
+
+  it('records an aborted call when the consumer stops reading early', async () => {
+    const { gateway, records } = setup({ chunks: ['a', 'b', 'c'] });
+    for await (const event of gateway.stream(ctx, request)) {
+      expect(event.type).toBe('text');
+      break;
+    }
+    expect(records).toEqual([expect.objectContaining({ outcome: 'error', errorType: 'aborted' })]);
+  });
+
+  it('does not fail the call when usage recording fails', async () => {
+    const provider = new MockProvider();
+    const logger = { info: vi.fn(), error: vi.fn() };
+    const gateway = new LlmGateway({
+      config: loadGatewayConfig({}),
+      providers: { openai: provider },
+      recordUsage: () => Promise.reject(new Error('db down')),
+      logger,
+    });
+    const result = await gateway.complete(ctx, request);
+    expect(result.finishReason).toBe('complete');
+    expect(logger.error).toHaveBeenCalledWith('llm usage record failed', {
+      route: 'report_interpretation',
+    });
+  });
+
+  describe('complete()', () => {
+    it('joins the streamed text', async () => {
+      const { gateway } = setup({ chunks: ['你好', '世界'] });
+      expect(await gateway.complete(ctx, request)).toMatchObject({
+        text: '你好世界',
+        finishReason: 'complete',
+      });
+    });
+
+    it('returns no text when the model refused', async () => {
+      const { gateway, records } = setup({ chunks: ['partial'], finishReason: 'refused' });
+      expect(await gateway.complete(ctx, request)).toMatchObject({
+        text: '',
+        finishReason: 'refused',
+      });
+      expect(records[0]?.outcome).toBe('refused');
+    });
+  });
+});

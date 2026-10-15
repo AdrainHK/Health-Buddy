@@ -6,12 +6,15 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import helmet from 'helmet';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { AppModule } from './app.module.js';
+import { AppModule, type AppOptions } from './app.module.js';
 import { originCheck } from './common/origin-check.js';
 import type { AppConfig } from './config.js';
 
-export async function createApp(config: AppConfig): Promise<NestExpressApplication> {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule.forRoot(config), {
+export async function createApp(
+  config: AppConfig,
+  options: AppOptions = {},
+): Promise<NestExpressApplication> {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule.forRoot(config, options), {
     // 自己注册请求体解析，才能在它后面接上不泄露请求内容的错误处理。
     bodyParser: false,
     logger: config.env === 'test' ? ['error', 'warn'] : ['log', 'error', 'warn'],

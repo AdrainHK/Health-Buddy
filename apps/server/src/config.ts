@@ -1,3 +1,4 @@
+import { loadGatewayConfig, type GatewayConfig } from '@health-buddy/ai-engine';
 import { z } from 'zod';
 
 const envSchema = z.object({
@@ -25,6 +26,8 @@ export interface AppConfig {
   workbenchDist: string | undefined;
   secureCookies: boolean;
   platformAdmin: { email: string; password: string } | undefined;
+  /** 大模型网关配置（厂商密钥、默认型号、按用途覆盖） */
+  llm: GatewayConfig;
 }
 
 export const APP_DB_ROLE = 'hb_app';
@@ -57,6 +60,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
       env.PLATFORM_ADMIN_EMAIL && env.PLATFORM_ADMIN_PASSWORD
         ? { email: env.PLATFORM_ADMIN_EMAIL, password: env.PLATFORM_ADMIN_PASSWORD }
         : undefined,
+    llm: loadGatewayConfig(source),
   };
 }
 
