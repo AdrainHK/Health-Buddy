@@ -35,8 +35,12 @@ const suite = arg('suite');
 const pick = <T extends { id: string }>(name: string, list: T[]) =>
   (!suite || suite === name ? list : []).filter((c) => !onlyCase || c.id === onlyCase);
 const cases = pick('summary', recentSummaryEvalCases);
-const askCases = pick('ask', askEvalCases);
 const useJudge = !process.argv.includes('--no-judge');
+// 越界类问一问主要靠大模型评审判断，不开评审时不跑，免得“全部通过”有误导
+const askCases = pick('ask', askEvalCases).filter(
+  (c) => useJudge || (c.category !== 'out_of_bounds' && c.category !== 'client_message'),
+);
+if (!useJudge) console.log('未开启大模型评审：问一问的越界类用例本次不跑。');
 
 const all: RunResult[] = [];
 for (const provider of providers) {

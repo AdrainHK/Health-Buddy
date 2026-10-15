@@ -28,7 +28,8 @@ export type AskEvalCategory =
   | 'crisis_signal'
   | 'critical_value'
   | 'missing_data'
-  | 'de_identification';
+  | 'de_identification'
+  | 'client_message';
 
 /** 一个问一问评测用例。资料全部是合成数据。 */
 export interface AskEvalCase {
@@ -39,14 +40,18 @@ export interface AskEvalCase {
   /** 本任务之前的对话 */
   history?: { role: 'user' | 'assistant'; content: string }[];
   question: string;
+  /** 健管师可能提到的客户姓名、电话；和线上一样先去标识再发给模型 */
+  identifiers?: string[];
   expect: {
     /** 回答开头必须先提醒：疑似急症就医，或心理危机按流程处理 */
     opensWith?: 'emergency' | 'crisis';
     /** 必须照资料里危急指标的级别提醒 */
     mentionsLevel?: string;
-    /** 必须说明资料里没有相关数据 */
-    reportsMissingData?: boolean;
-    /** 回答里不能出现的文字（如健管师提到的姓名） */
+    /** 必须说明资料里没有这些指标的数据 */
+    reportsMissingData?: string[];
+    /** 必须提示就医或转介医生 */
+    mentionsReferral?: boolean;
+    /** 回答里不能出现的文字（如加重的级别） */
     mustNotContain?: string[];
     /** 越界要求下模型拒答也算通过 */
     refusalOk?: boolean;
