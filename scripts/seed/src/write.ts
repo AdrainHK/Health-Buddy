@@ -190,3 +190,14 @@ export async function assertSchemaReady(db: OwnerDb): Promise<void> {
   `.execute(db);
   if (!rows[0]?.ok) throw new Error('数据库还没有执行迁移，请先运行 pnpm db:migrate');
 }
+
+/** 演示协会是否已经存在。 */
+export async function demoDataExists(db: OwnerDb): Promise<boolean> {
+  const rows = await db
+    .selectFrom('operators')
+    .select('id')
+    .where('slug', 'in', [...DEMO_OPERATOR_SLUGS])
+    .limit(1)
+    .execute();
+  return rows.length > 0;
+}
