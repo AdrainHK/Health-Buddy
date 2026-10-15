@@ -10,6 +10,11 @@ const env = z
     DATABASE_URL: z.url(),
     /** 所有演示账号共用的密码，只放环境变量，不写进代码 */
     SEED_PASSWORD: z.string().min(12, 'SEED_PASSWORD 至少 12 位'),
+    /**
+     * 必须显式设为 yes 才运行。演示账号共用一个已知密码，等于一组可登录的账号，
+     * 只能出现在开发库和预览环境，绝不能误跑到正式库上。
+     */
+    SEED_ALLOW: z.literal('yes', { error: 'SEED_ALLOW 必须设为 yes（只在开发库和预览环境设置）' }),
   })
   .safeParse(process.env);
 

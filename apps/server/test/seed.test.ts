@@ -60,6 +60,32 @@ describe('合成数据生成器', () => {
     expect(real).toHaveLength(0);
   });
 
+  it('演示协会里出现非合成客户时中止，不删除任何数据', async () => {
+    await writeDemoData(owner, data, SEED_PASSWORD);
+    const demoClient = await owner
+      .selectFrom('clients')
+      .innerJoin('operators', 'operators.id', 'clients.operator_id')
+      .select('clients.id')
+      .where('operators.slug', '=', 'demo-assoc-a')
+      .executeTakeFirstOrThrow();
+    await owner
+      .updateTable('clients')
+      .set({ is_synthetic: false })
+      .where('id', '=', demoClient.id)
+      .execute();
+    const before = await count('clients');
+    try {
+      await expect(writeDemoData(owner, data, SEED_PASSWORD)).rejects.toThrow(/已中止/);
+      expect(await count('clients')).toBe(before);
+    } finally {
+      await owner
+        .updateTable('clients')
+        .set({ is_synthetic: true })
+        .where('id', '=', demoClient.id)
+        .execute();
+    }
+  });
+
   it('演示健管师可以登录，只看到自己的 10 位客户', async () => {
     const managerA1 = data[0]!.org.managers[0]!;
     const agent = request.agent(app.getHttpServer());

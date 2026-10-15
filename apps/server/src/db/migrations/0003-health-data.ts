@@ -45,14 +45,16 @@ export async function up(db: Kysely<unknown>): Promise<void> {
   `.execute(db);
 
   for (const table of ['health_reports', 'report_indicators', 'monitoring_readings']) {
+    // 列名带上表名：以后 clients 若加了同名列，子查询也不会悄悄改成比较 clients 自己的列
+    const col = sql.ref(`${table}.client_id`);
     await sql`
       alter table ${sql.table(table)} enable row level security;
       create policy ${sql.id(`${table}_select`)} on ${sql.table(table)} for select using (
-        exists (select 1 from clients c where c.id = client_id)
+        exists (select 1 from clients c where c.id = ${col})
       );
       create policy ${sql.id(`${table}_write`)} on ${sql.table(table)} for all
-        using (exists (select 1 from clients c where c.id = client_id and c.manager_id = app_user_id()))
-        with check (exists (select 1 from clients c where c.id = client_id and c.manager_id = app_user_id()));
+        using (exists (select 1 from clients c where c.id = ${col} and c.manager_id = app_user_id()))
+        with check (exists (select 1 from clients c where c.id = ${col} and c.manager_id = app_user_id()));
       grant select, insert, update, delete on ${sql.table(table)} to hb_app;
     `.execute(db);
   }

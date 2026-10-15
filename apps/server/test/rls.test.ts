@@ -1,7 +1,12 @@
 import { Kysely, PostgresDialect, sql } from 'kysely';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { withTenant, type Db, type TenantContext } from '../src/db/database.js';
+import {
+  withTenant,
+  type Db,
+  type TenantContext,
+  type TenantTransaction,
+} from '../src/db/database.js';
 import type { Database } from '../src/db/types.js';
 import { TEST_APP_URL } from './env.js';
 import { ownerDb, seedFixtures, type Fixtures } from './fixtures.js';
@@ -234,6 +239,106 @@ describe('数据库行级安全', () => {
     await withTenant(app, managerA1(), (trx) =>
       trx.insertInto('monitoring_readings').values(reading(f.clients.a1[0])).execute(),
     );
+  });
+
+  it('不能把报告或监测数据挪到别人的客户名下，也不能挂到别人的报告上', async () => {
+    const ownReport = await owner
+      .selectFrom('health_reports')
+      .select('id')
+      .where('client_id', '=', f.clients.a1[0])
+      .executeTakeFirstOrThrow();
+    const otherReport = await owner
+      .selectFrom('health_reports')
+      .select('id')
+      .where('client_id', '=', f.clients.b1)
+      .executeTakeFirstOrThrow();
+
+    const attempts: [string, (trx: TenantTransaction) => Promise<unknown>, string][] = [
+      [
+        '把监测数据改到 B 的客户',
+        (trx) =>
+          trx
+            .updateTable('monitoring_readings')
+            .set({ client_id: f.clients.b1 })
+            .where('client_id', '=', f.clients.a1[0])
+            .execute(),
+        '42501',
+      ],
+      [
+        '把报告改到 B 的客户',
+        (trx) =>
+          trx
+            .updateTable('health_reports')
+            .set({ client_id: f.clients.b1 })
+            .where('id', '=', ownReport.id)
+            .execute(),
+        '42501',
+      ],
+      [
+        '给 B 的客户新建报告',
+        (trx) =>
+          trx
+            .insertInto('health_reports')
+            .values({
+              client_id: f.clients.b1,
+              report_date: '2026-02-01',
+              title: 'x',
+              source: 'manual',
+            })
+            .execute(),
+        '42501',
+      ],
+      [
+        '把指标挂到 B 的报告、填自己的客户',
+        (trx) =>
+          trx
+            .insertInto('report_indicators')
+            .values({
+              report_id: otherReport.id,
+              client_id: f.clients.a1[0],
+              code: 'tc',
+              value: 5,
+              unit: 'mmol/L',
+            })
+            .execute(),
+        '23503',
+      ],
+      [
+        '把指标挂到 B 的报告、填 B 的客户',
+        (trx) =>
+          trx
+            .insertInto('report_indicators')
+            .values({
+              report_id: otherReport.id,
+              client_id: f.clients.b1,
+              code: 'tc',
+              value: 5,
+              unit: 'mmol/L',
+            })
+            .execute(),
+        '42501',
+      ],
+    ];
+    for (const [label, attempt, code] of attempts) {
+      await expect(withTenant(app, managerA1(), attempt), label).rejects.toMatchObject({ code });
+    }
+  });
+
+  it('机构管理员只能看，不能改、不能删本机构客户的数据', async () => {
+    const orgAdmin = ctxOf(f.users.orgAdminA.id, 'org_admin', f.operatorA, f.orgA);
+    const result = await withTenant(app, orgAdmin, async (trx) => ({
+      updated: await trx
+        .updateTable('monitoring_readings')
+        .set({ value: 1 })
+        .where('client_id', '=', f.clients.a1[0])
+        .executeTakeFirst(),
+      deleted: await trx
+        .deleteFrom('health_reports')
+        .where('client_id', '=', f.clients.a1[0])
+        .executeTakeFirst(),
+    }));
+    expect(result.updated.numUpdatedRows).toBe(0n);
+    expect(result.deleted.numDeletedRows).toBe(0n);
   });
 
   it('健管师改不了、删不了别人的客户', async () => {

@@ -1,7 +1,12 @@
 import { hash } from '@node-rs/argon2';
 import { MONITORING_METRICS, REPORT_INDICATORS } from '@health-buddy/shared';
 import { sql, type Kysely, type Transaction } from 'kysely';
-import { DEMO_OPERATOR_SLUGS, type DemoAccount, type DemoOperator } from './generate.js';
+import {
+  DEMO_EMAIL_DOMAIN,
+  DEMO_OPERATOR_SLUGS,
+  type DemoAccount,
+  type DemoOperator,
+} from './generate.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 以所有者身份写库，不需要完整的表类型
 type OwnerDb = Kysely<any>;
@@ -127,10 +132,31 @@ export async function writeDemoData(
   return summary;
 }
 
-/** 删除演示协会及其下的全部数据。只按演示 slug 定位。 */
+/**
+ * 删除演示协会及其下的全部数据。只按演示 slug 定位。
+ * 删除前确认里面只有本脚本生成的数据：只要发现非合成客户或非演示域名的账号就中止，
+ * 防止有人在演示协会里录入了真实客户，或真实协会碰巧用了同样的 slug。
+ */
 async function removeDemoData(trx: Trx): Promise<void> {
   const slugs = [...DEMO_OPERATOR_SLUGS];
   const ops = trx.selectFrom('operators').select('id').where('slug', 'in', slugs);
+  const realClients = await trx
+    .selectFrom('clients')
+    .select('id')
+    .where('operator_id', 'in', ops)
+    .where('is_synthetic', '=', false)
+    .limit(1)
+    .execute();
+  const otherUsers = await trx
+    .selectFrom('users')
+    .select('id')
+    .where('operator_id', 'in', ops)
+    .where('email', 'not like', `%@${DEMO_EMAIL_DOMAIN}`)
+    .limit(1)
+    .execute();
+  if (realClients.length || otherUsers.length) {
+    throw new Error('演示协会里有不是本脚本生成的客户或账号，已中止，没有删除任何数据');
+  }
   const users = trx.selectFrom('users').select('id').where('operator_id', 'in', ops);
   // 客户删除会级联删掉报告、指标和监测数据；会话随用户级联删除
   await trx.deleteFrom('llm_usage').where('user_id', 'in', users).execute();
