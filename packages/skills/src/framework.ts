@@ -10,7 +10,7 @@
  * 所有产物都是草稿；有通俗版的产物都由后端拼接免责声明并过禁用词检查。
  */
 import { readFileSync } from 'node:fs';
-import type { CriticalFlag } from '@health-buddy/shared';
+import { findBannedTerms, type CriticalFlag } from '@health-buddy/shared';
 import type { z } from 'zod';
 
 export const SKILL_MODES = ['plan', 'craft'] as const;
@@ -113,6 +113,10 @@ export function parseSkillMeta(meta: Record<string, string>): SkillMeta {
   }
   if (!meta.kind) throw new Error('skill.md 缺少 kind');
   if (!meta.title) throw new Error('skill.md 缺少 title');
+  // 面向客户的技能，标题会印在导出文件上，必须合规
+  if (meta.clientFacing === 'true' && findBannedTerms(meta.title).length) {
+    throw new Error('skill.md 的 title 含禁用词');
+  }
   return {
     id,
     kind: meta.kind,

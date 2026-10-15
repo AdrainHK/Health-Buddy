@@ -73,6 +73,8 @@ const PNG_WIDTH = 1080;
 const PADDING = 72;
 const BODY_SIZE = 34;
 const LINE_HEIGHT = 56;
+const TITLE_SIZE = 48;
+const TITLE_LINE_HEIGHT = 66;
 
 /** 按宽度逐字折行（中文没有空格，不能按词折） */
 function wrap(ctx: SKRSContext2D, text: string, width: number): string[] {
@@ -96,7 +98,10 @@ export function renderPng(doc: ExportDocument): Buffer {
   const measure = createCanvas(PNG_WIDTH, 100).getContext('2d');
   measure.font = `${BODY_SIZE}px HBExport`;
   const lines = wrap(measure, doc.body, PNG_WIDTH - PADDING * 2);
-  const height = PADDING * 2 + 120 + lines.length * LINE_HEIGHT;
+  measure.font = `${TITLE_SIZE}px HBExport`;
+  const titleLines = wrap(measure, doc.title, PNG_WIDTH - PADDING * 2);
+  const header = titleLines.length * TITLE_LINE_HEIGHT + 54;
+  const height = PADDING * 2 + header + lines.length * LINE_HEIGHT;
 
   const canvas = createCanvas(PNG_WIDTH, height);
   const ctx = canvas.getContext('2d');
@@ -104,13 +109,13 @@ export function renderPng(doc: ExportDocument): Buffer {
   ctx.fillRect(0, 0, PNG_WIDTH, height);
   ctx.textBaseline = 'top';
   ctx.fillStyle = '#1f2937';
-  ctx.font = `48px HBExport`;
-  ctx.fillText(doc.title, PADDING, PADDING);
+  ctx.font = `${TITLE_SIZE}px HBExport`;
+  titleLines.forEach((line, i) => ctx.fillText(line, PADDING, PADDING + i * TITLE_LINE_HEIGHT));
   ctx.fillStyle = '#6b7280';
   ctx.font = `26px HBExport`;
-  ctx.fillText(doc.date, PADDING, PADDING + 66);
+  ctx.fillText(doc.date, PADDING, PADDING + titleLines.length * TITLE_LINE_HEIGHT);
   ctx.fillStyle = '#111827';
   ctx.font = `${BODY_SIZE}px HBExport`;
-  lines.forEach((line, i) => ctx.fillText(line, PADDING, PADDING + 120 + i * LINE_HEIGHT));
+  lines.forEach((line, i) => ctx.fillText(line, PADDING, PADDING + header + i * LINE_HEIGHT));
   return canvas.toBuffer('image/png');
 }

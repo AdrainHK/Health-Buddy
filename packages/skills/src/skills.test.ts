@@ -45,6 +45,8 @@ describe('skill metadata', () => {
     expect(() => parseSkillMeta({ ...ok, modes: 'ask' })).toThrow();
     expect(() => parseSkillMeta({ ...ok, clientFacing: 'yes' })).toThrow();
     expect(() => parseSkillMeta({ ...ok, title: '' })).toThrow();
+    // 面向客户的技能标题会印在导出文件上，不能含禁用词
+    expect(() => parseSkillMeta({ ...ok, clientFacing: 'true', title: '风险筛查' })).toThrow();
   });
 
   it('lists skills for the API and looks them up by id', () => {

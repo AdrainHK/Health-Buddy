@@ -434,6 +434,20 @@ describe('产物接口', () => {
     await a2.get(`/api/artifacts/${approved}`).expect(404);
     await a2.post(`/api/artifacts/${approved}/copy`).expect(404);
     await a2.post(`/api/artifacts/${approved}/revise`).expect(404);
+    await exportAs(a2, approved, 'pdf').expect(404);
+    expect(await actionsOf(approved)).toEqual(['approved']);
+  });
+
+  it('发给客户前再查一遍：通俗版里有危急指标数值的已审核产物不能复制或导出', async () => {
+    const { id } = await draftA1({
+      criticalFlags: [SBP_FLAG],
+      clientFacing: `您最近一次收缩压 185，请留意休息。\n\n${DISCLAIMER}`,
+    });
+    await owner.updateTable('artifacts').set({ status: 'approved' }).where('id', '=', id).execute();
+    const agent = await loginAs(app, f.users.managerA1.email);
+    await agent.post(`/api/artifacts/${id}/copy`).expect(409);
+    await exportAs(agent, id, 'png').expect(409);
+    expect(await actionsOf(id)).toEqual([]);
   });
 
   it('请求体不合法返回 400', async () => {

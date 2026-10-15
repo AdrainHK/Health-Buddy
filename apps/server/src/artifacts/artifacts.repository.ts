@@ -13,7 +13,6 @@ import {
   type ArtifactEvent,
   type CriticalFlag,
   type ExportFormat,
-  PRODUCT_NAME,
   type UpdateArtifactRequest,
 } from '@health-buddy/shared';
 import { checkClientText, finalizeClientText, getSkill } from '@health-buddy/skills';
@@ -181,9 +180,7 @@ export class ArtifactsRepository {
       if (!row) return undefined;
       if (row.detached) throw readOnly();
       if (row.status !== 'approved') throw conflict();
-      // 已审核内容数据库层不能再改，这里再查一遍只是多一道保险
-      const text = row.content.clientFacing;
-      if (findBannedTerms(text).length || !endsWithDisclaimer(text)) throw conflict();
+      const text = deliverableText(row);
       await recordEvent(trx, ctx, row, 'copied');
       return buildClientDeliverable(text);
     });
@@ -191,7 +188,7 @@ export class ArtifactsRepository {
 
   /**
    * 导出已审核产物的通俗版（图片或 PDF），并记一条导出记录（谁、什么时候、什么格式，不记内容）。
-   * 检查和复制相同；文件在同一个事务里生成，生成失败就不留记录。
+   * 检查和复制相同，另外标题也要合规；文件在同一个事务里生成，生成失败就不留记录。
    */
   exportClientText(
     ctx: TenantContext,
@@ -203,9 +200,10 @@ export class ArtifactsRepository {
       if (!row) return undefined;
       if (row.detached) throw readOnly();
       if (row.status !== 'approved') throw conflict();
-      const text = row.content.clientFacing;
-      if (findBannedTerms(text).length || !endsWithDisclaimer(text)) throw conflict();
-      const title = getSkill(row.skill_id)?.title ?? PRODUCT_NAME;
+      const text = deliverableText(row);
+      // 标题会印在文件上、写进文件名，找不到技能或标题不合规就不导出
+      const title = getSkill(row.skill_id)?.title;
+      if (!title || findBannedTerms(title).length) throw conflict();
       const date = shanghaiDate(new Date());
       const doc = { title, date, body: buildClientDeliverable(text) };
       const file = format === 'pdf' ? await renderPdf(doc) : renderPng(doc);
@@ -386,6 +384,23 @@ async function buildDetail(
       createdAt: e.created_at.toISOString(),
     })),
   };
+}
+
+/**
+ * 发给客户前再查一遍通俗版：已审核内容数据库层不能再改，这里是多一道保险。
+ * 和确认时的检查一致：无禁用词、免责声明恰好一次且在末尾、不含危急指标数值。
+ */
+function deliverableText(row: ArtifactRow): string {
+  const text = row.content.clientFacing;
+  if (
+    findBannedTerms(text).length ||
+    !endsWithDisclaimer(text) ||
+    countDisclaimers(text) !== 1 ||
+    checkClientText(text, row.critical_flags).criticalValueMentions.length
+  ) {
+    throw conflict();
+  }
+  return text;
 }
 
 /** 导出文件上的日期按北京时间 */
