@@ -10,6 +10,7 @@ export const API_ERROR_CODES = [
   'invalid_credentials',
   'forbidden_origin',
   'not_found',
+  'conflict',
   'too_many_requests',
   'internal_error',
 ] as const;

@@ -15,6 +15,7 @@ const CODE_BY_STATUS: Partial<Record<number, ApiErrorCode>> = {
   [HttpStatus.UNAUTHORIZED]: 'unauthenticated',
   [HttpStatus.FORBIDDEN]: 'not_found',
   [HttpStatus.NOT_FOUND]: 'not_found',
+  [HttpStatus.CONFLICT]: 'conflict',
   [HttpStatus.TOO_MANY_REQUESTS]: 'too_many_requests',
 };
 
