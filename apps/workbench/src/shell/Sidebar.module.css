@@ -157,3 +157,123 @@
 .collapsed .label {
   display: none;
 }
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--hb-space-1);
+  margin-bottom: var(--hb-space-2);
+}
+
+.sectionHeader .sectionTitle {
+  margin: 0;
+}
+
+.taskScroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.group + .group {
+  margin-top: var(--hb-space-3);
+}
+
+.groupTitle {
+  margin: 0 0 var(--hb-space-1);
+  padding: 0 var(--hb-space-3);
+  overflow: hidden;
+  color: var(--hb-text-2);
+  font-size: var(--hb-text-xs);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taskList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.taskRow {
+  display: flex;
+  align-items: center;
+  gap: var(--hb-space-1);
+  border-radius: var(--hb-radius-md);
+}
+
+.taskRow:hover {
+  background: var(--hb-surface-3);
+}
+
+.task {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--hb-space-2);
+  min-width: 0;
+  padding: var(--hb-space-2) var(--hb-space-3);
+  border: 0;
+  border-radius: var(--hb-radius-md);
+  background: transparent;
+  color: var(--hb-text);
+  font-size: var(--hb-text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.task[aria-current='true'] {
+  background: var(--hb-brand-soft);
+  font-weight: 600;
+}
+
+.taskTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taskAction {
+  flex: none;
+  opacity: 0;
+}
+
+.taskRow:hover .taskAction,
+.taskAction:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .taskAction {
+    opacity: 1;
+  }
+}
+
+.badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--hb-space-1);
+  padding: 0 var(--hb-space-2);
+  border-radius: var(--hb-radius-full);
+  background: var(--hb-surface-3);
+  color: var(--hb-text-2);
+  font-size: var(--hb-text-xs);
+  font-weight: 500;
+}
+
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--hb-brand);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

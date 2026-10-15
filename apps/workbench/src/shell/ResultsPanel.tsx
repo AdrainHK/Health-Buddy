@@ -12,10 +12,12 @@ export interface ResultsPanelProps {
   mode: 'docked' | 'sheet';
   open: boolean;
   onClose: () => void;
+  /** 当前任务和产物有变化时改变，结果区据此重新加载（产物预览在下一步实现） */
+  refreshKey?: string;
 }
 
 /** 右侧结果区：产物、客户档案和修改记录。M0 只有空状态。 */
-export function ResultsPanel({ mode, open, onClose }: ResultsPanelProps) {
+export function ResultsPanel({ mode, open, onClose, refreshKey }: ResultsPanelProps) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('artifacts');
   const tabRefs = useRef<Partial<Record<Tab, HTMLButtonElement | null>>>({});
@@ -71,6 +73,7 @@ export function ResultsPanel({ mode, open, onClose }: ResultsPanelProps) {
       </div>
 
       <div
+        key={refreshKey}
         className={styles.content}
         role="tabpanel"
         id={`hb-tabpanel-${tab}`}

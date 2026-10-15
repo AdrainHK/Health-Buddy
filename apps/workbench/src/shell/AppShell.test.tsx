@@ -1,6 +1,45 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { CLIENTS, SKILL, emptyDetail, ids, json, makeTask, mockApi } from '../test/mockApi';
 import { AppShell } from './AppShell';
+
+const TASKS = [
+  makeTask({
+    id: ids.task,
+    title: '甲的小结',
+    clientId: ids.clientA,
+    updatedAt: '2026-10-15T09:00:00.000Z',
+  }),
+  makeTask({
+    id: ids.task2,
+    title: '随便问问',
+    clientId: null,
+    updatedAt: '2026-10-15T08:00:00.000Z',
+  }),
+];
+const ARCHIVED = [
+  makeTask({
+    id: ids.task3,
+    title: '转出客户的任务',
+    clientId: null,
+    archived: true,
+    detachedReason: 'client_transferred',
+  }),
+];
+
+function mockWorkbench() {
+  return mockApi({
+    'GET /tasks': () => json(200, { tasks: TASKS }),
+    'GET /tasks?archived=true': () => json(200, { tasks: ARCHIVED }),
+    'GET /clients': () => json(200, { clients: CLIENTS }),
+    'GET /skills': () => json(200, { skills: [SKILL] }),
+    [`GET /tasks/${ids.task}`]: () => json(200, emptyDetail(TASKS[0])),
+    [`GET /tasks/${ids.task3}`]: () => json(200, emptyDetail(ARCHIVED[0])),
+    [`PATCH /tasks/${ids.task2}`]: () => json(200, { task: { ...TASKS[1], archived: true } }),
+  });
+}
+
+afterEach(() => vi.unstubAllGlobals());
 
 function setViewport(narrow: boolean) {
   window.matchMedia = (query: string) =>
@@ -13,7 +52,10 @@ function setViewport(narrow: boolean) {
 }
 
 describe('AppShell (wide screen)', () => {
-  beforeEach(() => setViewport(false));
+  beforeEach(() => {
+    setViewport(false);
+    mockWorkbench();
+  });
 
   it('shows the product name, the three columns and the greeting', () => {
     render(<AppShell />);
@@ -62,16 +104,69 @@ describe('AppShell (wide screen)', () => {
     expect(within(screen.getByRole('tabpanel')).getByText('未选择客户')).toBeInTheDocument();
   });
 
-  it('keeps the composer disabled until chat ships in M1', () => {
+  it('enables the composer with craft as the default mode', () => {
     render(<AppShell />);
-    expect(screen.getByRole('textbox')).toBeDisabled();
+    expect(screen.getByRole('textbox')).toBeEnabled();
+    // 没有输入内容时发送按钮不可用
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
     expect(screen.getByRole('radio', { name: '做一做' })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('groups tasks by client, newest first, with an unlinked group', async () => {
+    render(<AppShell />);
+    const clientGroup = await screen.findByRole('group', { name: '合成客户甲' });
+    expect(within(clientGroup).getByRole('button', { name: '甲的小结' })).toBeInTheDocument();
+    const unlinked = screen.getByRole('group', { name: '未关联客户' });
+    expect(within(unlinked).getByRole('button', { name: '随便问问' })).toBeInTheDocument();
+    const groups = screen.getAllByRole('group');
+    expect(groups.indexOf(clientGroup)).toBeLessThan(groups.indexOf(unlinked));
+  });
+
+  it('switches tasks and shows the task title', async () => {
+    const user = userEvent.setup();
+    render(<AppShell />);
+    await user.click(await screen.findByRole('button', { name: '甲的小结' }));
+    expect(screen.getByRole('heading', { level: 1, name: '甲的小结' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '甲的小结' })).toHaveAttribute(
+      'aria-current',
+      'true',
+    );
+    await user.click(screen.getByRole('button', { name: '新建任务' }));
+    expect(screen.getByRole('heading', { level: 1, name: '新任务' })).toBeInTheDocument();
+    expect(screen.getByText('今天想让我帮你做什么？')).toBeInTheDocument();
+  });
+
+  it('archives a task through PATCH', async () => {
+    const api = mockWorkbench();
+    const user = userEvent.setup();
+    render(<AppShell />);
+    await user.click(await screen.findByRole('button', { name: '归档“随便问问”' }));
+    expect(api.callsTo('PATCH', `/tasks/${ids.task2}`)[0]?.body).toEqual({ archived: true });
+  });
+
+  it('lists archived tasks with a read-only marker and a disabled composer', async () => {
+    const user = userEvent.setup();
+    render(<AppShell />);
+    await user.click(await screen.findByRole('button', { name: '已归档' }));
+    const detached = await screen.findByRole('group', { name: '已转出或删除的客户' });
+    const task = within(detached).getByRole('button', { name: /转出客户的任务/ });
+    expect(within(task).getByText('只读')).toBeInTheDocument();
+    // 只读任务不能取消归档
+    expect(screen.queryByRole('button', { name: /取消归档/ })).not.toBeInTheDocument();
+
+    await user.click(task);
+    expect(await screen.findByPlaceholderText('客户已转出或删除，此任务只读')).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: '返回任务列表' }));
+    expect(await screen.findByRole('group', { name: '未关联客户' })).toBeInTheDocument();
   });
 });
 
 describe('AppShell (narrow screen)', () => {
-  beforeEach(() => setViewport(true));
+  beforeEach(() => {
+    setViewport(true);
+    mockWorkbench();
+  });
 
   it('starts with both overlays closed and opens the menu as a drawer', async () => {
     const user = userEvent.setup();

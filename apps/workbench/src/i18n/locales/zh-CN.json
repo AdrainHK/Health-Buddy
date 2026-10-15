@@ -10,20 +10,110 @@
     "collapseSidebar": "收起侧栏",
     "expandSidebar": "展开侧栏",
     "openMenu": "打开菜单",
-    "closeMenu": "关闭菜单"
+    "closeMenu": "关闭菜单",
+    "archived": "已归档",
+    "noArchived": "没有已归档的任务",
+    "backToTasks": "返回任务列表",
+    "archive": "归档“{{title}}”",
+    "unarchive": "取消归档“{{title}}”",
+    "readOnly": "只读",
+    "readOnlyHint": "客户已转出或删除，任务只读",
+    "loadingTasks": "正在加载任务…",
+    "loadFailed": "任务列表加载失败",
+    "retry": "重试",
+    "groups": {
+      "unlinked": "未关联客户",
+      "detached": "已转出或删除的客户"
+    }
   },
   "chat": {
     "untitled": "新任务",
     "greeting": "今天想让我帮你做什么？",
     "subtitle": "你可以让我解读体检报告、生成方案、准备随访，或者向专家提问。",
-    "placeholder": "描述你的需求，输入 / 调用技能，输入 @ 引用客户或专家",
-    "comingSoon": "对话功能将在下一个里程碑开放",
+    "placeholder": "描述你的需求，输入 / 调用技能，输入 @ 引用客户",
+    "readOnlyPlaceholder": "客户已转出或删除，此任务只读",
     "send": "发送",
+    "stop": "停止生成",
+    "loading": "正在加载对话…",
+    "loadFailed": "对话加载失败",
+    "retry": "重试",
+    "generating": "正在生成…",
+    "queued": "将在当前回答结束后发送",
+    "cancelQueued": "取消",
+    "messages": "对话记录",
+    "you": "我",
+    "assistant": "AI 助手",
+    "removeSkill": "移除技能 {{name}}",
+    "removeClient": "移除客户 {{name}}",
+    "skillMenu": "选择技能",
+    "clientMenu": "选择客户",
+    "noMatch": "没有匹配项",
     "modes": {
       "label": "工作模式",
       "ask": "问一问",
       "plan": "想一想",
       "craft": "做一做"
+    },
+    "status": {
+      "stopped": "已停止",
+      "refused": "模型未作答，请换个说法再试",
+      "error": "生成失败"
+    },
+    "hints": {
+      "askSkill": "技能需要在做一做或想一想模式下使用",
+      "switchToCraft": "切换到做一做",
+      "needClient": "请先 @ 客户",
+      "otherClient": "该任务已关联其他客户，如需引用请新建任务",
+      "newTask": "新建任务"
+    },
+    "steps": {
+      "title": "执行步骤",
+      "progress": "{{done}}/{{total}}",
+      "running": "进行中",
+      "done": "已完成",
+      "failed": "失败"
+    },
+    "plan": {
+      "title": "执行计划",
+      "readClient": "读取客户档案",
+      "runSkill": "调用技能：{{name}}",
+      "confirm": "确认执行",
+      "confirmed": "已确认",
+      "revised": "已修改"
+    },
+    "suggestion": "使用 /{{name}}",
+    "artifactDrafted": "已生成草稿，请在右侧结果区审核",
+    "errors": {
+      "busy": "上一条回答还在生成，请稍候再发",
+      "tooMany": "操作太频繁，请稍后再试",
+      "readOnly": "客户已转出或删除，此任务只读",
+      "badRequest": "请求无效，请检查后重试",
+      "notFound": "任务或客户不存在",
+      "conflict": "任务状态已变化，请刷新后重试",
+      "network": "网络连接失败，请检查网络后重试",
+      "unknown": "出错了，请稍后再试"
+    },
+    "streamErrors": {
+      "not_configured": "AI 服务尚未配置，请联系管理员",
+      "rate_limited": "AI 服务繁忙，请稍后再试",
+      "timeout": "AI 响应超时，请重试",
+      "provider_error": "AI 服务暂时不可用，请稍后再试",
+      "invalid_output": "AI 输出格式不合格，未生成草稿，请重试",
+      "internal_error": "出错了，请稍后再试",
+      "network": "连接中断，刷新后可查看已保存的内容"
+    }
+  },
+  "steps": {
+    "readClient": "读取客户档案",
+    "detectCritical": "识别危急指标",
+    "runSkill": "执行技能",
+    "answer": "生成回答",
+    "unknown": "处理中"
+  },
+  "skills": {
+    "client-recent-summary": {
+      "name": "客户近况小结",
+      "description": "根据最近 30 天的监测数据和最近一份体检报告，生成专业版小结和通俗版"
     }
   },
   "results": {
