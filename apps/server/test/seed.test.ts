@@ -49,7 +49,7 @@ describe('合成数据生成器', () => {
     expect(kept).toHaveLength(1);
   });
 
-  it('演示协会里有工作台数据和改过的阈值时，也能重新生成', async () => {
+  it('演示协会里有工作台数据时，也能重新生成', async () => {
     await writeDemoData(owner, data, SEED_PASSWORD);
     const c = await owner
       .selectFrom('clients')
@@ -87,13 +87,6 @@ describe('合成数据生成器', () => {
     await owner
       .insertInto('artifact_events')
       .values({ ...scope, artifact_id: artifactId, actor_id: c.manager_id, action: 'approved' })
-      .execute();
-    await owner
-      .updateTable('critical_thresholds')
-      .set({ value: 170 })
-      .where('operator_id', '=', c.operator_id)
-      .where('metric', '=', 'sbp')
-      .where('comparator', '=', 'gte')
       .execute();
 
     await expect(writeDemoData(owner, data, SEED_PASSWORD)).resolves.toMatchObject({ clients: 60 });

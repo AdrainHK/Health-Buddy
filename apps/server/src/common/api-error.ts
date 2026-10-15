@@ -14,3 +14,6 @@ export class ApiException extends HttpException {
 export const notFound = () => new ApiException(HttpStatus.NOT_FOUND, 'not_found');
 export const unauthenticated = () => new ApiException(HttpStatus.UNAUTHORIZED, 'unauthenticated');
 export const badRequest = () => new ApiException(HttpStatus.BAD_REQUEST, 'bad_request');
+export const conflict = () => new ApiException(HttpStatus.CONFLICT, 'conflict');
+export const tooManyRequests = () =>
+  new ApiException(HttpStatus.TOO_MANY_REQUESTS, 'too_many_requests');

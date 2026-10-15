@@ -158,7 +158,7 @@ async function removeDemoData(trx: Trx): Promise<void> {
     throw new Error('演示协会里有不是本脚本生成的客户或账号，已中止，没有删除任何数据');
   }
   const users = trx.selectFrom('users').select('id').where('operator_id', 'in', ops);
-  // 工作台数据和阈值先删（产物记录只能追加，所有者身份才能删）
+  // 工作台数据先删（产物记录只能追加，所有者身份才能删）
   for (const table of [
     'artifact_events',
     'artifacts',
@@ -169,9 +169,6 @@ async function removeDemoData(trx: Trx): Promise<void> {
   ] as const) {
     await trx.deleteFrom(table).where('operator_id', 'in', ops).execute();
   }
-  // 删阈值会触发修改记录，所以记录放在阈值之后删
-  await trx.deleteFrom('critical_thresholds').where('operator_id', 'in', ops).execute();
-  await trx.deleteFrom('critical_threshold_events').where('operator_id', 'in', ops).execute();
   // 客户删除会级联删掉报告、指标和监测数据；会话随用户级联删除
   await trx.deleteFrom('llm_usage').where('user_id', 'in', users).execute();
   await trx.deleteFrom('clients').where('operator_id', 'in', ops).execute();

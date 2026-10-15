@@ -5,10 +5,12 @@ import { AiModule } from './ai/ai.module.js';
 import { LLM_PROVIDERS } from './ai/gateway.provider.js';
 import { AuthModule } from './auth/auth.module.js';
 import { ClientsModule } from './clients/clients.module.js';
+import { CriticalThresholdsModule } from './critical-thresholds/critical-thresholds.module.js';
 import { ApiExceptionFilter } from './common/exception.filter.js';
 import { APP_CONFIG, type AppConfig } from './config.js';
 import { DbModule } from './db/db.provider.js';
 import { HealthController } from './health/health.controller.js';
+import { SkillsController } from './skills/skills.controller.js';
 
 export interface AppOptions {
   /** 测试用：替换大模型厂商适配器 */
@@ -21,8 +23,8 @@ export class AppModule {
     return {
       module: AppModule,
       global: true,
-      imports: [DbModule, AuthModule, ClientsModule, AiModule],
-      controllers: [HealthController],
+      imports: [DbModule, AuthModule, ClientsModule, CriticalThresholdsModule, AiModule],
+      controllers: [HealthController, SkillsController],
       providers: [
         { provide: APP_CONFIG, useValue: config },
         { provide: APP_FILTER, useClass: ApiExceptionFilter },
