@@ -80,3 +80,20 @@
   min-height: 0;
   overflow-y: auto;
 }
+
+.content[data-fill] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.status {
+  margin: 0;
+  padding: var(--hb-space-4);
+  color: var(--hb-text-2);
+  font-size: var(--hb-text-sm);
+}
+
+.status p {
+  margin: 0 0 var(--hb-space-2);
+}

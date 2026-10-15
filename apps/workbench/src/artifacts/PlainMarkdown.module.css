@@ -1,0 +1,26 @@
+.root {
+  overflow-wrap: anywhere;
+  line-height: var(--hb-leading);
+}
+
+.heading {
+  margin: var(--hb-space-3) 0 var(--hb-space-1);
+  font-weight: 600;
+}
+
+.heading[data-level='1'] {
+  font-size: var(--hb-text-lg);
+}
+
+.root > :first-child {
+  margin-top: 0;
+}
+
+.paragraph {
+  margin: 0 0 var(--hb-space-2);
+}
+
+.list {
+  margin: 0 0 var(--hb-space-2);
+  padding-left: var(--hb-space-5);
+}

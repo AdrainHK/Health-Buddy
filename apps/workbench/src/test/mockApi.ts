@@ -1,4 +1,6 @@
 import type {
+  ArtifactDetailResponse,
+  ArtifactSummary,
   ClientSummary,
   SkillSummary,
   Task,
@@ -22,6 +24,10 @@ export const ids = {
   step2: '50000000-0000-4000-8000-000000000002',
   plan: '60000000-0000-4000-8000-000000000001',
   artifact: '70000000-0000-4000-8000-000000000001',
+  artifact2: '70000000-0000-4000-8000-000000000002',
+  artifact3: '70000000-0000-4000-8000-000000000003',
+  event1: '80000000-0000-4000-8000-000000000001',
+  event2: '80000000-0000-4000-8000-000000000002',
 };
 
 export const NOW = '2026-10-15T08:00:00.000Z';
@@ -175,4 +181,57 @@ export function setWideViewport() {
       addEventListener: () => {},
       removeEventListener: () => {},
     }) as unknown as MediaQueryList;
+}
+
+/** 合成产物摘要 */
+export function makeArtifactSummary(overrides: Partial<ArtifactSummary> = {}): ArtifactSummary {
+  return {
+    id: ids.artifact,
+    taskId: ids.task,
+    skillId: SKILL.id,
+    version: 1,
+    status: 'draft',
+    hasCriticalFlags: false,
+    createdAt: NOW,
+    ...overrides,
+  };
+}
+
+export const SYNTHETIC_DISCLAIMER = '仅供参考，非医疗诊断';
+
+/** 合成产物详情。通俗版默认以免责声明结尾，和后端保存的一致。 */
+export function makeArtifactDetail(
+  overrides: Partial<ArtifactDetailResponse['artifact']> = {},
+  extra: Partial<Omit<ArtifactDetailResponse, 'artifact'>> = {},
+): ArtifactDetailResponse {
+  const artifact: ArtifactDetailResponse['artifact'] = {
+    ...makeArtifactSummary(),
+    clientId: ids.clientA,
+    parentId: null,
+    content: {
+      professional: '## 合成专业版\n- 近 30 天合成监测数据平稳',
+      clientFacing: `合成通俗版：最近状态平稳，继续保持。\n\n${SYNTHETIC_DISCLAIMER}`,
+    },
+    contentHash: 'hash-1',
+    criticalFlags: [],
+    ...overrides,
+  };
+  const { id, taskId, skillId, version, status, hasCriticalFlags, createdAt } = artifact;
+  return {
+    artifact,
+    hints: { judgementHints: [] },
+    versions: [{ id, taskId, skillId, version, status, hasCriticalFlags, createdAt }],
+    events: [
+      {
+        id: ids.event1,
+        artifactId: id,
+        actorId: null,
+        action: 'created',
+        reason: null,
+        format: null,
+        createdAt: NOW,
+      },
+    ],
+    ...extra,
+  };
 }
