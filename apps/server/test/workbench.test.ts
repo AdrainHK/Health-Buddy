@@ -390,7 +390,7 @@ describe('对话和生成接口', () => {
     await request(app.getHttpServer()).post(`/api/tasks/${taskA1}/messages`).send({}).expect(401);
   });
 
-  it('停止：生成立即中止，已生成的文本保留，不生成产物', async () => {
+  it('停止：生成立即中止，已生成的文本保留并带固定提示，不生成产物', async () => {
     const agent = await loginAs(app, f.users.managerA2.email);
     const taskId = await newTask(agent);
     provider.queue.push({ chunks: ['第一段。', '第二段。', '第三段。', '第四段。'], delayMs: 150 });
@@ -404,7 +404,7 @@ describe('对话和生成接口', () => {
     const [, assistant] = await messagesOf(taskId);
     expect(assistant?.status).toBe('stopped');
     expect(assistant?.content.startsWith('第一段。')).toBe(true);
-    expect(assistant?.content).not.toContain(ASK_NOTICE);
+    expect(assistant?.content.endsWith(`\n\n${ASK_NOTICE}`)).toBe(true);
   });
 
   it('模型拒答：不生成产物，回答不保留厂商原文', async () => {
@@ -418,6 +418,72 @@ describe('对话和生成接口', () => {
     }).expect(200);
     expect(parseSse(res.text).at(-1)).toMatchObject({ type: 'done', reason: 'refused' });
     expect(await artifactsOf(taskId)).toHaveLength(0);
+  });
+
+  it('模型拒答时，心理危机和危急指标提醒仍然保存给健管师，模型原文丢掉', async () => {
+    await owner
+      .insertInto('monitoring_readings')
+      .values({
+        client_id: f.clients.a1[0],
+        metric: 'sbp',
+        value: 185,
+        unit: 'mmHg',
+        measured_at: new Date(),
+        source: 'synthetic',
+      })
+      .execute();
+    const agent = await loginAs(app, f.users.managerA1.email);
+    const taskId = await newTask(agent, f.clients.a1[0]);
+    provider.queue.push({ chunks: ['厂商原文'], finishReason: 'refused' });
+    const res = await send(agent, taskId, {
+      mode: 'ask',
+      content: '客户说活不下去了，怎么办',
+      clientRefs: [f.clients.a1[0]],
+    }).expect(200);
+    expect(parseSse(res.text).at(-1)).toMatchObject({ type: 'done', reason: 'refused' });
+    const [, assistant] = await messagesOf(taskId);
+    expect(assistant?.status).toBe('refused');
+    expect(assistant?.content).toContain(CRISIS_NOTICE);
+    expect(assistant?.content).toContain('**危急指标提醒**');
+    expect(assistant?.content.endsWith(ASK_NOTICE)).toBe(true);
+    expect(assistant?.content).not.toContain('厂商原文');
+
+    // 做一做被拒答也一样
+    provider.queue.push({ chunks: [], finishReason: 'refused' });
+    await send(agent, taskId, {
+      mode: 'craft',
+      content: '写个近况小结',
+      skillId: 'client-recent-summary',
+    }).expect(200);
+    const last = (await messagesOf(taskId)).at(-1);
+    expect(last?.status).toBe('refused');
+    // 危机信号来自之前的消息
+    expect(last?.content).toContain(CRISIS_NOTICE);
+    expect(last?.content).toContain('**危急指标提醒**');
+  });
+
+  it('之前几轮提到的危机信号和姓名、手机号：后续回答仍提示，历史发给模型前去标识', async () => {
+    const agent = await loginAs(app, f.users.managerA1.email);
+    const taskId = await newTask(agent, f.clients.a1[0]);
+    provider.queue.push({ chunks: ['好的。'] }, { chunks: ['建议联系家属。'] });
+    await send(agent, taskId, {
+      mode: 'ask',
+      content: '测试客户 A1-1（13812345678）说最近想死',
+      clientRefs: [f.clients.a1[0]],
+    }).expect(200);
+    const res = await send(agent, taskId, {
+      mode: 'ask',
+      content: '那现在怎么跟进？',
+      clientRefs: [f.clients.a1[0]],
+    }).expect(200);
+    const text = parseSse(res.text)
+      .flatMap((e) => (e.type === 'text' ? [e.delta] : []))
+      .join('');
+    expect(text.startsWith('**心理危机提示**')).toBe(true);
+    const prompt = JSON.stringify(provider.calls[1]);
+    expect(prompt).not.toContain('测试客户');
+    expect(prompt).not.toContain('13812345678');
+    expect(prompt).toContain('[电话]');
   });
 
   it('输出格式不合格：重试一次仍不合格就报错，不留半成品', async () => {

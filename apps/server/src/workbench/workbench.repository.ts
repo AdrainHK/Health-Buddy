@@ -25,6 +25,8 @@ const readOnly = () => conflict({ reasons: ['read_only'] });
 
 /** 发给模型的历史对话最多带几条 */
 const HISTORY_LIMIT = 12;
+/** 识别心理危机信号时回看健管师消息的条数 */
+const CRISIS_SCAN_LIMIT = 50;
 const MONITORING_DAYS = 30;
 
 export interface PreparedTurn {
@@ -420,6 +422,21 @@ export class WorkbenchRepository {
       return rows
         .reverse()
         .map((r) => ({ role: r.role === 'manager' ? 'user' : 'assistant', content: r.content }));
+    });
+  }
+
+  /** 本任务里健管师说过的话（最近的若干条），只用来识别心理危机信号，不进提示词 */
+  managerTexts(ctx: TenantContext, taskId: string): Promise<string[]> {
+    return withTenant(this.db, ctx, async (trx) => {
+      const rows = await trx
+        .selectFrom('task_messages')
+        .select('content')
+        .where('task_id', '=', taskId)
+        .where('role', '=', 'manager')
+        .orderBy('created_at', 'desc')
+        .limit(CRISIS_SCAN_LIMIT)
+        .execute();
+      return rows.map((r) => r.content);
     });
   }
 

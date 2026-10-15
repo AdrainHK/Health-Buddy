@@ -13,7 +13,7 @@ import {
   finalizeClientText,
   redactClientIdentity,
 } from './guardrails.js';
-import { ASK_NOTICE, criticalNotice, suggestSkill } from './ask.js';
+import { ASK_NOTICE, criticalNotice, suggestSkill, withAskNotice } from './ask.js';
 import { getSkill, skillSummaries } from './registry.js';
 
 describe('skill metadata', () => {
@@ -114,6 +114,9 @@ describe('guardrails', () => {
   it('detects crisis keywords without relying on the model', () => {
     expect(detectCrisisKeywords(['帮我写小结', '她说最近活着 没意思'])).toBe(true);
     expect(detectCrisisKeywords(['帮我写小结，她最近睡得少'])).toBe(false);
+    for (const phrase of ['活不下去了', '她说想死', '攒了一些安眠药', '不想拖累家人', '写了遗书']) {
+      expect(detectCrisisKeywords([phrase]), phrase).toBe(true);
+    }
   });
 
   it('removes the client name, nicknames and phone number from manager text', () => {
@@ -121,6 +124,13 @@ describe('guardrails', () => {
     expect(redactClientIdentity(text, ['张秀英', '小英', '13800001234'])).toBe(
       '帮我给该客户写个小结，该客户电话 该客户，该客户最近忙',
     );
+  });
+
+  it('removes phone and ID numbers even without known identifiers', () => {
+    expect(redactClientIdentity('电话 138-0000-1234，身份证 11010519491231002X', [])).toBe(
+      '电话 [电话]，身份证 [证件号]',
+    );
+    expect(redactClientIdentity('空腹血糖 7.8，收缩压 185', [])).toBe('空腹血糖 7.8，收缩压 185');
   });
 
   it('uses the generic crisis wording until hotlines are provided', () => {
@@ -243,7 +253,9 @@ describe('ask mode helpers', () => {
     expect(criticalNotice([])).toBe('');
   });
 
-  it('ends the ask notice with the disclaimer wording', () => {
-    expect(ASK_NOTICE).toContain(DISCLAIMER);
+  it('uses the exact ask label from the spec', () => {
+    expect(ASK_NOTICE).toBe('仅供健管师参考，非医疗诊断，请勿直接转发给客户');
+    expect(withAskNotice('要点。')).toBe(`要点。\n\n${ASK_NOTICE}`);
+    expect(withAskNotice('  ')).toBe('');
   });
 });

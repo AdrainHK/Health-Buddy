@@ -5,13 +5,14 @@ import {
   ASK_NOTICE,
   ASK_SYSTEM_PROMPT,
   buildSystemPrompt,
-  CRISIS_NOTICE,
+  CRISIS_HEADER,
   criticalNotice,
   describeClient,
   detectCrisisKeywords,
   finalizeClientText,
   redactClientIdentity,
   suggestSkill,
+  withAskNotice,
   type SkillDefinition,
 } from '@health-buddy/skills';
 import { LLM_GATEWAY, type AppGateway } from '../ai/gateway.provider.js';
@@ -85,15 +86,26 @@ export class GenerationService {
         return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
 
       const step = await steps.start('answer', 'steps.answer');
-      const history = await this.repo.history(ctx, turn.taskId, turn);
-      const question = redactClientIdentity(request.content, client?.identifiers ?? []);
+      const redact = (t: string) => redactClientIdentity(t, client?.identifiers ?? []);
+      // 历史消息也去标识：之前几轮里健管师可能提到过姓名或手机号
+      const history = (await this.repo.history(ctx, turn.taskId, turn)).map((m) => ({
+        ...m,
+        content: redact(m.content),
+      }));
+      const question = redact(request.content);
       const userContent = client
         ? `${describeClient({ client: client.snapshot, managerRequest: '' })}\n\n## 健管师的问题\n${question}`
         : question;
 
-      // 固定的提醒由后端拼在开头，不依赖模型
-      if (detectCrisisKeywords([request.content])) push(`**心理危机提示**：${CRISIS_NOTICE}\n\n`);
-      if (client) push(criticalNotice(client.snapshot.criticalFlags));
+      // 固定的提醒由后端拼在开头，不依赖模型；模型拒答时也保留
+      const crisis = detectCrisisKeywords([
+        request.content,
+        ...(await this.repo.managerTexts(ctx, turn.taskId)),
+      ]);
+      const notices =
+        (crisis ? CRISIS_HEADER : '') +
+        (client ? criticalNotice(client.snapshot.criticalFlags) : '');
+      push(notices);
 
       let finishReason: 'complete' | 'truncated' | 'refused' = 'complete';
       for await (const event of this.gateway.stream(
@@ -110,22 +122,24 @@ export class GenerationService {
           push(event.delta);
           if (Date.now() - lastFlush > FLUSH_MS) {
             lastFlush = Date.now();
-            await this.repo.saveAssistant(ctx, messageId, text, 'streaming');
+            await this.repo.saveAssistant(ctx, messageId, withAskNotice(text), 'streaming');
           }
         } else finishReason = event.finishReason;
       }
       if (finishReason === 'refused') {
+        // 模型生成的部分丢掉（前端收到 refused 后清空已显示的文本），固定提醒留下
         await steps.finish(step, 'failed');
-        return await this.finish(ctx, messageId, '', 'refused', io);
+        return await this.finish(ctx, messageId, withAskNotice(notices), 'refused', io);
       }
-      push(`\n\n${ASK_NOTICE}`);
+      const final = withAskNotice(text);
+      if (final) io.emit({ type: 'text', messageId, delta: `\n\n${ASK_NOTICE}` });
       await steps.finish(step, 'done');
       const suggestion = suggestSkill(request.content);
       if (suggestion) io.emit({ type: 'suggestion', skillId: suggestion });
-      await this.finish(ctx, messageId, text, 'complete', io);
+      await this.finish(ctx, messageId, final, 'complete', io);
     } catch (err) {
       await steps.failRunning();
-      await this.fail(ctx, messageId, text, err, io);
+      await this.fail(ctx, messageId, withAskNotice(text), err, io);
     }
   }
 
@@ -162,6 +176,12 @@ export class GenerationService {
       const client = await this.readClient(ctx, run.clientId, steps);
       if (!client) return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
 
+      // 心理危机信号不只依赖模型判断：健管师的原话、退回原因、本任务之前的消息里有关键词也算
+      const crisis = detectCrisisKeywords([
+        run.managerRequest,
+        run.returnReason ?? '',
+        ...(await this.repo.managerTexts(ctx, run.taskId)),
+      ]);
       const step = await steps.start('run_skill', 'steps.runSkill');
       const redact = (t: string) => redactClientIdentity(t, client.identifiers);
       const input = {
@@ -181,14 +201,14 @@ export class GenerationService {
         io.signal,
       );
       if (result.status === 'refused') {
+        // 没有产物，但危机和危急指标提醒要留给健管师
         await steps.finish(step, 'failed');
-        return await this.finish(ctx, messageId, '', 'refused', io);
+        const notices =
+          (crisis ? CRISIS_HEADER : '') + criticalNotice(client.snapshot.criticalFlags);
+        return await this.finish(ctx, messageId, withAskNotice(notices), 'refused', io);
       }
-      // 心理危机信号不只依赖模型判断：健管师的原话或退回原因里有关键词也算
       const output = result.data as Record<string, unknown>;
-      if (detectCrisisKeywords([run.managerRequest, run.returnReason ?? ''])) {
-        output.crisisSignal = true;
-      }
+      if (crisis) output.crisisSignal = true;
       const rendered = run.skill.render(output);
 
       // 保存前重新确认：会话仍然有效、任务没有断开、客户仍归当前健管师
@@ -269,7 +289,7 @@ export class GenerationService {
     io: TurnIo,
     error?: ErrorKind,
   ): Promise<void> {
-    await this.repo.saveAssistant(ctx, messageId, reason === 'refused' ? '' : text, reason);
+    await this.repo.saveAssistant(ctx, messageId, text, reason);
     if (error) io.emit({ type: 'error', kind: error });
     io.emit({ type: 'done', messageId, reason });
   }
