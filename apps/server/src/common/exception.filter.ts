@@ -38,7 +38,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost): void {
     const res = host.switchToHttp().getResponse<Response>();
     if (exception instanceof ApiException) {
-      res.status(exception.getStatus()).json({ error: exception.code });
+      res.status(exception.getStatus()).json({ ...exception.details, error: exception.code });
       return;
     }
     if (exception instanceof HttpException) {
