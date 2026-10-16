@@ -159,6 +159,20 @@ describe('LlmGateway', () => {
     expect(JSON.stringify(logs)).not.toContain('sk-');
   });
 
+  it('takes the error type from an Anthropic error body', async () => {
+    const notFound = Object.assign(new Error(`404 ${PROMPT}`), {
+      status: 404,
+      error: { type: 'error', error: { type: 'not_found_error', message: PROMPT } },
+    });
+    const { gateway, logs } = setup({ failWith: notFound });
+    await expect(collect(gateway.stream(ctx, request))).rejects.toMatchObject({
+      kind: 'provider_error',
+      status: 404,
+      code: 'not_found_error',
+    });
+    expect(JSON.stringify(logs)).not.toContain('张某某');
+  });
+
   it('drops an error code that is not a plain identifier', async () => {
     const odd = Object.assign(new Error('x'), { status: 400, code: `bad input: ${PROMPT}` });
     const { gateway, logs } = setup({ failWith: odd });

@@ -56,7 +56,10 @@ export function loadGatewayConfig(source: NodeJS.ProcessEnv = process.env): Gate
       ...(env.OPENAI_API_KEY ? { openai: env.OPENAI_API_KEY } : {}),
       ...(env.ANTHROPIC_API_KEY ? { anthropic: env.ANTHROPIC_API_KEY } : {}),
     },
-    baseUrls: env.ANTHROPIC_BASE_URL ? { anthropic: env.ANTHROPIC_BASE_URL } : {},
+    // SDK 会自己拼 /v1/messages，中转地址末尾带的 /v1 和斜杠要去掉，否则路径重复成 404
+    baseUrls: env.ANTHROPIC_BASE_URL
+      ? { anthropic: env.ANTHROPIC_BASE_URL.replace(/\/+$/, '').replace(/\/v1$/, '') }
+      : {},
     defaultProvider: env.LLM_DEFAULT_PROVIDER,
     defaultModels: { openai: env.OPENAI_MODEL, anthropic: env.ANTHROPIC_MODEL },
     defaultEffort: env.LLM_DEFAULT_EFFORT,
