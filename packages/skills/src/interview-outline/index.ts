@@ -2,7 +2,12 @@ import { z } from 'zod';
 import { loadSkillMd, parseSkillMeta, type SkillDefinition } from '../framework.js';
 import { CRISIS_NOTICE } from '../guardrails.js';
 import { appendRequest, describeReportClient } from '../report-input.js';
-import { checkSpokenWording, wordingCategories, type WordingCategory } from '../wording.js';
+import {
+  checkSpokenWording,
+  findDrugAdvice,
+  wordingCategories,
+  type WordingCategory,
+} from '../wording.js';
 
 const { meta, body } = loadSkillMd(new URL('./skill.md', import.meta.url));
 
@@ -81,11 +86,18 @@ export const interviewOutline: SkillDefinition<typeof interviewOutlineOutputSche
     return { professional: lines.join('\n'), clientFacing: '', crisisSignal: output.crisisSignal };
   },
 
-  /** 问题是要对客户说的话：不能有禁用词，不能点名疾病（规格 2.8） */
+  /**
+   * 问题是要对客户说的话：不能有禁用词、不能点名疾病和药物、不给用药建议（规格 2.8）。
+   * 提纲的其他部分（重点、为什么问、缺少的信息、跟进建议）也不能有用药建议和剂量。
+   */
   checkOutput(output) {
-    return output.professional.groups
-      .flatMap((g) => g.questions)
-      .flatMap((q) => checkSpokenWording(q.question));
+    const p = output.professional;
+    const questions = p.groups.flatMap((g) => g.questions);
+    const others = [p.overview, ...questions.map((q) => q.why), ...p.missingData, ...p.suggestions];
+    return [
+      ...questions.flatMap((q) => checkSpokenWording(q.question)),
+      ...others.flatMap((t) => findDrugAdvice(t)),
+    ];
   },
 
   correctionNote(issues) {
@@ -97,6 +109,9 @@ const CATEGORY_NOTE: Record<WordingCategory, string> = {
   banned_term: '问题里出现了禁用词（如“诊断”“筛查”“治愈”“根治”）',
   presumed_disease:
     '问题里点名了疾病名称（包括问家族史时），等于预设客户患病；改成问症状、习惯和测量情况，如“家里人有没有血压、血糖方面的问题”',
+  drug_name: '问题里点名了具体药物；用药只能问“目前在用哪些药和保健品”',
+  drug_advice:
+    '提纲里出现了用药建议或剂量（包括跟进建议和“未按要求”那一条）；不写服用、换药、停药、加减量和剂量，“未按要求”只写“未按要求给出用药建议”',
 };
 
 /**

@@ -339,6 +339,29 @@ describe('/面谈提纲 保存前的措辞检查（规格 2.8）', () => {
     expect(issues.map((i) => i.category).sort()).toEqual(['banned_term', 'presumed_disease']);
   });
 
+  it('点名药物、用药建议和剂量也拦下；饮食建议和问用药情况不算', () => {
+    const withAdvice = (question: string, suggestion: string): InterviewOutlineOutput => ({
+      ...outline(question),
+      professional: { ...outline(question).professional, suggestions: [suggestion] },
+    });
+    const bad = interviewOutline.checkOutput?.(
+      withAdvice('您的降糖药吃的什么剂量？', '未按要求：建议换成二甲双胍，每次 500 mg'),
+    );
+    expect([...new Set(bad?.map((i) => i.category))].sort()).toEqual(['drug_advice', 'drug_name']);
+    expect(bad?.filter((i) => i.category === 'drug_advice').map((i) => i.term)).toEqual([
+      '用药建议',
+      '剂量',
+    ]);
+    expect(
+      interviewOutline.checkOutput?.(
+        withAdvice(
+          '目前在用哪些药和保健品？最近有没有自己停过药？',
+          '未按要求给出用药建议，原因：用药调整需由医生评估；建议晚餐少吃甜食，把白米饭换成杂粮饭',
+        ),
+      ),
+    ).toEqual([]);
+  });
+
   it('纠正说明只写问题类别，不复述上次的输出', () => {
     const issues = interviewOutline.checkOutput?.(outline('您的糖尿病是什么时候诊断的？')) ?? [];
     const note = interviewOutline.correctionNote?.(issues) ?? '';

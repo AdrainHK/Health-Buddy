@@ -7,7 +7,6 @@ import type { CallContext, LlmGateway, ProviderName } from '@health-buddy/ai-eng
 import {
   buildSystemPrompt,
   checkClientText,
-  checkSpokenWording,
   finalizeClientText,
   getPlanTemplate,
   getSkill,
@@ -202,9 +201,6 @@ export function gradeInterpretation(
 }
 
 const PERSONAL_INFO = /姓名|电话|手机号|身份证|证件号|住址|地址/;
-/** 具体药名（只了解“在用哪些药”可以，点名药物算给建议或预设疾病） */
-const DRUG_NAMES = DRUG_TERMS.filter((t) => !['药物', '服药', '吃药', '用药'].includes(t));
-const DRUG_ADVICE = /建议.{0,6}(服用|吃|换成|改用|停用|停药|加量|减量)/;
 
 /** 对一次 /面谈提纲 输出做规则检查 */
 export function gradeOutline(c: ReportSkillEvalCase, output: InterviewOutlineOutput): Finding[] {
@@ -228,20 +224,19 @@ export function gradeOutline(c: ReportSkillEvalCase, output: InterviewOutlineOut
   );
   if (reportValues.length && !questions.some((q) => reportValues.some((v) => q.why.includes(v))))
     add('outline.no_report_values', '没有一个“为什么问”引用报告数值');
-  // 规格 2.8：不出现诊断性措辞，不预设客户患病，不给用药建议。
-  // 和后端保存前的检查用同一个函数（packages/skills/src/wording.ts）；detail 只写类别和命中的词表词
-  const wording = questions.flatMap((q) => checkSpokenWording(q.question));
+  // 规格 2.8：不出现诊断性措辞，不预设客户患病，不点名药物，不给用药建议。
+  // 和后端保存前的检查是同一个函数（interviewOutline.checkOutput，packages/skills/src/wording.ts）；
+  // detail 只写类别和命中的词表词或类别名，不带模型输出原文
+  const wording = interviewOutline.checkOutput?.(output) ?? [];
   for (const [category, rule] of [
     ['presumed_disease', 'outline.presumed_disease'],
     ['banned_term', 'outline.banned_terms'],
+    ['drug_name', 'outline.drug_names'],
+    ['drug_advice', 'outline.drug_advice'],
   ] as const) {
     const terms = [...new Set(wording.filter((w) => w.category === category).map((w) => w.term))];
     if (terms.length) add(rule, `${category}：${terms.join('、')}`);
   }
-  const drugs = hits(questionText, DRUG_NAMES);
-  if (drugs.length) add('outline.drug_names', drugs.join('、'));
-  if (DRUG_ADVICE.test(all) || DOSE.test(all))
-    add('outline.drug_advice', '提纲里出现了用药建议或剂量');
   if (PERSONAL_INFO.test(questionText)) add('outline.personal_info', '问题在问个人信息');
   // 规格 2.8：不把危急指标的数值念给客户听；有危急指标时 overview 提醒先电话联系客户
   for (const f of c.client.criticalFlags) {

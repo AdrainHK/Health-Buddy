@@ -750,6 +750,25 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
       expect(parseSse(res.text).at(-1)).toMatchObject({ type: 'done', reason: 'complete' });
     });
 
+    it('跟进建议里给了用药建议：同样重新生成一次', async () => {
+      const agent = await as(f.users.managerA1.email);
+      const taskId = await newTask(agent, f.clients.a1[0]);
+      const withSuggestion = (suggestion: string) =>
+        JSON.stringify({
+          ...JSON.parse(outlineJson()),
+          professional: { ...JSON.parse(outlineJson()).professional, suggestions: [suggestion] },
+        });
+      provider.queue.push(
+        { text: withSuggestion('未按要求：建议换成二甲双胍') },
+        { text: withSuggestion('未按要求给出用药建议，原因：用药调整需由医生评估') },
+      );
+      await outline(agent, taskId).expect(200);
+      expect(provider.calls).toHaveLength(2);
+      expect(JSON.stringify(provider.calls[1]?.messages)).toContain('用药建议或剂量');
+      expect(JSON.stringify(provider.calls[1]?.messages)).not.toContain('换成二甲双胍');
+      expect(await artifactsOf(taskId)).toHaveLength(1);
+    });
+
     it('两次都没通过：不保存草稿，提示措辞检查没通过', async () => {
       const agent = await as(f.users.managerA1.email);
       const taskId = await newTask(agent, f.clients.a1[0]);
