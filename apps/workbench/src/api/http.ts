@@ -16,7 +16,7 @@ export class ApiError extends Error {
   }
 }
 
-export type HttpMethod = 'GET' | 'POST' | 'PATCH';
+export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 
 export interface RequestOptions {
   method?: HttpMethod;

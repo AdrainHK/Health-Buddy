@@ -35,6 +35,8 @@ export function AppShell({ account }: AppShellProps = {}) {
   const [conversationVersion, setConversationVersion] = useState(0);
   /** 对话区里 @ 的客户（任务还没关联客户时用来在结果区显示资料） */
   const [draftClient, setDraftClient] = useState<ClientSummary | null>(null);
+  /** 刚在档案标签里新建的客户：结果区先显示它，换任务或 @ 了别的客户后恢复 */
+  const [createdClientId, setCreatedClientId] = useState<string | null>(null);
 
   // 技能和客户列表：/ 和 @ 补全、任务按客户分组都要用
   useEffect(() => {
@@ -83,6 +85,7 @@ export function AppShell({ account }: AppShellProps = {}) {
 
   const selectTask = (task: Task | null) => {
     setActiveTask(task);
+    setCreatedClientId(null);
     closeDrawerOnNarrow();
   };
 
@@ -121,9 +124,33 @@ export function AppShell({ account }: AppShellProps = {}) {
     }
   }, [narrow]);
 
+  /** 新建或修改了客户：更新客户列表（@ 补全、任务分组都用它） */
+  const upsertClient = useCallback((client: ClientSummary) => {
+    setClients((list) => {
+      const current = list ?? [];
+      return current.some((c) => c.id === client.id)
+        ? current.map((c) => (c.id === client.id ? client : c))
+        : [...current, client];
+    });
+  }, []);
+
+  const onClientCreated = useCallback(
+    (client: ClientSummary) => {
+      upsertClient(client);
+      setCreatedClientId(client.id);
+    },
+    [upsertClient],
+  );
+
+  const onDraftClientChange = useCallback((client: ClientSummary | null) => {
+    setDraftClient(client);
+    if (client) setCreatedClientId(null);
+  }, []);
+
   const linkedClientId = activeTask?.clientId ?? null;
-  const panelClient = linkedClientId
-    ? (clients?.find((c) => c.id === linkedClientId) ?? null)
+  const panelClientId = createdClientId ?? linkedClientId;
+  const panelClient = panelClientId
+    ? (clients?.find((c) => c.id === panelClientId) ?? null)
     : draftClient;
 
   const overlayOpen = narrow && (drawerOpen || resultsOpen);
@@ -187,7 +214,7 @@ export function AppShell({ account }: AppShellProps = {}) {
         onTaskChanged={refreshTasks}
         onArtifact={onArtifact}
         conversationVersion={conversationVersion}
-        onDraftClientChange={setDraftClient}
+        onDraftClientChange={onDraftClientChange}
         onNewTask={() => selectTask(null)}
       />
       <ResultsPanel
@@ -198,6 +225,8 @@ export function AppShell({ account }: AppShellProps = {}) {
         client={panelClient}
         onArtifactsChanged={refreshTasks}
         onConversationChanged={onConversationChanged}
+        onClientCreated={onClientCreated}
+        onClientSaved={upsertClient}
         refreshKey={`${activeTask?.id ?? 'none'}:${artifactsVersion}`}
       />
       {overlayOpen && (

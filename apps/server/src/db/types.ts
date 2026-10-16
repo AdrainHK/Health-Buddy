@@ -62,7 +62,17 @@ export interface LlmUsageTable {
   created_at: Timestamp;
 }
 
-export interface HealthReportsTable {
+/**
+ * 档案数据的租户列由触发器从客户行填写（0008），插入时可以不给。
+ * 应用写入时仍按当前上下文给出，和触发器的结果一致。
+ */
+interface ClientScoped {
+  operator_id: Generated<string>;
+  org_id: Generated<string | null>;
+  manager_id: Generated<string>;
+}
+
+export interface HealthReportsTable extends ClientScoped {
   id: Generated<string>;
   client_id: string;
   report_date: ColumnType<Date, Date | string, Date | string>;
@@ -71,7 +81,7 @@ export interface HealthReportsTable {
   created_at: Timestamp;
 }
 
-export interface ReportIndicatorsTable {
+export interface ReportIndicatorsTable extends ClientScoped {
   id: Generated<string>;
   report_id: string;
   client_id: string;
@@ -167,6 +177,28 @@ export interface ArtifactEventsTable extends ManagerScoped {
   created_at: Timestamp;
 }
 
+export interface ClientHealthHistoryTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: string;
+  category: 'past_history' | 'family_history' | 'medication' | 'allergy' | 'lifestyle';
+  content: string;
+  recorded_on: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  created_by: string;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  deleted_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+}
+
+/** 分层历史，只能追加；最新一条就是当前分层 */
+export interface ClientRiskTiersTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: string;
+  tier: 'high' | 'medium' | 'low';
+  reason: string;
+  set_by: string;
+  set_at: Timestamp;
+}
+
 interface CriticalRuleColumns {
   id: Generated<string>;
   metric: string;
@@ -200,6 +232,8 @@ export interface Database {
   health_reports: HealthReportsTable;
   report_indicators: ReportIndicatorsTable;
   monitoring_readings: MonitoringReadingsTable;
+  client_health_history: ClientHealthHistoryTable;
+  client_risk_tiers: ClientRiskTiersTable;
   tasks: TasksTable;
   task_messages: TaskMessagesTable;
   task_steps: TaskStepsTable;
