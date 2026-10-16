@@ -28,7 +28,10 @@ describe('识别结果的确定性处理', () => {
     expect(processItem(raw({ rawValue: '80' })).flags).toEqual(['out_of_bounds']);
     expect(processItem(raw({ rawValue: '5.l' })).flags).toEqual(['unreadable']);
     expect(processItem(raw({ rawValue: '<5' })).value).toBeNull();
-    expect(processItem(raw({ rawName: '血糖' }))).toMatchObject({ code: null, flags: ['unmapped'] });
+    expect(processItem(raw({ rawName: '血糖' }))).toMatchObject({
+      code: null,
+      flags: ['unmapped'],
+    });
     // 健管师指定按未收录保存
     expect(processItem(raw({}), null).code).toBeNull();
   });

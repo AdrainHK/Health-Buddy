@@ -1,3 +1,9 @@
+import {
+  reportExtractionEvalCases,
+  type ExtractionEvalCase,
+  type ReportExtractionOutput,
+} from '@health-buddy/skills';
+import { gradeExtraction } from './extraction.js';
 import { LlmGateway, MockProvider, loadGatewayConfig } from '@health-buddy/ai-engine';
 import {
   SNAPSHOTS,
@@ -252,5 +258,104 @@ describe('withRetry', () => {
       return { ...base, findings: [{ rule: 'professional.dose', detail: 'x' }] };
     }, [0, 0, 0]);
     expect(calls).toBe(1);
+  });
+});
+
+describe('报告识别的规则检查（M2 规格 4.4）', () => {
+  const byId = (id: string) => {
+    const c = reportExtractionEvalCases.find((x) => x.id === id);
+    if (!c) throw new Error(id);
+    return c;
+  };
+  /** 按样本标注拼出“完全正确”的识别结果 */
+  const perfect = (c: ExtractionEvalCase): ReportExtractionOutput[] =>
+    c.sample.pages.map((rows) => ({
+      category: c.sample.kind === 'report' ? 'report' : 'not_a_report',
+      reportDate: c.sample.date,
+      institution: c.sample.institution,
+      items: rows
+        .filter((r) => !r.blurred)
+        .map((r) => ({
+          indicator: r.name,
+          value: r.value,
+          unit: r.unit,
+          referenceRange: r.ref,
+          snippet: `${r.name} ${r.value}`,
+          unreadable: false,
+        })),
+    }));
+  const rules = (c: ExtractionEvalCase, out: ReportExtractionOutput[]) =>
+    gradeExtraction(c, out).map((f) => f.rule);
+
+  it('和标注一致的输出全部通过', () => {
+    for (const c of reportExtractionEvalCases) expect(rules(c, perfect(c)), c.id).toEqual([]);
+  });
+
+  it('数值、单位、参考范围、页码不一致都判不通过', () => {
+    const c = byId('multi-page');
+    const out = perfect(c);
+    out[0]!.items[0]!.value = '6.8';
+    out[1]!.items[0]!.unit = 'mg/dL';
+    out[1]!.items[1]!.referenceRange = '<2.0';
+    // 第 3 页的一项挪到第 2 页
+    out[1]!.items.push(out[2]!.items.shift()!);
+    expect(rules(c, out).sort()).toEqual(
+      ['extraction.page', 'extraction.reference', 'extraction.unit', 'extraction.value'].sort(),
+    );
+  });
+
+  it('没印参考范围却输出了、看不清的猜了数值、多出项目、漏项都判不通过', () => {
+    const noRef = byId('no-reference-range');
+    const a = perfect(noRef);
+    a[0]!.items[0]!.referenceRange = '3.9-6.1';
+    expect(rules(noRef, a)).toEqual(['extraction.invented_reference']);
+
+    const blurred = byId('partly-unreadable');
+    const b = perfect(blurred);
+    b[0]!.items.push({
+      indicator: '总胆固醇',
+      value: '5.47',
+      unit: 'mmol/L',
+      referenceRange: '<5.2',
+      snippet: '总胆固醇',
+      unreadable: false,
+    });
+    expect(rules(blurred, b)).toEqual(['extraction.guessed']);
+    b[0]!.items.at(-1)!.unreadable = true;
+    expect(rules(blurred, b)).toEqual([]);
+
+    const clear = byId('clear-pdf');
+    const d = perfect(clear);
+    d[0]!.items.push({ ...d[0]!.items[0]!, indicator: '血红蛋白' });
+    d[0]!.items.splice(1, 1);
+    expect(rules(clear, d).sort()).toEqual(['extraction.invented_item', 'extraction.missing']);
+  });
+
+  it('输出里出现姓名、电话、证件号判不通过；非报告必须返回 not_a_report 且没有数值', () => {
+    const inj = byId('prompt-injection');
+    const out = perfect(inj);
+    out[0]!.institution = `${inj.sample.person.name} ${inj.sample.person.phone}`;
+    expect(rules(inj, out)).toEqual(['extraction.identity_leak']);
+
+    const menu = byId('not-a-report');
+    expect(
+      rules(menu, [
+        {
+          category: 'report',
+          reportDate: null,
+          institution: null,
+          items: [
+            {
+              indicator: '番茄炒蛋',
+              value: '120',
+              unit: '元',
+              referenceRange: null,
+              snippet: '',
+              unreadable: false,
+            },
+          ],
+        },
+      ]).sort(),
+    ).toEqual(['extraction.items_on_non_report', 'extraction.not_a_report']);
   });
 });

@@ -339,7 +339,10 @@ export function ResultsPanel({
           >
             {t(`results.tabs.${id}`)}
             {id === 'review' && reviewCount > 0 && (
-              <span className={styles.badge} aria-label={t('reports.tab.badge', { count: reviewCount })}>
+              <span
+                className={styles.badge}
+                aria-label={t('reports.tab.badge', { count: reviewCount })}
+              >
                 {reviewCount}
               </span>
             )}

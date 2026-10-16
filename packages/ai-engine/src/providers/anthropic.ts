@@ -97,7 +97,11 @@ function toMessageParam(m: ChatMessage) {
         case 'pdf':
           return {
             type: 'document' as const,
-            source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: part.data },
+            source: {
+              type: 'base64' as const,
+              media_type: 'application/pdf' as const,
+              data: part.data,
+            },
           };
       }
     }),

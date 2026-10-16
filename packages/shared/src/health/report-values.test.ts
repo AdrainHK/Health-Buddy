@@ -76,7 +76,11 @@ describe('reference range (Q10)', () => {
     });
     expect(parseReferenceRange('3.9～6.1')).toMatchObject({ low: 3.9, high: 6.1 });
     expect(parseReferenceRange('3.9 — 6.1')).toMatchObject({ low: 3.9, high: 6.1 });
-    expect(parseReferenceRange('<1.7')).toMatchObject({ low: null, high: 1.7, highInclusive: false });
+    expect(parseReferenceRange('<1.7')).toMatchObject({
+      low: null,
+      high: 1.7,
+      highInclusive: false,
+    });
     expect(parseReferenceRange('≤5.2')).toMatchObject({ high: 5.2, highInclusive: true });
     expect(parseReferenceRange('>1.0')).toMatchObject({ low: 1, lowInclusive: false });
     expect(parseReferenceRange('≥1.04')).toMatchObject({ low: 1.04, lowInclusive: true });

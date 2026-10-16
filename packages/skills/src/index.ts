@@ -23,3 +23,10 @@ export {
   type ExtractionPageInput,
   type ExtractionContentPart,
 } from './report-extraction/index.js';
+export {
+  reportExtractionEvalCases,
+  type ExtractionEvalCase,
+  type ExtractionEvalCategory,
+  type ReportSample,
+  type ReportSampleRow,
+} from './report-extraction/evals/cases.js';

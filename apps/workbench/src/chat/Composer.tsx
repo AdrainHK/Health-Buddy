@@ -339,46 +339,46 @@ export function Composer({
           ))}
         </div>
         <div className={styles.barEnd}>
-        {onAttachFiles && (
-          <>
+          {onAttachFiles && (
+            <>
+              <IconButton
+                label={t('chat.attach')}
+                icon={<Paperclip size={16} />}
+                disabled={disabled}
+                onClick={() => fileRef.current?.click()}
+              />
+              <input
+                ref={fileRef}
+                type="file"
+                multiple
+                hidden
+                accept={REPORT_ACCEPT}
+                aria-label={t('chat.attachLabel')}
+                data-testid="chat-file-input"
+                onChange={(e) => {
+                  const files = [...(e.target.files ?? [])];
+                  e.target.value = '';
+                  if (files.length) onAttachFiles(files);
+                }}
+              />
+            </>
+          )}
+          {generating ? (
             <IconButton
-              label={t('chat.attach')}
-              icon={<Paperclip size={16} />}
-              disabled={disabled}
-              onClick={() => fileRef.current?.click()}
+              variant="secondary"
+              label={t('chat.stop')}
+              icon={<Square size={14} fill="currentColor" />}
+              onClick={onStop}
             />
-            <input
-              ref={fileRef}
-              type="file"
-              multiple
-              hidden
-              accept={REPORT_ACCEPT}
-              aria-label={t('chat.attachLabel')}
-              data-testid="chat-file-input"
-              onChange={(e) => {
-                const files = [...(e.target.files ?? [])];
-                e.target.value = '';
-                if (files.length) onAttachFiles(files);
-              }}
+          ) : (
+            <IconButton
+              type="submit"
+              variant="primary"
+              label={t('chat.send')}
+              icon={<ArrowUp size={18} />}
+              disabled={disabled || !text.trim()}
             />
-          </>
-        )}
-        {generating ? (
-          <IconButton
-            variant="secondary"
-            label={t('chat.stop')}
-            icon={<Square size={14} fill="currentColor" />}
-            onClick={onStop}
-          />
-        ) : (
-          <IconButton
-            type="submit"
-            variant="primary"
-            label={t('chat.send')}
-            icon={<ArrowUp size={18} />}
-            disabled={disabled || !text.trim()}
-          />
-        )}
+          )}
         </div>
       </div>
     </form>

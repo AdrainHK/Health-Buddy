@@ -73,9 +73,12 @@ interface ClientScoped {
 }
 
 type Nullable<T> = ColumnType<T | null, T | null | undefined, T | null>;
-/** numeric 列，pg 驱动返回字符串，避免精度丢失 */
-type Numeric = ColumnType<string, number | string, number | string>;
-type NullableNumeric = ColumnType<string | null, number | string | null | undefined, number | string | null>;
+/** 可为空的 numeric 列，pg 驱动返回字符串，避免精度丢失 */
+type NullableNumeric = ColumnType<
+  string | null,
+  number | string | null | undefined,
+  number | string | null
+>;
 
 export interface HealthReportsTable extends ClientScoped {
   id: Generated<string>;
@@ -249,13 +252,7 @@ export interface CriticalThresholdEventsTable {
 export type UploadStatusColumn =
   'queued' | 'processing' | 'needs_review' | 'verified' | 'failed' | 'discarded';
 export type FailureCategoryColumn =
-  | 'not_a_report'
-  | 'unreadable'
-  | 'refused'
-  | 'timeout'
-  | 'too_large'
-  | 'error'
-  | 'transferred';
+  'not_a_report' | 'unreadable' | 'refused' | 'timeout' | 'too_large' | 'error' | 'transferred';
 
 /** 一次上传就是一条识别记录（M2 规格 3.2） */
 export interface ReportUploadsTable extends ClientScoped {
@@ -320,7 +317,11 @@ export interface ExtractedValuesTable extends ClientScoped {
   ref_text: string | null;
   page: number | null;
   source_snippet: string | null;
-  flags: ColumnType<ExtractedFlagColumn[], ExtractedFlagColumn[] | undefined, ExtractedFlagColumn[]>;
+  flags: ColumnType<
+    ExtractedFlagColumn[],
+    ExtractedFlagColumn[] | undefined,
+    ExtractedFlagColumn[]
+  >;
   review_status: ColumnType<
     'pending' | 'checked' | 'edited' | 'deleted' | 'added',
     'pending' | 'checked' | 'edited' | 'deleted' | 'added' | undefined,

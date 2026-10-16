@@ -14,12 +14,12 @@ import { PDFDocument, StandardFonts } from 'pdf-lib';
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 /** 文件头是 PNG 的合成文件；tag 让每个文件的指纹不同 */
-export function syntheticPng(tag = randomUUID()): Buffer {
+export function syntheticPng(tag: string = randomUUID()): Buffer {
   return Buffer.concat([PNG_MAGIC, Buffer.from(`synthetic-report-${tag}`)]);
 }
 
 /** 合成的多页 PDF */
-export async function syntheticPdf(pages: number, tag = randomUUID()): Promise<Buffer> {
+export async function syntheticPdf(pages: number, tag: string = randomUUID()): Promise<Buffer> {
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   for (let i = 0; i < pages; i++) {

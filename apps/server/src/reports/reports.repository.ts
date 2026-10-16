@@ -22,10 +22,17 @@ import {
   type VerifyRejection,
   type VerifyUploadRequest,
 } from '@health-buddy/shared';
-import { sql, type ExpressionBuilder, type Selectable, type Updateable } from 'kysely';
+import { type ExpressionBuilder, type Selectable, type Updateable } from 'kysely';
 import { badRequest, conflict, notFound, tooManyRequests } from '../common/api-error.js';
 import { DB } from '../db/db.provider.js';
 import { withTenant, type Db, type TenantContext, type TenantTransaction } from '../db/database.js';
+import {
+  asDate,
+  currentDate,
+  reportUploadRequester,
+  storagePurgeBatch,
+  storagePurgeDone,
+} from '../db/report-functions.js';
 import type {
   ExtractedValuesTable,
   ReportEventAction,
@@ -148,11 +155,6 @@ function isoDate<DB, TB extends keyof DB>(
   column: Parameters<ExpressionBuilder<DB, TB>['ref']>[0],
 ) {
   return eb.fn<string>('to_char', [eb.ref(column), eb.val('YYYY-MM-DD')]);
-}
-
-/** YYYY-MM-DD 按日期比较，不经过 JS Date，避免时区把日期挪一天 */
-function asDate(text: string) {
-  return sql<Date>`${text}::date`;
 }
 
 function tenantScope(ctx: TenantContext) {
@@ -284,21 +286,8 @@ export class ReportsRepository {
    * 队列任务的发起人（规格 3.2）：只按 upload_id 查，只返回身份，不返回业务数据。
    * 只对排队中、识别中的记录有结果。
    */
-  async requester(uploadId: string): Promise<TenantContext | undefined> {
-    const { rows } = await sql<{
-      user_id: string;
-      role: TenantContext['role'];
-      operator_id: string | null;
-      org_id: string | null;
-    }>`select * from report_upload_requester(${uploadId})`.execute(this.db);
-    const row = rows[0];
-    if (!row) return undefined;
-    return {
-      userId: row.user_id,
-      role: row.role,
-      operatorId: row.operator_id,
-      orgId: row.org_id,
-    };
+  requester(uploadId: string): Promise<TenantContext | undefined> {
+    return reportUploadRequester(this.db, uploadId);
   }
 
   /** 认领一次识别：排队中（或服务重启后重新执行的识别中）改为识别中，返回原件列表 */
@@ -972,10 +961,7 @@ export class ReportsRepository {
 
   /** 客户删除后待清除的原件（Q6）。以所有者函数取用，不需要租户上下文 */
   async purgeBatch(storage: ObjectStorage, limit = 50): Promise<number> {
-    const { rows } = await sql<{
-      storage_purge_batch: string;
-    }>`select storage_purge_batch(${limit})`.execute(this.db);
-    const keys = rows.map((r) => r.storage_purge_batch);
+    const keys = await storagePurgeBatch(this.db, limit);
     const done: string[] = [];
     for (const key of keys) {
       try {
@@ -985,7 +971,7 @@ export class ReportsRepository {
         // 下次再试
       }
     }
-    if (done.length) await sql`select storage_purge_done(${done}::text[])`.execute(this.db);
+    await storagePurgeDone(this.db, done);
     return done.length;
   }
 }
@@ -1012,7 +998,7 @@ async function addEvent(
 
 /** 当天的识别页数加上 pages；超过每天 200 页时拒绝（Q24），约束在数据库里 */
 async function reservePages(trx: TenantTransaction, ctx: TenantContext, pages: number) {
-  const day = sql<Date>`current_date`;
+  const day = currentDate();
   const current = await trx
     .selectFrom('report_extraction_quota')
     .select('pages')
@@ -1049,7 +1035,10 @@ async function lockUpload(trx: TenantTransaction, ctx: TenantContext, uploadId: 
       'attempts',
       'page_count',
       'institution',
-      sql<string | null>`to_char(report_date, 'YYYY-MM-DD')`.as('report_date'),
+      (eb) =>
+        eb
+          .fn<string | null>('to_char', [eb.ref('report_date'), eb.val('YYYY-MM-DD')])
+          .as('report_date'),
     ])
     .where('id', '=', uploadId)
     .forUpdate()
@@ -1154,7 +1143,10 @@ async function loadUpload(
       'u.version',
       'u.institution',
       'u.critical_acknowledged',
-      sql<string | null>`to_char(u.report_date, 'YYYY-MM-DD')`.as('report_date'),
+      (eb) =>
+        eb
+          .fn<string | null>('to_char', [eb.ref('u.report_date'), eb.val('YYYY-MM-DD')])
+          .as('report_date'),
     ])
     .where('u.id', '=', uploadId)
     .executeTakeFirst();
@@ -1307,4 +1299,3 @@ async function ownClient(
   const row = await (lock ? q.forShare() : q).executeTakeFirst();
   return Boolean(row);
 }
-
