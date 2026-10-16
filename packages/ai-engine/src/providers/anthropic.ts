@@ -18,8 +18,8 @@ export class AnthropicProvider implements Provider {
   readonly name = 'anthropic' as const;
   private readonly client: Anthropic;
 
-  constructor(apiKey: string, client?: Anthropic) {
-    this.client = client ?? new Anthropic({ apiKey });
+  constructor(apiKey: string, client?: Anthropic, baseURL?: string) {
+    this.client = client ?? new Anthropic({ apiKey, ...(baseURL ? { baseURL } : {}) });
   }
 
   async *stream(

@@ -48,4 +48,21 @@ describe('gateway config', () => {
     const config = loadGatewayConfig({ OPENAI_API_KEY: 'sk-test', ANTHROPIC_API_KEY: '' });
     expect(config.apiKeys).toEqual({ openai: 'sk-test' });
   });
+
+  it('accepts a relay base URL for Claude and treats empty CI values as unset', () => {
+    const config = loadGatewayConfig({
+      ANTHROPIC_API_KEY: 'sk-test',
+      ANTHROPIC_BASE_URL: 'https://relay.example/anthropic',
+      ANTHROPIC_MODEL: '',
+    });
+    expect(config.baseUrls).toEqual({ anthropic: 'https://relay.example/anthropic' });
+    expect(config.defaultModels.anthropic).toBe('claude-opus-5-5');
+    expect(loadGatewayConfig({ ANTHROPIC_BASE_URL: '' }).baseUrls).toEqual({});
+  });
+
+  it('rejects a base URL that is not a URL', () => {
+    expect(() => loadGatewayConfig({ ANTHROPIC_BASE_URL: 'not a url' })).toThrow(
+      'ANTHROPIC_BASE_URL',
+    );
+  });
 });

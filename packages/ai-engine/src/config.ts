@@ -15,14 +15,19 @@ const routeOverrideSchema = z
 /** 空字符串按“没有配置”处理：CI 里没设置的密钥会以空字符串传进来 */
 const optionalKey = z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional());
 
+/** 空字符串按默认值处理：CI 里没设置的仓库变量会以空字符串传进来 */
+const emptyAsUnset = (v: unknown) => (v === '' ? undefined : v);
+
 const envSchema = z.object({
   OPENAI_API_KEY: optionalKey,
   ANTHROPIC_API_KEY: optionalKey,
+  /** Claude 走中转服务时填中转地址；不填用官方地址。 */
+  ANTHROPIC_BASE_URL: z.preprocess(emptyAsUnset, z.url().optional()),
   /** 没有单独配置的用途默认用哪家。Claude API 开通前先用 OpenAI。 */
   LLM_DEFAULT_PROVIDER: providerSchema.default('openai'),
   /** 两家各自的默认型号。 */
-  OPENAI_MODEL: z.string().min(1).default('gpt-6-astra'),
-  ANTHROPIC_MODEL: z.string().min(1).default('claude-opus-5-5'),
+  OPENAI_MODEL: z.preprocess(emptyAsUnset, z.string().min(1).default('gpt-6-astra')),
+  ANTHROPIC_MODEL: z.preprocess(emptyAsUnset, z.string().min(1).default('claude-opus-5-5')),
   LLM_DEFAULT_EFFORT: effortSchema.default('medium'),
   /** 按用途覆盖，JSON 格式，例如 {"expert":{"provider":"anthropic","effort":"high"}} */
   LLM_ROUTES: z.string().optional(),
@@ -30,6 +35,8 @@ const envSchema = z.object({
 
 export interface GatewayConfig {
   apiKeys: Partial<Record<ProviderName, string>>;
+  /** 只在走中转服务时设置 */
+  baseUrls: Partial<Record<ProviderName, string>>;
   defaultProvider: ProviderName;
   defaultModels: Record<ProviderName, string>;
   defaultEffort: Effort;
@@ -49,6 +56,7 @@ export function loadGatewayConfig(source: NodeJS.ProcessEnv = process.env): Gate
       ...(env.OPENAI_API_KEY ? { openai: env.OPENAI_API_KEY } : {}),
       ...(env.ANTHROPIC_API_KEY ? { anthropic: env.ANTHROPIC_API_KEY } : {}),
     },
+    baseUrls: env.ANTHROPIC_BASE_URL ? { anthropic: env.ANTHROPIC_BASE_URL } : {},
     defaultProvider: env.LLM_DEFAULT_PROVIDER,
     defaultModels: { openai: env.OPENAI_MODEL, anthropic: env.ANTHROPIC_MODEL },
     defaultEffort: env.LLM_DEFAULT_EFFORT,

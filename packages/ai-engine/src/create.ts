@@ -12,6 +12,10 @@ export function createGateway<C extends CallContext = CallContext>(
   const providers: Partial<Record<ProviderName, Provider>> = {};
   if (config.apiKeys.openai) providers.openai = new OpenAIProvider(config.apiKeys.openai);
   if (config.apiKeys.anthropic)
-    providers.anthropic = new AnthropicProvider(config.apiKeys.anthropic);
+    providers.anthropic = new AnthropicProvider(
+      config.apiKeys.anthropic,
+      undefined,
+      config.baseUrls.anthropic,
+    );
   return new LlmGateway<C>({ ...options, config, providers });
 }
