@@ -33,6 +33,8 @@ export function AppShell({ account }: AppShellProps = {}) {
   const [artifactsVersion, setArtifactsVersion] = useState(0);
   /** 对话在对话区之外有了变化（结果区里退回重写），对话区据此重新加载 */
   const [conversationVersion, setConversationVersion] = useState(0);
+  /** 对话区里 @ 的客户（任务还没关联客户时用来在结果区显示资料） */
+  const [draftClient, setDraftClient] = useState<ClientSummary | null>(null);
 
   // 技能和客户列表：/ 和 @ 补全、任务按客户分组都要用
   useEffect(() => {
@@ -119,6 +121,11 @@ export function AppShell({ account }: AppShellProps = {}) {
     }
   }, [narrow]);
 
+  const linkedClientId = activeTask?.clientId ?? null;
+  const panelClient = linkedClientId
+    ? (clients?.find((c) => c.id === linkedClientId) ?? null)
+    : draftClient;
+
   const overlayOpen = narrow && (drawerOpen || resultsOpen);
 
   useEffect(() => {
@@ -180,12 +187,15 @@ export function AppShell({ account }: AppShellProps = {}) {
         onTaskChanged={refreshTasks}
         onArtifact={onArtifact}
         conversationVersion={conversationVersion}
+        onDraftClientChange={setDraftClient}
+        onNewTask={() => selectTask(null)}
       />
       <ResultsPanel
         mode={narrow ? 'sheet' : 'docked'}
         open={resultsOpen}
         onClose={() => setResultsOpen(false)}
         task={activeTask}
+        client={panelClient}
         onArtifactsChanged={refreshTasks}
         onConversationChanged={onConversationChanged}
         refreshKey={`${activeTask?.id ?? 'none'}:${artifactsVersion}`}

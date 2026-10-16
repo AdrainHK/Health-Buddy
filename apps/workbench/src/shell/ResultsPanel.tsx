@@ -1,4 +1,9 @@
-import type { ArtifactDetailResponse, ArtifactSummary, Task } from '@health-buddy/shared';
+import type {
+  ArtifactDetailResponse,
+  ArtifactSummary,
+  ClientSummary,
+  Task,
+} from '@health-buddy/shared';
 import { Button, EmptyState, IconButton } from '@health-buddy/ui';
 import { FileText, History, UserRound, X } from 'lucide-react';
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react';
@@ -9,6 +14,7 @@ import { getTask } from '../api/workbench';
 import { ArtifactHistory } from '../artifacts/ArtifactHistory';
 import { ArtifactList, sortArtifacts } from '../artifacts/ArtifactList';
 import { ArtifactView } from '../artifacts/ArtifactView';
+import { ClientCard } from './ClientCard';
 import styles from './ResultsPanel.module.css';
 import { isReadOnlyTask } from './taskGroups';
 
@@ -24,6 +30,8 @@ export interface ResultsPanelProps {
   onClose: () => void;
   /** 当前任务；为空时是欢迎页 */
   task?: Task | null;
+  /** 当前任务关联的客户；任务还没关联时是输入框里 @ 的客户 */
+  client?: ClientSummary | null;
   /**
    * 当前任务和产物有变化时改变，结果区据此重新加载。
    * 同一任务内变化（对话里生成了新草稿）时自动打开最新的产物。
@@ -41,6 +49,7 @@ export function ResultsPanel({
   open,
   onClose,
   task = null,
+  client = null,
   refreshKey,
   onArtifactsChanged,
   onConversationChanged,
@@ -78,6 +87,17 @@ export function ResultsPanel({
   const onDirtyChange = useCallback((dirty: boolean) => {
     dirtyRef.current = dirty;
   }, []);
+
+  // 在输入框里 @ 了一位客户（任务还没关联客户）：没有打开的产物时切到“客户”标签，
+  // 让健管师马上看到资料。打开已关联客户的任务时仍停在产物标签。
+  const clientId = client?.id ?? null;
+  const fromDraft = task?.clientId == null;
+  const seenClientRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (seenClientRef.current === clientId) return;
+    seenClientRef.current = clientId;
+    if (clientId !== null && fromDraft && selectedRef.current === null) setTab('client');
+  }, [clientId, fromDraft]);
 
   const readOnly = task !== null && (isReadOnlyTask(task) || readOnlyTaskId === task.id);
 
@@ -271,7 +291,8 @@ export function ResultsPanel({
         aria-labelledby={`hb-tab-${tab}`}
       >
         {tab === 'artifacts' && renderArtifacts()}
-        {tab === 'client' && (
+        {tab === 'client' && client && <ClientCard client={client} />}
+        {tab === 'client' && !client && (
           <EmptyState
             icon={<UserRound size={20} />}
             title={t('results.empty.client')}

@@ -1,0 +1,50 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-3);
+  padding: var(--hb-space-4);
+}
+
+.name {
+  display: flex;
+  align-items: center;
+  gap: var(--hb-space-2);
+  margin: 0;
+  font-size: var(--hb-text-md);
+  font-weight: 600;
+}
+
+.tag {
+  padding: 0 var(--hb-space-2);
+  border-radius: var(--hb-radius-sm);
+  background: var(--hb-surface-2);
+  color: var(--hb-text-2);
+  font-size: var(--hb-text-xs);
+  font-weight: 400;
+}
+
+.fields {
+  display: grid;
+  gap: var(--hb-space-2);
+  margin: 0;
+}
+
+.field {
+  display: flex;
+  gap: var(--hb-space-3);
+}
+
+.field dt {
+  min-width: 4em;
+  color: var(--hb-text-2);
+}
+
+.field dd {
+  margin: 0;
+}
+
+.hint {
+  margin: 0;
+  color: var(--hb-text-3);
+  font-size: var(--hb-text-sm);
+}

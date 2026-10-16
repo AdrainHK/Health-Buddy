@@ -60,6 +60,28 @@ export function finalizeClientText(text: string): string {
   return `${body}\n\n${DISCLAIMER}`;
 }
 
+const LEADING_GREETING = /^\s*(?:您好|你好)[，,。！!、：:\s]*/u;
+
+/**
+ * 通俗版开头加上客户称呼，方便健管师直接转发。
+ * 姓名不发给模型（Q9 去标识化），由后端在模型输出之后加上；模型自己写的“您好”换成带称呼的问候。
+ */
+export function greetClient(name: string, text: string): string {
+  const trimmed = name.trim();
+  const body = text.replace(LEADING_GREETING, '');
+  // 只有问候没有正文时不加称呼，确认时的“通俗版为空”检查仍然生效
+  if (!trimmed || !body.trim()) return text;
+  return `${trimmed}${GREETING_SUFFIX}\n\n${body}`;
+}
+
+const GREETING_SUFFIX = '，您好！';
+
+/** 开头称呼行的长度（没有称呼时为 0）。称呼里的姓名可能带数字，不参与危急指标数值检查 */
+function greetingLength(text: string): number {
+  const firstLine = text.split('\n', 1)[0] ?? '';
+  return firstLine.endsWith(GREETING_SUFFIX) && firstLine.length <= 40 ? firstLine.length : 0;
+}
+
 /** 规格 3.6：通俗版出现疾病名称或判断句式时只提示、不拦截 */
 const JUDGEMENT_HINT =
   /患有|患上|有.{0,8}风险|疑似|高血压|低血压|糖尿病|高血脂|血脂异常|痛风|脂肪肝|冠心病|中风|抑郁|焦虑/g;
@@ -84,14 +106,17 @@ export function checkClientText(
     text: m[0],
     index: m.index,
   }));
+  const skip = greetingLength(text);
   const criticalValueMentions = criticalFlags.flatMap((f) => {
     // 数值前后不能紧挨着别的数字，避免 18 命中 185
     const re = new RegExp(`(?<![\\d.])${String(f.value).replace('.', '\\.')}(?![\\d])`, 'g');
-    return [...text.matchAll(re)].map((m) => ({
-      metric: f.metric,
-      value: f.value,
-      index: m.index,
-    }));
+    return [...text.matchAll(re)]
+      .filter((m) => m.index >= skip)
+      .map((m) => ({
+        metric: f.metric,
+        value: f.value,
+        index: m.index,
+      }));
   });
   return {
     bannedTerms: findBannedTerms(text),

@@ -64,6 +64,7 @@
       "switchToCraft": "切换到做一做",
       "needClient": "请先 @ 客户",
       "otherClient": "该任务已关联其他客户，如需引用请新建任务",
+      "newTaskForClient": "为 {{name}} 新建任务",
       "newTask": "新建任务"
     },
     "steps": {
@@ -131,6 +132,20 @@
       "client": "未选择客户",
       "clientHint": "在对话中 @ 一位客户，这里会显示 TA 的档案和数字孪生。",
       "history": "还没有修改记录"
+    },
+    "client": {
+      "gender": "性别",
+      "age": "年龄",
+      "ageValue": "{{age}} 岁",
+      "unknown": "未知",
+      "genders": {
+        "female": "女",
+        "male": "男",
+        "other": "其他",
+        "unknown": "未知"
+      },
+      "synthetic": "测试数据",
+      "hint": "这里显示的是客户基本信息，监测数据和体检报告会在客户档案里陆续开放。"
     },
     "artifacts": {
       "list": "本任务的产物",
