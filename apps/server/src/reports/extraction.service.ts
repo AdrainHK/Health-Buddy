@@ -19,6 +19,7 @@ import type { TenantContext } from '../db/database.js';
 import { EXTRACTION_QUEUE, type ExtractionJob, type ExtractionQueue } from './extraction-queue.js';
 import { splitPages, type ExtractionPage } from './file-inspect.js';
 import type { RawItem } from './process-values.js';
+import { redactExtraction } from './redact.js';
 import { ReportsRepository } from './reports.repository.js';
 import { OBJECT_STORAGE, type ObjectStorage } from './storage.js';
 
@@ -93,10 +94,11 @@ export class ExtractionService implements OnModuleInit, OnApplicationShutdown {
   }
 
   async process(job: ExtractionJob): Promise<void> {
-    const { uploadId } = job;
+    const { uploadId, attempt } = job;
+    if (!Number.isInteger(attempt) || attempt < 1) throw new ExtractionJobRejected();
     const ctx = await this.repo.requester(uploadId);
     if (!ctx) throw new ExtractionJobRejected();
-    const claim = await this.repo.claimExtraction(ctx, uploadId);
+    const claim = await this.repo.claimExtraction(ctx, uploadId, attempt);
     if (!claim) throw new ExtractionJobRejected();
     this.events.notify(uploadId);
     const started = Date.now();
@@ -106,7 +108,8 @@ export class ExtractionService implements OnModuleInit, OnApplicationShutdown {
         this.log(uploadId, 'abandoned', claim.pageCount, started);
         return;
       }
-      const saved = await this.repo.finishExtraction(ctx, uploadId, result);
+      // 兜底：电话、证件号不进数据库（提示词已要求不转录）
+      const saved = await this.repo.finishExtraction(ctx, uploadId, redactExtraction(result));
       this.log(uploadId, saved ? 'done' : 'abandoned', claim.pageCount, started);
     } catch (err) {
       const category = err instanceof ExtractionFailure ? err.category : failureCategory(err);

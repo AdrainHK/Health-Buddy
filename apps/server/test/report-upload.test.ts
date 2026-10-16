@@ -6,6 +6,7 @@ import { sql } from 'kysely';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InlineExtractionQueue } from '../src/reports/extraction-queue.js';
+import { ReportsRepository } from '../src/reports/reports.repository.js';
 import { InMemoryObjectStorage } from '../src/reports/storage.js';
 import { ownerDb, seedFixtures, type Account, type Fixtures } from './fixtures.js';
 import { createTestApp, loginAs } from './http.js';
@@ -141,7 +142,7 @@ describe('报告上传、识别和核对接口', () => {
         expect.objectContaining({ mimeType: 'image/png', pageCount: 1, originalName: FILE_NAME }),
       ]);
       // 队列任务参数只有 upload_id
-      expect(queue.jobs.map((j) => j.data)).toEqual([{ uploadId: u.id }]);
+      expect(queue.jobs.map((j) => j.data)).toEqual([{ uploadId: u.id, attempt: 1 }]);
       expect(queue.jobs[0]?.outcome).toBe('completed');
 
       const byName = Object.fromEntries(u.values.map((v) => [v.rawName, v]));
@@ -933,12 +934,76 @@ describe('报告上传、识别和核对接口', () => {
       const pending = await extracted(a1, f.clients.a1[0]);
       provider.reset();
       for (const uploadId of [randomUUID(), verified.id, pending.id, 'not-a-uuid']) {
-        expect(await queue.run({ uploadId }), uploadId).toBe('failed');
+        expect(await queue.run({ uploadId, attempt: 1 }), uploadId).toBe('failed');
       }
       expect(provider.calls).toHaveLength(0);
       const after = (await a1.get(`/api/report-uploads/${pending.id}`)).body.upload;
       expect(after.version).toBe(pending.version);
       expect(after.status).toBe('needs_review');
+    });
+
+    it('同一次识别的重复任务：识别中时读不到；次数不对的读不到；超过 10 分钟没有进度的可以重新认领', async () => {
+      const a1 = await loginAs(app, f.users.managerA1.email);
+      queue.paused = true;
+      const res = await upload(a1, f.clients.a1[0], [{ body: syntheticPng() }]).expect(201);
+      const uploadId = res.body.upload.id as string;
+      // 第一个任务已认领、正在识别
+      const ctx = {
+        userId: f.users.managerA1.id,
+        role: 'manager' as const,
+        operatorId: f.operatorA,
+        orgId: f.orgA,
+      };
+      expect(await app.get(ReportsRepository).claimExtraction(ctx, uploadId, 1)).toBeDefined();
+      expect(await queue.run({ uploadId, attempt: 1 })).toBe('failed');
+      expect(await queue.run({ uploadId, attempt: 2 })).toBe('failed');
+      expect(provider.calls).toHaveLength(0);
+      const status = async () =>
+        await owner
+          .selectFrom('report_uploads')
+          .select(['status', 'claimed_attempt'])
+          .where('id', '=', uploadId)
+          .executeTakeFirstOrThrow();
+      expect(await status()).toEqual({ status: 'processing', claimed_attempt: 1 });
+
+      // 服务重启等：识别中但 10 分钟没有进度，同一次识别的任务可以重新认领
+      await sql`alter table report_uploads disable trigger report_uploads_guard`.execute(owner);
+      try {
+        await owner
+          .updateTable('report_uploads')
+          .set({ updated_at: sql`now() - interval '11 minutes'` })
+          .where('id', '=', uploadId)
+          .execute();
+      } finally {
+        await sql`alter table report_uploads enable trigger report_uploads_guard`.execute(owner);
+      }
+      provider.push(pageJson(STANDARD_ITEMS));
+      expect(await queue.run({ uploadId, attempt: 1 })).toBe('completed');
+      expect((await status()).status).toBe('needs_review');
+      queue.jobs.length = 0;
+    });
+
+    it('Q24：入队失败时记录改为失败并退还预占的页数，只退一次；重新识别再计入', async () => {
+      const a1 = await loginAs(app, f.users.managerA1.email);
+      const pages = async () =>
+        (
+          await owner
+            .selectFrom('report_extraction_quota')
+            .select('pages')
+            .where('manager_id', '=', f.users.managerA1.id)
+            .executeTakeFirst()
+        )?.pages;
+      queue.failNextEnqueue = true;
+      const res = await upload(a1, f.clients.a1[0], [
+        { body: await syntheticPdf(2), name: 'a.pdf', type: 'application/pdf' },
+      ]).expect(201);
+      const uploadId = res.body.upload.id as string;
+      expect(res.body.upload.status).toBe('failed');
+      expect(await pages()).toBe(0);
+
+      queue.paused = true;
+      await a1.post(`/api/report-uploads/${uploadId}/retry`).expect(200);
+      expect(await pages()).toBe(2);
     });
 
     it('发起人停用后排队中的任务以失败结束', async () => {
@@ -1031,7 +1096,7 @@ describe('报告上传、识别和核对接口', () => {
 
       const jobParams = JSON.stringify(queue.jobs.map((j) => j.data));
       expect(jobParams).toMatch(
-        /^\[\{"uploadId":"[0-9a-f-]{36}"\}(,\{"uploadId":"[0-9a-f-]{36}"\})*\]$/,
+        /^\[\{"uploadId":"[0-9a-f-]{36}","attempt":[1-3]\}(,\{"uploadId":"[0-9a-f-]{36}","attempt":[1-3]\})*\]$/,
       );
       const logs = captured.join('\n');
       expect(logs).toContain('report extraction');

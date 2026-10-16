@@ -30,6 +30,11 @@ function findFont(): string | null {
   return fontPath;
 }
 
+/** 渲染样本需要的中文字体是否可用（评测开始前检查，缺字体时直接报清楚，而不是每个用例都出错） */
+export function sampleFontAvailable(): boolean {
+  return findFont() !== null;
+}
+
 export class SampleFontMissingError extends Error {
   constructor() {
     super('report sample font missing');

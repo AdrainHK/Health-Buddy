@@ -43,7 +43,7 @@ export interface ExtractionEvalCase {
   sample: ReportSample;
 }
 
-const PERSON = { name: '林晓雯', phone: '13912345678', idNumber: '110101199001011234' };
+const PERSON = { name: '林晓雯', phone: '13900000000', idNumber: '110101199001011234' };
 const BASE = {
   title: '健康体检报告',
   institution: '合成健康体检中心',

@@ -506,7 +506,7 @@
     },
     "flags": {
       "unreadable": "看不清",
-      "out_of_bounds": "数值异常，请重点核对",
+      "out_of_bounds": "数值超出合理范围，请重点核对",
       "unit_converted": "已换算单位",
       "unit_unknown": "单位未识别",
       "unmapped": "未收录指标",

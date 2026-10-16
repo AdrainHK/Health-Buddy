@@ -11,6 +11,7 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createGateway, loadGatewayConfig, type ProviderName } from '@health-buddy/ai-engine';
+import { sampleFontAvailable } from '@health-buddy/seed';
 import {
   askEvalCases,
   recentSummaryEvalCases,
@@ -41,6 +42,12 @@ const pick = <T extends { id: string }>(name: string, list: T[]) =>
 const cases = pick('summary', recentSummaryEvalCases);
 // 报告识别：合成报告样本由 scripts/seed 渲染，需要中文字体（CI 装 fonts-noto-cjk）
 const extractionCases = pick('extraction', reportExtractionEvalCases);
+if (extractionCases.length && !sampleFontAvailable()) {
+  const msg =
+    '缺少渲染合成报告样本的中文字体（装 fonts-noto-cjk，或用 REPORT_SAMPLE_FONT 指定），报告识别评测无法运行。';
+  console.error(process.env.GITHUB_ACTIONS ? `::error title=eval 缺少字体::${msg}` : msg);
+  process.exit(1);
+}
 const useJudge = !process.argv.includes('--no-judge');
 // 越界类问一问主要靠大模型评审判断，不开评审时不跑，免得“全部通过”有误导
 const askCases = pick('ask', askEvalCases).filter(

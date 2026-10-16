@@ -22,16 +22,33 @@ export async function reportUploadRequester(
   return { userId: row.user_id, role: row.role, operatorId: row.operator_id, orgId: row.org_id };
 }
 
-/** 客户删除后待清除的原件 key */
-export async function storagePurgeBatch(db: Db, limit: number): Promise<string[]> {
+/**
+ * 认领一批客户删除后待清除的原件 key（15 分钟内不会再被认领）。
+ * 只能在没有租户上下文的连接上调用（后台任务），带用户身份时数据库拒绝。
+ */
+export async function storagePurgeClaim(db: Db, limit: number): Promise<string[]> {
   const { rows } = await sql<{
-    storage_purge_batch: string;
-  }>`select storage_purge_batch(${limit})`.execute(db);
-  return rows.map((r) => r.storage_purge_batch);
+    storage_purge_claim: string;
+  }>`select storage_purge_claim(${limit})`.execute(db);
+  return rows.map((r) => r.storage_purge_claim);
 }
 
+/** 清除完成：只删除认领中的 key */
 export async function storagePurgeDone(db: Db, keys: string[]): Promise<void> {
   if (keys.length) await sql`select storage_purge_done(${keys}::text[])`.execute(db);
+}
+
+/** 入队失败时退还这次识别预占的页数（在租户事务里调用）。返回是否退还 */
+export async function reportQuotaRefund(trx: Db, uploadId: string): Promise<boolean> {
+  const { rows } = await sql<{
+    report_quota_refund: boolean;
+  }>`select report_quota_refund(${uploadId})`.execute(trx);
+  return rows[0]?.report_quota_refund === true;
+}
+
+/** 识别中的记录多久没有进度算作中断（服务重启等），之后可以重新认领。每页识别超时是 3 分钟 */
+export function claimStaleBefore(): RawBuilder<Date> {
+  return sql<Date>`now() - interval '10 minutes'`;
 }
 
 /** YYYY-MM-DD 按日期比较，不经过 JS Date，避免时区把日期挪一天 */

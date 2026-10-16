@@ -359,15 +359,15 @@ export class ReportUploadsController {
     res.end(preview.body);
   }
 
-  /** 入队；入队失败时把记录改成失败，健管师可以重新识别 */
+  /** 入队；入队失败时把记录改成失败并退还预占的页数，健管师可以重新识别 */
   private async enqueue(session: ResolvedSession, uploadId: string, attempt: number) {
     try {
-      await this.queue.enqueue({ uploadId }, attempt);
+      await this.queue.enqueue({ uploadId, attempt });
     } catch (err) {
       this.logger.error(
         `enqueue failed ${JSON.stringify({ uploadId, error: describeError(err) })}`,
       );
-      await this.repo.failExtraction(session, uploadId, 'error').catch(() => false);
+      await this.repo.failEnqueue(session, uploadId).catch(() => false);
     }
   }
 }

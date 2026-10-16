@@ -5,11 +5,13 @@ import { Redis } from 'ioredis';
 /**
  * 报告识别队列（M2 规格 2.3 第 3 条、3.2“识别过程中的租户上下文”）。
  *
- * 任务参数只有 upload_id：不带租户信息、客户姓名、文件名或任何内容。
+ * 任务参数只有 upload_id 和第几次识别：不带租户信息、客户姓名、文件名或任何内容。
  * 执行时由 ExtractionService 从数据库重新读取发起人的身份，以他的租户上下文读写。
+ * attempt 必须等于记录当前的识别次数才能认领，同一次识别的重复任务读不到。
  */
 export interface ExtractionJob {
   uploadId: string;
+  attempt: number;
 }
 
 export type ExtractionProcessor = (job: ExtractionJob) => Promise<void>;
@@ -17,8 +19,8 @@ export type ExtractionProcessor = (job: ExtractionJob) => Promise<void>;
 export interface ExtractionQueue {
   /** 没有配置 Redis 时为 false，上传和重新识别接口返回“未配置” */
   readonly configured: boolean;
-  /** attempt 用来区分同一条记录的多次识别，避免重复入队 */
-  enqueue(job: ExtractionJob, attempt: number): Promise<void>;
+  /** 任务 id 由 upload_id 和 attempt 组成，同一次识别不会重复入队 */
+  enqueue(job: ExtractionJob): Promise<void>;
   /** 由 ExtractionService 启动时注册处理函数 */
   start(processor: ExtractionProcessor): void;
   close(): Promise<void>;
@@ -62,11 +64,11 @@ export class BullMqExtractionQueue implements ExtractionQueue {
     return redis;
   }
 
-  async enqueue(job: ExtractionJob, attempt: number): Promise<void> {
+  async enqueue(job: ExtractionJob): Promise<void> {
     await this.queue.add(
       'extract',
-      { uploadId: job.uploadId },
-      { jobId: `${job.uploadId}-${attempt}` },
+      { uploadId: job.uploadId, attempt: job.attempt },
+      { jobId: `${job.uploadId}-${job.attempt}` },
     );
   }
 
@@ -75,7 +77,7 @@ export class BullMqExtractionQueue implements ExtractionQueue {
     this.workerConnection = this.connect();
     this.worker = new Worker<ExtractionJob>(
       QUEUE_NAME,
-      async (job) => processor({ uploadId: job.data.uploadId }),
+      async (job) => processor({ uploadId: job.data.uploadId, attempt: job.data.attempt }),
       { connection: this.workerConnection, concurrency: CONCURRENCY },
     );
     // 失败只记任务 id（含 upload_id）和错误类型，不记错误消息
@@ -121,9 +123,18 @@ export class InlineExtractionQueue implements ExtractionQueue {
   private pending = new Set<Promise<void>>();
   /** 设置后入队不执行，用来测试“排队中”的状态 */
   paused = false;
+  /** 设置后下一次入队失败，用来测试“入队失败时退还页数” */
+  failNextEnqueue = false;
 
-  enqueue(job: ExtractionJob, attempt: number): Promise<void> {
-    const entry: (typeof this.jobs)[number] = { data: { uploadId: job.uploadId }, attempt };
+  enqueue(job: ExtractionJob): Promise<void> {
+    if (this.failNextEnqueue) {
+      this.failNextEnqueue = false;
+      return Promise.reject(new Error('queue unavailable'));
+    }
+    const entry: (typeof this.jobs)[number] = {
+      data: { uploadId: job.uploadId, attempt: job.attempt },
+      attempt: job.attempt,
+    };
     this.jobs.push(entry);
     if (!this.paused) this.schedule(entry);
     return Promise.resolve();

@@ -10,6 +10,8 @@ import {
 } from '../src/db/database.js';
 import type { Database } from '../src/db/types.js';
 import { TEST_APP_URL } from './env.js';
+import { ReportsRepository } from '../src/reports/reports.repository.js';
+import { InMemoryObjectStorage } from '../src/reports/storage.js';
 import { ownerDb, seedFixtures, type Fixtures } from './fixtures.js';
 
 /**
@@ -196,6 +198,104 @@ describe('报告上传数据表的行级安全和约束', () => {
       return seen;
     });
   }
+
+  describe('原件清除队列（Q6）', () => {
+    const storageKey = async (fileId: string) =>
+      (
+        await owner
+          .selectFrom('report_files')
+          .select('storage_key')
+          .where('id', '=', fileId)
+          .executeTakeFirstOrThrow()
+      ).storage_key;
+    const queued = async () =>
+      (
+        await sql<{ storage_key: string }>`select storage_key from storage_purge_queue`.execute(
+          owner,
+        )
+      ).rows.map((r) => r.storage_key);
+    const deleteClientA1 = () =>
+      owner.deleteFrom('clients').where('id', '=', f.clients.a1[0]).execute();
+
+    it('删除客户时它的原件 key 进入清除队列', async () => {
+      const key = await storageKey(a1.fileId);
+      expect(await queued()).toEqual([]);
+      await deleteClientA1();
+      expect(await queued()).toEqual([key]);
+    });
+
+    it('带租户上下文（健管师、客户、管理员）的会话不能认领或完成清除，也不能直接读队列', async () => {
+      await deleteClientA1();
+      for (const c of [managerA1(), managerB1(), orgAdminA(), platform()]) {
+        await expect(
+          withTenant(app, c, (trx) => sql`select storage_purge_claim(10)`.execute(trx)),
+          c.role,
+        ).rejects.toThrow(/system task/);
+        await expect(
+          withTenant(app, c, (trx) =>
+            sql`select storage_purge_done(${['x']}::text[])`.execute(trx),
+          ),
+          c.role,
+        ).rejects.toThrow(/system task/);
+      }
+      // 客户端会话（以后的客户账号）同样带 app.role / app.user_id，同样被拒绝
+      await expect(
+        app.transaction().execute(async (trx) => {
+          await sql`select set_config('app.role', 'client', true), set_config('app.user_id', ${randomUUID()}, true)`.execute(
+            trx,
+          );
+          await sql`select storage_purge_claim(10)`.execute(trx);
+        }),
+      ).rejects.toThrow(/system task/);
+      await expect(sql`select storage_key from storage_purge_queue`.execute(app)).rejects.toThrow(
+        /permission denied/,
+      );
+      expect(await queued()).toHaveLength(1);
+    });
+
+    it('认领即占用：认领过的 key 不会再被列出；只能完成认领中的 key', async () => {
+      const key = await storageKey(a1.fileId);
+      await deleteClientA1();
+      const claim = async () =>
+        (await sql<{ k: string }>`select storage_purge_claim(10) as k`.execute(app)).rows.map(
+          (r) => r.k,
+        );
+      expect(await claim()).toEqual([key]);
+      expect(await claim()).toEqual([]);
+      // 没认领的 key 完成不了
+      await sql`insert into storage_purge_queue (storage_key) values ('reports/unclaimed')`.execute(
+        owner,
+      );
+      await sql`select storage_purge_done(${['reports/unclaimed']}::text[])`.execute(app);
+      expect((await queued()).sort()).toEqual([key, 'reports/unclaimed'].sort());
+      await sql`select storage_purge_done(${[key]}::text[])`.execute(app);
+      expect(await queued()).toEqual(['reports/unclaimed']);
+    });
+
+    it('后台清除删掉对象存储里的原件并移出队列；删除失败的留到认领过期后再试', async () => {
+      const key = await storageKey(a1.fileId);
+      const storage = new InMemoryObjectStorage();
+      await storage.put(key, Buffer.from('synthetic'), 'image/png');
+      await storage.put('reports/other', Buffer.from('synthetic'), 'image/png');
+      await deleteClientA1();
+      const repo = new ReportsRepository(app);
+      expect(await repo.purgeBatch(storage)).toBe(1);
+      expect([...storage.objects.keys()]).toEqual(['reports/other']);
+      expect(await queued()).toEqual([]);
+
+      const failing = new InMemoryObjectStorage();
+      failing.delete = () => Promise.reject(new Error('unavailable'));
+      await deleteClientsOf(f.clients.a1[1]);
+      const before = await queued();
+      expect(await repo.purgeBatch(failing)).toBe(0);
+      expect(await queued()).toEqual(before);
+    });
+
+    async function deleteClientsOf(clientId: string) {
+      await seedUpload(managerA1(), clientId);
+      await owner.deleteFrom('clients').where('id', '=', clientId).execute();
+    }
+  });
 
   it('没有租户上下文时，应用角色查不到任何一张新表或扩展表的数据', async () => {
     for (const t of [...ALL_TABLES, 'report_extraction_quota'] as const) {
@@ -567,6 +667,15 @@ describe('报告上传数据表的行级安全和约束', () => {
   });
 
   it('客户转出（Q23）：未核对的作废并清掉识别结果，原件跟着客户走；健管师调机构时 org_id 跟着变', async () => {
+    // 已放弃的识别结果同样作废（Q23：未核对的结果不跟着转）
+    const discarded = await seedUpload(managerA1(), f.clients.a1[0]);
+    await asA1((trx) =>
+      trx
+        .updateTable('report_uploads')
+        .set({ status: 'discarded' })
+        .where('id', '=', discarded.uploadId)
+        .execute(),
+    );
     await owner
       .updateTable('clients')
       .set({ manager_id: f.users.managerA2.id })
@@ -593,6 +702,19 @@ describe('报告上传数据表的行级安全和约束', () => {
         .where('upload_id', '=', a1.uploadId)
         .execute(),
     ).toEqual([]);
+    expect(
+      await owner
+        .selectFrom('extracted_values')
+        .select('id')
+        .where('upload_id', '=', discarded.uploadId)
+        .execute(),
+    ).toEqual([]);
+    const discardedRow = await owner
+      .selectFrom('report_uploads')
+      .select('status')
+      .where('id', '=', discarded.uploadId)
+      .executeTakeFirstOrThrow();
+    expect(discardedRow.status).toBe('discarded');
     const files = await withTenant(app, managerA2(), (trx) =>
       trx.selectFrom('report_files').select('id').where('upload_id', '=', a1.uploadId).execute(),
     );
@@ -636,6 +758,52 @@ describe('报告上传数据表的行级安全和约束', () => {
       { user_id: f.users.managerA1.id, role: 'manager', operator_id: f.operatorA, org_id: f.orgA },
     ]);
     expect((await requester(randomUUID())).rows).toEqual([]);
+    // 发起人不是这位客户的健管师（或不是健管师）时没有结果
+    await sql`alter table report_uploads disable trigger report_uploads_guard`.execute(owner);
+    try {
+      for (const other of [f.users.managerA2.id, f.users.orgAdminA.id]) {
+        await owner
+          .updateTable('report_uploads')
+          .set({ requested_by: other })
+          .where('id', '=', queued.id)
+          .execute();
+        expect((await requester(queued.id)).rows, other).toEqual([]);
+      }
+    } finally {
+      await sql`alter table report_uploads enable trigger report_uploads_guard`.execute(owner);
+    }
+  });
+
+  it('认领只能认领当前这次识别并进入识别中；退还记录应用改不了', async () => {
+    const queued = await asA1((trx) =>
+      trx
+        .insertInto('report_uploads')
+        .values({
+          ...scope(managerA1()),
+          client_id: f.clients.a1[1],
+          page_count: 1,
+          uploaded_by: f.users.managerA1.id,
+          requested_by: f.users.managerA1.id,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow(),
+    );
+    const set = (values: { status?: 'processing'; claimed_attempt?: number }) =>
+      asA1((trx) =>
+        trx.updateTable('report_uploads').set(values).where('id', '=', queued.id).execute(),
+      );
+    await expect(set({ status: 'processing', claimed_attempt: 2 })).rejects.toThrow(/claim/);
+    await expect(set({ claimed_attempt: 1 })).rejects.toThrow(/claim/);
+    await set({ status: 'processing', claimed_attempt: 1 });
+    await expect(
+      asA1((trx) =>
+        trx
+          .updateTable('report_uploads')
+          .set({ quota_refunded_attempt: 1 } as never)
+          .where('id', '=', queued.id)
+          .execute(),
+      ),
+    ).rejects.toThrow(/permission denied/);
   });
 
   it('每天识别页数：只能看到和写自己的，不能超过 200 页', async () => {
@@ -679,5 +847,92 @@ describe('报告上传数据表的行级安全和约束', () => {
           .execute(),
       ),
     ).rejects.toThrow();
+  });
+
+  it('每天识别页数只能增加；只有入队失败、还没认领的那次识别能退还，且只退一次', async () => {
+    const pages = async () =>
+      (
+        await owner
+          .selectFrom('report_extraction_quota')
+          .select('pages')
+          .where('manager_id', '=', f.users.managerA1.id)
+          .executeTakeFirst()
+      )?.pages;
+    await asA1((trx) =>
+      trx
+        .insertInto('report_extraction_quota')
+        .values({
+          manager_id: f.users.managerA1.id,
+          operator_id: f.operatorA,
+          day: sql`current_date`,
+          pages: 5,
+        })
+        .execute(),
+    );
+    await expect(
+      asA1((trx) =>
+        trx
+          .updateTable('report_extraction_quota')
+          .set({ pages: 1 })
+          .where('manager_id', '=', f.users.managerA1.id)
+          .execute(),
+      ),
+    ).rejects.toThrow(/only increase/);
+
+    const newUpload = (clientId: string) =>
+      asA1((trx) =>
+        trx
+          .insertInto('report_uploads')
+          .values({
+            ...scope(managerA1()),
+            client_id: clientId,
+            page_count: 2,
+            uploaded_by: f.users.managerA1.id,
+            requested_by: f.users.managerA1.id,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow(),
+      );
+    const fail = (id: string, claim: boolean) =>
+      asA1(async (trx) => {
+        if (claim) {
+          await trx
+            .updateTable('report_uploads')
+            .set({ status: 'processing', claimed_attempt: 1 })
+            .where('id', '=', id)
+            .execute();
+        }
+        await trx
+          .updateTable('report_uploads')
+          .set({ status: 'failed', failure_category: 'error' })
+          .where('id', '=', id)
+          .execute();
+      });
+    const refund = (c: TenantContext, id: string) =>
+      withTenant(app, c, async (trx) => {
+        const { rows } = await sql<{
+          ok: boolean;
+        }>`select report_quota_refund(${id}) as ok`.execute(trx);
+        return rows[0]?.ok;
+      });
+
+    const unclaimed = await newUpload(f.clients.a1[1]);
+    const claimed = await newUpload(f.clients.a1[1]);
+    // 还在排队中：不退
+    expect(await refund(managerA1(), unclaimed.id)).toBe(false);
+    await fail(unclaimed.id, false);
+    await fail(claimed.id, true);
+    // 别人、没有租户上下文：不退；已经开始识别的：不退
+    expect(await refund(managerA2(), unclaimed.id)).toBe(false);
+    expect(
+      (await sql<{ ok: boolean }>`select report_quota_refund(${unclaimed.id}) as ok`.execute(app))
+        .rows[0]?.ok,
+    ).toBe(false);
+    expect(await refund(managerA1(), claimed.id)).toBe(false);
+    expect(await pages()).toBe(5);
+    expect(await refund(managerA1(), unclaimed.id)).toBe(true);
+    expect(await pages()).toBe(3);
+    expect(await refund(managerA1(), unclaimed.id)).toBe(false);
+    expect(await pages()).toBe(3);
   });
 });

@@ -39,6 +39,10 @@ export async function up(db: Kysely<unknown>): Promise<void> {
         )
       ),
       attempts int not null default 1 check (attempts between 0 and 3),
+      -- 已被队列任务认领的是第几次识别：同一次识别的重复任务不能再认领（识别超时后除外）
+      claimed_attempt int not null default 0 check (claimed_attempt between 0 and 3),
+      -- 已退还页数的是第几次识别（入队失败时退还，规格 Q24），每次识别最多退一次
+      quota_refunded_attempt int not null default 0 check (quota_refunded_attempt between 0 and 3),
       version int not null default 0 check (version >= 0),
       page_count int not null check (page_count between 1 and 30),
       progress_page int not null default 0 check (progress_page between 0 and 30),
@@ -170,10 +174,12 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       primary key (manager_id, day)
     );
 
-    -- 客户删除后待清除的原件（Q6）。只有所有者能读写，应用通过下面两个函数取用
+    -- 客户删除后待清除的原件（Q6）。只有所有者能读写，后台任务通过下面两个函数认领、完成
     create table storage_purge_queue (
       storage_key text primary key,
-      created_at timestamptz not null default now()
+      created_at timestamptz not null default now(),
+      -- 认领到期前不会再被认领；到期未完成（清除失败、进程退出）的下次重新认领
+      claimed_until timestamptz
     );
   `.execute(db);
 
@@ -256,6 +262,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       if tg_op = 'INSERT' then
         if new.status <> 'queued' or new.attempts <> 1 or new.version <> 0
           or new.progress_page <> 0 or new.report_id is not null or new.verified_by is not null
+          or new.claimed_attempt <> 0 or new.quota_refunded_attempt <> 0
           or new.verified_at is not null or new.critical_acknowledged
           or new.uploaded_by is distinct from app_user_id()
           or new.requested_by is distinct from app_user_id()
@@ -304,6 +311,15 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       elsif new.attempts <> old.attempts or new.requested_by <> old.requested_by then
         raise exception 'attempts change only on retry' using errcode = 'check_violation';
       end if;
+      -- 认领只能认领当前这次识别，并同时进入识别中；退还记录只由退还函数写
+      if new.claimed_attempt <> old.claimed_attempt
+        and (new.claimed_attempt <> new.attempts or new.status <> 'processing')
+      then
+        raise exception 'claim must match the current attempt' using errcode = 'check_violation';
+      end if;
+      if new.quota_refunded_attempt <> old.quota_refunded_attempt then
+        raise exception 'quota refund is recorded by the system' using errcode = 'check_violation';
+      end if;
       if new.status = 'verified' then
         if new.verified_by is distinct from app_user_id() or not exists (
           select 1 from health_reports r
@@ -334,6 +350,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
           new.status := 'failed';
           new.failure_category := 'transferred';
           new.attempts := 0;
+          new.claimed_attempt := 0;
+          new.quota_refunded_attempt := 0;
           new.progress_page := 0;
           new.report_date := null;
           new.institution := null;
@@ -347,22 +365,23 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     create trigger report_uploads_transfer before update of manager_id on report_uploads
       for each row execute function report_uploads_transfer();
 
-    -- 作废的识别结果不留数值；记一条系统记录
+    -- 没核对通过的识别结果作废，不留数值（含已放弃的，Q23）；新作废的记一条系统记录
     create function report_uploads_after_transfer() returns trigger
       language plpgsql security definer set search_path = pg_catalog, public, pg_temp
     as $$
     begin
       delete from extracted_values where upload_id = new.id;
-      insert into report_events (operator_id, org_id, manager_id, client_id, upload_id, actor_id, action)
-        values (new.operator_id, new.org_id, new.manager_id, new.client_id, new.id, null, 'transferred');
+      if new.failure_category = 'transferred' and old.failure_category is distinct from 'transferred' then
+        insert into report_events (operator_id, org_id, manager_id, client_id, upload_id, actor_id, action)
+          values (new.operator_id, new.org_id, new.manager_id, new.client_id, new.id, null, 'transferred');
+      end if;
       return null;
     end
     $$;
     revoke all on function report_uploads_after_transfer() from public;
     create trigger report_uploads_after_transfer after update of manager_id on report_uploads
       for each row
-      when (new.manager_id is distinct from old.manager_id and new.failure_category = 'transferred'
-            and old.failure_category is distinct from 'transferred')
+      when (new.manager_id is distinct from old.manager_id and new.status <> 'verified')
       execute function report_uploads_after_transfer();
   `.execute(db);
 
@@ -637,17 +656,40 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     create trigger report_files_enqueue_purge after delete on report_files
       for each row execute function report_files_enqueue_purge();
 
-    create function storage_purge_batch(p_limit int) returns setof text
-      language sql security definer set search_path = pg_catalog, public, pg_temp
+    -- 只给后台任务用：带用户身份（租户上下文）的会话调用时拒绝。
+    -- 认领即占用：认领到的 key 在 15 分钟内不会再被列出，不能只列不取。
+    create function storage_purge_claim(p_limit int) returns setof text
+      language plpgsql security definer set search_path = pg_catalog, public, pg_temp
     as $$
-      select storage_key from storage_purge_queue order by created_at limit least(p_limit, 100)
+    begin
+      if app_role() is not null or app_user_id() is not null then
+        raise exception 'storage purge is a system task' using errcode = 'insufficient_privilege';
+      end if;
+      return query
+        update storage_purge_queue q set claimed_until = now() + interval '15 minutes'
+        where q.storage_key in (
+          select storage_key from storage_purge_queue
+          where claimed_until is null or claimed_until < now()
+          order by created_at
+          limit least(greatest(p_limit, 0), 100)
+          for update skip locked
+        )
+        returning q.storage_key;
+    end
     $$;
+    -- 只删除认领中的 key
     create function storage_purge_done(p_keys text[]) returns void
-      language sql security definer set search_path = pg_catalog, public, pg_temp
+      language plpgsql security definer set search_path = pg_catalog, public, pg_temp
     as $$
-      delete from storage_purge_queue where storage_key = any (p_keys)
+    begin
+      if app_role() is not null or app_user_id() is not null then
+        raise exception 'storage purge is a system task' using errcode = 'insufficient_privilege';
+      end if;
+      delete from storage_purge_queue
+      where storage_key = any (p_keys) and claimed_until is not null and claimed_until >= now();
+    end
     $$;
-    revoke all on function storage_purge_batch(int) from public;
+    revoke all on function storage_purge_claim(int) from public;
     revoke all on function storage_purge_done(text[]) from public;
 
     -- 队列任务只带 upload_id：执行时按这个函数找到发起识别的人，再以他的身份建立租户上下文。
@@ -661,15 +703,56 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       join users u on u.id = r.requested_by
       left join operators o on o.id = u.operator_id
       where r.id = p_upload_id and r.status in ('queued', 'processing')
+        and r.requested_by = r.manager_id and u.role = 'manager'
         and u.status = 'active' and coalesce(o.status = 'active', true)
     $$;
     revoke all on function report_upload_requester(uuid) from public;
+
+    -- 入队失败时退还这次识别预占的页数（Q24）。只退调用者自己发起、还没被认领、
+    -- 因入队失败（error）结束的这一次识别，每次识别最多退一次。返回是否退还。
+    create function report_quota_refund(p_upload_id uuid) returns boolean
+      language plpgsql security definer set search_path = pg_catalog, public, pg_temp
+    as $$
+    declare
+      r report_uploads%rowtype;
+    begin
+      select * into r from report_uploads where id = p_upload_id for update;
+      if not found or app_role() is distinct from 'manager'
+        or r.manager_id is distinct from app_user_id() or r.requested_by is distinct from app_user_id()
+        or r.status <> 'failed' or r.failure_category is distinct from 'error'
+        or r.attempts = 0 or r.claimed_attempt = r.attempts or r.quota_refunded_attempt = r.attempts
+      then
+        return false;
+      end if;
+      update report_uploads set quota_refunded_attempt = r.attempts where id = r.id;
+      update report_extraction_quota set pages = greatest(pages - r.page_count, 0)
+        where manager_id = r.manager_id and day = current_date;
+      return true;
+    end
+    $$;
+    revoke all on function report_quota_refund(uuid) from public;
+
+    -- 应用只能增加当天的页数，减少只能经过上面的退还函数
+    create function report_extraction_quota_guard() returns trigger language plpgsql as $$
+    begin
+      if not hb_is_system(tg_relid) and new.pages < old.pages then
+        raise exception 'quota pages can only increase' using errcode = 'check_violation';
+      end if;
+      if new.manager_id <> old.manager_id or new.day <> old.day or new.operator_id <> old.operator_id then
+        raise exception 'quota row is immutable' using errcode = 'check_violation';
+      end if;
+      return new;
+    end
+    $$;
+    create trigger report_extraction_quota_guard before update on report_extraction_quota
+      for each row execute function report_extraction_quota_guard();
   `.execute(db);
 
   await sql`
     grant select, insert on report_uploads to ${app};
-    grant update (status, failure_category, attempts, version, progress_page, report_date,
-                  institution, report_id, requested_by, verified_by, critical_acknowledged)
+    grant update (status, failure_category, attempts, claimed_attempt, version, progress_page,
+                  report_date, institution, report_id, requested_by, verified_by,
+                  critical_acknowledged)
       on report_uploads to ${app};
     grant select, insert on report_files to ${app};
     grant select, insert on extracted_values to ${app};
@@ -683,7 +766,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     -- 报告和指标：上传来源的报告由触发器锁成只读、不能删除；更正只开放 superseded_by
     grant update (superseded_by) on report_indicators to ${app};
 
-    grant execute on function storage_purge_batch(int), storage_purge_done(text[]),
-      report_upload_requester(uuid) to ${app};
+    grant execute on function storage_purge_claim(int), storage_purge_done(text[]),
+      report_upload_requester(uuid), report_quota_refund(uuid) to ${app};
   `.execute(db);
 }

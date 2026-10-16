@@ -55,6 +55,10 @@ jobs:
           cache: pnpm
       - if: steps.keys.outputs.ready == 'true'
         run: pnpm install --frozen-lockfile
+      # 报告识别评测要渲染合成报告样本（PDF、照片），需要中文字体；没有字体时每个识别用例都会出错
+      - name: 安装中文字体
+        if: steps.keys.outputs.ready == 'true'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk
       - name: 运行评测
         if: steps.keys.outputs.ready == 'true'
         # 手动输入经环境变量传入，不直接拼进脚本

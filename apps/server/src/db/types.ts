@@ -262,6 +262,8 @@ export interface ReportUploadsTable extends ClientScoped {
   status: Generated<UploadStatusColumn>;
   failure_category: Nullable<FailureCategoryColumn>;
   attempts: Generated<number>;
+  claimed_attempt: Generated<number>;
+  quota_refunded_attempt: Generated<number>;
   version: Generated<number>;
   page_count: number;
   progress_page: Generated<number>;

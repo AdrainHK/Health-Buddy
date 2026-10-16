@@ -26,11 +26,14 @@ import { type ExpressionBuilder, type Selectable, type Updateable } from 'kysely
 import { badRequest, conflict, notFound, tooManyRequests } from '../common/api-error.js';
 import { DB } from '../db/db.provider.js';
 import { withTenant, type Db, type TenantContext, type TenantTransaction } from '../db/database.js';
+import { dbErrorCode } from '../common/db-error.js';
 import {
   asDate,
+  claimStaleBefore,
   currentDate,
+  reportQuotaRefund,
   reportUploadRequester,
-  storagePurgeBatch,
+  storagePurgeClaim,
   storagePurgeDone,
 } from '../db/report-functions.js';
 import type {
@@ -290,8 +293,16 @@ export class ReportsRepository {
     return reportUploadRequester(this.db, uploadId);
   }
 
-  /** 认领一次识别：排队中（或服务重启后重新执行的识别中）改为识别中，返回原件列表 */
-  claimExtraction(ctx: TenantContext, uploadId: string): Promise<ClaimedExtraction | undefined> {
+  /**
+   * 认领一次识别，返回原件列表。任务带的 attempt 必须是记录当前这次识别：
+   * 排队中的直接认领；识别中的（已被认领）只有超过 10 分钟没有进度（服务重启等）才能重新认领，
+   * 同一次识别的重复任务读不到。
+   */
+  claimExtraction(
+    ctx: TenantContext,
+    uploadId: string,
+    attempt: number,
+  ): Promise<ClaimedExtraction | undefined> {
     return withTenant(this.db, ctx, async (trx) => {
       if (ctx.role !== 'manager') return undefined;
       const upload = await trx
@@ -299,14 +310,20 @@ export class ReportsRepository {
         .select(['id', 'client_id', 'status', 'page_count'])
         .where('id', '=', uploadId)
         .where('manager_id', '=', ctx.userId)
-        .where('status', 'in', ['queued', 'processing'])
+        .where('attempts', '=', attempt)
+        .where((eb) =>
+          eb.or([
+            eb('status', '=', 'queued'),
+            eb.and([eb('status', '=', 'processing'), eb('updated_at', '<', claimStaleBefore())]),
+          ]),
+        )
         .forUpdate()
         .executeTakeFirst();
       if (!upload) return undefined;
       if (!(await ownClient(trx, ctx, upload.client_id))) return undefined;
       await trx
         .updateTable('report_uploads')
-        .set({ status: 'processing', progress_page: 0 })
+        .set({ status: 'processing', progress_page: 0, claimed_attempt: attempt })
         .where('id', '=', uploadId)
         .execute();
       await addEvent(trx, ctx, upload.client_id, {
@@ -414,6 +431,27 @@ export class ReportsRepository {
         action: 'extraction_failed',
       });
       return true;
+    });
+  }
+
+  /**
+   * 入队失败：记录改为失败（原因“出错”），并退还这次识别预占的页数（Q24）。
+   * 退还由数据库函数检查：只退自己发起、还没被认领的这一次。
+   */
+  failEnqueue(ctx: TenantContext, uploadId: string): Promise<boolean> {
+    return withTenant(this.db, ctx, async (trx) => {
+      const upload = await lockUpload(trx, ctx, uploadId);
+      if (!upload || upload.status !== 'queued') return false;
+      await trx
+        .updateTable('report_uploads')
+        .set({ status: 'failed', failure_category: 'error', progress_page: 0 })
+        .where('id', '=', uploadId)
+        .execute();
+      await addEvent(trx, ctx, upload.client_id, {
+        upload_id: uploadId,
+        action: 'extraction_failed',
+      });
+      return reportQuotaRefund(trx, uploadId);
     });
   }
 
@@ -961,7 +999,7 @@ export class ReportsRepository {
 
   /** 客户删除后待清除的原件（Q6）。以所有者函数取用，不需要租户上下文 */
   async purgeBatch(storage: ObjectStorage, limit = 50): Promise<number> {
-    const keys = await storagePurgeBatch(this.db, limit);
+    const keys = await storagePurgeClaim(this.db, limit);
     const done: string[] = [];
     for (const key of keys) {
       try {
@@ -996,30 +1034,30 @@ async function addEvent(
     .execute();
 }
 
-/** 当天的识别页数加上 pages；超过每天 200 页时拒绝（Q24），约束在数据库里 */
+/**
+ * 当天的识别页数加上 pages（Q24）。一条 upsert 原子地累加，上限写在数据库约束里：
+ * 超过每天 200 页时约束失败，整个事务回滚，返回 429。
+ */
 async function reservePages(trx: TenantTransaction, ctx: TenantContext, pages: number) {
-  const day = currentDate();
-  const current = await trx
-    .selectFrom('report_extraction_quota')
-    .select('pages')
-    .where('manager_id', '=', ctx.userId)
-    .where('day', '=', day)
-    .forUpdate()
-    .executeTakeFirst();
-  const used = current?.pages ?? 0;
-  if (used + pages > REPORT_UPLOAD_LIMITS.dailyPages) throw tooManyRequests(['daily_page_limit']);
-  if (current) {
-    await trx
-      .updateTable('report_extraction_quota')
-      .set({ pages: used + pages })
-      .where('manager_id', '=', ctx.userId)
-      .where('day', '=', day)
-      .execute();
-  } else {
+  if (pages > REPORT_UPLOAD_LIMITS.dailyPages) throw tooManyRequests(['daily_page_limit']);
+  try {
     await trx
       .insertInto('report_extraction_quota')
-      .values({ manager_id: ctx.userId, operator_id: ctx.operatorId ?? '', day, pages })
+      .values({
+        manager_id: ctx.userId,
+        operator_id: ctx.operatorId ?? '',
+        day: currentDate(),
+        pages,
+      })
+      .onConflict((oc) =>
+        oc.columns(['manager_id', 'day']).doUpdateSet((eb) => ({
+          pages: eb('report_extraction_quota.pages', '+', eb.ref('excluded.pages')),
+        })),
+      )
       .execute();
+  } catch (err) {
+    if (dbErrorCode(err) === '23514') throw tooManyRequests(['daily_page_limit']);
+    throw err;
   }
 }
 

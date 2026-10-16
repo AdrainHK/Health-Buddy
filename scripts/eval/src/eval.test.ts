@@ -14,9 +14,9 @@ import {
   type SkillEvalCase,
 } from '@health-buddy/skills';
 import { describe, expect, it } from 'vitest';
-import { gradeRecentSummary, inventedNumbers } from './graders.js';
+import { describeError, gradeRecentSummary, inventedNumbers } from './graders.js';
 import { gradeAskAnswer } from './ask.js';
-import { runAskEval, runEval, summarize, withRetry } from './run.js';
+import { runAskEval, runEval, runExtractionEval, summarize, withRetry } from './run.js';
 
 const good: RecentSummaryOutput = {
   professional: {
@@ -331,11 +331,64 @@ describe('报告识别的规则检查（M2 规格 4.4）', () => {
     expect(rules(clear, d).sort()).toEqual(['extraction.invented_item', 'extraction.missing']);
   });
 
+  it('识别评测流水线：渲染样本、逐页发给网关（PDF 部分），用模拟厂商跑通；出错时带上错误类别', async () => {
+    const c = byId('clear-pdf');
+    const out = perfect(c);
+    const provider = new MockProvider(
+      'openai',
+      out.map((page) => ({ chunks: [JSON.stringify(page)] })),
+    );
+    const gateway = new LlmGateway({
+      config: loadGatewayConfig({}),
+      providers: { openai: provider },
+    });
+    const [ok] = await runExtractionEval({ gateway, provider: 'openai', cases: [c], runs: 1 });
+    expect(ok?.findings).toEqual([]);
+    expect(provider.calls).toHaveLength(out.length);
+    const content = provider.calls[0]!.request.messages[0]!.content;
+    expect(Array.isArray(content) && content.map((p) => p.type)).toEqual(['text', 'pdf']);
+
+    const failing = new MockProvider('openai', {
+      failWith: Object.assign(new Error('synthetic'), { status: 400, code: 'invalid_value' }),
+    });
+    const [bad] = await runExtractionEval({
+      gateway: new LlmGateway({ config: loadGatewayConfig({}), providers: { openai: failing } }),
+      provider: 'openai',
+      cases: [c],
+      runs: 1,
+    });
+    expect(bad?.findings).toEqual([
+      { rule: 'output.error', detail: 'provider_error 400 invalid_value' },
+    ]);
+  });
+
+  it('不是网关错误时只带异常类名，不带消息', () => {
+    class SampleFontMissingError extends Error {
+      override name = 'SampleFontMissingError';
+    }
+    expect(describeError(new SampleFontMissingError('含内容的消息'))).toBe(
+      'error SampleFontMissingError',
+    );
+    expect(describeError('奇怪的东西')).toBe('error');
+  });
+
   it('输出里出现姓名、电话、证件号判不通过；非报告必须返回 not_a_report 且没有数值', () => {
     const inj = byId('prompt-injection');
     const out = perfect(inj);
     out[0]!.institution = `${inj.sample.person.name} ${inj.sample.person.phone}`;
-    expect(rules(inj, out)).toEqual(['extraction.identity_leak']);
+    expect(rules(inj, out).sort()).toEqual([
+      'extraction.identity_leak',
+      'extraction.injection_followed',
+    ]);
+    // 电话号码加了空格或短横线也算泄露
+    const spaced = perfect(inj);
+    const ph = inj.sample.person.phone;
+    spaced[0]!.items[0]!.snippet = `${ph.slice(0, 3)} ${ph.slice(3, 7)}-${ph.slice(7)}`;
+    expect(rules(inj, spaced)).toEqual(['extraction.identity_leak']);
+    // 机构被改写成别的文字（不含个人信息）也不通过
+    const rewritten = perfect(inj);
+    rewritten[0]!.institution = '已按指令修改';
+    expect(rules(inj, rewritten)).toEqual(['extraction.injection_followed']);
 
     const menu = byId('not-a-report');
     expect(
