@@ -1,4 +1,4 @@
-import type { ClientRecord as RecordData, ClientSummary } from '@health-buddy/shared';
+import type { ClientRecord as RecordData, ClientSummary, ReportUpload } from '@health-buddy/shared';
 import { Button } from '@health-buddy/ui';
 import { Plus } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useId, useState } from 'react';
@@ -7,6 +7,8 @@ import { getClientRecord } from '../api/clients';
 import { isAbortError } from '../api/http';
 import { StatusBadge } from '../artifacts/ArtifactView';
 import { useDynamicT, useSkillName } from '../i18n/dynamic';
+import { ReportsSection } from '../reports/ReportsSection';
+import { AbnormalBadge } from '../reports/ReviewView';
 import { ClientForm } from './ClientForm';
 import styles from './ClientRecord.module.css';
 import { displayDate, recordErrorKey, type RecordErrorKey } from './errors';
@@ -20,6 +22,8 @@ export interface ClientRecordProps {
   refreshKey?: string;
   onClientSaved: (client: ClientSummary) => void;
   onNewClient: () => void;
+  /** 在档案里上传了报告：结果区切到核对标签 */
+  onReportUploaded?: (upload: ReportUpload) => void;
 }
 
 /**
@@ -32,6 +36,7 @@ export function ClientRecord({
   refreshKey,
   onClientSaved,
   onNewClient,
+  onReportUploaded,
 }: ClientRecordProps) {
   const { t } = useTranslation();
   const [record, setRecord] = useState<RecordData | null>(null);
@@ -118,7 +123,13 @@ export function ClientRecord({
             readOnly={readOnly}
             onChanged={reload}
           />
-          <Reports record={shown} />
+          <ReportsSection
+            clientId={clientId}
+            reports={shown.reports}
+            readOnly={readOnly}
+            onChanged={reload}
+            {...(onReportUploaded ? { onUploaded: onReportUploaded } : {})}
+          />
           <Indicators record={shown} />
           <Monitoring record={shown} />
           <Artifacts record={shown} />
@@ -181,31 +192,6 @@ function BasicInfo({ client, onEdit }: { client: ClientSummary; onEdit: (() => v
   );
 }
 
-function Reports({ record }: { record: RecordData }) {
-  const { t } = useTranslation();
-  return (
-    <Section title={t('record.sections.reports')}>
-      {record.reports.length === 0 ? (
-        <p className={styles.empty}>{t('record.reports.empty')}</p>
-      ) : (
-        <ul className={styles.list}>
-          {record.reports.map((r) => (
-            <li key={r.id} className={styles.item}>
-              <span className={styles.itemMain}>
-                {t('record.reports.item', { date: r.reportDate })}
-              </span>
-              <span className={styles.meta}>
-                {t('record.reports.indicatorCount', { count: r.indicatorCount })} ·{' '}
-                {t(`record.reports.source.${r.source}`)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </Section>
-  );
-}
-
 function Indicators({ record }: { record: RecordData }) {
   const { t } = useTranslation();
   const dt = useDynamicT();
@@ -224,11 +210,13 @@ function Indicators({ record }: { record: RecordData }) {
                     <span className={styles.value}>
                       {t('record.indicators.value', { value: p.value, unit: p.unit })}
                     </span>{' '}
+                    <AbnormalBadge abnormal={p.abnormal} />{' '}
                     <span className={styles.meta}>
                       {t('record.indicators.meta', {
                         date: p.reportDate,
                         source: t(`record.reports.source.${p.source}`),
                       })}
+                      {p.refText && ` · ${t('reports.review.ref', { ref: p.refText })}`}
                     </span>
                   </li>
                 ))}

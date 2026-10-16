@@ -45,7 +45,16 @@ function makeRecord(overrides: Partial<RecordData> = {}): RecordData {
         updatedAt: NOW,
       },
     ],
-    reports: [{ id: REPORT_ID, reportDate: '2026-09-12', source: 'synthetic', indicatorCount: 2 }],
+    reports: [
+      {
+        id: REPORT_ID,
+        reportDate: '2026-09-12',
+        source: 'synthetic',
+        institution: null,
+        indicatorCount: 2,
+        abnormalCount: 0,
+      },
+    ],
     indicators: [
       {
         code: 'fpg',
@@ -56,6 +65,10 @@ function makeRecord(overrides: Partial<RecordData> = {}): RecordData {
             source: 'synthetic',
             value: 5.6,
             unit: 'mmol/L',
+            originalValue: null,
+            originalUnit: null,
+            refText: null,
+            abnormal: 'no_reference',
           },
         ],
       },

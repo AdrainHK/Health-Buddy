@@ -42,4 +42,44 @@ describe('config', () => {
       expect(String(err)).not.toContain(secret);
     }
   });
+
+  it('enables report storage only when bucket and both keys are set', () => {
+    expect(loadConfig({ ...base })).toMatchObject({
+      storage: undefined,
+      redisUrl: undefined,
+      incompleteStorageVars: [],
+    });
+    const full = loadConfig({
+      ...base,
+      S3_BUCKET: 'reports',
+      S3_ACCESS_KEY_ID: 'key-id',
+      S3_SECRET_ACCESS_KEY: 'secret-key',
+      S3_ENDPOINT: 'https://s3.example.com',
+      S3_FORCE_PATH_STYLE: 'true',
+      REDIS_URL: 'redis://default:pw@redis.internal:6379',
+    });
+    expect(full.storage).toEqual({
+      endpoint: 'https://s3.example.com',
+      region: 'us-east-1',
+      bucket: 'reports',
+      accessKeyId: 'key-id',
+      secretAccessKey: 'secret-key',
+      forcePathStyle: true,
+    });
+    expect(full.redisUrl).toBe('redis://default:pw@redis.internal:6379');
+    // 只配了一部分：不启用，记下缺的变量名（不含值）
+    const partial = loadConfig({ ...base, S3_BUCKET: 'reports', S3_ACCESS_KEY_ID: '' });
+    expect(partial.storage).toBeUndefined();
+    expect(partial.incompleteStorageVars).toEqual(['S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY']);
+  });
+
+  it('rejects a malformed REDIS_URL without printing it', () => {
+    const bad = 'not a url with secret-pw';
+    expect(() => loadConfig({ ...base, REDIS_URL: bad })).toThrow(/REDIS_URL/);
+    try {
+      loadConfig({ ...base, REDIS_URL: bad });
+    } catch (err) {
+      expect(String(err)).not.toContain('secret-pw');
+    }
+  });
 });

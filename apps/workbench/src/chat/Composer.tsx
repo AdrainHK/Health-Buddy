@@ -5,17 +5,21 @@ import {
   type SkillSummary,
   type TaskMode,
 } from '@health-buddy/shared';
-import { ArrowUp, AtSign, Slash, Square, X } from 'lucide-react';
+import { ArrowUp, AtSign, FileText, Paperclip, Slash, Square, X } from 'lucide-react';
 import {
   type ChangeEvent,
+  type ClipboardEvent,
+  type DragEvent,
   type FormEvent,
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
   useId,
+  useRef,
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
+import { REPORT_ACCEPT } from '../api/reports';
 import { useSkillName } from '../i18n/dynamic';
 import styles from './Composer.module.css';
 
@@ -49,7 +53,16 @@ interface Option {
   id: string;
   label: string;
   description?: string;
+  /** 列出来但不能选（如还没核对完的报告） */
+  disabled?: boolean;
   select: () => void;
+}
+
+/** @ 列表里的报告：已核对的可以引用；还没核对完的列出来但不能选（规格 2.6） */
+export interface ReportOption {
+  id: string;
+  date: string;
+  pending: boolean;
 }
 
 export interface ComposerProps {
@@ -71,6 +84,12 @@ export interface ComposerProps {
   onStop: () => void;
   /** 输入框上方的提示（技能和模式不匹配、请先 @ 客户、出错等） */
   notice?: ReactNode;
+  /** 当前客户的报告，@ 列表里列出 */
+  reports?: ReportOption[];
+  report?: ReportOption | null;
+  onReportChange?: (report: ReportOption | null) => void;
+  /** 选择、粘贴或拖入了报告文件（一次算一份报告） */
+  onAttachFiles?: (files: File[]) => void;
 }
 
 /** 输入框：模式切换、/ 技能和 @ 客户补全、发送和停止 */
@@ -91,10 +110,16 @@ export function Composer({
   onSubmit,
   onStop,
   notice,
+  reports = [],
+  report = null,
+  onReportChange,
+  onAttachFiles,
 }: ComposerProps) {
   const { t } = useTranslation();
   const skillName = useSkillName();
   const listId = useId();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
   const [trigger, setTrigger] = useState<Trigger | null>(null);
   const [active, setActive] = useState(0);
 
@@ -118,9 +143,24 @@ export function Composer({
             label: skillName(s.id),
             select: pick(() => onSkillChange(s)),
           }))
-      : clients
-          .filter((c) => c.displayName.toLowerCase().includes(query))
-          .map((c) => ({ id: c.id, label: c.displayName, select: pick(() => onClientChange(c)) }));
+      : [
+          ...clients
+            .filter((c) => c.displayName.toLowerCase().includes(query))
+            .map((c) => ({
+              id: c.id,
+              label: c.displayName,
+              select: pick(() => onClientChange(c)),
+            })),
+          ...(onReportChange ? reports : [])
+            .map((r) => ({ r, label: t('chat.reportOption', { date: r.date }) }))
+            .filter(({ r, label }) => label.toLowerCase().includes(query) || r.date.includes(query))
+            .map(({ r, label }) => ({
+              id: r.id,
+              label,
+              ...(r.pending ? { description: t('chat.reportPending'), disabled: true } : {}),
+              select: r.pending ? () => {} : pick(() => onReportChange?.(r)),
+            })),
+        ];
   const activeIndex = Math.min(active, Math.max(options.length - 1, 0));
   const menuOpen = trigger !== null;
 
@@ -162,11 +202,44 @@ export function Composer({
     onSubmit();
   };
 
-  return (
-    <form className={styles.composer} onSubmit={submit}>
-      {notice && <div className={styles.notice}>{notice}</div>}
+  // 粘贴截图、拖入文件都按上传报告处理
+  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = [...e.clipboardData.files];
+    if (!onAttachFiles || files.length === 0) return;
+    e.preventDefault();
+    onAttachFiles(files);
+  };
+  const hasFiles = (e: DragEvent) => [...e.dataTransfer.types].includes('Files');
+  const onDragOver = (e: DragEvent<HTMLFormElement>) => {
+    if (!onAttachFiles || disabled || !hasFiles(e)) return;
+    e.preventDefault();
+    setDragging(true);
+  };
+  const onDrop = (e: DragEvent<HTMLFormElement>) => {
+    setDragging(false);
+    if (!onAttachFiles || disabled || !hasFiles(e)) return;
+    e.preventDefault();
+    const files = [...e.dataTransfer.files];
+    if (files.length) onAttachFiles(files);
+  };
 
-      {(skill || client) && (
+  return (
+    <form
+      className={styles.composer}
+      onSubmit={submit}
+      onDragOver={onDragOver}
+      onDragLeave={() => setDragging(false)}
+      onDrop={onDrop}
+      data-dragging={dragging || undefined}
+    >
+      {notice && <div className={styles.notice}>{notice}</div>}
+      {dragging && (
+        <div className={styles.notice} role="status">
+          {t('chat.dropHint')}
+        </div>
+      )}
+
+      {(skill || client || report) && (
         <div className={styles.chips}>
           {skill && (
             <Chip
@@ -186,6 +259,15 @@ export function Composer({
               disabled={disabled}
             />
           )}
+          {report && (
+            <Chip
+              icon={<FileText size={12} />}
+              label={t('chat.reportOption', { date: report.date })}
+              removeLabel={t('chat.removeReport', { date: report.date })}
+              onRemove={() => onReportChange?.(null)}
+              disabled={disabled}
+            />
+          )}
         </div>
       )}
 
@@ -197,6 +279,7 @@ export function Composer({
           onChange={onChange}
           onKeyDown={onKeyDown}
           onBlur={() => setTrigger(null)}
+          onPaste={onPaste}
           placeholder={disabled ? t('chat.readOnlyPlaceholder') : t('chat.placeholder')}
           aria-label={t('chat.placeholder')}
           aria-autocomplete="list"
@@ -221,6 +304,7 @@ export function Composer({
                 id={`${listId}-${index}`}
                 role="option"
                 aria-selected={index === activeIndex}
+                aria-disabled={option.disabled || undefined}
                 className={styles.option}
                 // 用 mousedown 选中，避免输入框先失焦把列表关掉
                 onMouseDown={(e) => {
@@ -229,6 +313,9 @@ export function Composer({
                 }}
               >
                 {option.label}
+                {option.description && (
+                  <span className={styles.optionNote}>{option.description}</span>
+                )}
               </li>
             ))}
           </ul>
@@ -251,22 +338,48 @@ export function Composer({
             </button>
           ))}
         </div>
-        {generating ? (
-          <IconButton
-            variant="secondary"
-            label={t('chat.stop')}
-            icon={<Square size={14} fill="currentColor" />}
-            onClick={onStop}
-          />
-        ) : (
-          <IconButton
-            type="submit"
-            variant="primary"
-            label={t('chat.send')}
-            icon={<ArrowUp size={18} />}
-            disabled={disabled || !text.trim()}
-          />
-        )}
+        <div className={styles.barEnd}>
+          {onAttachFiles && (
+            <>
+              <IconButton
+                label={t('chat.attach')}
+                icon={<Paperclip size={16} />}
+                disabled={disabled}
+                onClick={() => fileRef.current?.click()}
+              />
+              <input
+                ref={fileRef}
+                type="file"
+                multiple
+                hidden
+                accept={REPORT_ACCEPT}
+                aria-label={t('chat.attachLabel')}
+                data-testid="chat-file-input"
+                onChange={(e) => {
+                  const files = [...(e.target.files ?? [])];
+                  e.target.value = '';
+                  if (files.length) onAttachFiles(files);
+                }}
+              />
+            </>
+          )}
+          {generating ? (
+            <IconButton
+              variant="secondary"
+              label={t('chat.stop')}
+              icon={<Square size={14} fill="currentColor" />}
+              onClick={onStop}
+            />
+          ) : (
+            <IconButton
+              type="submit"
+              variant="primary"
+              label={t('chat.send')}
+              icon={<ArrowUp size={18} />}
+              disabled={disabled || !text.trim()}
+            />
+          )}
+        </div>
       </div>
     </form>
   );

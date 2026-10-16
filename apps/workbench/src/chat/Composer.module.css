@@ -152,3 +152,25 @@
 .mode:disabled {
   cursor: not-allowed;
 }
+
+.option[aria-disabled='true'] {
+  color: var(--hb-text-3);
+  cursor: not-allowed;
+}
+
+.optionNote {
+  display: block;
+  color: var(--hb-text-3);
+  font-size: var(--hb-text-xs);
+}
+
+.barEnd {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hb-space-1);
+}
+
+/* 拖入文件时提示可以松开上传 */
+.composer[data-dragging] {
+  border-color: var(--hb-brand);
+}

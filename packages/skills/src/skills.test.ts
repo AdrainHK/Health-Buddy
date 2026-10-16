@@ -13,6 +13,7 @@ import {
   finalizeClientText,
   greetClient,
   redactClientIdentity,
+  redactIdentifiers,
 } from './guardrails.js';
 import { ASK_NOTICE, criticalNotice, suggestSkill, withAskNotice } from './ask.js';
 import { getSkill, skillSummaries } from './registry.js';
@@ -166,6 +167,18 @@ describe('guardrails', () => {
       '电话 [电话]，身份证 [证件号]',
     );
     expect(redactClientIdentity('空腹血糖 7.8，收缩压 185', [])).toBe('空腹血糖 7.8，收缩压 185');
+  });
+
+  it('redacts spaced and dashed phone and ID numbers but keeps indicator rows', () => {
+    expect(redactIdentifiers('电话 139 0000 0000 / +86-139-0000-0000')).toBe(
+      '电话 [电话] / [电话]',
+    );
+    expect(redactIdentifiers('证件号 110101 19900101 123X，110101-19900101-1234')).toBe(
+      '证件号 [证件号]，[证件号]',
+    );
+    expect(redactIdentifiers('空腹血糖 5.6 mmol/L 3.9-6.1；白细胞 6.2 10^9/L')).toBe(
+      '空腹血糖 5.6 mmol/L 3.9-6.1；白细胞 6.2 10^9/L',
+    );
   });
 
   it('uses the generic crisis wording until hotlines are provided', () => {

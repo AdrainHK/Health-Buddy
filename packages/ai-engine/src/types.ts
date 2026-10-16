@@ -12,14 +12,29 @@ export const ROUTES = [
   'chat', // 工作台对话（M1）
   'skill', // 工作台技能执行（M1）
   'report_interpretation', // 体检报告解读（M2）
+  'report_extraction', // 体检报告识别：从报告图片或 PDF 转录指标（M2）
   'expert', // 专家智能体（M3）
   'companion', // AI 健康伴侣（M6）
 ] as const;
 export type Route = (typeof ROUTES)[number];
 
+/** 图片输入支持的格式。HEIC 等其他格式由调用方先转换。 */
+export const IMAGE_MEDIA_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const;
+export type ImageMediaType = (typeof IMAGE_MEDIA_TYPES)[number];
+
+/**
+ * 消息内容的一段：文字、图片或 PDF（M2 报告识别）。
+ * 图片和 PDF 用 base64 传入，由各厂商适配器转换成自己的格式。
+ */
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; mediaType: ImageMediaType; data: string }
+  | { type: 'pdf'; data: string };
+
 export interface ChatMessage {
   role: 'user' | 'assistant';
-  content: string;
+  /** 纯文本，或若干段内容（图片和 PDF 只能出现在 user 消息里） */
+  content: string | ContentPart[];
 }
 
 /** 结构化输出：要求模型按 JSON Schema 输出。两家都用各自的原生能力约束。 */

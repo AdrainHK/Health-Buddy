@@ -135,9 +135,14 @@ export function detectCrisisKeywords(texts: readonly string[]): boolean {
   return texts.some((t) => CRISIS_KEYWORDS.test(t.replace(/\s+/g, '')));
 }
 
-/** 身份证号（18 位，末位可为 X）和大陆手机号 */
-const ID_NUMBER = /(?<!\d)\d{17}[\dXx](?!\d)/g;
+/** 身份证号（18 位，末位可为 X）和大陆手机号；都允许按常见分组用空格或短横线隔开 */
+const ID_NUMBER = /(?<!\d)\d{6}[-\s]?\d{8}[-\s]?\d{3}[\dXx](?!\d)/g;
 const PHONE = /(?<!\d)(?:\+?86[-\s]?)?1[3-9]\d[-\s]?\d{4}[-\s]?\d{4}(?!\d)/g;
+
+/** 按格式替换手机号和身份证号（含空格、短横线分隔的写法）。不认识姓名，姓名要另外处理 */
+export function redactIdentifiers(text: string): string {
+  return text.replace(ID_NUMBER, '[证件号]').replace(PHONE, '[电话]');
+}
 
 /**
  * Q9：健管师的要求原样进入提示词，里面可能带客户姓名或联系方式。
@@ -161,5 +166,5 @@ export function redactClientIdentity(text: string, identifiers: readonly string[
     }
   }
   // 不管有没有引用客户，手机号、身份证号都按格式替换掉
-  return out.replace(ID_NUMBER, '[证件号]').replace(PHONE, '[电话]');
+  return redactIdentifiers(out);
 }

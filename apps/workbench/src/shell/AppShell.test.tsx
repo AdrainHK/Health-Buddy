@@ -186,6 +186,7 @@ describe('AppShell return and rewrite', () => {
       content,
       skillId: SKILL.id,
       clientRefs: [],
+      reportRefs: [],
       status: 'complete',
       createdAt: NOW,
     });

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ABNORMAL_FLAGS } from '../health/reference.js';
 import { artifactSummarySchema } from './artifacts.js';
 import { clientGenderSchema, clientSummarySchema } from './clients.js';
 import { riskTierRecordSchema } from './risk-tiers.js';
@@ -103,10 +104,17 @@ export const reportSummarySchema = z.object({
   reportDate: z.iso.date(),
   source: reportSourceSchema,
   indicatorCount: z.number().int().nonnegative(),
+  /** 检查机构（如有） */
+  institution: z.string().nullable(),
+  /** 高于或低于报告参考范围的指标数 */
+  abnormalCount: z.number().int().nonnegative(),
 });
 export type ReportSummary = z.infer<typeof reportSummarySchema>;
 
-/** 某个指标的历次数值，来自已核对的报告，按报告日期从新到旧 */
+/**
+ * 某个指标的历次数值，来自已核对的报告，按报告日期从新到旧。
+ * 带报告上印的参考范围和高低标记（后端按 Q10 计算），换算过单位的带原值和原单位（Q11）。
+ */
 export const indicatorSeriesSchema = z.object({
   code: z.string(),
   points: z.array(
@@ -116,6 +124,10 @@ export const indicatorSeriesSchema = z.object({
       source: reportSourceSchema,
       value: z.number(),
       unit: z.string(),
+      originalValue: z.string().nullable(),
+      originalUnit: z.string().nullable(),
+      refText: z.string().nullable(),
+      abnormal: z.enum(ABNORMAL_FLAGS),
     }),
   ),
 });

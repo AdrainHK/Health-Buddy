@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { artifactSummarySchema } from './artifacts.js';
+import { reportUploadSummarySchema } from './reports.js';
 
 /** 三种工作模式：问一问、想一想、做一做（M1 规格 3.3） */
 export const TASK_MODES = ['ask', 'plan', 'craft'] as const;
@@ -60,6 +61,8 @@ export const taskMessageSchema = z.object({
   content: z.string(),
   skillId: z.string().nullable(),
   clientRefs: z.array(z.uuid()),
+  /** @ 引用的已核对报告（M2 规格 2.6） */
+  reportRefs: z.array(z.uuid()).default([]),
   status: messageStatusSchema,
   createdAt: z.iso.datetime(),
 });
@@ -99,6 +102,8 @@ export const taskDetailResponseSchema = z.object({
   steps: z.array(taskStepSchema),
   plans: z.array(taskPlanSchema),
   artifacts: z.array(artifactSummarySchema),
+  /** 在这个任务里上传的报告（对话区的识别卡片，M2 规格 2.1） */
+  uploads: z.array(reportUploadSummarySchema).default([]),
 });
 export type TaskDetailResponse = z.infer<typeof taskDetailResponseSchema>;
 
@@ -109,6 +114,8 @@ export const sendMessageRequestSchema = z
     skillId: z.string().min(1).optional(),
     /** 每个任务只关联一位客户（Q6） */
     clientRefs: z.array(z.uuid()).max(1).default([]),
+    /** @ 引用的已核对报告，最多 1 份，必须属于任务关联的客户（M2 规格 2.6） */
+    reportRefs: z.array(z.uuid()).max(1).default([]),
   })
   // 问一问不能调用技能（Q4），前端会先提示切换模式
   .refine((v) => !(v.mode === 'ask' && v.skillId !== undefined), {

@@ -32,6 +32,8 @@ const MONITORING_DAYS = 30;
 export interface PreparedTurn {
   taskId: string;
   clientId: string | null;
+  /** @ 引用的已核对报告（规格 2.6）；为空时用最近一份 */
+  reportId: string | null;
   managerMessageId: string;
   assistantMessageId: string;
 }
@@ -82,6 +84,7 @@ export class WorkbenchRepository {
       content: string;
       skillId: string | undefined;
       clientRefs: string[];
+      reportRefs: string[];
       requiresClient: boolean;
     },
     claim: (taskId: string) => boolean,
@@ -106,6 +109,19 @@ export class WorkbenchRepository {
         }
       }
       if (input.requiresClient && !clientId) throw badRequest();
+      // @ 引用的报告必须是任务关联客户的已核对报告，并且对当前健管师可见（规格 2.6）；
+      // 待核对的识别结果不在 health_reports 里，同样按“不存在”处理
+      const reportId = input.reportRefs[0] ?? null;
+      if (reportId) {
+        if (!clientId) throw notFound();
+        const report = await trx
+          .selectFrom('health_reports')
+          .select('id')
+          .where('id', '=', reportId)
+          .where('client_id', '=', clientId)
+          .executeTakeFirst();
+        if (!report) throw notFound();
+      }
       if (!claim(task.id)) throw conflict({ reasons: ['busy'] });
 
       await closeStaleTurns(trx, task.id);
@@ -131,6 +147,7 @@ export class WorkbenchRepository {
           content: input.content,
           skill_id: input.skillId ?? null,
           client_refs: clientId && ref ? [clientId] : [],
+          report_refs: reportId ? [reportId] : [],
           status: 'complete',
           created_at: new Date(now),
         })
@@ -152,6 +169,7 @@ export class WorkbenchRepository {
       return {
         taskId: task.id,
         clientId,
+        reportId,
         managerMessageId: manager.id,
         assistantMessageId: assistant,
       };
@@ -315,7 +333,11 @@ export class WorkbenchRepository {
    * 读取客户档案并识别危急指标（规格第四节、第五节之二）。
    * 按 Q9 去标识化：只给年龄段、性别和健康数据。客户已经看不到时返回 undefined。
    */
-  clientContext(ctx: TenantContext, clientId: string): Promise<ClientContext | undefined> {
+  clientContext(
+    ctx: TenantContext,
+    clientId: string,
+    reportId: string | null = null,
+  ): Promise<ClientContext | undefined> {
     return withTenant(this.db, ctx, async (trx) => {
       const client = await trx
         .selectFrom('clients')
@@ -332,21 +354,41 @@ export class WorkbenchRepository {
         .where('measured_at', '>=', since)
         .orderBy('measured_at')
         .execute();
-      const report = await trx
+      // @ 引用了报告就用那一份，否则用最近一份（都是已核对的报告）
+      let reportQuery = trx
         .selectFrom('health_reports')
         .select(['id', 'report_date'])
-        .where('client_id', '=', clientId)
-        .orderBy('report_date', 'desc')
-        .limit(1)
-        .executeTakeFirst();
-      const indicators = report
-        ? await trx
-            .selectFrom('report_indicators')
-            .select(['code', 'value', 'unit'])
-            .where('report_id', '=', report.id)
-            .orderBy('code')
-            .execute()
-        : [];
+        .where('client_id', '=', clientId);
+      reportQuery = reportId
+        ? reportQuery.where('id', '=', reportId)
+        : reportQuery.orderBy('report_date', 'desc').orderBy('created_at', 'desc');
+      const report = await reportQuery.limit(1).executeTakeFirst();
+      // 只用目录指标的当前值；参考范围是报告上印的（Q10）
+      const indicators = (
+        report
+          ? await trx
+              .selectFrom('report_indicators')
+              .select(['code', 'value', 'unit', 'ref_low', 'ref_high'])
+              .where('report_id', '=', report.id)
+              .where('superseded_by', 'is', null)
+              .where('code', 'is not', null)
+              .where('value', 'is not', null)
+              .orderBy('code')
+              .execute()
+          : []
+      ).flatMap((i) =>
+        i.code === null || i.value === null
+          ? []
+          : [
+              {
+                code: i.code,
+                value: Number(i.value),
+                unit: i.unit,
+                ...(i.ref_low === null ? {} : { refLow: Number(i.ref_low) }),
+                ...(i.ref_high === null ? {} : { refHigh: Number(i.ref_high) }),
+              },
+            ],
+      );
       const rules = await trx
         .selectFrom('critical_thresholds')
         .select(['metric', 'comparator', 'value', 'level', 'enabled'])
@@ -372,7 +414,7 @@ export class WorkbenchRepository {
       for (const i of indicators) {
         observations.push({
           metric: i.code,
-          value: Number(i.value),
+          value: i.value,
           unit: i.unit,
           observedOn: reportDate,
           source: 'report',
@@ -396,11 +438,7 @@ export class WorkbenchRepository {
           latestReport: report
             ? {
                 date: reportDate,
-                indicators: indicators.map((i) => ({
-                  code: i.code,
-                  value: Number(i.value),
-                  unit: i.unit,
-                })),
+                indicators,
               }
             : null,
           criticalFlags,
@@ -412,7 +450,11 @@ export class WorkbenchRepository {
   }
 
   /** 本任务之前的对话（不含这一轮），用作问一问的上下文 */
-  history(ctx: TenantContext, taskId: string, before: PreparedTurn): Promise<ChatMessage[]> {
+  history(
+    ctx: TenantContext,
+    taskId: string,
+    before: Pick<PreparedTurn, 'managerMessageId' | 'assistantMessageId'>,
+  ): Promise<(ChatMessage & { content: string })[]> {
     return withTenant(this.db, ctx, async (trx) => {
       const rows = await trx
         .selectFrom('task_messages')

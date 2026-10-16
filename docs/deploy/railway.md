@@ -28,6 +28,26 @@ Redis 在用到队列和定时任务的里程碑（M5 随访、M10 自动化）�
 
 可选：`OPENAI_MODEL`（默认 `gpt-6.1-sol`）、`LLM_DEFAULT_PROVIDER`（默认 `openai`）、`LLM_ROUTES`。说明见 `apps/server/.env.example`。
 
+### 报告上传和识别（M2）
+
+报告原件存在 S3 兼容的对象存储里，识别任务走 Redis 队列。这两样没配置时服务照常启动，只是上传报告和重新识别会提示“报告识别服务尚未配置”。
+
+1. 在项目里点 **+ New → Database → Add Redis**，加一个 Redis 服务。
+2. 准备一个对象存储桶（Railway 的 Bucket、Cloudflare R2、AWS S3 或 MinIO 都可以），**不要开公开访问**；地区和数据库放在同一地区（Q5）。
+3. 在应用服务的 **Variables** 里加：
+
+| 变量 | 填什么 |
+|---|---|
+| `REDIS_URL` | `${{Redis.REDIS_URL}}`（引用 Redis 服务，照抄即可） |
+| `S3_BUCKET` | 桶名 |
+| `S3_ACCESS_KEY_ID` | 访问密钥 ID |
+| `S3_SECRET_ACCESS_KEY` | 访问密钥 |
+| `S3_ENDPOINT` | 不是 AWS 时填服务商给的地址（如 R2 的 `https://<账号>.r2.cloudflarestorage.com`）；AWS 留空 |
+| `S3_REGION` | 地区，默认 `us-east-1`；R2 填 `auto` |
+| `S3_FORCE_PATH_STYLE` | MinIO 等需要路径风格时填 `true`，其他留空 |
+
+`S3_BUCKET`、`S3_ACCESS_KEY_ID`、`S3_SECRET_ACCESS_KEY` 三个要一起填，只填一部分时启动日志会提示缺了哪几个（只写变量名）。原件只能通过后端接口查看，存储里的文件名是随机 id，不含客户姓名。
+
 密钥只填在 Railway 里，不要发在聊天里，也不要写进仓库。
 
 ## 每次部署做什么

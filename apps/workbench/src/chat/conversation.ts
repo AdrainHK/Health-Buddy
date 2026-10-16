@@ -20,6 +20,8 @@ export interface ViewMessage {
   content: string;
   skillId: string | null;
   clientRefs: string[];
+  /** @ 引用的已核对报告（规格 2.6） */
+  reportRefs?: string[];
   status: MessageStatus;
   /** 技能建议（Q5），只建议不执行 */
   suggestion?: string;
@@ -160,6 +162,7 @@ function fromMessage(m: TaskMessage): ViewMessage {
     content: m.content,
     skillId: m.skillId,
     clientRefs: m.clientRefs,
+    ...(m.reportRefs.length ? { reportRefs: m.reportRefs } : {}),
     status: m.status,
     ...(m.status === 'refused' ? { refused: true } : {}),
   };

@@ -4,10 +4,12 @@ import {
   clientRecentSummary,
   recentSummaryOutputSchema,
   type AskEvalCase,
+  type ExtractionEvalCase,
   type RecentSummaryOutput,
   type SkillEvalCase,
 } from '@health-buddy/skills';
 import { runAskOnce } from './ask.js';
+import { runExtractionOnce } from './extraction.js';
 import { describeError, gradeRecentSummary, type Finding } from './graders.js';
 import { judgeClientText } from './judge.js';
 
@@ -106,6 +108,23 @@ export async function runAskEval(options: {
     ),
   );
   return runPool(jobs, options.concurrency ?? 3);
+}
+
+/** 报告识别的评测：合成报告逐页识别，每个用例跑 runs 次（M2 规格 4.4） */
+export async function runExtractionEval(options: {
+  gateway: LlmGateway;
+  provider: ProviderName;
+  cases: ExtractionEvalCase[];
+  runs: number;
+  concurrency?: number;
+}): Promise<RunResult[]> {
+  const jobs = options.cases.flatMap((c) =>
+    Array.from(
+      { length: options.runs },
+      (_, i) => () => runExtractionOnce(options.gateway, EVAL_CTX, options.provider, c, i + 1),
+    ),
+  );
+  return runPool(jobs, options.concurrency ?? 2);
 }
 
 /** 厂商或中转临时故障（5xx、限流、超时）：重试，不算模型答错 */

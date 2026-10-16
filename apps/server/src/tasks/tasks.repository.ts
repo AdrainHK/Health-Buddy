@@ -11,6 +11,7 @@ import type {
   UpdateTaskRequest,
 } from '@health-buddy/shared';
 import { conflict } from '../common/api-error.js';
+import { selectUploadSummary, toUploadSummary } from '../reports/reports.repository.js';
 import { DB } from '../db/db.provider.js';
 import { withTenant, type Db, type TenantContext, type TenantTransaction } from '../db/database.js';
 
@@ -99,6 +100,7 @@ export class TasksRepository {
           'content',
           'skill_id',
           'client_refs',
+          'report_refs',
           'status',
           'created_at',
         ])
@@ -138,6 +140,10 @@ export class TasksRepository {
         .orderBy('created_at')
         .orderBy('version')
         .execute();
+      const uploads = await selectUploadSummary(trx)
+        .where('u.task_id', '=', id)
+        .orderBy('u.created_at')
+        .execute();
       return {
         task: toTask(task),
         messages: messages.map((m): TaskMessage => ({
@@ -147,6 +153,7 @@ export class TasksRepository {
           content: m.content,
           skillId: m.skill_id,
           clientRefs: m.client_refs,
+          reportRefs: m.report_refs,
           status: m.status,
           createdAt: m.created_at.toISOString(),
         })),
@@ -167,6 +174,7 @@ export class TasksRepository {
           status: p.status,
         })),
         artifacts: artifacts.map(toArtifactSummary),
+        uploads: uploads.map(toUploadSummary),
       };
     });
   }

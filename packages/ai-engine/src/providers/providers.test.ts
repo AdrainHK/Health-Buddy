@@ -275,3 +275,100 @@ describe('structured output', () => {
     expect(calls[0]).not.toHaveProperty('text');
   });
 });
+
+describe('image and PDF input (M2 report extraction)', () => {
+  const multimodal: GatewayRequest = {
+    route: 'report_extraction',
+    system: 'system prompt',
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'page 1 of 2' },
+          { type: 'image', mediaType: 'image/png', data: 'aW1n' },
+          { type: 'pdf', data: 'cGRm' },
+        ],
+      },
+    ],
+  };
+
+  it('OpenAI sends input_text, input_image and input_file with a neutral file name', async () => {
+    const calls: unknown[] = [];
+    const client = {
+      responses: {
+        stream: (params: unknown) => {
+          calls.push(params);
+          return fakeStream([], 'finalResponse', {
+            model: 'gpt-6-astra',
+            status: 'completed',
+            incomplete_details: null,
+            usage: { input_tokens: 1, output_tokens: 1 },
+          });
+        },
+      },
+    } as unknown as OpenAI;
+    await collect(
+      new OpenAIProvider('unused', client).stream(multimodal, {
+        provider: 'openai',
+        model: 'gpt-6-astra',
+        effort: 'medium',
+      }),
+    );
+    expect(calls[0]).toMatchObject({
+      input: [
+        {
+          role: 'user',
+          content: [
+            { type: 'input_text', text: 'page 1 of 2' },
+            { type: 'input_image', image_url: 'data:image/png;base64,aW1n', detail: 'high' },
+            {
+              type: 'input_file',
+              filename: 'document.pdf',
+              file_data: 'data:application/pdf;base64,cGRm',
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('Claude sends image and document blocks', async () => {
+    const calls: unknown[] = [];
+    const client = {
+      beta: {
+        messages: {
+          stream: (params: unknown) => {
+            calls.push(params);
+            return fakeStream([], 'finalMessage', {
+              model: 'claude-opus-5-5',
+              stop_reason: 'end_turn',
+              usage: { input_tokens: 1, output_tokens: 1 },
+            });
+          },
+        },
+      },
+    } as unknown as Anthropic;
+    await collect(
+      new AnthropicProvider('unused', client).stream(multimodal, {
+        provider: 'anthropic',
+        model: 'claude-opus-5-5',
+        effort: 'high',
+      }),
+    );
+    expect(calls[0]).toMatchObject({
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'page 1 of 2' },
+            { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'aW1n' } },
+            {
+              type: 'document',
+              source: { type: 'base64', media_type: 'application/pdf', data: 'cGRm' },
+            },
+          ],
+        },
+      ],
+    });
+  });
+});

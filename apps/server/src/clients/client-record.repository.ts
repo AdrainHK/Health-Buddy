@@ -15,6 +15,7 @@ import { DB } from '../db/db.provider.js';
 import { withTenant, type Db, type TenantContext, type TenantTransaction } from '../db/database.js';
 import type { Database } from '../db/types.js';
 import { selectArtifactSummary, toArtifactSummary } from '../tasks/tasks.repository.js';
+import { selectReportList } from '../reports/reports.repository.js';
 import { selectClientSummary, toClientSummary } from './clients.repository.js';
 
 /** 档案里列出的上限，防止一位客户的数据把响应撑得太大 */
@@ -43,21 +44,8 @@ export class ClientRecordRepository {
       const tiers = await selectTiers(trx, clientId).limit(1).execute();
       const history = await selectHistory(trx, clientId).execute();
 
-      const reports = await trx
-        .selectFrom('health_reports as r')
-        .leftJoin('report_indicators as i', 'i.report_id', 'r.id')
-        .select((eb) => [
-          'r.id',
-          'r.source',
-          isoDate(eb, 'r.report_date').as('report_date'),
-          eb.fn.count<string>('i.id').as('indicator_count'),
-        ])
-        .where('r.client_id', '=', clientId)
-        .groupBy('r.id')
-        .orderBy('r.report_date', 'desc')
-        .orderBy('r.created_at', 'desc')
-        .limit(REPORT_LIMIT)
-        .execute();
+      // 只有已核对的报告（待核对的识别结果不在 health_reports 里，规格 4.3 第 2 条）
+      const reports = await selectReportList(trx, clientId).limit(REPORT_LIMIT).execute();
 
       const indicatorRows = await trx
         .selectFrom('report_indicators as i')
@@ -68,11 +56,19 @@ export class ClientRecordRepository {
           'i.code',
           'i.value',
           'i.unit',
+          'i.original_value',
+          'i.original_unit',
+          'i.ref_text',
+          'i.abnormal',
           'r.id as report_id',
           'r.source',
           isoDate(eb, 'r.report_date').as('report_date'),
         ])
         .where('i.client_id', '=', clientId)
+        // 趋势只看目录指标的当前值：更正掉的旧值、未收录指标不进趋势
+        .where('i.superseded_by', 'is', null)
+        .where('i.code', 'is not', null)
+        .where('i.value', 'is not', null)
         .orderBy('i.code')
         .orderBy('r.report_date', 'desc')
         .orderBy('r.created_at', 'desc')
@@ -80,6 +76,7 @@ export class ClientRecordRepository {
         .execute();
       const indicators = new Map<string, IndicatorSeries>();
       for (const row of indicatorRows) {
+        if (row.code === null) continue;
         const series = indicators.get(row.code) ?? { code: row.code, points: [] };
         series.points.push({
           reportId: row.report_id,
@@ -87,6 +84,10 @@ export class ClientRecordRepository {
           source: row.source,
           value: Number(row.value),
           unit: row.unit,
+          originalValue: row.original_value,
+          originalUnit: row.original_unit,
+          refText: row.ref_text,
+          abnormal: row.abnormal,
         });
         indicators.set(row.code, series);
       }
@@ -138,7 +139,9 @@ export class ClientRecordRepository {
           id: r.id,
           reportDate: r.report_date,
           source: r.source,
+          institution: r.institution,
           indicatorCount: Number(r.indicator_count),
+          abnormalCount: Number(r.abnormal_count),
         })),
         indicators: [...indicators.values()],
         monitoring: [...monitoring.values()].sort((a, b) => a.metric.localeCompare(b.metric)),

@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type {
+  ChatMessage,
   FinishReason,
   GatewayEvent,
   GatewayRequest,
@@ -45,7 +46,7 @@ export class AnthropicProvider implements Provider {
           ? {}
           : { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const }),
         ...(request.system ? { system: request.system } : {}),
-        messages: request.messages.map((m) => ({ role: m.role, content: m.content })),
+        messages: request.messages.map(toMessageParam),
       },
       signal ? { signal } : undefined,
     );
@@ -77,4 +78,32 @@ function toFinishReason(stopReason: string | null): FinishReason {
   if (stopReason === 'refusal') return 'refused';
   if (stopReason === 'max_tokens') return 'truncated';
   return 'complete';
+}
+
+/** 统一消息转成 Messages API 的参数：图片是 image 块，PDF 是 document 块（base64）。 */
+function toMessageParam(m: ChatMessage) {
+  if (typeof m.content === 'string') return { role: m.role, content: m.content };
+  return {
+    role: m.role,
+    content: m.content.map((part) => {
+      switch (part.type) {
+        case 'text':
+          return { type: 'text' as const, text: part.text };
+        case 'image':
+          return {
+            type: 'image' as const,
+            source: { type: 'base64' as const, media_type: part.mediaType, data: part.data },
+          };
+        case 'pdf':
+          return {
+            type: 'document' as const,
+            source: {
+              type: 'base64' as const,
+              media_type: 'application/pdf' as const,
+              data: part.data,
+            },
+          };
+      }
+    }),
+  };
 }

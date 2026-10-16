@@ -67,6 +67,7 @@ export class GenerationService {
     turn: {
       taskId: string;
       clientId: string | null;
+      reportId?: string | null;
       assistantMessageId: string;
       managerMessageId: string;
     },
@@ -82,7 +83,9 @@ export class GenerationService {
       io.emit({ type: 'text', messageId, delta });
     };
     try {
-      const client = turn.clientId ? await this.readClient(ctx, turn.clientId, steps) : undefined;
+      const client = turn.clientId
+        ? await this.readClient(ctx, turn.clientId, steps, turn.reportId ?? null)
+        : undefined;
       if (turn.clientId && !client)
         return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
 
@@ -170,7 +173,11 @@ export class GenerationService {
   /** 做一做：执行技能，生成草稿（也用于确认计划后执行、退回后重写） */
   async runSkill(
     ctx: TenantContext,
-    run: Omit<RegenerationContext, 'skillId'> & { skill: SkillDefinition; returnReason?: string },
+    run: Omit<RegenerationContext, 'skillId'> & {
+      skill: SkillDefinition;
+      returnReason?: string;
+      reportId?: string | null;
+    },
     io: TurnIo,
   ): Promise<void> {
     const messageId = run.assistantMessageId;
@@ -178,7 +185,7 @@ export class GenerationService {
     try {
       if (!run.clientId)
         return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
-      const client = await this.readClient(ctx, run.clientId, steps);
+      const client = await this.readClient(ctx, run.clientId, steps, run.reportId ?? null);
       if (!client) return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
 
       // 心理危机信号不只依赖模型判断：健管师的原话、退回原因、本任务之前的消息里有关键词也算
@@ -257,9 +264,10 @@ export class GenerationService {
     ctx: TenantContext,
     clientId: string,
     steps: StepRunner,
+    reportId: string | null = null,
   ): Promise<ClientContext | undefined> {
     const read = await steps.start('read_client', 'steps.readClient');
-    const client = await this.repo.clientContext(ctx, clientId);
+    const client = await this.repo.clientContext(ctx, clientId, reportId);
     if (!client) {
       await steps.finish(read, 'failed');
       return undefined;

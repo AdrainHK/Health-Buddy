@@ -77,6 +77,7 @@ export class WorkbenchController {
           content: input.content,
           skillId: input.skillId,
           clientRefs: input.clientRefs,
+          reportRefs: input.reportRefs,
           requiresClient: skill?.requiresClient ?? false,
         },
         claim,

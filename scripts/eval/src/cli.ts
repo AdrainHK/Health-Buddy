@@ -4,15 +4,20 @@
  *   pnpm eval                      有密钥的厂商都跑，每个用例 3 次
  *   pnpm eval --provider openai    只跑一家
  *   pnpm eval --runs 5 --case crisis-signal --no-judge
- *   pnpm eval --suite ask          只跑问一问（summary 只跑近况小结；默认两组都跑）
+ *   pnpm eval --suite ask          只跑问一问（summary 只跑近况小结，extraction 只跑报告识别；默认都跑）
  *
  * 密钥从环境变量读取（OPENAI_API_KEY、ANTHROPIC_API_KEY），不会打印。
  * 结果写到 eval-results/，全部是合成数据。有用例没通过时退出码为 1。
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createGateway, loadGatewayConfig, type ProviderName } from '@health-buddy/ai-engine';
-import { askEvalCases, recentSummaryEvalCases } from '@health-buddy/skills';
-import { runAskEval, runEval, summarize, type RunResult } from './run.js';
+import { sampleFontAvailable } from '@health-buddy/seed';
+import {
+  askEvalCases,
+  recentSummaryEvalCases,
+  reportExtractionEvalCases,
+} from '@health-buddy/skills';
+import { runAskEval, runEval, runExtractionEval, summarize, type RunResult } from './run.js';
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -35,6 +40,14 @@ const suite = arg('suite');
 const pick = <T extends { id: string }>(name: string, list: T[]) =>
   (!suite || suite === name ? list : []).filter((c) => !onlyCase || c.id === onlyCase);
 const cases = pick('summary', recentSummaryEvalCases);
+// 报告识别：合成报告样本由 scripts/seed 渲染，需要中文字体（CI 装 fonts-noto-cjk）
+const extractionCases = pick('extraction', reportExtractionEvalCases);
+if (extractionCases.length && !sampleFontAvailable()) {
+  const msg =
+    '缺少渲染合成报告样本的中文字体（装 fonts-noto-cjk，或用 REPORT_SAMPLE_FONT 指定），报告识别评测无法运行。';
+  console.error(process.env.GITHUB_ACTIONS ? `::error title=eval 缺少字体::${msg}` : msg);
+  process.exit(1);
+}
 const useJudge = !process.argv.includes('--no-judge');
 // 越界类问一问主要靠大模型评审判断，不开评审时不跑，免得“全部通过”有误导
 const askCases = pick('ask', askEvalCases).filter(
@@ -46,11 +59,12 @@ const all: RunResult[] = [];
 for (const provider of providers) {
   const gateway = createGateway({ ...config, defaultProvider: provider, routes: {} });
   console.log(
-    `\n${provider}（${config.defaultModels[provider]}）：${cases.length + askCases.length} 个用例 × ${runs} 次`,
+    `\n${provider}（${config.defaultModels[provider]}）：${cases.length + askCases.length + extractionCases.length} 个用例 × ${runs} 次`,
   );
   const results = [
     ...(await runEval({ gateway, provider, cases, runs, useJudge })),
     ...(await runAskEval({ gateway, provider, cases: askCases, runs, useJudge })),
+    ...(await runExtractionEval({ gateway, provider, cases: extractionCases, runs })),
   ];
   all.push(...results);
   for (const s of summarize(results)) {

@@ -2,6 +2,7 @@ import type {
   ArtifactDetailResponse,
   ArtifactSummary,
   ClientSummary,
+  ReportUploadSummary,
   Task,
 } from '@health-buddy/shared';
 import { Button, EmptyState, IconButton } from '@health-buddy/ui';
@@ -10,16 +11,18 @@ import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from 're
 import { useTranslation } from 'react-i18next';
 import { getArtifact } from '../api/artifacts';
 import { isAbortError } from '../api/http';
+import { listUploads } from '../api/reports';
 import { getTask } from '../api/workbench';
 import { ArtifactHistory } from '../artifacts/ArtifactHistory';
 import { ArtifactList, sortArtifacts } from '../artifacts/ArtifactList';
 import { ArtifactView } from '../artifacts/ArtifactView';
 import { ClientForm } from '../record/ClientForm';
 import { ClientRecord } from '../record/ClientRecord';
+import { ReviewTab } from '../reports/ReviewTab';
 import styles from './ResultsPanel.module.css';
 import { isReadOnlyTask } from './taskGroups';
 
-const TABS = ['artifacts', 'client', 'history'] as const;
+const TABS = ['artifacts', 'client', 'review', 'history'] as const;
 type Tab = (typeof TABS)[number];
 
 type LoadState = 'loading' | 'ready' | 'error';
@@ -46,6 +49,12 @@ export interface ResultsPanelProps {
   onClientCreated?: (client: ClientSummary) => void;
   /** 在档案标签里修改了客户的基本信息 */
   onClientSaved?: (client: ClientSummary) => void;
+  /** 要打开核对界面的识别记录（对话区里点了“去核对”）；key 变了就重新打开 */
+  reviewRequest?: { uploadId: string; key: number } | null;
+  /** 识别记录有变化（对话里上传了报告）时改变，核对标签据此重新加载 */
+  uploadsVersion?: number;
+  /** 核对标签里的识别记录有变化（确认、放弃、重新识别） */
+  onUploadsChanged?: () => void;
 }
 
 /** 右侧结果区：产物预览和审核、客户档案、修改记录（M1 规格 3.1、3.6；M2 规格 2.2） */
@@ -60,12 +69,21 @@ export function ResultsPanel({
   onConversationChanged,
   onClientCreated,
   onClientSaved,
+  reviewRequest = null,
+  uploadsVersion = 0,
+  onUploadsChanged,
 }: ResultsPanelProps) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('artifacts');
   /** 档案标签里正在新建客户 */
   const [creatingClient, setCreatingClient] = useState(false);
   const tabRefs = useRef<Partial<Record<Tab, HTMLButtonElement | null>>>({});
+  /** 当前客户的识别记录（核对标签和角标）；看不到（非健管师）时为空列表 */
+  const [uploads, setUploads] = useState<ReportUploadSummary[] | null>(null);
+  const [uploadsReload, setUploadsReload] = useState(0);
+  const [reviewId, setReviewId] = useState<string | null>(null);
+  /** 档案需要重新加载（核对后写入了正式报告） */
+  const [recordVersion, setRecordVersion] = useState(0);
 
   const taskId = task?.id ?? null;
   const [artifacts, setArtifacts] = useState<ArtifactSummary[]>([]);
@@ -109,6 +127,38 @@ export function ResultsPanel({
   }, [clientId, fromDraft]);
 
   const readOnly = task !== null && (isReadOnlyTask(task) || readOnlyTaskId === task.id);
+
+  // 识别记录：换客户时重新加载
+  useEffect(() => {
+    setReviewId(null);
+    setUploads(null);
+  }, [clientId]);
+  useEffect(() => {
+    if (clientId === null) return;
+    const controller = new AbortController();
+    listUploads(clientId, controller.signal)
+      .then(setUploads)
+      .catch((err: unknown) => {
+        if (!isAbortError(err)) setUploads([]);
+      });
+    return () => controller.abort();
+  }, [clientId, uploadsVersion, uploadsReload]);
+
+  // 对话区里点了“去核对”：切到核对标签打开那条记录
+  const reviewKey = reviewRequest?.key ?? null;
+  const reviewUploadId = reviewRequest?.uploadId ?? null;
+  useEffect(() => {
+    if (reviewUploadId === null) return;
+    setReviewId(reviewUploadId);
+    setTab('review');
+  }, [reviewUploadId, reviewKey]);
+
+  const uploadsChanged = useCallback(() => {
+    setUploadsReload((v) => v + 1);
+    setRecordVersion((v) => v + 1);
+    onUploadsChanged?.();
+  }, [onUploadsChanged]);
+  const reviewCount = (uploads ?? []).filter((u) => u.status === 'needs_review').length;
 
   // 产物列表：来自任务详情。换任务时回到列表；同一任务里刷新时打开最新的产物。
   useEffect(() => {
@@ -288,6 +338,14 @@ export function ResultsPanel({
             onKeyDown={onTabKeyDown}
           >
             {t(`results.tabs.${id}`)}
+            {id === 'review' && reviewCount > 0 && (
+              <span
+                className={styles.badge}
+                aria-label={t('reports.tab.badge', { count: reviewCount })}
+              >
+                {reviewCount}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -314,9 +372,14 @@ export function ResultsPanel({
         {tab === 'client' && !creatingClient && client && (
           <ClientRecord
             client={client}
-            {...(refreshKey !== undefined ? { refreshKey } : {})}
+            refreshKey={`${refreshKey ?? ''}:${recordVersion}`}
             onClientSaved={(saved) => onClientSaved?.(saved)}
             onNewClient={() => setCreatingClient(true)}
+            onReportUploaded={() => {
+              uploadsChanged();
+              setReviewId(null);
+              setTab('review');
+            }}
           />
         )}
         {tab === 'client' && !creatingClient && !client && (
@@ -329,6 +392,17 @@ export function ResultsPanel({
                 {t('record.newClient')}
               </Button>
             }
+          />
+        )}
+        {tab === 'review' && (
+          <ReviewTab
+            client={client}
+            uploads={uploads}
+            selectedId={reviewId}
+            onSelect={setReviewId}
+            onChanged={uploadsChanged}
+            taskId={task?.clientId && task.clientId === clientId ? task.id : null}
+            readOnly={readOnly}
           />
         )}
         {tab === 'history' &&

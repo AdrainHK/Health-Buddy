@@ -1,5 +1,12 @@
 import OpenAI from 'openai';
-import type { GatewayEvent, GatewayRequest, Provider, ResolvedRoute } from '../types.js';
+import type {
+  ChatMessage,
+  ContentPart,
+  GatewayEvent,
+  GatewayRequest,
+  Provider,
+  ResolvedRoute,
+} from '../types.js';
 
 const DEFAULT_MAX_OUTPUT_TOKENS = 16000;
 
@@ -25,7 +32,7 @@ export class OpenAIProvider implements Provider {
         // 不让 OpenAI 保存对话内容
         store: false,
         ...(request.system ? { instructions: request.system } : {}),
-        input: request.messages.map((m) => ({ role: m.role, content: m.content })),
+        input: request.messages.map(toInputMessage),
         ...(request.responseFormat
           ? {
               text: {
@@ -68,4 +75,39 @@ export class OpenAIProvider implements Provider {
       model: response.model,
     };
   }
+}
+
+/**
+ * 统一消息转成 Responses API 的输入。图片用 data URL 的 input_image，PDF 用 input_file；
+ * PDF 的文件名是固定的占位名，不用原文件名（可能含客户姓名）。
+ * assistant 消息只能是文字，多段时拼起来。
+ */
+function toInputMessage(m: ChatMessage) {
+  if (typeof m.content === 'string') return { role: m.role, content: m.content };
+  if (m.role === 'assistant') return { role: m.role, content: textOf(m.content) };
+  return {
+    role: m.role,
+    content: m.content.map((part) => {
+      switch (part.type) {
+        case 'text':
+          return { type: 'input_text' as const, text: part.text };
+        case 'image':
+          return {
+            type: 'input_image' as const,
+            image_url: `data:${part.mediaType};base64,${part.data}`,
+            detail: 'high' as const,
+          };
+        case 'pdf':
+          return {
+            type: 'input_file' as const,
+            filename: 'document.pdf',
+            file_data: `data:application/pdf;base64,${part.data}`,
+          };
+      }
+    }),
+  };
+}
+
+function textOf(parts: ContentPart[]): string {
+  return parts.map((p) => (p.type === 'text' ? p.text : '')).join('');
 }
