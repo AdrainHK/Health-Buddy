@@ -10,8 +10,15 @@
  * 所有产物都是草稿；有通俗版的产物都由后端拼接免责声明并过禁用词检查。
  */
 import { readFileSync } from 'node:fs';
-import { findBannedTerms, type CriticalFlag } from '@health-buddy/shared';
+import {
+  findBannedTerms,
+  type AbnormalFlag,
+  type CriticalFlag,
+  type RiskTier,
+  type RiskTierSuggestion,
+} from '@health-buddy/shared';
 import type { z } from 'zod';
+import type { WordingIssue } from './wording.js';
 
 export const SKILL_MODES = ['plan', 'craft'] as const;
 export type SkillMode = (typeof SKILL_MODES)[number];
@@ -57,6 +64,56 @@ export interface ClientSnapshot {
   } | null;
   /** 后端按阈值识别出的危急指标 */
   criticalFlags: CriticalFlag[];
+  /**
+   * 这次要解读的已核对报告的完整内容（M2 规格 2.5 第 2 条），只给用报告的技能
+   * （/体检解读、/面谈提纲）组装。高低标记由后端按报告上印的参考范围算好（Q10）。
+   */
+  reportDetail?: ReportDetail | null;
+  /** 健康史（Q12），文字在组装时已去掉姓名和联系方式 */
+  healthHistory?: HealthHistoryEntry[];
+  /** 当前风险分层（只给健管师看的专业版用，Q20）；未分层为 null */
+  riskTier?: { tier: RiskTier; setOn: string } | null;
+}
+
+/** 报告里的一项已核对指标 */
+export interface ReportIndicatorDetail {
+  /** 目录指标的编码；未收录指标为 null（Q10） */
+  code: string | null;
+  /** 未收录指标在报告上的原始名称；目录指标为 null */
+  rawName: string | null;
+  /** 数值（已换算成目录单位）；未收录指标的文字结果（如“阴性”）为 null */
+  value: number | null;
+  /** 数值为空时报告上的原文结果 */
+  textValue: string | null;
+  unit: string | null;
+  /** 报告上印的参考范围原文 */
+  refText: string | null;
+  refLow: number | null;
+  refHigh: number | null;
+  /** 后端按报告参考范围算出的高低标记 */
+  abnormal: AbnormalFlag;
+  /** 之前已核对报告里同一指标、同一单位的数值，日期升序（规格 4.2） */
+  previous: { date: string; value: number }[];
+}
+
+export interface ReportDetail {
+  date: string;
+  indicators: ReportIndicatorDetail[];
+  /** 之前已核对报告的日期（升序） */
+  previousReportDates: string[];
+}
+
+export const HEALTH_HISTORY_CATEGORIES = [
+  'past_history',
+  'family_history',
+  'medication',
+  'allergy',
+  'lifestyle',
+] as const;
+
+export interface HealthHistoryEntry {
+  category: (typeof HEALTH_HISTORY_CATEGORIES)[number];
+  content: string;
 }
 
 export interface SkillInput {
@@ -65,6 +122,11 @@ export interface SkillInput {
   managerRequest: string;
   /** 退回重写时健管师填写的原因 */
   returnReason?: string | undefined;
+  /**
+   * 风险分层标准（规格 4.2、Q8、Q9）。为空表示还没有确认的标准，模型不给分层，
+   * 只写“需要了解的情况”；后端也会丢弃这时模型给出的分层。
+   */
+  riskTierCriteria?: string | null | undefined;
 }
 
 /** 技能输出渲染后的产物内容。clientFacing 还没有拼接免责声明。 */
@@ -73,16 +135,52 @@ export interface SkillArtifact {
   clientFacing: string;
   /** 健管师转述了心理危机信号，审核栏要醒目提示 */
   crisisSignal: boolean;
+  /** 建议分层（只有 /体检解读，规格 2.7）；只给健管师看 */
+  riskTierSuggestion?: RiskTierSuggestion | null;
 }
 
 export interface SkillDefinition<S extends z.ZodType = z.ZodType> extends SkillMeta {
   /** 技能自己的提示词（skill.md 正文） */
   prompt: string;
   outputSchema: S;
+  /**
+   * 需要客户有已核对的报告（M2 规格 2.6）：没有时不生成，提示“请先上传并核对报告”。
+   * 后端会为这类技能组装 reportDetail、健康史和当前分层。
+   */
+  requiresReport?: boolean;
+  /**
+   * 通俗版怎么处理危急指标。defer（默认，M1）：只写“您的健管师会和您单独沟通”；
+   * omit（/体检解读，Q19）：通俗版完全不提这项指标，由健管师先电话联系客户。
+   */
+  criticalInClientText?: 'defer' | 'omit';
+  /** 通俗版可以照原文写报告上印的参考范围（M2 规格 2.5 示例、4.2） */
+  reportReferenceInClientText?: boolean;
+  /** 大模型网关的用途，默认 skill（规格 4.1：/体检解读 用 report_interpretation） */
+  route?: 'skill' | 'report_interpretation';
+  /** 执行步骤里“调用技能”那一步的 i18n 键，默认 steps.runSkill */
+  runStepLabel?: string;
   /** 把客户资料和健管师的要求组装成用户消息 */
   buildUserMessage(input: SkillInput): string;
-  /** 把模型输出渲染成产物 */
-  render(output: z.output<S>): SkillArtifact;
+  /** 把模型输出渲染成产物。input 是这次的输入，用来由后端确定性地写出数值表 */
+  render(output: z.output<S>, input?: SkillInput): SkillArtifact;
+  /**
+   * 保存前的确定性措辞检查（/面谈提纲：问题里不能有禁用词和疾病名称）。
+   * 有问题时后端带着纠正说明重新生成一次，仍有问题就不保存草稿。
+   */
+  checkOutput?(output: z.output<S>): WordingIssue[];
+  /** 重新生成时附在用户消息后面的纠正说明。只按问题类别写，不复述上次的输出 */
+  correctionNote?(issues: readonly WordingIssue[]): string;
+}
+
+/**
+ * 多步计划（M2 规格 2.9、Q22）：只能在想一想模式下用，确认后按顺序调用多个技能，
+ * 每个技能各出一份草稿。在 / 菜单里和技能一起列出。
+ */
+export interface PlanTemplate {
+  id: string;
+  skills: string[];
+  requiresClient: boolean;
+  requiresReport: boolean;
 }
 
 /** 读取同目录下的 skill.md：--- 包起来的 key: value 元数据，加上正文提示词。 */

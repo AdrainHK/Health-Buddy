@@ -13,17 +13,19 @@ import { ApiError, apiFetch, apiRequest, toApiError } from './http';
 import { streamRequest, type StreamOptions } from './stream';
 
 /**
- * 确认被拒绝（409）。除了原因，还带禁用词和危急指标数值在通俗版里的位置，
+ * 确认被拒绝（409）。除了原因，还带禁用词、危急指标数值和风险分层字样在通俗版里的位置，
  * 前端据此标出问题。
  */
 export class ApproveRejectedError extends ApiError {
   readonly bannedTerms: NonNullable<ApproveRejection['bannedTerms']>;
   readonly criticalValueMentions: NonNullable<ApproveRejection['criticalValueMentions']>;
+  readonly riskTierMentions: NonNullable<ApproveRejection['riskTierMentions']>;
 
   constructor(rejection: ApproveRejection) {
     super('conflict', 409, rejection.reasons);
     this.bannedTerms = rejection.bannedTerms ?? [];
     this.criticalValueMentions = rejection.criticalValueMentions ?? [];
+    this.riskTierMentions = rejection.riskTierMentions ?? [];
   }
 }
 

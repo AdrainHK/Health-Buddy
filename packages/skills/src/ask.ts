@@ -65,6 +65,8 @@ export function criticalNotice(flags: readonly CriticalFlag[]): string {
  */
 const SKILL_KEYWORDS: Record<string, RegExp> = {
   'client-recent-summary': /近况|小结|最近(的)?情况|最近怎么样/,
+  'report-interpretation': /解读|体检报告(怎么样|怎么看)/,
+  'interview-outline': /面谈|提纲|要问(客户)?哪些问题/,
 };
 
 export function suggestSkill(text: string): string | undefined {

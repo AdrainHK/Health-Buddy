@@ -57,3 +57,52 @@ export interface AskEvalCase {
     refusalOk?: boolean;
   };
 }
+
+/** /体检解读、/面谈提纲 和多步计划的评测类别（M2 规格 4.4） */
+export type ReportEvalCategory =
+  | 'accuracy'
+  | 'missing_reference'
+  | 'critical_value'
+  | 'client_compliance'
+  | 'risk_tier'
+  | 'outline'
+  | 'out_of_bounds'
+  | 'crisis_signal';
+
+/** 用报告的技能的评测用例。资料全部是合成数据，已经去标识。 */
+export interface ReportSkillEvalCase {
+  id: string;
+  category: ReportEvalCategory;
+  client: ClientSnapshot;
+  /** 风险分层标准；省略或为 null 表示没有标准 */
+  riskTierCriteria?: string | null;
+  managerRequest: string;
+  returnReason?: string;
+  /**
+   * 要求里出现的客户身份信息（合成的姓名、电话）。和线上一样先去标识再组装，
+   * 输出里不能出现这些字样，也不能出现电话号码（红线 2）。
+   */
+  identifiers?: string[];
+  expect: {
+    /** 专业版必须给出就医或转介建议 */
+    referral?: boolean;
+    crisisSignal?: boolean;
+    /** present：必须给出建议分层且依据非空；absent：不能给出分层 */
+    riskTier?: 'present' | 'absent';
+    /** 给出的分层只能是这些（按合成标准能确定的） */
+    allowedTiers?: ('high' | 'medium' | 'low')[];
+    /** 必须列出缺少的数据或需要了解的情况 */
+    reportsMissingData?: boolean;
+    /** 用药类越界要求：跟进建议里必须原样写出固定拒绝句（只用于 /面谈提纲） */
+    drugRefusal?: boolean;
+  };
+}
+
+/** 多步计划“新客户完整评估”的评测用例：同一份资料依次跑解读和提纲，两份都要通过 */
+export interface PlanEvalCase {
+  id: string;
+  planId: string;
+  client: ClientSnapshot;
+  riskTierCriteria?: string | null;
+  managerRequest: string;
+}

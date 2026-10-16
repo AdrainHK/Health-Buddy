@@ -18,6 +18,12 @@ export const riskTierRecordSchema = z.object({
   /** 设定人姓名；客户从别的健管师转来时，看不到原健管师的姓名，为空 */
   setByName: z.string().nullable(),
   setAt: z.iso.datetime(),
+  /**
+   * 来源（规格 2.7）：manual 是在档案里手动设定；artifact 是审核 /体检解读 时勾选“采用建议分层”。
+   * 机构管理员看不到产物（Q14），给他的响应里 sourceArtifactId 为空。
+   */
+  source: z.enum(['manual', 'artifact']),
+  sourceArtifactId: z.uuid().nullable(),
 });
 export type RiskTierRecord = z.infer<typeof riskTierRecordSchema>;
 
@@ -33,3 +39,14 @@ export type RiskTierHistoryResponse = z.infer<typeof riskTierHistoryResponseSche
 
 export const riskTierResponseSchema = z.object({ tier: riskTierRecordSchema });
 export type RiskTierResponse = z.infer<typeof riskTierResponseSchema>;
+
+/**
+ * /体检解读 专业版里的建议分层（规格 2.7、4.2）。只在输入里给了分层标准时才有；
+ * 健管师确认产物时勾选“采用建议分层”，后端在同一事务里写入分层历史。
+ */
+export const riskTierSuggestionSchema = z.object({
+  tier: riskTierSchema,
+  /** 依据，写进分层历史的理由 */
+  reason: z.string().min(1).max(RISK_TIER_REASON_MAX),
+});
+export type RiskTierSuggestion = z.infer<typeof riskTierSuggestionSchema>;

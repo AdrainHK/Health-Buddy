@@ -51,6 +51,8 @@ export const SKILL: SkillSummary = {
   modes: ['plan', 'craft'],
   clientFacing: true,
   involvesHealthJudgment: true,
+  requiresReport: false,
+  planSkills: [],
 };
 
 export const CLIENTS: ClientSummary[] = [
@@ -220,12 +222,16 @@ export function makeArtifactDetail(
     },
     contentHash: 'hash-1',
     criticalFlags: [],
+    sourceReportId: null,
+    riskTierSuggestion: null,
+    clientFacing: true,
     ...overrides,
   };
   const { id, taskId, skillId, version, status, hasCriticalFlags, createdAt } = artifact;
   return {
     artifact,
-    hints: { judgementHints: [], criticalValueMentions: [] },
+    sourceReport: null,
+    hints: { judgementHints: [], criticalValueMentions: [], riskTierMentions: [] },
     versions: [{ id, taskId, skillId, version, status, hasCriticalFlags, createdAt }],
     events: [
       {

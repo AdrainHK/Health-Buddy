@@ -4,7 +4,8 @@
  *   pnpm eval                      有密钥的厂商都跑，每个用例 3 次
  *   pnpm eval --provider openai    只跑一家
  *   pnpm eval --runs 5 --case crisis-signal --no-judge
- *   pnpm eval --suite ask          只跑问一问（summary 只跑近况小结，extraction 只跑报告识别；默认都跑）
+ *   pnpm eval --suite ask          只跑问一问（summary 只跑近况小结，extraction 只跑报告识别，
+ *                                  interpretation 只跑体检解读，outline 只跑面谈提纲，plan 只跑多步计划；默认都跑）
  *
  * 密钥从环境变量读取（OPENAI_API_KEY、ANTHROPIC_API_KEY），不会打印。
  * 结果写到 eval-results/，全部是合成数据。有用例没通过时退出码为 1。
@@ -14,10 +15,21 @@ import { createGateway, loadGatewayConfig, type ProviderName } from '@health-bud
 import { sampleFontAvailable } from '@health-buddy/seed';
 import {
   askEvalCases,
+  assessmentPlanEvalCases,
+  interviewOutlineEvalCases,
   recentSummaryEvalCases,
   reportExtractionEvalCases,
+  reportInterpretationEvalCases,
 } from '@health-buddy/skills';
-import { runAskEval, runEval, runExtractionEval, summarize, type RunResult } from './run.js';
+import {
+  runAskEval,
+  runEval,
+  runExtractionEval,
+  runPlanEval,
+  runReportSkillEval,
+  summarize,
+  type RunResult,
+} from './run.js';
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -48,6 +60,9 @@ if (extractionCases.length && !sampleFontAvailable()) {
   console.error(process.env.GITHUB_ACTIONS ? `::error title=eval 缺少字体::${msg}` : msg);
   process.exit(1);
 }
+const interpretationCases = pick('interpretation', reportInterpretationEvalCases);
+const outlineCases = pick('outline', interviewOutlineEvalCases);
+const planCases = pick('plan', assessmentPlanEvalCases);
 const useJudge = !process.argv.includes('--no-judge');
 // 越界类问一问主要靠大模型评审判断，不开评审时不跑，免得“全部通过”有误导
 const askCases = pick('ask', askEvalCases).filter(
@@ -59,12 +74,29 @@ const all: RunResult[] = [];
 for (const provider of providers) {
   const gateway = createGateway({ ...config, defaultProvider: provider, routes: {} });
   console.log(
-    `\n${provider}（${config.defaultModels[provider]}）：${cases.length + askCases.length + extractionCases.length} 个用例 × ${runs} 次`,
+    `\n${provider}（${config.defaultModels[provider]}）：${cases.length + askCases.length + extractionCases.length + interpretationCases.length + outlineCases.length + planCases.length} 个用例 × ${runs} 次`,
   );
   const results = [
     ...(await runEval({ gateway, provider, cases, runs, useJudge })),
     ...(await runAskEval({ gateway, provider, cases: askCases, runs, useJudge })),
     ...(await runExtractionEval({ gateway, provider, cases: extractionCases, runs })),
+    ...(await runReportSkillEval({
+      gateway,
+      provider,
+      skillId: 'report-interpretation',
+      cases: interpretationCases,
+      runs,
+      useJudge,
+    })),
+    ...(await runReportSkillEval({
+      gateway,
+      provider,
+      skillId: 'interview-outline',
+      cases: outlineCases,
+      runs,
+      useJudge,
+    })),
+    ...(await runPlanEval({ gateway, provider, cases: planCases, runs, useJudge })),
   ];
   all.push(...results);
   for (const s of summarize(results)) {
@@ -78,8 +110,23 @@ const file = `eval-results/${new Date().toISOString().replace(/[:.]/g, '-')}.jso
 writeFileSync(file, JSON.stringify({ runs, results: all }, null, 2));
 const failed = summarize(all).filter((s) => s.passed < s.runs);
 // 在 GitHub Actions 里把未通过的用例写成一条注解（注解每步最多 10 条），不下载报告也能看到
-// 是哪条规则；只有用例名、规则名、错误类别和多出来的数值（合成数据），没有模型输出原文
-const DETAIL_RULES = new Set(['output.error', 'accuracy.invented_numbers']);
+// 是哪条规则；只有用例名、规则名、错误类别、多出来的数值（合成数据）和命中的词表词（类别：词），
+// 没有模型输出原文，也没有客户资料
+const DETAIL_RULES = new Set([
+  'output.error',
+  'accuracy.invented_numbers',
+  'outline.presumed_disease',
+  'outline.banned_terms',
+  'outline.drug_names',
+  'outline.drug_advice',
+  'outline.judgment',
+  'client.banned_terms',
+  'client.disease_terms',
+  'client.drug_terms',
+  'client.judgment_terms',
+  'client.urgency_terms',
+  'client.crisis_terms',
+]);
 if (process.env.GITHUB_ACTIONS && failed.length) {
   const errorKinds = (s: { caseId: string; provider: string }) => [
     ...new Set(

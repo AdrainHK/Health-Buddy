@@ -3,6 +3,7 @@ import {
   type ArtifactDetailResponse,
   type CriticalFlag,
   type ExportFormat,
+  type RiskTierSuggestion,
   type TaskStep,
 } from '@health-buddy/shared';
 import { Button, IconButton } from '@health-buddy/ui';
@@ -20,7 +21,7 @@ import {
   updateArtifact,
 } from '../api/artifacts';
 import { isAbortError } from '../api/http';
-import { useDynamicT, useSkillName } from '../i18n/dynamic';
+import { useDynamicT, useSkillName, useStepLabel } from '../i18n/dynamic';
 import styles from './ArtifactView.module.css';
 import { PlainMarkdown } from './PlainMarkdown';
 import { type ArtifactErrorKey, classifyArtifactError } from './errors';
@@ -29,6 +30,7 @@ import {
   criticalMarks,
   hintCriticalMarks,
   judgementMarks,
+  riskTierMarks,
   segmentText,
   serverBannedMarks,
   type TextMark,
@@ -47,6 +49,7 @@ interface Rejection {
   reasons: string[];
   bannedTerms: { term: string; index: number }[];
   criticalValueMentions: { metric: string; index: number }[];
+  riskTierMentions: { text: string; index: number }[];
   text: string;
 }
 
@@ -108,10 +111,13 @@ export function ArtifactView({
 }: ArtifactViewProps) {
   const { t } = useTranslation();
   const skillName = useSkillName();
-  const { artifact, hints } = detail;
-  const saved = artifact.content.clientFacing;
+  const { artifact, hints, sourceReport } = detail;
+  /** 只有专业版的产物（/面谈提纲，规格 2.8）：编辑专业版，没有通俗版、复制和导出 */
+  const clientFacing = artifact.clientFacing;
+  const views: readonly View[] = clientFacing ? VIEWS : ['professional'];
+  const saved = clientFacing ? artifact.content.clientFacing : artifact.content.professional;
 
-  const [view, setView] = useState<View>('clientFacing');
+  const [view, setView] = useState<View>(clientFacing ? 'clientFacing' : 'professional');
   const [text, setText] = useState(saved);
   const [baseHash, setBaseHash] = useState(artifact.contentHash);
   /** 本地编辑基于的已保存内容 */
@@ -120,6 +126,8 @@ export function ArtifactView({
   const [newerLoaded, setNewerLoaded] = useState(false);
   const [dismissedNewerId, setDismissedNewerId] = useState<string | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
+  /** 确认时一并采用 AI 的建议分层（规格 2.7），默认不勾选 */
+  const [adoptTier, setAdoptTier] = useState(false);
   const [rejection, setRejection] = useState<Rejection | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
@@ -167,37 +175,61 @@ export function ArtifactView({
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
   const marks = useMemo(() => {
+    // 只有专业版的产物不发给客户，不做通俗版的检查
+    if (!clientFacing) return [];
     const result: TextMark[] = bannedTermMarks(text);
     if (rejection && rejection.text === text) {
       for (const mark of serverBannedMarks(text, rejection.bannedTerms)) {
         if (!result.some((m) => m.start === mark.start)) result.push(mark);
       }
       result.push(...criticalMarks(text, rejection.criticalValueMentions));
+      for (const mark of riskTierMarks(text, rejection.riskTierMentions, text)) {
+        if (!result.some((m) => m.kind === 'riskTier' && m.start === mark.start)) result.push(mark);
+      }
     }
     // 详情里提前给出的危急指标数值位置（打开草稿就标出，不必等确认被拒绝）
     for (const mark of hintCriticalMarks(text, hints.criticalValueMentions, saved)) {
       if (!result.some((m) => m.kind === 'critical' && m.start === mark.start)) result.push(mark);
     }
+    for (const mark of riskTierMarks(text, hints.riskTierMentions, saved)) {
+      if (!result.some((m) => m.kind === 'riskTier' && m.start === mark.start)) result.push(mark);
+    }
     result.push(...judgementMarks(text, hints.judgementHints, saved));
     return result.sort((a, b) => a.start - b.start);
-  }, [text, rejection, hints.judgementHints, hints.criticalValueMentions, saved]);
+  }, [
+    clientFacing,
+    text,
+    rejection,
+    hints.judgementHints,
+    hints.criticalValueMentions,
+    hints.riskTierMentions,
+    saved,
+  ]);
 
   const localBanned = marks.some((m) => m.kind === 'banned');
   const hasCriticalValue = marks.some((m) => m.kind === 'critical');
+  const hasRiskTier = marks.some((m) => m.kind === 'riskTier');
   const hasJudgement = marks.some((m) => m.kind === 'judgement');
 
   const approveBlock:
-    'newerBlock' | 'unsaved' | 'bannedBlock' | 'criticalValueBlock' | 'criticalBlock' | null =
-    !editable
-      ? null
-      : newerLoaded
-        ? 'newerBlock'
-        : localBanned
-          ? 'bannedBlock'
-          : dirty
-            ? 'unsaved'
-            : hasCriticalValue
-              ? 'criticalValueBlock'
+    | 'newerBlock'
+    | 'unsaved'
+    | 'bannedBlock'
+    | 'criticalValueBlock'
+    | 'riskTierBlock'
+    | 'criticalBlock'
+    | null = !editable
+    ? null
+    : newerLoaded
+      ? 'newerBlock'
+      : localBanned
+        ? 'bannedBlock'
+        : dirty
+          ? 'unsaved'
+          : hasCriticalValue
+            ? 'criticalValueBlock'
+            : hasRiskTier
+              ? 'riskTierBlock'
               : hasCritical && !acknowledged
                 ? 'criticalBlock'
                 : null;
@@ -246,7 +278,9 @@ export function ArtifactView({
       const next = await updateArtifact(artifact.id, {
         version: artifact.version,
         contentHash: artifact.contentHash,
-        content: { professional: artifact.content.professional, clientFacing: text },
+        content: clientFacing
+          ? { professional: artifact.content.professional, clientFacing: text }
+          : { professional: text, clientFacing: '' },
       });
       ownHashRef.current = next.artifact.contentHash;
       setNewerLoaded(false);
@@ -261,6 +295,7 @@ export function ArtifactView({
           version: artifact.version,
           contentHash: artifact.contentHash,
           acknowledgedCritical: hasCritical ? acknowledged : false,
+          ...(artifact.riskTierSuggestion ? { adoptRiskTier: adoptTier } : {}),
         });
         setRejection(null);
         onDetail(next);
@@ -277,10 +312,19 @@ export function ArtifactView({
             reasons: [...err.reasons],
             bannedTerms: err.bannedTerms,
             criticalValueMentions: err.criticalValueMentions,
+            riskTierMentions: err.riskTierMentions,
             text: saved,
           });
           if (err.reasons.includes('critical_not_acknowledged')) setAcknowledged(false);
-          if (err.reasons.some((r) => r === 'banned_terms' || r.startsWith('critical_value'))) {
+          if (
+            clientFacing &&
+            err.reasons.some(
+              (r) =>
+                r === 'banned_terms' ||
+                r.startsWith('critical_value') ||
+                r === 'risk_tier_in_client_text',
+            )
+          ) {
             setView('clientFacing');
           }
           return;
@@ -389,7 +433,7 @@ export function ArtifactView({
     const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
     if (!step) return;
     e.preventDefault();
-    const next = VIEWS[(VIEWS.indexOf(view) + step + VIEWS.length) % VIEWS.length] ?? view;
+    const next = views[(views.indexOf(view) + step + views.length) % views.length] ?? view;
     setView(next);
     tabRefs.current[next]?.focus();
   };
@@ -398,7 +442,9 @@ export function ArtifactView({
     ? t('results.artifacts.statusNote.readOnlyTask')
     : artifact.status === 'draft'
       ? null
-      : t(`results.artifacts.statusNote.${artifact.status}`);
+      : artifact.status === 'approved' && !clientFacing
+        ? t('results.artifacts.statusNote.approvedProfessionalOnly')
+        : t(`results.artifacts.statusNote.${artifact.status}`);
 
   return (
     <section className={styles.view} aria-labelledby="hb-artifact-title">
@@ -419,7 +465,7 @@ export function ArtifactView({
       </div>
 
       <div className={styles.tabs} role="tablist" aria-label={t('results.artifacts.views.label')}>
-        {VIEWS.map((id) => (
+        {views.map((id) => (
           <button
             key={id}
             ref={(el) => {
@@ -446,12 +492,38 @@ export function ArtifactView({
         id={`hb-artifact-panel-${view}`}
         aria-labelledby={`hb-artifact-tab-${view}`}
       >
+        {sourceReport?.correctedSince && (
+          <p className={styles.hintNote} role="note">
+            {t('results.artifacts.reportCorrected', { date: sourceReport.reportDate })}
+          </p>
+        )}
         {view === 'professional' ? (
           <>
-            <p className={styles.note}>{t('results.artifacts.professionalNote')}</p>
-            <div className={styles.document} data-testid="artifact-professional">
-              <PlainMarkdown source={artifact.content.professional} />
-            </div>
+            <p className={styles.note}>
+              {clientFacing
+                ? t('results.artifacts.professionalNote')
+                : t('results.artifacts.professionalOnlyNote')}
+            </p>
+            {!clientFacing && editable ? (
+              <label className={styles.editor}>
+                <span className={styles.editorLabel}>
+                  {t('results.artifacts.professionalLabel')}
+                </span>
+                <textarea
+                  className={styles.textarea}
+                  value={text}
+                  disabled={working}
+                  onChange={(e) => {
+                    setText(e.target.value);
+                    if (notice?.kind === 'saved') setNotice(null);
+                  }}
+                />
+              </label>
+            ) : (
+              <div className={styles.document} data-testid="artifact-professional">
+                <PlainMarkdown source={clientFacing ? artifact.content.professional : text} />
+              </div>
+            )}
           </>
         ) : (
           <>
@@ -490,6 +562,11 @@ export function ArtifactView({
                 {t('results.artifacts.marks.criticalNote')}
               </p>
             )}
+            {hasRiskTier && (
+              <p className={styles.criticalNote} role="alert">
+                {t('results.artifacts.marks.riskTierNote')}
+              </p>
+            )}
             {hasJudgement && (
               <p className={styles.hintNote} role="note">
                 {t('results.artifacts.marks.judgementNote')}
@@ -510,10 +587,21 @@ export function ArtifactView({
         {hasCritical && (
           <CriticalPanel
             flags={artifact.criticalFlags}
+            fromReport={artifact.sourceReportId !== null}
             showAcknowledge={isDraft}
             acknowledged={acknowledged}
             disabled={!editable || working}
             onAcknowledge={setAcknowledged}
+          />
+        )}
+
+        {artifact.riskTierSuggestion && (
+          <TierSuggestionPanel
+            suggestion={artifact.riskTierSuggestion}
+            showAdopt={isDraft}
+            adopt={adoptTier}
+            disabled={!editable || working}
+            onAdopt={setAdoptTier}
           />
         )}
 
@@ -637,19 +725,23 @@ export function ArtifactView({
 
         {artifact.status === 'approved' && (
           <div className={styles.actions}>
-            <Button variant="primary" disabled={readOnly || working} onClick={copy}>
-              {t('results.artifacts.review.copy')}
-            </Button>
-            <Button disabled={readOnly || working} onClick={() => doExport('png')}>
-              {busy === 'png'
-                ? t('results.artifacts.review.exporting')
-                : t('results.artifacts.review.exportPng')}
-            </Button>
-            <Button disabled={readOnly || working} onClick={() => doExport('pdf')}>
-              {busy === 'pdf'
-                ? t('results.artifacts.review.exporting')
-                : t('results.artifacts.review.exportPdf')}
-            </Button>
+            {clientFacing && (
+              <>
+                <Button variant="primary" disabled={readOnly || working} onClick={copy}>
+                  {t('results.artifacts.review.copy')}
+                </Button>
+                <Button disabled={readOnly || working} onClick={() => doExport('png')}>
+                  {busy === 'png'
+                    ? t('results.artifacts.review.exporting')
+                    : t('results.artifacts.review.exportPng')}
+                </Button>
+                <Button disabled={readOnly || working} onClick={() => doExport('pdf')}>
+                  {busy === 'pdf'
+                    ? t('results.artifacts.review.exporting')
+                    : t('results.artifacts.review.exportPdf')}
+                </Button>
+              </>
+            )}
             <Button variant="ghost" disabled={readOnly || working} onClick={revise}>
               {t('results.artifacts.review.revise')}
             </Button>
@@ -687,6 +779,8 @@ function MarkList({
         metric: dt(`indicators.${mark.label}`, mark.label),
       });
     }
+    if (mark.kind === 'riskTier')
+      return t('results.artifacts.marks.riskTier', { text: mark.label });
     return t('results.artifacts.marks.judgement', { text: mark.label });
   };
   return (
@@ -717,12 +811,15 @@ function MarkList({
 
 function CriticalPanel({
   flags,
+  fromReport,
   showAcknowledge,
   acknowledged,
   disabled,
   onAcknowledge,
 }: {
   flags: CriticalFlag[];
+  /** 依据体检报告生成的产物：先提示电话联系客户（Q19） */
+  fromReport: boolean;
   showAcknowledge: boolean;
   acknowledged: boolean;
   disabled: boolean;
@@ -735,6 +832,11 @@ function CriticalPanel({
       <p id="hb-critical-title" className={styles.criticalTitle}>
         {t('results.artifacts.critical.title')}
       </p>
+      {fromReport && (
+        <p className={styles.callNotice} role="alert">
+          {t('results.artifacts.critical.callFirst')}
+        </p>
+      )}
       <ul className={styles.criticalList}>
         {flags.map((flag, i) => (
           <li key={`${flag.metric}-${i}`}>
@@ -767,6 +869,45 @@ function CriticalPanel({
             onChange={(e) => onAcknowledge(e.target.checked)}
           />
           {t('results.artifacts.critical.acknowledge')}
+        </label>
+      )}
+    </div>
+  );
+}
+
+/** AI 的建议分层（规格 2.7）：只给健管师看；勾选“采用建议分层”后，确认时写入分层历史 */
+function TierSuggestionPanel({
+  suggestion,
+  showAdopt,
+  adopt,
+  disabled,
+  onAdopt,
+}: {
+  suggestion: RiskTierSuggestion;
+  showAdopt: boolean;
+  adopt: boolean;
+  disabled: boolean;
+  onAdopt: (value: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className={styles.tierSuggestion} role="group" aria-labelledby="hb-tier-suggestion-title">
+      <p id="hb-tier-suggestion-title" className={styles.tierTitle}>
+        {t('results.artifacts.tierSuggestion.title', {
+          tier: t(`record.tier.levels.${suggestion.tier}`),
+        })}
+      </p>
+      <p className={styles.tierReason}>{suggestion.reason}</p>
+      <p className={styles.note}>{t('results.artifacts.tierSuggestion.note')}</p>
+      {showAdopt && (
+        <label className={styles.acknowledge}>
+          <input
+            type="checkbox"
+            checked={adopt}
+            disabled={disabled}
+            onChange={(e) => onAdopt(e.target.checked)}
+          />
+          {t('results.artifacts.tierSuggestion.adopt')}
         </label>
       )}
     </div>
@@ -821,6 +962,7 @@ function NoticeLine({ notice }: { notice: Notice }) {
 function ReturnProgressView({ progress, active }: { progress: ReturnProgress; active: boolean }) {
   const { t } = useTranslation();
   const dt = useDynamicT();
+  const stepLabel = useStepLabel();
   const errorText = progress.error
     ? progress.error === 'no_artifact'
       ? t('results.artifacts.returnDialog.noArtifact')
@@ -835,7 +977,7 @@ function ReturnProgressView({ progress, active }: { progress: ReturnProgress; ac
             .sort((a, b) => a.seq - b.seq)
             .map((step) => (
               <li key={step.id} data-status={step.status}>
-                {dt(step.labelKey, t('steps.unknown'))} · {t(`chat.steps.${step.status}`)}
+                {stepLabel(step)} · {t(`chat.steps.${step.status}`)}
               </li>
             ))}
         </ol>

@@ -12,7 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useDynamicT, useSkillName } from '../i18n/dynamic';
+import { useSkillName, useStepLabel } from '../i18n/dynamic';
 import type { Conversation, ViewMessage } from './conversation';
 import styles from './MessageList.module.css';
 
@@ -199,7 +199,7 @@ function MessageStatus({ message }: { message: ViewMessage }) {
 
 function StepList({ steps }: { steps: TaskStep[] }) {
   const { t } = useTranslation();
-  const dt = useDynamicT();
+  const stepLabel = useStepLabel();
   const sorted = [...steps].sort((a, b) => a.seq - b.seq);
   const done = sorted.filter((s) => s.status === 'done').length;
   const running = sorted.some((s) => s.status === 'running');
@@ -222,7 +222,7 @@ function StepList({ steps }: { steps: TaskStep[] }) {
             {step.status === 'running' && <Loader size={14} className={styles.spin} aria-hidden />}
             {step.status === 'done' && <Check size={14} aria-hidden />}
             {step.status === 'failed' && <X size={14} aria-hidden />}
-            <span>{dt(step.labelKey, t('steps.unknown'))}</span>
+            <span>{stepLabel(step)}</span>
             <span className={styles.visuallyHidden}>{t(`chat.steps.${step.status}`)}</span>
           </li>
         ))}

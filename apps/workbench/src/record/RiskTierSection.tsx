@@ -98,6 +98,7 @@ function TierSummary({ record }: { record: RiskTierRecord }) {
         {record.setByName
           ? t('record.tier.setBy', { name: record.setByName, date })
           : t('record.tier.setByOther', { date })}
+        {record.source === 'artifact' && ` · ${t('record.tier.sourceArtifact')}`}
       </span>
       <p className={styles.status}>{t('record.tier.reason', { reason: record.reason })}</p>
     </div>
