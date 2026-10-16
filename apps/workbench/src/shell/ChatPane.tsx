@@ -44,6 +44,10 @@ export interface ChatPaneProps {
    * 对话区据此重新加载当前任务的对话。
    */
   conversationVersion?: number;
+  /** 输入框里 @ 的客户变了（结果区据此显示客户资料） */
+  onDraftClientChange?: (client: ClientSummary | null) => void;
+  /** 回到欢迎页准备新建任务（为另一位客户新建任务时） */
+  onNewTask?: () => void;
 }
 
 interface Draft {
@@ -56,7 +60,10 @@ interface Draft {
 type ErrorKey =
   'busy' | 'tooMany' | 'readOnly' | 'badRequest' | 'notFound' | 'conflict' | 'network' | 'unknown';
 
-type Notice = { kind: 'needClient' } | { kind: 'otherClient' } | { kind: 'error'; key: ErrorKey };
+type Notice =
+  | { kind: 'needClient' }
+  | { kind: 'otherClient'; client: ClientSummary }
+  | { kind: 'error'; key: ErrorKey };
 
 function errorKey(err: unknown): ErrorKey {
   if (!(err instanceof ApiError)) return 'unknown';
@@ -87,6 +94,8 @@ export function ChatPane({
   onTaskChanged,
   onArtifact,
   conversationVersion = 0,
+  onDraftClientChange,
+  onNewTask,
 }: ChatPaneProps) {
   const { t } = useTranslation();
   const [conversation, dispatch] = useReducer(conversationReducer, emptyConversation);
@@ -97,6 +106,8 @@ export function ChatPane({
   const [text, setText] = useState('');
   const [skill, setSkill] = useState<SkillSummary | null>(null);
   const [client, setClient] = useState<ClientSummary | null>(null);
+  /** 本任务发送时 @ 过的客户：任务列表刷新出关联关系之前，结果区先用它显示资料 */
+  const [sentClient, setSentClient] = useState<ClientSummary | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [generating, setGenerating] = useState(false);
   const [queued, setQueued] = useState<Draft | null>(null);
@@ -111,6 +122,8 @@ export function ChatPane({
   const createdTaskIdRef = useRef<string | null>(null);
   const localSeq = useRef(0);
   const submitRef = useRef<(draft: Draft) => void>(() => {});
+  /** 为另一位客户新建任务时带到欢迎页的输入内容 */
+  const carryRef = useRef<Draft | null>(null);
 
   const taskId = task?.id ?? null;
   const readOnly = task !== null && (isReadOnlyTask(task) || readOnlyTaskId === task.id);
@@ -131,11 +144,22 @@ export function ChatPane({
     setNotice(null);
     setSkill(null);
     setClient(null);
+    setSentClient(null);
     dispatch({ type: 'reset' });
     if (taskId === null) {
       setLoadState('idle');
+      const carry = carryRef.current;
+      carryRef.current = null;
+      if (carry) {
+        setText(carry.text);
+        setMode(carry.mode);
+        setSkill(carry.skill);
+        setClient(carry.client);
+        inputRef.current?.focus();
+      }
       return;
     }
+    carryRef.current = null;
     setLoadState('loading');
     const controller = new AbortController();
     getTask(taskId, controller.signal)
@@ -168,6 +192,11 @@ export function ChatPane({
       });
     return () => controller.abort();
   }, [conversationVersion, taskId]);
+
+  const shownClient = client ?? sentClient;
+  useEffect(() => {
+    onDraftClientChange?.(shownClient);
+  }, [shownClient, onDraftClientChange]);
 
   // 离开页面时停止正在进行的流
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -278,7 +307,7 @@ export function ChatPane({
     if (draft.skill && draft.mode === 'ask') return;
     const linkedClientId = task?.clientId ?? null;
     if (draft.client && linkedClientId && draft.client.id !== linkedClientId) {
-      setNotice({ kind: 'otherClient' });
+      setNotice({ kind: 'otherClient', client: draft.client });
       return;
     }
     if (draft.skill?.requiresClient && !draft.client && !linkedClientId) {
@@ -294,6 +323,7 @@ export function ChatPane({
     }
 
     clearComposer();
+    if (draft.client) setSentClient(draft.client);
     let target = task;
     if (!target) {
       try {
@@ -380,8 +410,8 @@ export function ChatPane({
 
   const onClientChange = (next: ClientSummary | null) => {
     if (next && task?.clientId && next.id !== task.clientId) {
-      // 每个任务只关联一位客户（Q6）
-      setNotice({ kind: 'otherClient' });
+      // 每个任务只关联一位客户（Q6）：提示并提供一键为该客户新建任务
+      setNotice({ kind: 'otherClient', client: next });
       return;
     }
     setClient(next);
@@ -404,14 +434,29 @@ export function ChatPane({
         </Button>
       </>
     );
+  } else if (notice?.kind === 'otherClient') {
+    const other = notice.client;
+    noticeNode = (
+      <>
+        <span role="alert">{t('chat.hints.otherClient')}</span>
+        {onNewTask && (
+          <Button
+            variant="ghost"
+            onClick={() => {
+              carryRef.current = { text, mode, skill, client: other };
+              setNotice(null);
+              onNewTask();
+            }}
+          >
+            {t('chat.hints.newTaskForClient', { name: other.displayName })}
+          </Button>
+        )}
+      </>
+    );
   } else if (notice) {
     noticeNode = (
       <span role="alert">
-        {notice.kind === 'needClient'
-          ? t('chat.hints.needClient')
-          : notice.kind === 'otherClient'
-            ? t('chat.hints.otherClient')
-            : t(`chat.errors.${notice.key}`)}
+        {notice.kind === 'needClient' ? t('chat.hints.needClient') : t(`chat.errors.${notice.key}`)}
       </span>
     );
   } else if (queued) {

@@ -246,6 +246,8 @@ describe('对话和生成接口', () => {
     expect(artifact?.status).toBe('draft');
     const content = artifact?.content as { professional: string; clientFacing: string };
     expect(content.clientFacing.endsWith(`\n\n${DISCLAIMER}`)).toBe(true);
+    // 称呼由后端在模型输出之后加上，模型写的“您好”换成带客户名的问候
+    expect(content.clientFacing.startsWith('测试客户 A1-1，您好！\n\n您最近的血压')).toBe(true);
     expect(content.professional).toContain('## 近况概述');
     expect(artifact?.critical_flags).toEqual([
       expect.objectContaining({

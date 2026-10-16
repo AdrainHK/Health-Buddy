@@ -40,6 +40,8 @@ export interface ClientContext {
   snapshot: ClientSnapshot;
   /** 去标识化用：提示词里要替换掉的姓名等字样，只在内存里用，不写日志 */
   identifiers: string[];
+  /** 通俗版开头的称呼，只在模型输出之后拼接，不发给模型 */
+  displayName: string;
 }
 
 export interface RegenerationContext {
@@ -404,6 +406,7 @@ export class WorkbenchRepository {
           criticalFlags,
         },
         identifiers: [client.display_name],
+        displayName: client.display_name,
       };
     });
   }

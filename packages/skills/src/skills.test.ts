@@ -1,4 +1,4 @@
-import { DISCLAIMER } from '@health-buddy/shared';
+import { DISCLAIMER, type CriticalFlag } from '@health-buddy/shared';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { clientRecentSummary, type RecentSummaryOutput } from './client-recent-summary/index.js';
@@ -11,6 +11,7 @@ import {
   checkClientText,
   detectCrisisKeywords,
   finalizeClientText,
+  greetClient,
   redactClientIdentity,
 } from './guardrails.js';
 import { ASK_NOTICE, criticalNotice, suggestSkill, withAskNotice } from './ask.js';
@@ -92,6 +93,35 @@ describe('guardrails', () => {
         `您好。多走路。\n\n${DISCLAIMER}`,
       );
     }
+  });
+
+  it('puts the client name in the greeting of the client-facing text', () => {
+    expect(greetClient('张敏', '您好，最近血压平稳。')).toBe('张敏，您好！\n\n最近血压平稳。');
+    expect(greetClient('张敏', '你好！最近血压平稳。')).toBe('张敏，您好！\n\n最近血压平稳。');
+    expect(greetClient(' 张敏 ', '最近血压平稳。')).toBe('张敏，您好！\n\n最近血压平稳。');
+    // 只换开头的问候，正文里的“您好”不动
+    expect(greetClient('张敏', '最近还好。您好好休息。')).toBe(
+      '张敏，您好！\n\n最近还好。您好好休息。',
+    );
+    expect(greetClient('', '您好，最近血压平稳。')).toBe('您好，最近血压平稳。');
+    // 只有问候没有正文时不加称呼，确认时仍按“通俗版为空”拦截
+    expect(greetClient('张敏', '您好。')).toBe('您好。');
+    expect(greetClient('张敏', '')).toBe('');
+  });
+
+  it('ignores digits in the greeting name when looking for critical values', () => {
+    const flag = {
+      metric: 'sbp',
+      value: 1,
+      unit: 'mmHg',
+      observedOn: '2026-10-01',
+      source: 'monitoring',
+      rule: { comparator: 'gte', value: 1, level: 'urgent' },
+    } as unknown as CriticalFlag;
+    const text = finalizeClientText(greetClient('测试客户 A1-1', '您好，最近血压平稳。'));
+    expect(checkClientText(text, [flag]).criticalValueMentions).toEqual([]);
+    const withValue = finalizeClientText(greetClient('测试客户 A1-1', '您好，最近收缩压 1。'));
+    expect(checkClientText(withValue, [flag]).criticalValueMentions).toHaveLength(1);
   });
 
   it('checks banned terms and the disclaimer', () => {

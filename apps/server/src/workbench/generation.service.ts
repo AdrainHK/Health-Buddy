@@ -10,6 +10,7 @@ import {
   criticalNotice,
   detectCrisisKeywords,
   finalizeClientText,
+  greetClient,
   redactClientIdentity,
   suggestSkill,
   withAskNotice,
@@ -225,7 +226,9 @@ export class GenerationService {
         skillId: run.skill.id,
         kind: run.skill.kind,
         professional: rendered.professional,
-        clientFacing: run.skill.clientFacing ? finalizeClientText(rendered.clientFacing) : '',
+        clientFacing: run.skill.clientFacing
+          ? finalizeClientText(greetClient(client.displayName, rendered.clientFacing))
+          : '',
         criticalFlags: client.snapshot.criticalFlags,
         parent: run.parent,
       });

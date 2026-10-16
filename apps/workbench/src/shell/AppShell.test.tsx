@@ -1,5 +1,5 @@
 import type { TaskDetailResponse, TaskMessage } from '@health-buddy/shared';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {
   CLIENTS,
@@ -274,5 +274,54 @@ describe('AppShell (narrow screen)', () => {
     await user.click(screen.getByRole('button', { name: '打开结果区', hidden: true }));
     expect(screen.queryByRole('complementary', { name: 'Health Buddy' })).not.toBeInTheDocument();
     expect(screen.getByRole('complementary', { name: '结果' })).toBeInTheDocument();
+  });
+});
+
+describe('AppShell client tab and switching clients', () => {
+  beforeEach(() => {
+    setViewport(false);
+    mockWorkbench();
+  });
+
+  it('shows the client of the opened task in the client tab', async () => {
+    const user = userEvent.setup();
+    render(<AppShell />);
+    await user.click(await screen.findByRole('button', { name: '甲的小结' }));
+    // 打开已关联客户的任务时停在产物标签，点“客户”标签查看资料
+    expect(screen.getByRole('tab', { name: '产物' })).toHaveAttribute('aria-selected', 'true');
+    await user.click(screen.getByRole('tab', { name: '客户' }));
+    const panel = screen.getByRole('tabpanel');
+    expect(within(panel).getByRole('heading', { name: /合成客户甲/ })).toBeInTheDocument();
+    expect(within(panel).getByText('测试数据')).toBeInTheDocument();
+  });
+
+  it('shows the client picked with @ before the task is linked', async () => {
+    const user = userEvent.setup();
+    render(<AppShell />);
+    await user.type(screen.getByRole('textbox'), '@乙');
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('tab', { name: '客户' })).toHaveAttribute('aria-selected', 'true');
+    expect(
+      await within(screen.getByRole('tabpanel')).findByRole('heading', { name: /合成客户乙/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('starts a new task for another client in one click, keeping the draft', async () => {
+    const user = userEvent.setup();
+    render(<AppShell />);
+    await user.click(await screen.findByRole('button', { name: '甲的小结' }));
+    const box = await screen.findByRole('textbox');
+    await waitFor(() => expect(box).toBeEnabled());
+    await user.type(box, '看看最近血压 @乙');
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('alert')).toHaveTextContent('该任务已关联其他客户');
+    await user.click(screen.getByRole('button', { name: '为 合成客户乙 新建任务' }));
+
+    expect(await screen.findByText('今天想让我帮你做什么？')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '移除客户 合成客户乙' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox')).toHaveValue('看看最近血压 ');
+    expect(
+      within(screen.getByRole('tabpanel')).getByRole('heading', { name: /合成客户乙/ }),
+    ).toBeInTheDocument();
   });
 });
