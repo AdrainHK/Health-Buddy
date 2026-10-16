@@ -19,6 +19,8 @@ import styles from './MessageList.module.css';
 export interface MessageListProps {
   conversation: Conversation;
   clients: ClientSummary[];
+  /** 已核对报告的日期（显示 @ 的报告） */
+  reportDates?: ReadonlyMap<string, string>;
   /** 只读任务或正在生成时，计划不能确认 */
   canConfirm: boolean;
   onConfirmPlan: (plan: TaskPlan) => void;
@@ -29,6 +31,7 @@ export interface MessageListProps {
 export function MessageList({
   conversation,
   clients,
+  reportDates,
   canConfirm,
   onConfirmPlan,
   onUseSkill,
@@ -38,7 +41,12 @@ export function MessageList({
     <ol className={styles.list} aria-label={t('chat.messages')}>
       {conversation.messages.map((message) =>
         message.role === 'manager' ? (
-          <ManagerMessage key={message.id} message={message} clients={clients} />
+          <ManagerMessage
+            key={message.id}
+            message={message}
+            clients={clients}
+            {...(reportDates ? { reportDates } : {})}
+          />
         ) : (
           <AssistantMessage
             key={message.id}
@@ -55,14 +63,24 @@ export function MessageList({
   );
 }
 
-function ManagerMessage({ message, clients }: { message: ViewMessage; clients: ClientSummary[] }) {
+function ManagerMessage({
+  message,
+  clients,
+  reportDates,
+}: {
+  message: ViewMessage;
+  clients: ClientSummary[];
+  reportDates?: ReadonlyMap<string, string>;
+}) {
   const { t } = useTranslation();
   const skillName = useSkillName();
   const client = clients.find((c) => c.id === message.clientRefs[0]);
+  const reportId = message.reportRefs?.[0];
+  const reportDate = reportId ? reportDates?.get(reportId) : undefined;
   return (
     <li className={styles.manager} aria-label={t('chat.you')}>
       <div className={styles.bubble}>
-        {(message.skillId || client) && (
+        {(message.skillId || client || reportId) && (
           <div className={styles.tags}>
             {message.skillId && (
               <span className={styles.tag}>
@@ -74,6 +92,12 @@ function ManagerMessage({ message, clients }: { message: ViewMessage; clients: C
               <span className={styles.tag}>
                 <AtSign size={12} aria-hidden />
                 {client.displayName}
+              </span>
+            )}
+            {reportId && (
+              <span className={styles.tag}>
+                <FileText size={12} aria-hidden />
+                {reportDate ? t('chat.reportOption', { date: reportDate }) : t('chat.reportRef')}
               </span>
             )}
           </div>

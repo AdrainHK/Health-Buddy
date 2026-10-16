@@ -73,7 +73,7 @@ export const CLIENTS: ClientSummary[] = [
 ];
 
 export function emptyDetail(task: Task = makeTask()): TaskDetailResponse {
-  return { task, messages: [], steps: [], plans: [], artifacts: [] };
+  return { task, messages: [], steps: [], plans: [], artifacts: [], uploads: [] };
 }
 
 export const json = (status: number, body: unknown) =>
@@ -157,7 +157,13 @@ export function mockApi(routes: Record<string, Handler>) {
     const call: RecordedCall = {
       method,
       path,
-      body: init?.body ? (JSON.parse(String(init.body)) as unknown) : undefined,
+      // 上传文件时 body 是 FormData，原样记录
+      body:
+        init?.body instanceof FormData
+          ? init.body
+          : init?.body
+            ? (JSON.parse(String(init.body)) as unknown)
+            : undefined,
     };
     calls.push(call);
     const handler = routes[`${method} ${path}`];

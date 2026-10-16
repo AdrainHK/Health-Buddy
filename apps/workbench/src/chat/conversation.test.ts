@@ -57,6 +57,7 @@ describe('conversationReducer', () => {
         content: '固定提醒',
         skillId: null,
         clientRefs: [],
+        reportRefs: [],
         status: 'refused',
         createdAt: '2026-10-15T08:00:00.000Z',
       },

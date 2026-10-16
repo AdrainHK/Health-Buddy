@@ -204,10 +204,20 @@ export class ReportsRepository {
             .selectFrom('tasks')
             .select(['id', 'client_id', 'detached_reason'])
             .where('id', '=', input.taskId)
-            .forShare()
+            .forUpdate()
             .executeTakeFirst();
-          if (!task || task.client_id !== input.clientId) throw notFound();
+          if (!task || (task.client_id !== null && task.client_id !== input.clientId)) {
+            throw notFound();
+          }
           if (task.detached_reason) throw conflict({ reasons: ['read_only'] });
+          if (task.client_id === null) {
+            // 在还没关联客户的任务里上传：和 @ 客户一样把任务关联到这位客户（Q6）
+            await trx
+              .updateTable('tasks')
+              .set({ client_id: input.clientId })
+              .where('id', '=', input.taskId)
+              .execute();
+          }
         }
         // 同一文件重复上传（文件指纹相同）直接提示“已上传过”（Q17）；已放弃的不算
         const dup = await trx

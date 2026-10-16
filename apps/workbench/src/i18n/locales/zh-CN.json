@@ -65,7 +65,8 @@
       "needClient": "请先 @ 客户",
       "otherClient": "该任务已关联其他客户，如需引用请新建任务",
       "newTaskForClient": "为 {{name}} 新建任务",
-      "newTask": "新建任务"
+      "newTask": "新建任务",
+      "uploadNeedClient": "请先 @ 客户，再上传报告"
     },
     "steps": {
       "title": "执行步骤",
@@ -102,7 +103,15 @@
       "invalid_output": "AI 输出格式不合格，未生成草稿，请重试",
       "internal_error": "出错了，请稍后再试",
       "network": "连接中断，刷新后可查看已保存的内容"
-    }
+    },
+    "attach": "上传报告",
+    "attachLabel": "选择报告文件上传（PDF、JPG、PNG、HEIC）",
+    "dropHint": "松开即可上传报告",
+    "reportOption": "报告 · {{date}}",
+    "reportPending": "这份报告还没核对完",
+    "removeReport": "移除报告 {{date}}",
+    "uploads": "本任务上传的报告",
+    "reportRef": "已引用报告"
   },
   "steps": {
     "readClient": "读取客户档案",
@@ -124,6 +133,7 @@
     "tabs": {
       "artifacts": "产物",
       "client": "档案",
+      "review": "核对",
       "history": "记录"
     },
     "empty": {
@@ -387,7 +397,8 @@
         "synthetic": "测试数据",
         "upload": "上传后核对",
         "manual": "手动录入"
-      }
+      },
+      "abnormalCount": "{{count}} 项超出参考范围"
     },
     "indicators": {
       "empty": "暂无指标数据",
@@ -414,6 +425,144 @@
       "notFound": "客户不存在或已不可见",
       "badRequest": "填写的内容不符合要求，请检查后重试",
       "tooMany": "操作太频繁，请稍后再试",
+      "network": "网络连接失败，请检查网络后重试",
+      "unknown": "出错了，请稍后再试"
+    }
+  },
+  "reports": {
+    "value": "{{value}} {{unit}}",
+    "disclaimer": "识别结果须健管师核对后才会写入档案。高低标记按报告上印的参考范围计算，仅供参考，非医疗诊断。",
+    "upload": {
+      "button": "上传报告",
+      "uploading": "正在上传…"
+    },
+    "status": {
+      "queued": "已上传，排队等待识别（共 {{pages}} 页）",
+      "processing": "正在识别第 {{page}}/{{total}} 页",
+      "needs_review": "识别完成，请核对后确认",
+      "verified": "已核对，已写入档案",
+      "failed": "识别未成功",
+      "discarded": "已放弃"
+    },
+    "failure": {
+      "not_a_report": "这份文件看起来不是体检报告，没有识别出任何数值。",
+      "unreadable": "页面看不清，没有识别出数值。可以重新拍照上传。",
+      "refused": "AI 没有处理这份文件，请重新识别或手动录入。",
+      "timeout": "识别超时，请重新识别。",
+      "too_large": "文件太大，AI 无法处理，请拆分后上传。",
+      "error": "识别出错，请重新识别。",
+      "transferred": "客户转给了现在的健管师，之前未核对的结果已作废，请重新识别。"
+    },
+    "card": {
+      "label": "报告识别",
+      "progressLabel": "识别进度",
+      "review": "去核对",
+      "view": "查看",
+      "retry": "重新识别"
+    },
+    "tab": {
+      "badge": "{{count}} 份待核对",
+      "list": "识别记录",
+      "loading": "正在加载识别记录…",
+      "empty": "还没有待核对的报告",
+      "emptyHint": "在对话里 @ 客户后上传报告，或在这里直接上传。识别完成后在这里逐项核对。",
+      "noClient": "未选择客户",
+      "noClientHint": "在对话中 @ 一位客户后，这里显示 TA 的报告识别和核对。"
+    },
+    "review": {
+      "loading": "正在加载识别结果…",
+      "loadFailed": "识别结果加载失败",
+      "retry": "重试",
+      "back": "返回列表",
+      "originalFile": "报告原件",
+      "files": "原件文件",
+      "fileN": "文件 {{n}}",
+      "pageTitle": "原件第 {{page}}/{{total}} 页",
+      "pageOf": "第 {{page}}/{{total}} 页",
+      "prevPage": "上一页",
+      "nextPage": "下一页",
+      "values": "识别结果",
+      "attentionLeft": "还有 {{count}} 行需特别注意，请对照原件逐行勾选“已核对”",
+      "attentionDone": "需特别注意的行都已核对",
+      "noValue": "没有数值",
+      "original": "（原值 {{value}} {{unit}}）",
+      "ref": "参考范围 {{ref}}",
+      "page": "第 {{page}} 页",
+      "checked": "已核对",
+      "edit": "修改",
+      "editRow": "修改 {{name}}",
+      "delete": "删除",
+      "deleteRow": "删除 {{name}}",
+      "deletedCount": "已删除 {{count}} 行",
+      "addRow": "补录一项",
+      "confirmSection": "确认核对",
+      "reportDate": "报告日期",
+      "saveAsNew": "这一天已有报告，作为新报告保存",
+      "confirm": "确认核对",
+      "discard": "放弃这份识别",
+      "confirmDiscard": "确定放弃",
+      "cancel": "取消",
+      "note": "确认后写入客户档案，识别记录不能再修改；之后发现错误可以在档案里更正，旧值会保留。"
+    },
+    "flags": {
+      "unreadable": "看不清",
+      "out_of_bounds": "数值异常，请重点核对",
+      "unit_converted": "已换算单位",
+      "unit_unknown": "单位未识别",
+      "unmapped": "未收录指标",
+      "conflict": "与已有数据冲突",
+      "duplicate": "可能重复"
+    },
+    "abnormal": {
+      "high": "偏高",
+      "low": "偏低",
+      "normal": "在参考范围内",
+      "no_reference": "报告未提供参考范围"
+    },
+    "form": {
+      "name": "报告上的名称",
+      "code": "对应指标",
+      "unmapped": "未收录指标（照原样保存）",
+      "value": "数值",
+      "unit": "单位",
+      "ref": "参考范围",
+      "refPlaceholder": "照报告上印的填写，如 3.9-6.1",
+      "save": "保存",
+      "cancel": "取消"
+    },
+    "verify": {
+      "stale_version": "识别结果已在别处修改，已刷新，请重新确认",
+      "not_reviewable": "这份识别记录已核对或已放弃",
+      "unchecked_attention": "还有需特别注意的行没有勾选“已核对”",
+      "critical_unacknowledged": "有危急指标，请勾选“已知悉”后再确认",
+      "same_date_report": "这一天已有报告，请选择“作为新报告保存”",
+      "missing_value": "有指标没有数值（看不清或单位未识别），请修改或删除",
+      "duplicate_code": "同一个指标出现了两行，请删除多余的一行",
+      "no_values": "没有任何指标，无法确认"
+    },
+    "detail": {
+      "loading": "正在加载报告…",
+      "loadFailed": "报告加载失败",
+      "corrections": "更正历史（{{count}} 条）",
+      "supersededAt": "{{date}} 录入，已更正",
+      "correct": "更正",
+      "correctRow": "更正 {{name}}",
+      "correctNote": "更正会新增一条记录，旧值保留在更正历史里。",
+      "saveCorrection": "保存更正"
+    },
+    "errors": {
+      "notConfigured": "报告识别服务尚未配置，请联系管理员",
+      "unsupportedType": "不支持这种文件。请上传 PDF、JPG、PNG 或 HEIC",
+      "fileTooLarge": "单个文件不能超过 20 MB",
+      "tooManyFiles": "一份报告最多 10 个文件",
+      "tooManyPages": "一份报告最多 30 页",
+      "duplicateFile": "这份文件已经上传过了",
+      "dailyLimit": "今天的识别页数已用完（每天 200 页），请明天再试",
+      "retryLimit": "已重新识别 3 次，请手动录入或重新上传",
+      "tooMany": "操作太频繁，请稍后再试",
+      "notFound": "识别记录不存在或已不可见",
+      "conflict": "识别记录状态已变化，已刷新",
+      "badRequest": "填写的内容不符合要求，请检查后重试",
       "network": "网络连接失败，请检查网络后重试",
       "unknown": "出错了，请稍后再试"
     }

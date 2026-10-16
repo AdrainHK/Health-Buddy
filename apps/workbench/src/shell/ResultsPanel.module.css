@@ -101,3 +101,18 @@
 .form {
   padding: var(--hb-space-4);
 }
+
+/* 核对标签上待核对的数量 */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5em;
+  margin-left: var(--hb-space-1);
+  padding: 0 var(--hb-space-1);
+  border-radius: var(--hb-radius-full);
+  background: var(--hb-brand);
+  color: var(--hb-brand-contrast);
+  font-size: var(--hb-text-xs);
+  font-weight: 600;
+}

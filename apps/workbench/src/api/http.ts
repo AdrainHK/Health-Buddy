@@ -37,7 +37,10 @@ export async function apiFetch(
   { method = 'GET', body, signal }: RequestOptions = {},
 ): Promise<Response> {
   const init: RequestInit = { method, credentials: 'same-origin' };
-  if (body !== undefined) {
+  if (body instanceof FormData) {
+    // 上传文件：浏览器自己设置 multipart 的 Content-Type 和分隔符
+    init.body = body;
+  } else if (body !== undefined) {
     init.headers = { 'Content-Type': 'application/json' };
     init.body = JSON.stringify(body);
   }
@@ -50,9 +53,10 @@ export async function apiFetch(
   }
 }
 
-/** 把非 2xx 响应转成 ApiError */
-export async function toApiError(res: Response): Promise<ApiError> {
-  const parsed = errorBodySchema.safeParse(await res.json().catch(() => null));
+/** 把非 2xx 响应转成 ApiError。body 是已经读出来的响应体（需要解析其他细节时） */
+export async function toApiError(res: Response, body?: unknown): Promise<ApiError> {
+  const json = body === undefined ? await res.json().catch(() => null) : body;
+  const parsed = errorBodySchema.safeParse(json);
   if (!parsed.success) return new ApiError('internal_error', res.status);
   return new ApiError(parsed.data.error, res.status, parsed.data.reasons ?? []);
 }

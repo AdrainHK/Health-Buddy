@@ -380,6 +380,10 @@ describe('报告上传、识别和核对接口', () => {
         expect.objectContaining({ id: res.body.upload.id, status: 'needs_review' }),
       ]);
       await upload(agent, f.clients.a1[1], [{ body: syntheticPng() }], task).expect(404);
+      // 还没关联客户的任务：上传时关联到这位客户
+      const blank = (await agent.post('/api/tasks').send({}).expect(201)).body.task.id as string;
+      await upload(agent, f.clients.a1[1], [{ body: syntheticPng() }], blank).expect(201);
+      expect((await agent.get(`/api/tasks/${blank}`)).body.task.clientId).toBe(f.clients.a1[1]);
       const other = (
         await (
           await loginAs(app, f.users.managerA2.email)

@@ -2,6 +2,7 @@ import { Button, IconButton } from '@health-buddy/ui';
 import type {
   ArtifactSummary,
   ClientSummary,
+  ReportUploadSummary,
   SkillSummary,
   Task,
   TaskMode,
@@ -12,8 +13,9 @@ import { type ReactNode, useEffect, useReducer, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ApiError, isAbortError } from '../api/http';
 import { confirmPlan, sendMessage, type StreamOptions } from '../api/stream';
+import { listReports, listUploads, uploadReport } from '../api/reports';
 import { createTask, getTask, stopTask } from '../api/workbench';
-import { Composer } from '../chat/Composer';
+import { Composer, type ReportOption } from '../chat/Composer';
 import {
   conversationReducer,
   emptyConversation,
@@ -21,6 +23,9 @@ import {
   type ViewMessage,
 } from '../chat/conversation';
 import { MessageList } from '../chat/MessageList';
+import { uploadErrorKey, type UploadErrorKey } from '../reports/errors';
+import reportStyles from '../reports/Reports.module.css';
+import { UploadCard } from '../reports/UploadCard';
 import styles from './ChatPane.module.css';
 import { isReadOnlyTask } from './taskGroups';
 
@@ -48,6 +53,10 @@ export interface ChatPaneProps {
   onDraftClientChange?: (client: ClientSummary | null) => void;
   /** 回到欢迎页准备新建任务（为另一位客户新建任务时） */
   onNewTask?: () => void;
+  /** 点了识别卡片上的“去核对”：结果区打开核对界面 */
+  onReviewUpload?: (uploadId: string) => void;
+  /** 对话里上传了报告或识别状态变了：结果区的核对标签需要刷新 */
+  onUploadsChanged?: () => void;
 }
 
 interface Draft {
@@ -55,6 +64,7 @@ interface Draft {
   mode: TaskMode;
   skill: SkillSummary | null;
   client: ClientSummary | null;
+  report?: ReportOption | null;
 }
 
 type ErrorKey =
@@ -62,6 +72,8 @@ type ErrorKey =
 
 type Notice =
   | { kind: 'needClient' }
+  | { kind: 'uploadNeedClient' }
+  | { kind: 'uploadError'; key: UploadErrorKey }
   | { kind: 'otherClient'; client: ClientSummary }
   | { kind: 'error'; key: ErrorKey };
 
@@ -96,6 +108,8 @@ export function ChatPane({
   conversationVersion = 0,
   onDraftClientChange,
   onNewTask,
+  onReviewUpload,
+  onUploadsChanged,
 }: ChatPaneProps) {
   const { t } = useTranslation();
   const [conversation, dispatch] = useReducer(conversationReducer, emptyConversation);
@@ -106,6 +120,13 @@ export function ChatPane({
   const [text, setText] = useState('');
   const [skill, setSkill] = useState<SkillSummary | null>(null);
   const [client, setClient] = useState<ClientSummary | null>(null);
+  /** @ 引用的已核对报告（规格 2.6） */
+  const [report, setReport] = useState<ReportOption | null>(null);
+  /** 当前客户的报告：已核对的可以 @，还没核对完的列出来但不能选 */
+  const [reportOptions, setReportOptions] = useState<ReportOption[]>([]);
+  /** 本任务里上传的报告（识别进度卡片） */
+  const [uploads, setUploads] = useState<ReportUploadSummary[]>([]);
+  const [uploadVersion, setUploadVersion] = useState(0);
   /** 本任务发送时 @ 过的客户：任务列表刷新出关联关系之前，结果区先用它显示资料 */
   const [sentClient, setSentClient] = useState<ClientSummary | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -144,6 +165,8 @@ export function ChatPane({
     setNotice(null);
     setSkill(null);
     setClient(null);
+    setReport(null);
+    setUploads([]);
     setSentClient(null);
     dispatch({ type: 'reset' });
     if (taskId === null) {
@@ -165,6 +188,7 @@ export function ChatPane({
     getTask(taskId, controller.signal)
       .then((detail) => {
         dispatch({ type: 'load', detail });
+        setUploads(detail.uploads);
         setLoadState('idle');
       })
       .catch((err: unknown) => {
@@ -193,6 +217,31 @@ export function ChatPane({
     return () => controller.abort();
   }, [conversationVersion, taskId]);
 
+  // @ 列表里的报告：任务关联的客户，或输入框里 @ 的客户
+  const reportClientId = task?.clientId ?? client?.id ?? sentClient?.id ?? null;
+  useEffect(() => {
+    setReport((r) => (reportClientId === null ? null : r));
+    if (reportClientId === null) {
+      setReportOptions([]);
+      return;
+    }
+    const controller = new AbortController();
+    Promise.all([
+      listReports(reportClientId, controller.signal),
+      listUploads(reportClientId, controller.signal).catch(() => []),
+    ])
+      .then(([reports, pending]) => {
+        setReportOptions([
+          ...reports.map((r) => ({ id: r.id, date: r.reportDate, pending: false })),
+          ...pending
+            .filter((u) => ['queued', 'processing', 'needs_review'].includes(u.status))
+            .map((u) => ({ id: u.id, date: u.createdAt.slice(0, 10), pending: true })),
+        ]);
+      })
+      .catch(() => setReportOptions([]));
+    return () => controller.abort();
+  }, [reportClientId, uploadVersion]);
+
   const shownClient = client ?? sentClient;
   useEffect(() => {
     onDraftClientChange?.(shownClient);
@@ -211,12 +260,14 @@ export function ChatPane({
     setText('');
     setSkill(null);
     setClient(null);
+    setReport(null);
   };
 
   const restoreComposer = (draft: Draft) => {
     setText(draft.text);
     setSkill(draft.skill);
     setClient(draft.client);
+    setReport(draft.report ?? null);
   };
 
   const nextLocalId = () => `${LOCAL_PREFIX}${++localSeq.current}`;
@@ -344,6 +395,7 @@ export function ChatPane({
       content,
       skillId: draft.skill?.id ?? null,
       clientRefs: draft.client ? [draft.client.id] : [],
+      ...(draft.report ? { reportRefs: [draft.report.id] } : {}),
       status: 'complete',
     };
     const assistant: ViewMessage = {
@@ -367,6 +419,7 @@ export function ChatPane({
             content,
             ...(draft.skill ? { skillId: draft.skill.id } : {}),
             clientRefs: draft.client ? [draft.client.id] : [],
+            ...(draft.report ? { reportRefs: [draft.report.id] } : {}),
           },
           options,
         ),
@@ -377,6 +430,45 @@ export function ChatPane({
   useEffect(() => {
     submitRef.current = (draft) => void submit(draft);
   });
+
+  /**
+   * 上传报告（规格 2.3 第 1 条）：必须先 @ 客户或在已关联客户的任务里；
+   * 欢迎页上传时先为这位客户新建任务，识别进度卡片显示在对话里。
+   */
+  const onAttachFiles = async (files: File[]) => {
+    if (readOnly) return;
+    const linkedId = task?.clientId ?? null;
+    const target = linkedId
+      ? (clients.find((c) => c.id === linkedId) ?? { id: linkedId })
+      : (client ?? sentClient);
+    if (!target) {
+      setNotice({ kind: 'uploadNeedClient' });
+      return;
+    }
+    setNotice(null);
+    let taskForUpload = task;
+    try {
+      if (!taskForUpload) {
+        taskForUpload = await createTask({ clientId: target.id });
+        createdTaskIdRef.current = taskForUpload.id;
+        if (client) setSentClient(client);
+        onTaskCreated?.(taskForUpload);
+      }
+      const created = await uploadReport(target.id, files, taskForUpload.id);
+      setUploads((list) => [...list.filter((u) => u.id !== created.id), created]);
+      setUploadVersion((v) => v + 1);
+      onTaskChanged?.();
+      onUploadsChanged?.();
+    } catch (err) {
+      setNotice({ kind: 'uploadError', key: uploadErrorKey(err) });
+    }
+  };
+
+  const onUploadChanged = (next: ReportUploadSummary) => {
+    setUploads((list) => list.map((u) => (u.id === next.id ? next : u)));
+    setUploadVersion((v) => v + 1);
+    onUploadsChanged?.();
+  };
 
   const onConfirmPlan = (plan: TaskPlan) => {
     if (!task || readOnly || generatingRef.current) return;
@@ -415,7 +507,9 @@ export function ChatPane({
       return;
     }
     setClient(next);
-    if (next && notice?.kind === 'needClient') setNotice(null);
+    if (next && (notice?.kind === 'needClient' || notice?.kind === 'uploadNeedClient')) {
+      setNotice(null);
+    }
   };
 
   const onSkillChange = (next: SkillSummary | null) => {
@@ -456,7 +550,13 @@ export function ChatPane({
   } else if (notice) {
     noticeNode = (
       <span role="alert">
-        {notice.kind === 'needClient' ? t('chat.hints.needClient') : t(`chat.errors.${notice.key}`)}
+        {notice.kind === 'needClient'
+          ? t('chat.hints.needClient')
+          : notice.kind === 'uploadNeedClient'
+            ? t('chat.hints.uploadNeedClient')
+            : notice.kind === 'uploadError'
+              ? t(`reports.errors.${notice.key}`)
+              : t(`chat.errors.${notice.key}`)}
       </span>
     );
   } else if (queued) {
@@ -493,13 +593,18 @@ export function ChatPane({
       clients={clients}
       disabled={readOnly || loadState !== 'idle'}
       generating={generating}
-      onSubmit={() => void submit({ text, mode, skill, client })}
+      onSubmit={() => void submit({ text, mode, skill, client, report })}
       onStop={onStop}
       notice={noticeNode}
+      reports={reportOptions}
+      report={report}
+      onReportChange={setReport}
+      onAttachFiles={(files) => void onAttachFiles(files)}
     />
   );
 
-  const hasMessages = conversation.messages.length > 0;
+  const hasMessages = conversation.messages.length > 0 || uploads.length > 0;
+  const reportDates = new Map(reportOptions.map((r) => [r.id, r.date]));
 
   return (
     <main className={styles.pane}>
@@ -545,10 +650,25 @@ export function ChatPane({
                 <MessageList
                   conversation={conversation}
                   clients={clients}
+                  reportDates={reportDates}
                   canConfirm={!readOnly && !generating}
                   onConfirmPlan={onConfirmPlan}
                   onUseSkill={onUseSkill}
                 />
+                {uploads.length > 0 && (
+                  <ul className={reportStyles.chatUploads} aria-label={t('chat.uploads')}>
+                    {uploads.map((u) => (
+                      <li key={`${u.id}-${u.attempts}`}>
+                        <UploadCard
+                          upload={u}
+                          readOnly={readOnly}
+                          onChanged={onUploadChanged}
+                          {...(onReviewUpload ? { onReview: onReviewUpload } : {})}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 <div ref={bottomRef} />
               </div>
             </div>

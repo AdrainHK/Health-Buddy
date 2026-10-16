@@ -37,6 +37,12 @@ export function AppShell({ account }: AppShellProps = {}) {
   const [draftClient, setDraftClient] = useState<ClientSummary | null>(null);
   /** 刚在档案标签里新建的客户：结果区先显示它，换任务或 @ 了别的客户后恢复 */
   const [createdClientId, setCreatedClientId] = useState<string | null>(null);
+  /** 对话区里点了“去核对”的识别记录 */
+  const [reviewRequest, setReviewRequest] = useState<{ uploadId: string; key: number } | null>(
+    null,
+  );
+  /** 识别记录有变化（对话里上传、识别结束、核对确认），对话区和结果区据此刷新 */
+  const [uploadsVersion, setUploadsVersion] = useState(0);
 
   // 技能和客户列表：/ 和 @ 补全、任务按客户分组都要用
   useEffect(() => {
@@ -108,6 +114,13 @@ export function AppShell({ account }: AppShellProps = {}) {
     setConversationVersion((v) => v + 1);
     refreshTasks();
   }, [refreshTasks]);
+
+  const onReviewUpload = useCallback((uploadId: string) => {
+    setReviewRequest((r) => ({ uploadId, key: (r?.key ?? 0) + 1 }));
+    setDrawerOpen(false);
+    setResultsOpen(true);
+  }, []);
+  const onUploadsChanged = useCallback(() => setUploadsVersion((v) => v + 1), []);
 
   const onArtifact = useCallback(() => {
     // 结果区自动打开并刷新（规格 3.2）
@@ -216,6 +229,8 @@ export function AppShell({ account }: AppShellProps = {}) {
         conversationVersion={conversationVersion}
         onDraftClientChange={onDraftClientChange}
         onNewTask={() => selectTask(null)}
+        onReviewUpload={onReviewUpload}
+        onUploadsChanged={onUploadsChanged}
       />
       <ResultsPanel
         mode={narrow ? 'sheet' : 'docked'}
@@ -228,6 +243,8 @@ export function AppShell({ account }: AppShellProps = {}) {
         onClientCreated={onClientCreated}
         onClientSaved={upsertClient}
         refreshKey={`${activeTask?.id ?? 'none'}:${artifactsVersion}`}
+        reviewRequest={reviewRequest}
+        uploadsVersion={uploadsVersion}
       />
       {overlayOpen && (
         <button
