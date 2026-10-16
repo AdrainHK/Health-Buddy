@@ -545,6 +545,141 @@ describe('/体检解读、/面谈提纲、多步计划的规则检查（M2 规�
     );
   });
 
+  it('和上次相比的变化：漏提、方向写反、把变差说成改善都判不通过', () => {
+    const worse = interpCase('interp-worsened');
+    const goodWorse: ReportInterpretationOutput = {
+      ...goodInterp,
+      professional: {
+        ...goodInterp.professional,
+        overview: '这次有四项不在参考范围内，多数比去年变差。',
+        abnormalFindings: [
+          { indicator: '空腹血糖', observation: '6.4 mmol/L，较上次 5.6 上升 0.8' },
+        ],
+        comparison: [
+          '空腹血糖 2025-09-18 5.6 → 2026-09-22 6.4 mmol/L，上升，没有改善，需要改善饮食',
+          '甘油三酯 1.4 → 1.9 mmol/L，升高',
+          '高密度脂蛋白胆固醇 1.25 → 0.95 mmol/L，下降，变差',
+          '体重指数（BMI）24.6 → 26.3，上升',
+        ],
+      },
+      clientFacing:
+        '您好，这次血糖和甘油三酯比去年高一些，建议多走动、少吃甜食，有疑问请联系您的健管师。',
+    };
+    expect(gradeInterpretation(worse, goodWorse)).toEqual([]);
+
+    const rules = gradeInterpretation(worse, {
+      ...goodWorse,
+      professional: {
+        ...goodWorse.professional,
+        abnormalFindings: [],
+        comparison: [
+          '空腹血糖 5.6 → 6.4 mmol/L，有所下降',
+          '高密度脂蛋白胆固醇 1.25 → 0.95 mmol/L，下降，有所改善',
+        ],
+      },
+    }).map((f) => f.rule);
+    expect(rules).toEqual(
+      expect.arrayContaining(['trend.missing', 'trend.wrong_direction', 'trend.wrong_judgment']),
+    );
+
+    // 变好的用例：说成上升、变差同样不通过
+    const better = interpCase('interp-improved');
+    const betterRules = gradeInterpretation(better, {
+      ...goodInterp,
+      professional: {
+        ...goodInterp.professional,
+        overview: '多数指标比去年好转。',
+        abnormalFindings: [],
+        comparison: [
+          '甘油三酯 2.4 → 1.5 mmol/L，下降，回到参考范围内，有所改善',
+          '谷丙转氨酶 68 → 45 U/L，升高，变差',
+          '体重 79 → 74.5 kg，下降',
+        ],
+      },
+    }).map((f) => f.rule);
+    expect(betterRules).toEqual(['trend.wrong_direction', 'trend.wrong_judgment']);
+  });
+
+  it('没有参考范围的指标：不列进异常项、不判断高低，也不能编出参考范围', () => {
+    const missing = interpCase('interp-missing-reference');
+    const ok: ReportInterpretationOutput = {
+      ...goodInterp,
+      professional: {
+        ...goodInterp.professional,
+        overview: '同型半胱氨酸 16.8 umol/L 高于报告参考范围 0-15。',
+        abnormalFindings: [{ indicator: '同型半胱氨酸', observation: '16.8 umol/L，高于 0-15' }],
+        comparison: ['没有之前的已核对报告，无法对比'],
+        missingData: ['谷丙转氨酶 52 U/L 报告未提供参考范围，无法判断是否偏高'],
+      },
+      clientFacing: '您好，这次大部分指标没有明显问题，建议规律作息，有疑问请联系您的健管师。',
+    };
+    expect(gradeInterpretation(missing, ok)).toEqual([]);
+    const rules = gradeInterpretation(missing, {
+      ...ok,
+      professional: {
+        ...ok.professional,
+        abnormalFindings: [
+          ...ok.professional.abnormalFindings,
+          { indicator: '谷丙转氨酶', observation: '52 U/L' },
+        ],
+        missingData: ['谷丙转氨酶 52 U/L 偏高，超过正常上限 40'],
+      },
+    }).map((f) => f.rule);
+    expect(rules).toEqual(
+      expect.arrayContaining([
+        'no_reference.listed_as_abnormal',
+        'no_reference.judged',
+        'accuracy.invented_numbers',
+      ]),
+    );
+  });
+
+  it('分层只按给定的标准选，依据要引用报告里的数值', () => {
+    const custom = interpCase('interp-tier-custom-criteria');
+    const cited = {
+      tier: 'low' as const,
+      reasons: [
+        '只有空腹血糖 6.5 mmol/L 一项高于报告参考范围 3.9-6.1，没有危急指标，对应标准里的低',
+      ],
+    };
+    expect(
+      gradeInterpretation(custom, {
+        ...goodInterp,
+        professional: { ...goodInterp.professional, riskTier: cited },
+      }),
+    ).toEqual([]);
+    const rules = gradeInterpretation(custom, {
+      ...goodInterp,
+      professional: {
+        ...goodInterp.professional,
+        riskTier: { tier: 'medium', reasons: ['血糖偏高，属于中等'] },
+      },
+    }).map((f) => f.rule);
+    expect(rules).toEqual(['expect.risk_tier_choice', 'risk_tier.no_cited_value']);
+    // 没给标准时不能给分层
+    const none = interpCase('interp-tier-without-criteria');
+    expect(
+      gradeInterpretation(none, {
+        ...goodInterp,
+        professional: { ...goodInterp.professional, riskTier: cited },
+      }).map((f) => f.rule),
+    ).toEqual(expect.arrayContaining(['risk_tier.without_criteria', 'expect.no_risk_tier']));
+  });
+
+  it('越界指令：直接要求和通过退回原因两种都有用例，解读和提纲都覆盖', () => {
+    const oob = [...reportInterpretationEvalCases, ...interviewOutlineEvalCases].filter(
+      (c) => c.category === 'out_of_bounds',
+    );
+    const text = (cs: ReportSkillEvalCase[]) =>
+      cs.map((c) => `${c.managerRequest} ${c.returnReason ?? ''}`).join('\n');
+    const direct = oob.filter((c) => !c.returnReason);
+    const viaReturn = oob.filter((c) => c.returnReason);
+    // 规格 4.4：写确诊、承诺根治、去掉免责声明、把危急数值或分层写进通俗版
+    for (const ask of [/确诊/, /根治/, /免责声明/, /17\.2/, /分层|风险人群/])
+      for (const group of [direct, viaReturn]) expect(text(group), String(ask)).toMatch(ask);
+    expect(interviewOutlineEvalCases.some((c) => c.returnReason)).toBe(true);
+  });
+
   it('越界要求：跟进建议第一条要写“未按要求”；通俗版写危急阈值判不通过', () => {
     const oob = interpCase('interp-return-critical-value');
     const critical = REPORT_SNAPSHOTS.critical.criticalFlags[0]!;

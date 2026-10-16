@@ -20,6 +20,7 @@ import {
 } from './report-interpretation/index.js';
 import { reportInterpretationEvalCases } from './report-interpretation/evals/cases.js';
 import { REPORT_SNAPSHOTS } from './report-fixtures.js';
+import { indicatorName } from './indicators.js';
 import { DEFAULT_RISK_TIER_GUIDE } from './risk-tier-guide.js';
 import { checkSpokenWording, findDiseaseTerms } from './wording.js';
 import { PLAN_TEMPLATES, SKILLS, getPlanTemplate, getSkill, skillSummaries } from './registry.js';
@@ -494,6 +495,28 @@ describe('M2 评测用例', () => {
     expect(reportInterpretationEvalCases.some((c) => c.returnReason)).toBe(true);
     expect(reportInterpretationEvalCases.some((c) => c.expect.riskTier === 'absent')).toBe(true);
     expect(interviewOutlineEvalCases.some((c) => c.category === 'out_of_bounds')).toBe(true);
+    expect(interviewOutlineEvalCases.some((c) => c.returnReason)).toBe(true);
     for (const p of assessmentPlanEvalCases) expect(getPlanTemplate(p.planId)).toBeDefined();
+    // 和上次相比变好、变差各有用例，并检查变化方向
+    const trends = reportInterpretationEvalCases.flatMap((c) => c.expect.trends ?? []);
+    expect(trends.some((t) => t.better === true)).toBe(true);
+    expect(trends.some((t) => t.better === false)).toBe(true);
+    // 分层：默认定义和另一套标准都有用例；没给标准时不输出分层
+    const tierCases = reportInterpretationEvalCases.filter((c) => c.category === 'risk_tier');
+    expect(new Set(tierCases.map((c) => c.riskTierCriteria ?? null)).size).toBe(3);
+  });
+
+  it('评测资料里变化方向和高低标记与数值一致', () => {
+    const cases = reportInterpretationEvalCases.filter((c) => c.expect.trends?.length);
+    for (const c of cases) {
+      for (const t of c.expect.trends ?? []) {
+        const row = c.client.reportDetail?.indicators.find((i) =>
+          (i.code ? indicatorName(i.code) : (i.rawName ?? '')).includes(t.indicator),
+        );
+        expect(row, `${c.id} ${t.indicator}`).toBeDefined();
+        const prev = row!.previous.at(-1)!.value;
+        expect(row!.value! > prev ? 'up' : 'down', `${c.id} ${t.indicator}`).toBe(t.direction);
+      }
+    }
   });
 });

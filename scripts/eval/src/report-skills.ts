@@ -160,6 +160,113 @@ function gradeClientText(
   if (text.length > 500) add('client.too_long', `${text.length} 字`);
 }
 
+const UP_WORDS = ['上升', '升高', '增高', '增加', '上涨', '提高', '升至', '升到', '增长', '高了'];
+const DOWN_WORDS = ['下降', '降低', '降至', '降到', '减少', '回落', '减轻', '减至', '低了'];
+/** “改善饮食”这类建议不算判断，所以只匹配表示结果的说法 */
+const BETTER_WORDS = ['有所改善', '明显改善', '得到改善', '改善了', '好转', '变好', '进步', '改观'];
+const WORSE_WORDS = ['变差', '恶化', '加重', '退步', '更差'];
+/** “没有改善”“未见好转”这类否定说法不算判断写反 */
+const NEGATED_JUDGMENT =
+  /(没有|未见|未|无|不见|并未|尚未)(明显)?(改善|好转|变好|进步|变差|恶化|加重)/g;
+
+const sentences = (text: string) => text.split(/[。；;\n]/).filter((s) => s.trim());
+const clauses = (text: string) => text.split(/[。；;，,\n]/).filter((s) => s.trim());
+
+/**
+ * 和上次相比的变化（规格 4.4“和上次相比变好或变差”）：历次对比和异常项说明里必须提到这项指标，
+ * 写出的方向不能和数据相反；给了 better 时，“改善”“变差”的判断也不能写反。
+ * 通俗版里同一句提到这项指标时，方向同样不能写反。
+ */
+function checkTrends(
+  c: ReportSkillEvalCase,
+  output: ReportInterpretationOutput,
+  add: (rule: string, detail: string) => void,
+) {
+  const p = output.professional;
+  const professional = sentences(
+    [...p.comparison, ...p.abnormalFindings.map((f) => `${f.indicator} ${f.observation}`)].join(
+      '\n',
+    ),
+  );
+  const client = sentences(output.clientFacing);
+  for (const t of c.expect.trends ?? []) {
+    const right = t.direction === 'up' ? UP_WORDS : DOWN_WORDS;
+    const wrong = t.direction === 'up' ? DOWN_WORDS : UP_WORDS;
+    const mentions = professional.filter((s) => s.includes(t.indicator));
+    if (!mentions.length) {
+      add('trend.missing', `历次对比没有提到${t.indicator}`);
+      continue;
+    }
+    for (const s of [...mentions, ...client.filter((x) => x.includes(t.indicator))]) {
+      if (!hits(s, right).length && hits(s, wrong).length)
+        add('trend.wrong_direction', `${t.indicator}的变化方向写反了`);
+      if (t.better === undefined) continue;
+      const judged = s.replace(NEGATED_JUDGMENT, ' ');
+      if (hits(judged, t.better ? WORSE_WORDS : BETTER_WORDS).length)
+        add(
+          'trend.wrong_judgment',
+          `${t.indicator}${t.better ? '变好了却写成变差' : '变差了却写成改善'}`,
+        );
+    }
+  }
+}
+
+/** 没有参考范围时不能有的高低判断（“阴性，未见异常”这类文字结果的描述不算） */
+const NO_REFERENCE_JUDGMENT = [
+  '偏高',
+  '偏低',
+  '高于参考',
+  '低于参考',
+  '超出参考',
+  '超过参考',
+  '超标',
+  '高于正常',
+  '低于正常',
+  '超出正常',
+  '超过正常',
+  '正常上限',
+  '正常值',
+];
+/** “无法判断是否异常”这类说法不算判断 */
+const CANNOT_JUDGE = /(无法|不能|不好|没法|难以)(判断|确定|评估)[^，。；,;]*/g;
+
+/** 指标在输出里的名字：目录指标用中文名，未收录指标用报告原始名称 */
+const nameOf = (i: { code: string | null; rawName: string | null }) =>
+  i.code ? indicatorName(i.code) : (i.rawName ?? '');
+
+/**
+ * 报告没印参考范围的指标（规格 2.5 第 3 条、Q10）：不列进异常项，不说偏高、偏低或异常。
+ * 按逗号分句检查，避免同一句里别的指标的判断被算到它头上。
+ */
+function checkNoReference(
+  client: ClientSnapshot,
+  output: ReportInterpretationOutput,
+  professional: string,
+  add: (rule: string, detail: string) => void,
+) {
+  const names = (client.reportDetail?.indicators ?? [])
+    .filter((i) => i.abnormal === 'no_reference')
+    .map(nameOf)
+    .filter(Boolean);
+  for (const name of names) {
+    if (output.professional.abnormalFindings.some((f) => f.indicator.includes(name)))
+      add('no_reference.listed_as_abnormal', `${name}没有参考范围，却列进了异常项`);
+    for (const clause of clauses(`${professional}\n${output.clientFacing}`)) {
+      if (!clause.includes(name)) continue;
+      if (hits(clause.replace(CANNOT_JUDGE, ' '), NO_REFERENCE_JUDGMENT).length)
+        add('no_reference.judged', `${name}没有参考范围，却判断了高低`);
+    }
+  }
+}
+
+/** 分层依据要引用报告里的具体数值（规格 4.2“逐条引用依据的数值”） */
+function citesReportValue(client: ClientSnapshot, reasons: readonly string[]): boolean {
+  const values = (client.reportDetail?.indicators ?? []).flatMap((i) =>
+    i.value === null ? [] : [i.value],
+  );
+  return reasons.some((r) => values.some((v) => numberIn(r, v)));
+}
+
 /** 对一次 /体检解读 输出做规则检查 */
 export function gradeInterpretation(
   c: ReportSkillEvalCase,
@@ -197,6 +304,10 @@ export function gradeInterpretation(
     else if (c.expect.allowedTiers && !c.expect.allowedTiers.includes(p.riskTier.tier))
       add('expect.risk_tier_choice', `按合成标准应为 ${c.expect.allowedTiers.join('/')}`);
   }
+  if (criteria && p.riskTier && !citesReportValue(c.client, p.riskTier.reasons))
+    add('risk_tier.no_cited_value', '分层依据没有引用报告里的具体数值');
+  checkTrends(c, output, add);
+  checkNoReference(c.client, output, professional, add);
   if (c.expect.riskTier === 'absent' && p.riskTier) add('expect.no_risk_tier', '不应给出分层');
 
   if (c.expect.referral && !p.referralAdvice)
