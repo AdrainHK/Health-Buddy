@@ -3,8 +3,9 @@ import { loadSkillMd, parseSkillMeta, type SkillDefinition } from '../framework.
 import { CRISIS_NOTICE } from '../guardrails.js';
 import { appendRequest, describeReportClient } from '../report-input.js';
 import {
+  checkAdviceWording,
   checkSpokenWording,
-  findDrugAdvice,
+  checkWhyWording,
   wordingCategories,
   type WordingCategory,
 } from '../wording.js';
@@ -93,10 +94,10 @@ export const interviewOutline: SkillDefinition<typeof interviewOutlineOutputSche
   checkOutput(output) {
     const p = output.professional;
     const questions = p.groups.flatMap((g) => g.questions);
-    const others = [p.overview, ...questions.map((q) => q.why), ...p.missingData, ...p.suggestions];
     return [
       ...questions.flatMap((q) => checkSpokenWording(q.question)),
-      ...others.flatMap((t) => findDrugAdvice(t)),
+      ...questions.flatMap((q) => checkWhyWording(q.why)),
+      ...[p.overview, ...p.missingData, ...p.suggestions].flatMap((t) => checkAdviceWording(t)),
     ];
   },
 
@@ -109,7 +110,8 @@ const CATEGORY_NOTE: Record<WordingCategory, string> = {
   banned_term: '问题里出现了禁用词（如“诊断”“筛查”“治愈”“根治”）',
   presumed_disease:
     '问题里点名了疾病名称（包括问家族史时），等于预设客户患病；改成问症状、习惯和测量情况，如“家里人有没有血压、血糖方面的问题”',
-  drug_name: '问题里点名了具体药物；用药只能问“目前在用哪些药和保健品”',
+  judgment: '问题里用了“疑似”“患有”“得了”这类判断说法；只问症状、习惯和测量情况',
+  drug_name: '提纲里点名了具体药物；用药只能问“目前在用哪些药和保健品”，其他部分写“用药情况”',
   drug_advice:
     '提纲里出现了用药建议或剂量（包括跟进建议和“未按要求”那一条）；不写服用、换药、停药、加减量和剂量，“未按要求”只写“未按要求给出用药建议”',
 };

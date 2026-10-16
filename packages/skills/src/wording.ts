@@ -24,6 +24,14 @@ export const DISEASE_TERMS = [
   '低血糖症',
   '抑郁',
   '焦虑症',
+  '肿瘤',
+  '癌',
+  '甲亢',
+  '甲减',
+  '肾病',
+  '哮喘',
+  '骨质疏松',
+  '贫血',
 ] as const;
 
 /** 具体药名和药物类别。问题里只能问“在用哪些药”，不能点名药物 */
@@ -43,25 +51,52 @@ export const DRUG_NAMES = [
 const SAME_CLAUSE = '[^，。；：！？,.;:!?\\n]';
 
 /**
- * 用药建议的句式（在规范化后的文本上匹配）：
- * - “建议”后面跟着服用、停药、停用、加量、减量；
- * - “建议”后面跟着吃药、用药（“建议少吃甜食”“建议把白米饭换成杂粮饭”是饮食建议，不算）；
- * - 换成、改用、加用某个具体药物。
- * 只在同一个分句里匹配：“未按要求给出用药建议，原因：用药调整需由医生评估”不算。
- * 问用药情况的问题（“最近有没有停过药？”）不算建议。
+ * 用药建议的动词。故意宽：只要这些动词和“药”、剂型、剂量或具体药名出现在同一个分句里就算。
+ * “建议少吃甜食”“把白米饭换成杂粮饭”这类饮食建议没有药，不算。
  */
+const ADVICE_VERBS = [
+  '换',
+  '停',
+  '减',
+  '加',
+  '改',
+  '别吃',
+  '不吃',
+  '暂停',
+  '减半',
+  '加倍',
+  '吃点',
+  '可以吃',
+  '建议吃',
+  '服用',
+  '继续吃',
+];
+const ADVICE_TARGETS = ['药', '片', '粒', '胶囊', '剂量', ...DRUG_NAMES];
+const verbs = ADVICE_VERBS.join('|');
+const targets = ADVICE_TARGETS.join('|');
+
+/** 动词在前（建议换药、停掉降压药）或药在前（把药减半、降压药先别吃了），同一分句内相距不超过 8 个字 */
 export const DRUG_ADVICE = new RegExp(
-  [
-    `建议${SAME_CLAUSE}{0,6}(?:服用|停药|停用|加量|减量)`,
-    `建议${SAME_CLAUSE}{0,6}(?:吃|用)${SAME_CLAUSE}{0,2}药`,
-    `(?:换成|换用|改用|改吃|加用)${SAME_CLAUSE}{0,6}(?:${DRUG_NAMES.join('|')})`,
-  ].join('|'),
+  `(?:${verbs})${SAME_CLAUSE}{0,8}?(?:${targets})|(?:${targets})${SAME_CLAUSE}{0,8}?(?:${verbs})`,
 );
 
-/** 剂量（数字 + 剂量单位） */
-export const DOSE = /\d+(?:\.\d+)?\s*(?:mg|毫克|片|粒|单位|IU)/i;
+/**
+ * 剂量：阿拉伯数字、中文数字或分数加剂量单位（5 mg、一片、半粒、1/2 片、两袋、10 ml）。
+ * 单位后面紧跟 / 或字母的不算（mg/dL、g/L 是检验单位）。
+ */
+export const DOSE =
+  /(?:\d+(?:\.\d+)?|\d+\/\d+|[一二两三四五六七八九十]+分之[一二三四五六七八九]|[一二两三四五六七八九十半]+)\s*(?:mg|毫克|克|g|ml|毫升|片|粒|支|袋|单位|IU)(?![/A-Za-z])/i;
 
-export type WordingCategory = 'banned_term' | 'presumed_disease' | 'drug_name' | 'drug_advice';
+/** 疑似、患有、得了这类判断句式：问题里不能用（skill.md“问题的措辞”） */
+export const JUDGMENT_PHRASES = ['疑似', '患有', '患上', '得了', '确诊', '病情'] as const;
+
+/**
+ * 拒绝越界要求时固定写的那句话（skill.md）。检查前整句遮掉，前后标点怎么写（，（）——）都不影响。
+ */
+export const DRUG_REFUSAL_PHRASES = ['未按要求给出用药建议', '用药调整需由医生评估'] as const;
+
+export type WordingCategory =
+  'banned_term' | 'presumed_disease' | 'judgment' | 'drug_name' | 'drug_advice';
 
 export interface WordingIssue {
   category: WordingCategory;
@@ -71,57 +106,95 @@ export interface WordingIssue {
   index: number;
 }
 
-/** 找出疾病名称。先规范化（去空格、零宽字符，统一全角半角和繁简），位置按原文 */
-export function findDiseaseTerms(text: string): { term: string; index: number }[] {
-  const { text: normalized, origin } = normalizeForCompliance(text);
+/** 规范化，并把固定的拒绝句遮成空格（长度不变，位置仍能映射回原文） */
+function normalized(text: string): { text: string; origin: number[] } {
+  const n = normalizeForCompliance(text);
+  let masked = n.text;
+  for (const phrase of DRUG_REFUSAL_PHRASES) {
+    const p = normalizeForCompliance(phrase).text;
+    masked = masked.split(p).join(' '.repeat(p.length));
+  }
+  return { text: masked, origin: n.origin };
+}
+
+function findTerms(text: string, terms: readonly string[]): { term: string; index: number }[] {
+  const { text: norm, origin } = normalized(text);
   const out: { term: string; index: number }[] = [];
-  for (const term of DISEASE_TERMS) {
-    for (let i = normalized.indexOf(term); i !== -1; i = normalized.indexOf(term, i + 1)) {
+  for (const term of terms) {
+    for (let i = norm.indexOf(term); i !== -1; i = norm.indexOf(term, i + 1)) {
       out.push({ term, index: origin[i] ?? 0 });
     }
   }
   return out.sort((a, b) => a.index - b.index);
+}
+
+/** 找出疾病名称。先规范化（去空格、零宽字符，统一全角半角和繁简），位置按原文 */
+export function findDiseaseTerms(text: string): { term: string; index: number }[] {
+  return findTerms(text, DISEASE_TERMS);
 }
 
 /** 找出具体药名（先规范化），位置按原文 */
 export function findDrugNames(text: string): { term: string; index: number }[] {
-  const { text: normalized, origin } = normalizeForCompliance(text);
-  const out: { term: string; index: number }[] = [];
-  for (const term of DRUG_NAMES) {
-    for (let i = normalized.indexOf(term); i !== -1; i = normalized.indexOf(term, i + 1)) {
-      out.push({ term, index: origin[i] ?? 0 });
-    }
-  }
-  return out.sort((a, b) => a.index - b.index);
+  return findTerms(text, DRUG_NAMES);
 }
 
 /**
- * 用药建议或剂量（规格 2.8：提纲不给用药建议）。在规范化后的文本上匹配；
+ * 用药建议或剂量（规格 2.8：提纲不给用药建议）。在规范化、遮掉固定拒绝句后的文本上匹配；
  * term 只写“用药建议”“剂量”这类类别名，不带原文。
  */
 export function findDrugAdvice(text: string): WordingIssue[] {
-  const { text: normalized, origin } = normalizeForCompliance(text);
+  const { text: norm, origin } = normalized(text);
   const out: WordingIssue[] = [];
-  const advice = DRUG_ADVICE.exec(normalized);
+  const advice = DRUG_ADVICE.exec(norm);
   if (advice)
     out.push({ category: 'drug_advice', term: '用药建议', index: origin[advice.index] ?? 0 });
-  const dose = DOSE.exec(normalized);
-  if (dose) out.push({ category: 'drug_advice', term: '剂量', index: origin[dose.index] ?? 0 });
+  out.push(...findDose(norm, origin));
   return out;
 }
 
-/** 一段要对客户说的话：禁用词、疾病名称、具体药名和用药建议 */
+function findDose(norm: string, origin: number[]): WordingIssue[] {
+  const dose = DOSE.exec(norm);
+  return dose ? [{ category: 'drug_advice', term: '剂量', index: origin[dose.index] ?? 0 }] : [];
+}
+
+const asIssues = (category: WordingCategory, found: { term: string; index: number }[]) =>
+  found.map((f) => ({ category, ...f }));
+
+/**
+ * 要对客户说出口的问题：禁用词、疾病名称、判断句式、具体药名和剂量。
+ * 问用药情况（“目前在用哪些药？”）可以，所以问题里不套用药建议的动词规则。
+ */
 export function checkSpokenWording(text: string): WordingIssue[] {
+  const { text: norm, origin } = normalized(text);
   return [
     ...findBannedTerms(text).map((b) => ({
       category: 'banned_term' as const,
       term: b.term,
       index: b.index,
     })),
-    ...findDiseaseTerms(text).map((d) => ({ category: 'presumed_disease' as const, ...d })),
-    ...findDrugNames(text).map((d) => ({ category: 'drug_name' as const, ...d })),
-    ...findDrugAdvice(text),
+    ...asIssues('presumed_disease', findDiseaseTerms(text)),
+    ...asIssues('judgment', findTerms(text, JUDGMENT_PHRASES)),
+    ...asIssues('drug_name', findDrugNames(text)),
+    ...findDose(norm, origin),
   ];
+}
+
+/** “为什么问”：写给健管师看，但同样不写禁用词、疾病名称，不点名药物、不给用药建议 */
+export function checkWhyWording(text: string): WordingIssue[] {
+  return [
+    ...findBannedTerms(text).map((b) => ({
+      category: 'banned_term' as const,
+      term: b.term,
+      index: b.index,
+    })),
+    ...asIssues('presumed_disease', findDiseaseTerms(text)),
+    ...checkAdviceWording(text),
+  ];
+}
+
+/** 提纲其他部分（重点、缺少的信息、跟进建议）：不点名药物、不给用药建议、不写剂量 */
+export function checkAdviceWording(text: string): WordingIssue[] {
+  return [...asIssues('drug_name', findDrugNames(text)), ...findDrugAdvice(text)];
 }
 
 /** 只要类别（去重），用于重新生成时的提示和日志 */

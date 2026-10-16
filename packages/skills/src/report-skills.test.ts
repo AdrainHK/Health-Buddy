@@ -141,8 +141,8 @@ describe('系统提示词', () => {
   it('/面谈提纲没有通俗版，不附通俗版规则', () => {
     const prompt = buildSystemPrompt(interviewOutline);
     expect(prompt).not.toContain('通俗版（clientFacing');
-    expect(prompt).toContain('任何问题里都不出现疾病名称');
-    expect(prompt).toContain('不给用药建议');
+    expect(prompt).toContain('措辞规则（整份提纲都适用）');
+    expect(prompt).toContain('未按要求给出用药建议，原因：用药调整需由医生评估');
   });
 });
 
@@ -339,27 +339,96 @@ describe('/面谈提纲 保存前的措辞检查（规格 2.8）', () => {
     expect(issues.map((i) => i.category).sort()).toEqual(['banned_term', 'presumed_disease']);
   });
 
-  it('点名药物、用药建议和剂量也拦下；饮食建议和问用药情况不算', () => {
-    const withAdvice = (question: string, suggestion: string): InterviewOutlineOutput => ({
-      ...outline(question),
-      professional: { ...outline(question).professional, suggestions: [suggestion] },
-    });
-    const bad = interviewOutline.checkOutput?.(
-      withAdvice('您的降糖药吃的什么剂量？', '未按要求：建议换成二甲双胍，每次 500 mg'),
-    );
-    expect([...new Set(bad?.map((i) => i.category))].sort()).toEqual(['drug_advice', 'drug_name']);
-    expect(bad?.filter((i) => i.category === 'drug_advice').map((i) => i.term)).toEqual([
-      '用药建议',
-      '剂量',
-    ]);
-    expect(
-      interviewOutline.checkOutput?.(
-        withAdvice(
-          '目前在用哪些药和保健品？最近有没有自己停过药？',
-          '未按要求给出用药建议，原因：用药调整需由医生评估；建议晚餐少吃甜食，把白米饭换成杂粮饭',
-        ),
-      ),
-    ).toEqual([]);
+  const withFields = (
+    fields: Partial<{
+      question: string;
+      why: string;
+      overview: string;
+      suggestion: string;
+      missing: string;
+    }>,
+  ): InterviewOutlineOutput => ({
+    professional: {
+      overview: fields.overview ?? '重点了解饮食。',
+      groups: [
+        {
+          topic: 'diet',
+          questions: [
+            {
+              question: fields.question ?? '您平时早餐一般吃什么？',
+              why: fields.why ?? '空腹血糖 6.5 mmol/L 高于参考范围',
+            },
+          ],
+        },
+      ],
+      missingData: fields.missing ? [fields.missing] : [],
+      suggestions: fields.suggestion ? [fields.suggestion] : [],
+    },
+    crisisSignal: false,
+  });
+  const categories = (o: InterviewOutlineOutput) => [
+    ...new Set((interviewOutline.checkOutput?.(o) ?? []).map((i) => i.category)),
+  ];
+
+  it.each([
+    '建议换药',
+    '可以吃点钙片',
+    '停掉降压药',
+    '建议停掉降压药',
+    '把药减半',
+    '建议暂停服药',
+    '建议加大剂量',
+    '建议吃阿司匹林',
+    '建议改成二甲双胍',
+    '可以换一种降压药',
+    '降压药先别吃了',
+    '建议您在医生指导下停药',
+  ])('非问题部分的用药建议“%s”被拦下（跟进建议、重点、为什么问、缺少的信息）', (phrase) => {
+    for (const fields of [
+      { suggestion: phrase },
+      { overview: phrase },
+      { why: `空腹血糖 6.5 mmol/L，${phrase}` },
+      { missing: phrase },
+    ]) {
+      const found = categories(withFields(fields));
+      expect(found.some((c) => c === 'drug_advice' || c === 'drug_name')).toBe(true);
+    }
+  });
+
+  it.each(['每次一片', '半粒', '两袋', '1/2 片', '三分之一片', '10 ml', '5 mg', '每天 300 g'])(
+    '剂量“%s”被拦下（中文数字、分数也算）',
+    (dose) => {
+      expect(categories(withFields({ suggestion: `早餐后${dose}` }))).toContain('drug_advice');
+      expect(categories(withFields({ question: `您平时${dose}吗？` }))).toContain('drug_advice');
+    },
+  );
+
+  it.each([
+    { suggestion: '建议少吃甜食' },
+    { suggestion: '建议晚餐少吃甜食，把白米饭换成杂粮饭' },
+    { suggestion: '未按要求给出用药建议，原因：用药调整需由医生评估' },
+    { suggestion: '未按要求给出用药建议（原因：用药调整需由医生评估）' },
+    { suggestion: '未按要求给出用药建议——用药调整需由医生评估' },
+    { question: '目前在用哪些药和保健品？' },
+    { question: '最近有没有自己停过药？' },
+    { question: '有没有医生开的长期用药？' },
+    { why: '血红蛋白 130 g/L，空腹血糖 6.5 mmol/L，高于参考范围' },
+    { missing: '健康史里没有用药记录' },
+  ])('饮食建议、固定拒绝句、问用药情况和检验单位不算：%o', (fields) => {
+    expect(interviewOutline.checkOutput?.(withFields(fields))).toEqual([]);
+  });
+
+  it('问题里的判断说法、扩充的疾病名称，以及为什么问里的禁用词和疾病名称都被拦下', () => {
+    expect(categories(withFields({ question: '您得了多久了？' }))).toEqual(['judgment']);
+    expect(categories(withFields({ question: '您疑似有什么情况吗？' }))).toEqual(['judgment']);
+    for (const disease of ['肿瘤', '甲亢', '肾病', '哮喘', '骨质疏松', '贫血']) {
+      expect(categories(withFields({ question: `家里有人有${disease}吗？` }))).toEqual([
+        'presumed_disease',
+      ]);
+    }
+    expect(categories(withFields({ why: '需要排除糖尿病' }))).toEqual(['presumed_disease']);
+    expect(categories(withFields({ why: '为后续筛查做准备' }))).toEqual(['banned_term']);
+    expect(categories(withFields({ question: '您的降糖药吃的什么剂量？' }))).toEqual(['drug_name']);
   });
 
   it('纠正说明只写问题类别，不复述上次的输出', () => {
