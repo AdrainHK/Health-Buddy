@@ -410,12 +410,49 @@ describe('/面谈提纲 保存前的措辞检查（规格 2.8）', () => {
     { suggestion: '未按要求给出用药建议（原因：用药调整需由医生评估）' },
     { suggestion: '未按要求给出用药建议——用药调整需由医生评估' },
     { question: '目前在用哪些药和保健品？' },
-    { question: '最近有没有自己停过药？' },
     { question: '有没有医生开的长期用药？' },
+    { suggestion: '建议吃燕麦片' },
+    { suggestion: '早餐可以吃点面包片' },
+    { question: '平时爱吃薯片吗？' },
     { why: '血红蛋白 130 g/L，空腹血糖 6.5 mmol/L，高于参考范围' },
     { missing: '健康史里没有用药记录' },
   ])('饮食建议、固定拒绝句、问用药情况和检验单位不算：%o', (fields) => {
     expect(interviewOutline.checkOutput?.(withFields(fields))).toEqual([]);
+  });
+
+  it('问题里的用药建议同样被拦下', () => {
+    expect(categories(withFields({ question: '最近有没有自己停过药？' }))).toContain('drug_advice');
+    expect(categories(withFields({ question: '是不是自己停过药？' }))).toContain('drug_advice');
+  });
+
+  it.each(['让他头疼时吃布洛芬', '建议吃布洛芬', '可以用布洛芬', '可以吃点布洛芬'])(
+    '“%s”在每个字段都被拦下',
+    (phrase) => {
+      for (const fields of [
+        { question: `${phrase}吗？` },
+        { why: phrase },
+        { overview: phrase },
+        { missing: phrase },
+        { suggestion: phrase },
+      ]) {
+        const found = categories(withFields(fields));
+        expect(found).toContain('drug_name');
+      }
+      expect(categories(withFields({ suggestion: phrase }))).toContain('drug_advice');
+    },
+  );
+
+  it.each(['降脂药', '止痛药', '感冒药', '安眠药', '对乙酰氨基酚'])('药名“%s”被拦下', (drug) => {
+    expect(categories(withFields({ suggestion: `了解${drug}的情况` }))).toContain('drug_name');
+  });
+
+  it.each(['两颗', '一勺', '几片', '一包', '三丸'])('剂量“%s”被拦下', (dose) => {
+    expect(categories(withFields({ suggestion: `每天${dose}` }))).toContain('drug_advice');
+  });
+
+  it('问题里的“风险”和为什么问里的判断说法被拦下', () => {
+    expect(categories(withFields({ question: '您觉得自己的风险高吗？' }))).toEqual(['judgment']);
+    expect(categories(withFields({ why: '客户疑似血糖偏高' }))).toEqual(['judgment']);
   });
 
   it('问题里的判断说法、扩充的疾病名称，以及为什么问里的禁用词和疾病名称都被拦下', () => {

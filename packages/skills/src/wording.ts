@@ -34,10 +34,19 @@ export const DISEASE_TERMS = [
   '贫血',
 ] as const;
 
-/** 具体药名和药物类别。问题里只能问“在用哪些药”，不能点名药物 */
+/**
+ * 具体药名和药物类别（和 interview-outline/skill.md 列出的一致）。
+ * 提纲任何地方都不能点名；问题里只能问“在用哪些药”
+ */
 export const DRUG_NAMES = [
   '降压药',
   '降糖药',
+  '降脂药',
+  '止痛药',
+  '感冒药',
+  '安眠药',
+  '布洛芬',
+  '对乙酰氨基酚',
   '他汀',
   '二甲双胍',
   '胰岛素',
@@ -68,10 +77,15 @@ const ADVICE_VERBS = [
   '吃点',
   '可以吃',
   '建议吃',
+  '可以用',
+  '建议用',
   '服用',
   '继续吃',
+  // 让他（头疼时）吃布洛芬：让和吃之间最多隔 4 个字
+  `让${SAME_CLAUSE}{0,4}?吃`,
 ];
-const ADVICE_TARGETS = ['药', '片', '粒', '胶囊', '剂量', ...DRUG_NAMES];
+/** “片”不含常见食物（薯片、面包片、燕麦片） */
+const ADVICE_TARGETS = ['药', '(?<!薯|面包|燕麦)片', '粒', '颗', '胶囊', '剂量', ...DRUG_NAMES];
 const verbs = ADVICE_VERBS.join('|');
 const targets = ADVICE_TARGETS.join('|');
 
@@ -85,10 +99,10 @@ export const DRUG_ADVICE = new RegExp(
  * 单位后面紧跟 / 或字母的不算（mg/dL、g/L 是检验单位）。
  */
 export const DOSE =
-  /(?:\d+(?:\.\d+)?|\d+\/\d+|[一二两三四五六七八九十]+分之[一二三四五六七八九]|[一二两三四五六七八九十半]+)\s*(?:mg|毫克|克|g|ml|毫升|片|粒|支|袋|单位|IU)(?![/A-Za-z])/i;
+  /(?:\d+(?:\.\d+)?|\d+\/\d+|[一二两三四五六七八九十]+分之[一二三四五六七八九]|[一二两三四五六七八九十半几]+)\s*(?:mg|毫克|克|g|ml|毫升|片|粒|颗|支|袋|包|丸|勺|单位|IU)(?![/A-Za-z])/i;
 
 /** 疑似、患有、得了这类判断句式：问题里不能用（skill.md“问题的措辞”） */
-export const JUDGMENT_PHRASES = ['疑似', '患有', '患上', '得了', '确诊', '病情'] as const;
+export const JUDGMENT_PHRASES = ['疑似', '患有', '患上', '得了', '确诊', '病情', '风险'] as const;
 
 /**
  * 拒绝越界要求时固定写的那句话（skill.md）。检查前整句遮掉，前后标点怎么写（，（）——）都不影响。
@@ -161,11 +175,11 @@ const asIssues = (category: WordingCategory, found: { term: string; index: numbe
   found.map((f) => ({ category, ...f }));
 
 /**
- * 要对客户说出口的问题：禁用词、疾病名称、判断句式、具体药名和剂量。
- * 问用药情况（“目前在用哪些药？”）可以，所以问题里不套用药建议的动词规则。
+ * 要对客户说出口的问题：禁用词、疾病名称、判断句式、具体药名、用药建议和剂量。
+ * 只能问“目前在用哪些药和保健品？”“有没有医生开的长期用药？”这类情况；
+ * 问停没停过药、换没换过药同样算（skill.md 禁止）。
  */
 export function checkSpokenWording(text: string): WordingIssue[] {
-  const { text: norm, origin } = normalized(text);
   return [
     ...findBannedTerms(text).map((b) => ({
       category: 'banned_term' as const,
@@ -174,12 +188,11 @@ export function checkSpokenWording(text: string): WordingIssue[] {
     })),
     ...asIssues('presumed_disease', findDiseaseTerms(text)),
     ...asIssues('judgment', findTerms(text, JUDGMENT_PHRASES)),
-    ...asIssues('drug_name', findDrugNames(text)),
-    ...findDose(norm, origin),
+    ...checkAdviceWording(text),
   ];
 }
 
-/** “为什么问”：写给健管师看，但同样不写禁用词、疾病名称，不点名药物、不给用药建议 */
+/** “为什么问”：写给健管师看，但同样不写禁用词、疾病名称、判断说法，不点名药物、不给用药建议 */
 export function checkWhyWording(text: string): WordingIssue[] {
   return [
     ...findBannedTerms(text).map((b) => ({
@@ -188,6 +201,7 @@ export function checkWhyWording(text: string): WordingIssue[] {
       index: b.index,
     })),
     ...asIssues('presumed_disease', findDiseaseTerms(text)),
+    ...asIssues('judgment', findTerms(text, JUDGMENT_PHRASES)),
     ...checkAdviceWording(text),
   ];
 }

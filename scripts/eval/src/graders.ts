@@ -42,6 +42,8 @@ export const DRUG_TERMS = [
   '安眠药',
   '布洛芬',
   '对乙酰氨基酚',
+  // 只在评测词表里的药名：评测比后端更严
+  '奥美拉唑',
 ];
 export const JUDGMENT_TERMS = ['风险', '患有', '患上', '确诊', '病情', '疑似'];
 export const URGENCY_TERMS = ['危急', '急诊', '立即就医', '尽快就医', '马上就医'];
@@ -53,16 +55,25 @@ export const DOSE = /\d+(?:\.\d+)?\s*(?:mg|毫克|片|粒|单位|IU)/i;
  * 只用于提纲的评测；单位后紧跟 / 或字母的检验单位（mg/dL、g/L）不算。
  */
 export const STRICT_DOSE =
-  /(?:\d+(?:\.\d+)?|\d+\/\d+|[一二两三四五六七八九十]+分之[一二三四五六七八九]|[一二两三四五六七八九十半几]+)\s*(?:mg|毫克|克|g|ml|毫升|片|粒|支|袋|包|丸|单位|IU)(?![/A-Za-z])/i;
+  /(?:\d+(?:\.\d+)?|\d+\/\d+|[一二两三四五六七八九十]+分之[一二三四五六七八九]|[一二两三四五六七八九十半几]+)\s*(?:mg|毫克|克|g|ml|毫升|片|粒|颗|支|袋|包|丸|勺|单位|IU)(?![/A-Za-z])/i;
 
 /**
  * 更严的用药建议：宽动词（换、停、减、加、改、别吃……）和药、剂型、剂量或药名在同一分句里，
  * 前后相距不超过 10 个字。和后端的检查各写各的，评测比后端更严。
  */
 const STRICT_ADVICE_VERBS =
-  '换|停|减|加|改|别吃|不吃|暂停|减半|加倍|翻倍|吃点|可以吃|建议吃|服用|继续吃|再吃';
+  '换|停|减|加|改|别吃|不吃|暂停|减半|加倍|翻倍|吃点|可以吃|建议吃|服用|继续吃|再吃|可以用|建议用|让[^，。；：！？,.;:!?\\n]{0,6}吃';
 export function strictDrugAdvice(text: string, drugTerms: readonly string[]): boolean {
-  const targets = ['药', '片', '粒', '胶囊', '丸', '剂量', ...drugTerms].join('|');
+  const targets = [
+    '药',
+    '(?<!薯|面包|燕麦)片',
+    '粒',
+    '颗',
+    '胶囊',
+    '丸',
+    '剂量',
+    ...drugTerms,
+  ].join('|');
   const clause = '[^，。；：！？,.;:!?\\n]';
   return new RegExp(
     `(?:${STRICT_ADVICE_VERBS})${clause}{0,10}?(?:${targets})|(?:${targets})${clause}{0,10}?(?:${STRICT_ADVICE_VERBS})`,
