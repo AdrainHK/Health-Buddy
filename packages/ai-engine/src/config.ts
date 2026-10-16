@@ -26,7 +26,7 @@ const envSchema = z.object({
   /** 没有单独配置的用途默认用哪家。Claude API 开通前先用 OpenAI。 */
   LLM_DEFAULT_PROVIDER: providerSchema.default('openai'),
   /** 两家各自的默认型号。 */
-  OPENAI_MODEL: z.preprocess(emptyAsUnset, z.string().min(1).default('gpt-6-astra')),
+  OPENAI_MODEL: z.preprocess(emptyAsUnset, z.string().min(1).default('gpt-6.1-sol')),
   ANTHROPIC_MODEL: z.preprocess(emptyAsUnset, z.string().min(1).default('claude-opus-5-5')),
   LLM_DEFAULT_EFFORT: effortSchema.default('medium'),
   /** 按用途覆盖，JSON 格式，例如 {"expert":{"provider":"anthropic","effort":"high"}} */

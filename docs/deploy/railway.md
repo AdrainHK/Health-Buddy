@@ -26,7 +26,7 @@ Redis 在用到队列和定时任务的里程碑（M5 随访、M10 自动化）�
 | `OPENAI_API_KEY` | ChatGPT 的 API 密钥 |
 | `ANTHROPIC_API_KEY` | Claude API 开通后再加 |
 
-可选：`OPENAI_MODEL`（默认 `gpt-6-astra`）、`LLM_DEFAULT_PROVIDER`（默认 `openai`）、`LLM_ROUTES`。说明见 `apps/server/.env.example`。
+可选：`OPENAI_MODEL`（默认 `gpt-6.1-sol`）、`LLM_DEFAULT_PROVIDER`（默认 `openai`）、`LLM_ROUTES`。说明见 `apps/server/.env.example`。
 
 密钥只填在 Railway 里，不要发在聊天里，也不要写进仓库。
 
