@@ -40,6 +40,11 @@ describe('inventedNumbers', () => {
     ).toEqual([]);
   });
 
+  it('accepts the age band and the change between two readings of one metric', () => {
+    // 体重 86.2 → 87.4
+    expect(inventedNumbers('50-59 岁，体重增加 1.2 kg', SNAPSHOTS.multiAbnormal)).toEqual([]);
+  });
+
   it('flags measurements that are not in the data', () => {
     expect(inventedNumbers('收缩压 162 mmHg，血糖 6.8', SNAPSHOTS.singleAbnormal)).toEqual([
       162, 6.8,
