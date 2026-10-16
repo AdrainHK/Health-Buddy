@@ -16,7 +16,7 @@ on:
         description: 每个用例跑几次
         default: '3'
       provider:
-        description: openai、anthropic，留空表示有密钥的都跑
+        description: openai、anthropic 或 all（有密钥的都跑）；留空用仓库变量 EVAL_PROVIDER，默认 openai
         default: ''
 
 concurrency:
@@ -60,10 +60,11 @@ jobs:
         # 手动输入经环境变量传入，不直接拼进脚本
         env:
           RUNS: ${{ inputs.runs || '3' }}
-          PROVIDER: ${{ inputs.provider }}
+          # Claude 中转暂停使用（2026-10-16 产品决定），默认只跑 OpenAI；恢复后把仓库变量 EVAL_PROVIDER 设为 all
+          PROVIDER: ${{ inputs.provider || vars.EVAL_PROVIDER || 'openai' }}
         run: |
           case "$RUNS" in ''|*[!0-9]*) echo "runs 必须是数字"; exit 1;; esac
-          if [ -n "$PROVIDER" ]; then
+          if [ "$PROVIDER" != all ]; then
             pnpm eval --runs "$RUNS" --provider "$PROVIDER"
           else
             pnpm eval --runs "$RUNS"
