@@ -178,7 +178,9 @@ describe('客户档案接口', () => {
           id: expect.any(String),
           reportDate: '2026-01-01',
           source: 'synthetic',
+          institution: null,
           indicatorCount: 1,
+          abnormalCount: 0,
         },
       ]);
       expect(record.indicators).toEqual([
@@ -191,6 +193,10 @@ describe('客户档案接口', () => {
               source: 'synthetic',
               value: 5.5,
               unit: 'mmol/L',
+              originalValue: null,
+              originalUnit: null,
+              refText: null,
+              abnormal: 'no_reference',
             },
           ],
         },

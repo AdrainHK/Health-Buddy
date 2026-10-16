@@ -7,6 +7,7 @@ import * as m0005 from './0005-critical-thresholds.js';
 import * as m0006 from './0006-platform-thresholds.js';
 import * as m0007 from './0007-detach-lock-order.js';
 import * as m0008 from './0008-client-record.js';
+import * as m0009 from './0009-report-upload.js';
 
 export interface Migration {
   name: string;
@@ -23,4 +24,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { name: '0006-platform-thresholds', up: m0006.up },
   { name: '0007-detach-lock-order', up: m0007.up },
   { name: '0008-client-record', up: m0008.up },
+  { name: '0009-report-upload', up: m0009.up },
 ];

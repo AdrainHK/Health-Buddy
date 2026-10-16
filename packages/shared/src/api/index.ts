@@ -7,3 +7,4 @@ export * from './skills.js';
 export * from './critical-thresholds.js';
 export * from './client-record.js';
 export * from './risk-tiers.js';
+export * from './reports.js';

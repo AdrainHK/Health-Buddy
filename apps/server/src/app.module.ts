@@ -6,6 +6,11 @@ import { ArtifactsModule } from './artifacts/artifacts.module.js';
 import { LLM_PROVIDERS } from './ai/gateway.provider.js';
 import { AuthModule } from './auth/auth.module.js';
 import { ClientsModule } from './clients/clients.module.js';
+import {
+  REPORT_INFRA_OVERRIDES,
+  ReportsModule,
+  type ReportInfraOverrides,
+} from './reports/reports.module.js';
 import { CriticalThresholdsModule } from './critical-thresholds/critical-thresholds.module.js';
 import { ApiExceptionFilter } from './common/exception.filter.js';
 import { APP_CONFIG, type AppConfig } from './config.js';
@@ -18,6 +23,8 @@ import { WorkbenchModule } from './workbench/workbench.module.js';
 export interface AppOptions {
   /** 测试用：替换大模型厂商适配器 */
   llmProviders?: Partial<Record<ProviderName, LlmProvider>>;
+  /** 测试用：替换对象存储和报告识别队列 */
+  reportInfra?: ReportInfraOverrides;
 }
 
 @Module({})
@@ -34,6 +41,7 @@ export class AppModule {
         TasksModule,
         ArtifactsModule,
         WorkbenchModule,
+        ReportsModule,
         AiModule,
       ],
       controllers: [HealthController, SkillsController],
@@ -43,8 +51,15 @@ export class AppModule {
         ...(options.llmProviders
           ? [{ provide: LLM_PROVIDERS, useValue: options.llmProviders }]
           : []),
+        ...(options.reportInfra
+          ? [{ provide: REPORT_INFRA_OVERRIDES, useValue: options.reportInfra }]
+          : []),
       ],
-      exports: [APP_CONFIG, ...(options.llmProviders ? [LLM_PROVIDERS] : [])],
+      exports: [
+        APP_CONFIG,
+        ...(options.llmProviders ? [LLM_PROVIDERS] : []),
+        ...(options.reportInfra ? [REPORT_INFRA_OVERRIDES] : []),
+      ],
     };
   }
 }

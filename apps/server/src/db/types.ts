@@ -72,6 +72,11 @@ interface ClientScoped {
   manager_id: Generated<string>;
 }
 
+type Nullable<T> = ColumnType<T | null, T | null | undefined, T | null>;
+/** numeric 列，pg 驱动返回字符串，避免精度丢失 */
+type Numeric = ColumnType<string, number | string, number | string>;
+type NullableNumeric = ColumnType<string | null, number | string | null | undefined, number | string | null>;
+
 export interface HealthReportsTable extends ClientScoped {
   id: Generated<string>;
   client_id: string;
@@ -79,16 +84,33 @@ export interface HealthReportsTable extends ClientScoped {
   title: string;
   source: 'synthetic' | 'upload' | 'manual';
   created_at: Timestamp;
+  /** 核对后写入的报告来自哪次上传（M2）；合成数据为空 */
+  upload_id: Nullable<string>;
+  institution: Nullable<string>;
+  verified_by: Nullable<string>;
+  verified_at: Nullable<Date>;
 }
+
+export type AbnormalColumn = 'high' | 'low' | 'normal' | 'no_reference';
 
 export interface ReportIndicatorsTable extends ClientScoped {
   id: Generated<string>;
   report_id: string;
   client_id: string;
-  code: string;
-  /** numeric 列，pg 驱动返回字符串，避免精度丢失 */
-  value: ColumnType<string, number | string, number | string>;
+  /** 未收录指标（Q10）为空 */
+  code: string | null;
+  /** 目录指标必有；未收录指标读不出数字时为空 */
+  value: NullableNumeric;
   unit: string;
+  raw_name: Nullable<string>;
+  original_value: Nullable<string>;
+  original_unit: Nullable<string>;
+  ref_low: NullableNumeric;
+  ref_high: NullableNumeric;
+  ref_text: Nullable<string>;
+  abnormal: ColumnType<AbnormalColumn, AbnormalColumn | undefined, AbnormalColumn>;
+  superseded_by: Nullable<string>;
+  created_at: Timestamp;
 }
 
 export interface MonitoringReadingsTable {
@@ -128,6 +150,7 @@ export interface TaskMessagesTable extends ManagerScoped {
   content: Generated<string>;
   skill_id: string | null;
   client_refs: ColumnType<string[], string[] | undefined, string[]>;
+  report_refs: ColumnType<string[], string[] | undefined, string[]>;
   status: 'streaming' | 'complete' | 'stopped' | 'refused' | 'error';
   created_at: Timestamp;
 }
@@ -223,6 +246,128 @@ export interface CriticalThresholdEventsTable {
   created_at: Timestamp;
 }
 
+export type UploadStatusColumn =
+  'queued' | 'processing' | 'needs_review' | 'verified' | 'failed' | 'discarded';
+export type FailureCategoryColumn =
+  | 'not_a_report'
+  | 'unreadable'
+  | 'refused'
+  | 'timeout'
+  | 'too_large'
+  | 'error'
+  | 'transferred';
+
+/** 一次上传就是一条识别记录（M2 规格 3.2） */
+export interface ReportUploadsTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: string;
+  task_id: string | null;
+  status: Generated<UploadStatusColumn>;
+  failure_category: Nullable<FailureCategoryColumn>;
+  attempts: Generated<number>;
+  version: Generated<number>;
+  page_count: number;
+  progress_page: Generated<number>;
+  report_date: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  institution: Nullable<string>;
+  report_id: Nullable<string>;
+  uploaded_by: string;
+  requested_by: string;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  verified_by: Nullable<string>;
+  verified_at: Nullable<Date>;
+  critical_acknowledged: Generated<boolean>;
+}
+
+export interface ReportFilesTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: string;
+  upload_id: string;
+  seq: number;
+  storage_key: string;
+  mime_type: 'application/pdf' | 'image/jpeg' | 'image/png' | 'image/heic';
+  size_bytes: number;
+  page_count: number;
+  sha256: string;
+  original_name: string;
+  created_at: Timestamp;
+  purged_at: Nullable<Date>;
+}
+
+export type ExtractedFlagColumn =
+  | 'unreadable'
+  | 'out_of_bounds'
+  | 'unit_converted'
+  | 'unit_unknown'
+  | 'unmapped'
+  | 'conflict'
+  | 'duplicate';
+
+export interface ExtractedValuesTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: string;
+  upload_id: string;
+  seq: number;
+  raw_name: string;
+  code: string | null;
+  raw_value: string;
+  raw_unit: string | null;
+  value: NullableNumeric;
+  unit: string | null;
+  ref_low: NullableNumeric;
+  ref_high: NullableNumeric;
+  ref_text: string | null;
+  page: number | null;
+  source_snippet: string | null;
+  flags: ColumnType<ExtractedFlagColumn[], ExtractedFlagColumn[] | undefined, ExtractedFlagColumn[]>;
+  review_status: ColumnType<
+    'pending' | 'checked' | 'edited' | 'deleted' | 'added',
+    'pending' | 'checked' | 'edited' | 'deleted' | 'added' | undefined,
+    'pending' | 'checked' | 'edited' | 'deleted' | 'added'
+  >;
+  checked_by: Nullable<string>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export type ReportEventAction =
+  | 'uploaded'
+  | 'extraction_started'
+  | 'extraction_failed'
+  | 'extraction_done'
+  | 'value_edited'
+  | 'value_added'
+  | 'value_deleted'
+  | 'value_checked'
+  | 'verified'
+  | 'discarded'
+  | 'corrected'
+  | 'file_viewed'
+  | 'file_purged'
+  | 'transferred';
+
+/** 识别和核对的操作记录：只记谁、什么时候、对哪一项做了什么，不记数值和原文 */
+export interface ReportEventsTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: string;
+  upload_id: string | null;
+  report_id: Nullable<string>;
+  actor_id: string | null;
+  action: ReportEventAction;
+  extracted_value_id: Nullable<string>;
+  indicator_id: Nullable<string>;
+  file_id: Nullable<string>;
+  created_at: Timestamp;
+}
+
+export interface ReportExtractionQuotaTable {
+  manager_id: string;
+  operator_id: string;
+  day: ColumnType<Date, Date | string, Date | string>;
+  pages: number;
+}
+
 export interface Database {
   operators: OperatorsTable;
   organizations: OrganizationsTable;
@@ -234,6 +379,11 @@ export interface Database {
   monitoring_readings: MonitoringReadingsTable;
   client_health_history: ClientHealthHistoryTable;
   client_risk_tiers: ClientRiskTiersTable;
+  report_uploads: ReportUploadsTable;
+  report_files: ReportFilesTable;
+  extracted_values: ExtractedValuesTable;
+  report_events: ReportEventsTable;
+  report_extraction_quota: ReportExtractionQuotaTable;
   tasks: TasksTable;
   task_messages: TaskMessagesTable;
   task_steps: TaskStepsTable;

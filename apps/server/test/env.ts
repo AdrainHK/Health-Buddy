@@ -23,6 +23,10 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     platformAdmin: undefined,
     // 测试里不配置任何密钥，大模型调用一律用模拟厂商
     llm: loadGatewayConfig({}),
+    // 测试默认不配置对象存储和 Redis；报告上传的测试用内存实现替换
+    storage: undefined,
+    redisUrl: undefined,
+    incompleteStorageVars: [],
     ...overrides,
   };
 }

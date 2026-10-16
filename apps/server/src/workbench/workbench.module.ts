@@ -16,5 +16,7 @@ import { WorkbenchRepository } from './workbench.repository.js';
     GenerationRegistry,
     { provide: LLM_RATE_LIMITER, useFactory: () => new LlmRateLimiter() },
   ],
+  // 上传报告和重新识别也计入同一个每分钟上限（M2 规格 3.4）
+  exports: [LLM_RATE_LIMITER],
 })
 export class WorkbenchModule {}
