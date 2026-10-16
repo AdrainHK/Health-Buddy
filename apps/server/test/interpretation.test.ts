@@ -712,6 +712,61 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
     });
   });
 
+  describe('/面谈提纲 保存前的措辞检查（规格 2.8）', () => {
+    const outlineWith = (question: string) =>
+      JSON.stringify({
+        ...JSON.parse(outlineJson()),
+        professional: {
+          ...JSON.parse(outlineJson()).professional,
+          groups: [{ topic: 'family', questions: [{ question, why: '空腹血糖 6.5 mmol/L' }] }],
+        },
+      });
+    const outline = (agent: Agent, taskId: string) =>
+      send(agent, taskId, {
+        mode: 'craft',
+        content: '列个面谈提纲',
+        skillId: 'interview-outline',
+        reportRefs: [reportA1],
+      });
+
+    it('第一次点名了疾病：带纠正说明重新生成一次，通过后保存', async () => {
+      const agent = await as(f.users.managerA1.email);
+      const taskId = await newTask(agent, f.clients.a1[0]);
+      provider.queue.push(
+        { text: outlineWith('家里有人得过糖尿病吗？') },
+        { text: outlineWith('家里的长辈有没有血糖方面的问题？') },
+      );
+      const res = await outline(agent, taskId).expect(200);
+      expect(provider.calls).toHaveLength(2);
+      const retry = JSON.stringify(provider.calls[1]?.messages);
+      expect(retry).toContain('没有通过措辞检查');
+      // 纠正说明不复述上次的输出
+      expect(retry).not.toContain('家里有人得过');
+      const artifacts = await artifactsOf(taskId);
+      expect(artifacts).toHaveLength(1);
+      expect((artifacts[0]!.content as { professional: string }).professional).not.toContain(
+        '糖尿病',
+      );
+      expect(parseSse(res.text).at(-1)).toMatchObject({ type: 'done', reason: 'complete' });
+    });
+
+    it('两次都没通过：不保存草稿，提示措辞检查没通过', async () => {
+      const agent = await as(f.users.managerA1.email);
+      const taskId = await newTask(agent, f.clients.a1[0]);
+      provider.queue.push(
+        { text: outlineWith('您的高血压是什么时候诊断的？') },
+        { text: outlineWith('做过糖尿病筛查吗？') },
+      );
+      const res = await outline(agent, taskId).expect(200);
+      const events = parseSse(res.text);
+      expect(provider.calls).toHaveLength(2);
+      expect(events).toContainEqual({ type: 'error', kind: 'wording_check_failed' });
+      expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'error' });
+      expect(events.some((e) => e.type === 'artifact')).toBe(false);
+      expect(await artifactsOf(taskId)).toEqual([]);
+    });
+  });
+
   describe('想一想“新客户完整评估”（规格 2.9、Q22，验收 14）', () => {
     it('先出计划；确认后依次生成解读和提纲两份草稿', async () => {
       const agent = await as(f.users.managerA1.email);

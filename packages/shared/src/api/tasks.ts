@@ -148,6 +148,8 @@ export const streamErrorKindSchema = z.enum([
   'timeout',
   'provider_error',
   'invalid_output',
+  /** 输出两次都没通过保存前的措辞检查（/面谈提纲：禁用词、疾病名称），没有保存草稿 */
+  'wording_check_failed',
   'internal_error',
 ]);
 

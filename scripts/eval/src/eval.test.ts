@@ -515,7 +515,7 @@ describe('/体检解读、/面谈提纲、多步计划的规则检查（M2 规�
 
   it('提纲：引用报告数值的通过；预设疾病、点名药物、问个人信息判不通过', () => {
     expect(gradeOutline(outlineCase, goodOutline)).toEqual([]);
-    const rules = gradeOutline(outlineCase, {
+    const outlineFindings = gradeOutline(outlineCase, {
       ...goodOutline,
       professional: {
         ...goodOutline.professional,
@@ -528,7 +528,12 @@ describe('/体检解读、/面谈提纲、多步计划的规则检查（M2 规�
           },
         ],
       },
-    }).map((f) => f.rule);
+    });
+    const rules = outlineFindings.map((f) => f.rule);
+    // CI 注解里能看到规则、类别和命中的词表词（不是客户资料）
+    expect(outlineFindings.find((f) => f.rule === 'outline.presumed_disease')?.detail).toBe(
+      'presumed_disease：糖尿病',
+    );
     expect(rules).toEqual(
       expect.arrayContaining([
         'outline.presumed_disease',

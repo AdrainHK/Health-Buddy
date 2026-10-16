@@ -12,6 +12,7 @@ import {
   finalizeClientText,
   greetClient,
   redactClientIdentity,
+  wordingCategories,
   suggestSkill,
   withAskNotice,
   type SkillDefinition,
@@ -42,6 +43,7 @@ type ErrorKind =
   | 'timeout'
   | 'provider_error'
   | 'invalid_output'
+  | 'wording_check_failed'
   | 'internal_error';
 
 /** 流式回答期间多久把已生成的文本存一次库，刷新页面也能看到 */
@@ -227,18 +229,41 @@ export class GenerationService {
 
       for (const skill of run.skills) {
         const step = await steps.start('run_skill', skill.runStepLabel ?? 'steps.runSkill');
-        const result = await this.gateway.completeStructured(
-          ctx,
-          {
-            // 规格 4.1：/体检解读 用已登记的 report_interpretation 用途，其他技能用 skill 用途
-            route: skill.route ?? 'skill',
-            system: buildSystemPrompt(skill),
-            messages: [{ role: 'user', content: skill.buildUserMessage(input) }],
-            maxOutputTokens: 8000,
-          },
-          { name: skill.id.replace(/-/g, '_'), schema: skill.outputSchema },
-          io.signal,
-        );
+        const userMessage = skill.buildUserMessage(input);
+        const call = (content: string) =>
+          this.gateway.completeStructured(
+            ctx,
+            {
+              // 规格 4.1：/体检解读 用已登记的 report_interpretation 用途，其他技能用 skill 用途
+              route: skill.route ?? 'skill',
+              system: buildSystemPrompt(skill),
+              messages: [{ role: 'user', content }],
+              maxOutputTokens: 8000,
+            },
+            { name: skill.id.replace(/-/g, '_'), schema: skill.outputSchema },
+            io.signal,
+          );
+        let result = await call(userMessage);
+        // 保存前的确定性措辞检查（/面谈提纲，规格 2.8）：没通过就带着纠正说明重新生成一次，
+        // 仍没通过就不保存草稿。日志只记类别和次数，不记输出内容
+        let issues = result.status === 'ok' ? (skill.checkOutput?.(result.data) ?? []) : [];
+        if (issues.length) {
+          this.logger.warn(
+            `output check failed ${JSON.stringify({ skill: skill.id, attempt: 1, categories: wordingCategories(issues) })}`,
+          );
+          const note = skill.correctionNote?.(issues) ?? '';
+          result = await call(note ? `${userMessage}\n\n${note}` : userMessage);
+          issues = result.status === 'ok' ? (skill.checkOutput?.(result.data) ?? []) : [];
+          if (issues.length) {
+            this.logger.warn(
+              `output check failed ${JSON.stringify({ skill: skill.id, attempt: 2, categories: wordingCategories(issues) })}`,
+            );
+            await steps.finish(step, 'failed');
+            const notices =
+              (crisis ? CRISIS_HEADER : '') + criticalNotice(client.snapshot.criticalFlags);
+            return await this.finish(ctx, messageId, notices, 'error', io, 'wording_check_failed');
+          }
+        }
         if (result.status === 'refused') {
           // 没有产物，但危机和危急指标提醒要留给健管师
           await steps.finish(step, 'failed');

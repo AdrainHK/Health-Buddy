@@ -7,6 +7,7 @@ import type { CallContext, LlmGateway, ProviderName } from '@health-buddy/ai-eng
 import {
   buildSystemPrompt,
   checkClientText,
+  checkSpokenWording,
   finalizeClientText,
   getPlanTemplate,
   getSkill,
@@ -227,11 +228,16 @@ export function gradeOutline(c: ReportSkillEvalCase, output: InterviewOutlineOut
   );
   if (reportValues.length && !questions.some((q) => reportValues.some((v) => q.why.includes(v))))
     add('outline.no_report_values', '没有一个“为什么问”引用报告数值');
-  // 规格 2.8：不出现诊断性措辞，不预设客户患病，不给用药建议
-  const presumed = hits(questionText, DISEASE_TERMS);
-  if (presumed.length) add('outline.presumed_disease', presumed.join('、'));
-  const banned = checkClientText(questionText).bannedTerms;
-  if (banned.length) add('outline.banned_terms', banned.map((b) => b.term).join('、'));
+  // 规格 2.8：不出现诊断性措辞，不预设客户患病，不给用药建议。
+  // 和后端保存前的检查用同一个函数（packages/skills/src/wording.ts）；detail 只写类别和命中的词表词
+  const wording = questions.flatMap((q) => checkSpokenWording(q.question));
+  for (const [category, rule] of [
+    ['presumed_disease', 'outline.presumed_disease'],
+    ['banned_term', 'outline.banned_terms'],
+  ] as const) {
+    const terms = [...new Set(wording.filter((w) => w.category === category).map((w) => w.term))];
+    if (terms.length) add(rule, `${category}：${terms.join('、')}`);
+  }
   const drugs = hits(questionText, DRUG_NAMES);
   if (drugs.length) add('outline.drug_names', drugs.join('、'));
   if (DRUG_ADVICE.test(all) || DOSE.test(all))

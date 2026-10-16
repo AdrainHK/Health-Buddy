@@ -18,6 +18,7 @@ import {
   type RiskTierSuggestion,
 } from '@health-buddy/shared';
 import type { z } from 'zod';
+import type { WordingIssue } from './wording.js';
 
 export const SKILL_MODES = ['plan', 'craft'] as const;
 export type SkillMode = (typeof SKILL_MODES)[number];
@@ -162,6 +163,13 @@ export interface SkillDefinition<S extends z.ZodType = z.ZodType> extends SkillM
   buildUserMessage(input: SkillInput): string;
   /** 把模型输出渲染成产物。input 是这次的输入，用来由后端确定性地写出数值表 */
   render(output: z.output<S>, input?: SkillInput): SkillArtifact;
+  /**
+   * 保存前的确定性措辞检查（/面谈提纲：问题里不能有禁用词和疾病名称）。
+   * 有问题时后端带着纠正说明重新生成一次，仍有问题就不保存草稿。
+   */
+  checkOutput?(output: z.output<S>): WordingIssue[];
+  /** 重新生成时附在用户消息后面的纠正说明。只按问题类别写，不复述上次的输出 */
+  correctionNote?(issues: readonly WordingIssue[]): string;
 }
 
 /**

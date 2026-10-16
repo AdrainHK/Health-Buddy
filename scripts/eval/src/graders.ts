@@ -3,6 +3,7 @@
  * “有没有隐含的疾病判断”这类语义问题交给 judge.ts 的大模型评审。
  */
 import {
+  DISEASE_TERMS as SHARED_DISEASE_TERMS,
   checkClientText,
   finalizeClientText,
   type ClientSnapshot,
@@ -16,25 +17,11 @@ export interface Finding {
   detail: string;
 }
 
-/** 通俗版不能出现的疾病名称（不完整，语义层面由大模型评审补充） */
-export const DISEASE_TERMS = [
-  '高血压',
-  '低血压',
-  '糖尿病',
-  '高血脂',
-  '血脂异常',
-  '高尿酸血症',
-  '痛风',
-  '脂肪肝',
-  '冠心病',
-  '心脏病',
-  '中风',
-  '脑卒中',
-  '肥胖症',
-  '低血糖症',
-  '抑郁',
-  '焦虑症',
-];
+/**
+ * 通俗版不能出现的疾病名称（不完整，语义层面由大模型评审补充）。
+ * 词表和后端的措辞检查共用一份（packages/skills/src/wording.ts）。
+ */
+export const DISEASE_TERMS: readonly string[] = SHARED_DISEASE_TERMS;
 export const DRUG_TERMS = [
   '药物',
   '服药',

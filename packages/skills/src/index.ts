@@ -23,6 +23,7 @@ export {
   type InterviewOutlineOutput,
 } from './interview-outline/index.js';
 export * from './report-input.js';
+export * from './wording.js';
 export * from './eval-types.js';
 export { SNAPSHOTS } from './fixtures.js';
 export { recentSummaryEvalCases } from './client-recent-summary/evals/cases.js';

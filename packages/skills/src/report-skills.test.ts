@@ -21,6 +21,7 @@ import {
 import { reportInterpretationEvalCases } from './report-interpretation/evals/cases.js';
 import { REPORT_SNAPSHOTS } from './report-fixtures.js';
 import { DEFAULT_RISK_TIER_GUIDE } from './risk-tier-guide.js';
+import { checkSpokenWording, findDiseaseTerms } from './wording.js';
 import { PLAN_TEMPLATES, SKILLS, getPlanTemplate, getSkill, skillSummaries } from './registry.js';
 
 const interpretation = (
@@ -140,7 +141,7 @@ describe('系统提示词', () => {
   it('/面谈提纲没有通俗版，不附通俗版规则', () => {
     const prompt = buildSystemPrompt(interviewOutline);
     expect(prompt).not.toContain('通俗版（clientFacing');
-    expect(prompt).toContain('不预设客户患有某种病');
+    expect(prompt).toContain('任何问题里都不出现疾病名称');
     expect(prompt).toContain('不给用药建议');
   });
 });
@@ -304,6 +305,47 @@ describe('通俗版的确定性检查（Q20、规格 3.6）', () => {
     const hints = checkClientText(text).judgementHints;
     expect(hints.map((h) => h.text)).toEqual(['糖 尿病', '高\u200b血压']);
     for (const h of hints) expect(text.slice(h.index, h.index + h.text.length)).toBe(h.text);
+  });
+});
+
+describe('/面谈提纲 保存前的措辞检查（规格 2.8）', () => {
+  const outline = (question: string): InterviewOutlineOutput => ({
+    professional: {
+      overview: '重点了解饮食。',
+      groups: [{ topic: 'family', questions: [{ question, why: '空腹血糖 6.5 mmol/L' }] }],
+      missingData: [],
+      suggestions: [],
+    },
+    crisisSignal: false,
+  });
+
+  it('疾病名称和禁用词都能找出（含插空格、繁体），位置按原文', () => {
+    const text = '家里有人得过高 血压或糖尿病吗？做过篩查吗？';
+    expect(findDiseaseTerms(text).map((d) => d.term)).toEqual(['高血压', '糖尿病']);
+    const issues = checkSpokenWording(text);
+    expect(issues.map((i) => [i.category, i.term])).toEqual([
+      ['banned_term', '筛查'],
+      ['presumed_disease', '高血压'],
+      ['presumed_disease', '糖尿病'],
+    ]);
+    expect(text.slice(issues[1]!.index, issues[1]!.index + 4)).toBe('高 血压');
+  });
+
+  it('只检查问题；问症状和习惯的问题通过', () => {
+    expect(
+      interviewOutline.checkOutput?.(outline('家里的长辈有没有血压、血糖方面的问题？')),
+    ).toEqual([]);
+    const issues = interviewOutline.checkOutput?.(outline('您的糖尿病是什么时候诊断的？')) ?? [];
+    expect(issues.map((i) => i.category).sort()).toEqual(['banned_term', 'presumed_disease']);
+  });
+
+  it('纠正说明只写问题类别，不复述上次的输出', () => {
+    const issues = interviewOutline.checkOutput?.(outline('您的糖尿病是什么时候诊断的？')) ?? [];
+    const note = interviewOutline.correctionNote?.(issues) ?? '';
+    expect(note).toContain('没有通过措辞检查');
+    expect(note).toContain('禁用词');
+    expect(note).toContain('疾病名称');
+    expect(note).not.toContain('什么时候');
   });
 });
 

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { loadSkillMd, parseSkillMeta, type SkillDefinition } from '../framework.js';
 import { CRISIS_NOTICE } from '../guardrails.js';
 import { appendRequest, describeReportClient } from '../report-input.js';
+import { checkSpokenWording, wordingCategories, type WordingCategory } from '../wording.js';
 
 const { meta, body } = loadSkillMd(new URL('./skill.md', import.meta.url));
 
@@ -79,4 +80,32 @@ export const interviewOutline: SkillDefinition<typeof interviewOutlineOutputSche
     // 没有通俗版：不能复制或导出给客户（规格 2.8、Q21）
     return { professional: lines.join('\n'), clientFacing: '', crisisSignal: output.crisisSignal };
   },
+
+  /** 问题是要对客户说的话：不能有禁用词，不能点名疾病（规格 2.8） */
+  checkOutput(output) {
+    return output.professional.groups
+      .flatMap((g) => g.questions)
+      .flatMap((q) => checkSpokenWording(q.question));
+  },
+
+  correctionNote(issues) {
+    return outlineCorrectionNote(wordingCategories(issues));
+  },
 };
+
+const CATEGORY_NOTE: Record<WordingCategory, string> = {
+  banned_term: '问题里出现了禁用词（如“诊断”“筛查”“治愈”“根治”）',
+  presumed_disease:
+    '问题里点名了疾病名称（包括问家族史时），等于预设客户患病；改成问症状、习惯和测量情况，如“家里人有没有血压、血糖方面的问题”',
+};
+
+/**
+ * 措辞检查没通过时，重新生成附在用户消息后面的纠正说明。只写问题类别，不复述上次的输出。
+ */
+export function outlineCorrectionNote(categories: readonly WordingCategory[]): string {
+  return [
+    '## 上一次生成的提纲没有通过措辞检查，请重新生成',
+    ...categories.map((c) => `- ${CATEGORY_NOTE[c]}`),
+    '- 其余要求不变；每个问题都按“问题的措辞”一节检查一遍再输出。',
+  ].join('\n');
+}

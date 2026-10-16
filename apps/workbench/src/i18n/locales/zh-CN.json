@@ -105,6 +105,7 @@
       "timeout": "AI 响应超时，请重试",
       "provider_error": "AI 服务暂时不可用，请稍后再试",
       "invalid_output": "AI 输出格式不合格，未生成草稿，请重试",
+      "wording_check_failed": "生成的内容两次都没通过措辞检查（出现了禁用词或疾病名称），未生成草稿，请重试或调整要求",
       "internal_error": "出错了，请稍后再试",
       "network": "连接中断，刷新后可查看已保存的内容"
     },
