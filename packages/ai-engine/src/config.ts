@@ -56,15 +56,23 @@ export function loadGatewayConfig(source: NodeJS.ProcessEnv = process.env): Gate
       ...(env.OPENAI_API_KEY ? { openai: env.OPENAI_API_KEY } : {}),
       ...(env.ANTHROPIC_API_KEY ? { anthropic: env.ANTHROPIC_API_KEY } : {}),
     },
-    // SDK 会自己拼 /v1/messages，中转地址末尾带的 /v1 和斜杠要去掉，否则路径重复成 404
-    baseUrls: env.ANTHROPIC_BASE_URL
-      ? { anthropic: env.ANTHROPIC_BASE_URL.replace(/\/+$/, '').replace(/\/v1$/, '') }
-      : {},
+    baseUrls: env.ANTHROPIC_BASE_URL ? { anthropic: relayRoot(env.ANTHROPIC_BASE_URL) } : {},
     defaultProvider: env.LLM_DEFAULT_PROVIDER,
     defaultModels: { openai: env.OPENAI_MODEL, anthropic: env.ANTHROPIC_MODEL },
     defaultEffort: env.LLM_DEFAULT_EFFORT,
     routes: parseRoutes(env.LLM_ROUTES),
   };
+}
+
+/**
+ * SDK 会自己拼 /v1/messages。中转给的地址常带 /v1 或 OpenAI 兼容的 /v1/chat/completions，
+ * 原样传进去路径会重复成 404，这里只保留根地址。
+ */
+function relayRoot(url: string): string {
+  return url
+    .replace(/\/+$/, '')
+    .replace(/\/chat\/completions$/, '')
+    .replace(/\/v1$/, '');
 }
 
 function parseRoutes(raw: string | undefined): GatewayConfig['routes'] {

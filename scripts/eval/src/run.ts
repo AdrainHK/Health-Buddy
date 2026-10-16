@@ -108,6 +108,29 @@ export async function runAskEval(options: {
   return runPool(jobs, options.concurrency ?? 3);
 }
 
+/** 厂商或中转临时故障（5xx、限流、超时）：重试，不算模型答错 */
+export function isTransientFailure(result: RunResult): boolean {
+  return result.findings.some(
+    (f) => f.rule === 'output.error' && /\b(5\d\d|rate_limited|timeout)\b/.test(f.detail),
+  );
+}
+
+const RETRY_DELAYS_MS = [5_000, 15_000, 30_000];
+
+/** 临时故障最多重试三次，仍失败就照实记录 */
+export async function withRetry(
+  job: () => Promise<RunResult>,
+  delays: readonly number[] = RETRY_DELAYS_MS,
+): Promise<RunResult> {
+  let result = await job();
+  for (const ms of delays) {
+    if (!isTransientFailure(result)) break;
+    await new Promise((r) => setTimeout(r, ms));
+    result = await job();
+  }
+  return result;
+}
+
 /** 限制同时进行的调用数，结果按用例和次数排序 */
 async function runPool(jobs: (() => Promise<RunResult>)[], concurrency: number) {
   const results: RunResult[] = [];
@@ -115,7 +138,7 @@ async function runPool(jobs: (() => Promise<RunResult>)[], concurrency: number) 
   const worker = async () => {
     while (next < jobs.length) {
       const job = jobs[next++];
-      if (job) results.push(await job());
+      if (job) results.push(await withRetry(job));
     }
   };
   await Promise.all(Array.from({ length: concurrency }, worker));

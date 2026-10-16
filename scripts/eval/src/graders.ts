@@ -59,10 +59,18 @@ function hits(text: string, terms: string[]): string[] {
   return terms.filter((t) => text.includes(t));
 }
 
-/** 资料里出现过的全部数值，用来核对模型有没有编造数据 */
+/**
+ * 资料里出现过的全部数值，用来核对模型有没有编造数据。
+ * 年龄段（如 60-69）的两端，以及同一项监测里两次读数的差值（如“体重增加 1.2 kg”）也算资料里有。
+ */
 function knownNumbers(client: ClientSnapshot): Set<number> {
   const nums = new Set<number>();
-  for (const m of client.monitoring) for (const r of m.readings) nums.add(r.value);
+  for (const n of client.ageBand?.match(/\d+/g) ?? []) nums.add(Number(n));
+  for (const m of client.monitoring) {
+    for (const r of m.readings) nums.add(r.value);
+    for (const a of m.readings)
+      for (const b of m.readings) if (a.value > b.value) nums.add(round1(a.value - b.value));
+  }
   for (const i of client.latestReport?.indicators ?? []) {
     nums.add(i.value);
     if (i.refLow !== undefined) nums.add(i.refLow);
@@ -73,6 +81,10 @@ function knownNumbers(client: ClientSnapshot): Set<number> {
     nums.add(f.rule.value);
   }
   return nums;
+}
+
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
 }
 
 /**

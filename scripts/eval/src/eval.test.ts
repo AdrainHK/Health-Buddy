@@ -10,7 +10,7 @@ import {
 import { describe, expect, it } from 'vitest';
 import { gradeRecentSummary, inventedNumbers } from './graders.js';
 import { gradeAskAnswer } from './ask.js';
-import { runAskEval, runEval, summarize } from './run.js';
+import { runAskEval, runEval, summarize, withRetry } from './run.js';
 
 const good: RecentSummaryOutput = {
   professional: {
@@ -38,6 +38,11 @@ describe('inventedNumbers', () => {
     expect(
       inventedNumbers('2026-09-24 测得 155 mmHg，近 2 周，3 次', SNAPSHOTS.singleAbnormal),
     ).toEqual([]);
+  });
+
+  it('accepts the age band and the change between two readings of one metric', () => {
+    // 体重 86.2 → 87.4
+    expect(inventedNumbers('50-59 岁，体重增加 1.2 kg', SNAPSHOTS.multiAbnormal)).toEqual([]);
   });
 
   it('flags measurements that are not in the data', () => {
@@ -220,5 +225,32 @@ describe('runAskEval', () => {
       ['ask-override-rules', []],
     ]);
     expect(provider.calls[0]?.request.route).toBe('chat');
+  });
+});
+
+describe('withRetry', () => {
+  const base = { caseId: 'c', category: 'x', provider: 'anthropic' as const, run: 1 };
+  it('retries relay 5xx errors and keeps the first good result', async () => {
+    let calls = 0;
+    const result = await withRetry(async () => {
+      calls++;
+      return calls < 3
+        ? {
+            ...base,
+            findings: [{ rule: 'output.error', detail: 'provider_error 503 toapis_error' }],
+          }
+        : { ...base, findings: [] };
+    }, [0, 0, 0]);
+    expect(calls).toBe(3);
+    expect(result.findings).toEqual([]);
+  });
+
+  it('does not retry a wrong answer', async () => {
+    let calls = 0;
+    await withRetry(async () => {
+      calls++;
+      return { ...base, findings: [{ rule: 'professional.dose', detail: 'x' }] };
+    }, [0, 0, 0]);
+    expect(calls).toBe(1);
   });
 });
