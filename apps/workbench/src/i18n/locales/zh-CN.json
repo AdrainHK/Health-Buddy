@@ -123,29 +123,15 @@
     "close": "关闭结果区",
     "tabs": {
       "artifacts": "产物",
-      "client": "客户",
+      "client": "档案",
       "history": "记录"
     },
     "empty": {
       "artifacts": "还没有产物",
       "artifactsHint": "解读报告、方案和文章生成后会出现在这里，审核通过后才会发给客户。",
       "client": "未选择客户",
-      "clientHint": "在对话中 @ 一位客户，这里会显示 TA 的档案和数字孪生。",
+      "clientHint": "在对话中 @ 一位客户，或新建一位客户，这里会显示 TA 的档案。",
       "history": "还没有修改记录"
-    },
-    "client": {
-      "gender": "性别",
-      "age": "年龄",
-      "ageValue": "{{age}} 岁",
-      "unknown": "未知",
-      "genders": {
-        "female": "女",
-        "male": "男",
-        "other": "其他",
-        "unknown": "未知"
-      },
-      "synthetic": "测试数据",
-      "hint": "这里显示的是客户基本信息，监测数据和体检报告会在客户档案里陆续开放。"
     },
     "artifacts": {
       "list": "本任务的产物",
@@ -294,6 +280,142 @@
       "selectArtifact": "打开一个产物后，这里显示它的版本和记录",
       "withDetail": "{{action}}（{{detail}}）",
       "separator": "，"
+    }
+  },
+  "record": {
+    "title": "客户档案",
+    "loading": "正在加载档案…",
+    "loadFailed": "档案加载失败",
+    "retry": "重试",
+    "newClient": "新建客户",
+    "edit": "编辑",
+    "cancel": "取消",
+    "save": "保存",
+    "saving": "正在保存…",
+    "synthetic": "测试数据",
+    "readOnly": "只读",
+    "sections": {
+      "basic": "基本信息",
+      "riskTier": "风险分层",
+      "history": "健康史",
+      "reports": "体检报告",
+      "indicators": "指标趋势",
+      "monitoring": "日常监测",
+      "artifacts": "产物"
+    },
+    "basic": {
+      "gender": "性别",
+      "birthYear": "出生年份",
+      "birthYearValue": "{{year}} 年（{{age}} 岁）",
+      "unknown": "未填写",
+      "genders": {
+        "female": "女",
+        "male": "男",
+        "other": "其他"
+      },
+      "editLabel": "编辑基本信息"
+    },
+    "form": {
+      "createTitle": "新建客户",
+      "editTitle": "编辑基本信息",
+      "name": "称呼（必填）",
+      "namePlaceholder": "如：王女士",
+      "gender": "性别",
+      "genderUnset": "不填写",
+      "birthYear": "出生年份",
+      "birthYearPlaceholder": "如：1970",
+      "nameRequired": "请填写称呼",
+      "nameTooLong": "称呼不能超过 {{max}} 个字",
+      "birthYearInvalid": "请填写 {{min}} 年到今年之间的年份",
+      "note": "只记录称呼、性别和出生年份，不收集电话、微信、地址等联系方式。",
+      "create": "新建",
+      "created": "已新建客户 {{name}}"
+    },
+    "tier": {
+      "levels": {
+        "high": "高",
+        "medium": "中",
+        "low": "低"
+      },
+      "none": "未分层",
+      "setBy": "{{name}} · {{date}} 设定",
+      "setByOther": "其他健管师 · {{date}} 设定",
+      "reason": "理由：{{reason}}",
+      "set": "调整分层",
+      "setFirst": "设定分层",
+      "formTitle": "设定风险分层",
+      "tierLabel": "分层",
+      "reasonLabel": "理由（必填）",
+      "reasonPlaceholder": "说明依据，如参考了哪些数据",
+      "reasonRequired": "请填写理由",
+      "tierRequired": "请选择分层",
+      "showHistory": "查看历史",
+      "hideHistory": "收起历史",
+      "historyLoading": "正在加载历史…",
+      "historyEmpty": "还没有分层记录",
+      "note": "分层只给健管师看，不会出现在给客户的任何内容里。"
+    },
+    "history": {
+      "categories": {
+        "past_history": "既往病史",
+        "family_history": "家族史",
+        "medication": "正在使用的药物",
+        "allergy": "过敏史",
+        "lifestyle": "生活习惯"
+      },
+      "empty": "暂无记录",
+      "add": "添加",
+      "addTo": "添加{{category}}",
+      "contentLabel": "内容",
+      "recordedOn": "日期（可选）",
+      "edit": "编辑",
+      "editItem": "编辑这条{{category}}",
+      "delete": "删除",
+      "deleteItem": "删除这条{{category}}",
+      "deleteConfirm": "确定删除这条记录？删除后不再显示。",
+      "confirmDelete": "确定删除",
+      "source": "健管师录入 · {{date}}",
+      "recorded": "记录日期 {{date}}",
+      "contentRequired": "请填写内容",
+      "note": "健康史由健管师手动录入，AI 不会自动写入。"
+    },
+    "reports": {
+      "empty": "还没有已核对的报告",
+      "item": "报告 · {{date}}",
+      "indicatorCount": "{{count}} 项指标",
+      "source": {
+        "synthetic": "测试数据",
+        "upload": "上传后核对",
+        "manual": "手动录入"
+      }
+    },
+    "indicators": {
+      "empty": "暂无指标数据",
+      "value": "{{value}} {{unit}}",
+      "meta": "{{date}} · {{source}}"
+    },
+    "monitoring": {
+      "empty": "最近 30 天没有监测数据",
+      "latest": "最新 {{value}} {{unit}}",
+      "meta": "{{date}} · {{source}} · 近 30 天 {{count}} 条",
+      "source": {
+        "synthetic": "测试数据",
+        "device": "设备",
+        "manual": "手动录入",
+        "companion": "健康伴侣"
+      }
+    },
+    "artifacts": {
+      "empty": "还没有产物",
+      "meta": "{{date}}"
+    },
+    "sourceNote": "每个数值旁注明来源和日期。",
+    "errors": {
+      "notFound": "客户不存在或已不可见",
+      "badRequest": "填写的内容不符合要求，请检查后重试",
+      "tooMany": "操作太频繁，请稍后再试",
+      "network": "网络连接失败，请检查网络后重试",
+      "unknown": "出错了，请稍后再试"
     }
   },
   "common": {

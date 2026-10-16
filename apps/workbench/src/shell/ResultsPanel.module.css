@@ -97,3 +97,7 @@
 .status p {
   margin: 0 0 var(--hb-space-2);
 }
+
+.form {
+  padding: var(--hb-space-4);
+}

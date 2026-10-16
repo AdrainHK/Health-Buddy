@@ -30,3 +30,7 @@
   max-width: 260px;
   font-size: var(--hb-text-sm);
 }
+
+.action {
+  margin-top: var(--hb-space-2);
+}

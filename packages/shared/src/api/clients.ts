@@ -1,9 +1,13 @@
 import { z } from 'zod';
 
+export const CLIENT_GENDERS = ['female', 'male', 'other'] as const;
+export const clientGenderSchema = z.enum(CLIENT_GENDERS);
+export type ClientGender = z.infer<typeof clientGenderSchema>;
+
 export const clientSummarySchema = z.object({
   id: z.uuid(),
   displayName: z.string(),
-  gender: z.enum(['female', 'male', 'other']).nullable(),
+  gender: clientGenderSchema.nullable(),
   birthYear: z.number().int().nullable(),
   managerId: z.uuid(),
   isSynthetic: z.boolean(),

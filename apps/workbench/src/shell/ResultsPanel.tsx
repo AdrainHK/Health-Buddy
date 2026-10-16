@@ -5,7 +5,7 @@ import type {
   Task,
 } from '@health-buddy/shared';
 import { Button, EmptyState, IconButton } from '@health-buddy/ui';
-import { FileText, History, UserRound, X } from 'lucide-react';
+import { FileText, History, Plus, UserRound, X } from 'lucide-react';
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getArtifact } from '../api/artifacts';
@@ -14,7 +14,8 @@ import { getTask } from '../api/workbench';
 import { ArtifactHistory } from '../artifacts/ArtifactHistory';
 import { ArtifactList, sortArtifacts } from '../artifacts/ArtifactList';
 import { ArtifactView } from '../artifacts/ArtifactView';
-import { ClientCard } from './ClientCard';
+import { ClientForm } from '../record/ClientForm';
+import { ClientRecord } from '../record/ClientRecord';
 import styles from './ResultsPanel.module.css';
 import { isReadOnlyTask } from './taskGroups';
 
@@ -41,9 +42,13 @@ export interface ResultsPanelProps {
   onArtifactsChanged?: () => void;
   /** 退回重写跑完了一轮生成，对话区需要重新加载 */
   onConversationChanged?: () => void;
+  /** 在档案标签里新建了客户（Q13） */
+  onClientCreated?: (client: ClientSummary) => void;
+  /** 在档案标签里修改了客户的基本信息 */
+  onClientSaved?: (client: ClientSummary) => void;
 }
 
-/** 右侧结果区：产物预览和审核、客户档案、修改记录（M1 规格 3.1、3.6） */
+/** 右侧结果区：产物预览和审核、客户档案、修改记录（M1 规格 3.1、3.6；M2 规格 2.2） */
 export function ResultsPanel({
   mode,
   open,
@@ -53,9 +58,13 @@ export function ResultsPanel({
   refreshKey,
   onArtifactsChanged,
   onConversationChanged,
+  onClientCreated,
+  onClientSaved,
 }: ResultsPanelProps) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('artifacts');
+  /** 档案标签里正在新建客户 */
+  const [creatingClient, setCreatingClient] = useState(false);
   const tabRefs = useRef<Partial<Record<Tab, HTMLButtonElement | null>>>({});
 
   const taskId = task?.id ?? null;
@@ -291,12 +300,35 @@ export function ResultsPanel({
         aria-labelledby={`hb-tab-${tab}`}
       >
         {tab === 'artifacts' && renderArtifacts()}
-        {tab === 'client' && client && <ClientCard client={client} />}
-        {tab === 'client' && !client && (
+        {tab === 'client' && creatingClient && (
+          <div className={styles.form}>
+            <ClientForm
+              onCancel={() => setCreatingClient(false)}
+              onSaved={(created) => {
+                setCreatingClient(false);
+                onClientCreated?.(created);
+              }}
+            />
+          </div>
+        )}
+        {tab === 'client' && !creatingClient && client && (
+          <ClientRecord
+            client={client}
+            {...(refreshKey !== undefined ? { refreshKey } : {})}
+            onClientSaved={(saved) => onClientSaved?.(saved)}
+            onNewClient={() => setCreatingClient(true)}
+          />
+        )}
+        {tab === 'client' && !creatingClient && !client && (
           <EmptyState
             icon={<UserRound size={20} />}
             title={t('results.empty.client')}
             description={t('results.empty.clientHint')}
+            action={
+              <Button icon={<Plus size={16} />} onClick={() => setCreatingClient(true)}>
+                {t('record.newClient')}
+              </Button>
+            }
           />
         )}
         {tab === 'history' &&
