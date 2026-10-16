@@ -30,7 +30,7 @@ function fakeStream<T>(events: unknown[], finalKey: string, final: T) {
 describe('AnthropicProvider', () => {
   const route: ResolvedRoute = { provider: 'anthropic', model: 'claude-opus-5-5', effort: 'high' };
 
-  function make(final: { stop_reason: string; model?: string }) {
+  function make(final: { stop_reason: string; model?: string }, baseURL?: string) {
     const calls: unknown[] = [];
     const client = {
       beta: {
@@ -61,7 +61,7 @@ describe('AnthropicProvider', () => {
         },
       },
     } as unknown as Anthropic;
-    return { provider: new AnthropicProvider('unused', client), calls };
+    return { provider: new AnthropicProvider('unused', client, baseURL), calls };
   }
 
   it('uses adaptive thinking, effort and server-side fallback', async () => {
@@ -86,6 +86,14 @@ describe('AnthropicProvider', () => {
         model: 'claude-opus-5-5',
       },
     ]);
+  });
+
+  it('leaves out the fallback beta when going through a relay', async () => {
+    const { provider, calls } = make({ stop_reason: 'end_turn' }, 'https://relay.example');
+    await collect(provider.stream(request, route));
+    expect(calls[0]).toMatchObject({ model: 'claude-opus-5-5', thinking: { type: 'adaptive' } });
+    expect(calls[0]).not.toHaveProperty('betas');
+    expect(calls[0]).not.toHaveProperty('fallbacks');
   });
 
   it('maps refusal and max_tokens', async () => {
