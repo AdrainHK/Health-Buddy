@@ -60,9 +60,13 @@ describe('gateway config', () => {
     expect(loadGatewayConfig({ ANTHROPIC_BASE_URL: '' }).baseUrls).toEqual({});
   });
 
-  it('strips a trailing /v1 from the relay base URL', () => {
+  it('strips /v1 and /v1/chat/completions from the relay base URL', () => {
     const config = loadGatewayConfig({ ANTHROPIC_BASE_URL: 'https://relay.example/v1/' });
     expect(config.baseUrls).toEqual({ anthropic: 'https://relay.example' });
+    const openaiStyle = loadGatewayConfig({
+      ANTHROPIC_BASE_URL: 'https://relay.example/v1/chat/completions',
+    });
+    expect(openaiStyle.baseUrls).toEqual({ anthropic: 'https://relay.example' });
   });
 
   it('rejects a base URL that is not a URL', () => {
