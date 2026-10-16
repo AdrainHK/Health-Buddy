@@ -55,7 +55,7 @@ describe('LlmGateway', () => {
         type: 'done',
         finishReason: 'complete',
         usage: { inputTokens: 100, outputTokens: 20 },
-        model: 'gpt-6-astra',
+        model: 'gpt-6.1-sol',
       },
     ]);
   });
@@ -69,12 +69,12 @@ describe('LlmGateway', () => {
       {
         route: 'report_interpretation',
         provider: 'openai',
-        model: 'gpt-6-astra',
+        model: 'gpt-6.1-sol',
         operatorId: 'op-1',
         userId: 'user-1',
         inputTokens: 1_000_000,
         outputTokens: 100_000,
-        costUsd: 15,
+        costUsd: 3,
         durationMs: 50,
         outcome: 'complete',
       },
@@ -159,6 +159,20 @@ describe('LlmGateway', () => {
     expect(JSON.stringify(logs)).not.toContain('sk-');
   });
 
+  it('takes the error type from an Anthropic error body', async () => {
+    const notFound = Object.assign(new Error(`404 ${PROMPT}`), {
+      status: 404,
+      error: { type: 'error', error: { type: 'not_found_error', message: PROMPT } },
+    });
+    const { gateway, logs } = setup({ failWith: notFound });
+    await expect(collect(gateway.stream(ctx, request))).rejects.toMatchObject({
+      kind: 'provider_error',
+      status: 404,
+      code: 'not_found_error',
+    });
+    expect(JSON.stringify(logs)).not.toContain('张某某');
+  });
+
   it('drops an error code that is not a plain identifier', async () => {
     const odd = Object.assign(new Error('x'), { status: 400, code: `bad input: ${PROMPT}` });
     const { gateway, logs } = setup({ failWith: odd });
@@ -236,7 +250,7 @@ describe('LlmGateway.completeStructured', () => {
     expect(result).toEqual({
       status: 'ok',
       data: { professional: '专业版', clientFacing: '通俗版' },
-      model: 'gpt-6-astra',
+      model: 'gpt-6.1-sol',
     });
     const sent = provider.calls[0]?.request.responseFormat;
     expect(sent?.name).toBe('summary');
@@ -287,7 +301,7 @@ describe('LlmGateway.completeStructured', () => {
   it('returns refused without retrying', async () => {
     const { gateway, provider } = setup({ chunks: [], finishReason: 'refused' });
     const result = await gateway.completeStructured(ctx, skillRequest, format);
-    expect(result).toEqual({ status: 'refused', model: 'gpt-6-astra' });
+    expect(result).toEqual({ status: 'refused', model: 'gpt-6.1-sol' });
     expect(provider.calls).toHaveLength(1);
   });
 });

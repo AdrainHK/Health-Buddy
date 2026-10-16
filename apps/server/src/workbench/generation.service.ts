@@ -4,10 +4,10 @@ import type { TaskMode, TaskStep, TaskStreamEvent } from '@health-buddy/shared';
 import {
   ASK_NOTICE,
   ASK_SYSTEM_PROMPT,
+  buildAskUserContent,
   buildSystemPrompt,
   CRISIS_HEADER,
   criticalNotice,
-  describeClient,
   detectCrisisKeywords,
   finalizeClientText,
   redactClientIdentity,
@@ -93,9 +93,7 @@ export class GenerationService {
         content: redact(m.content),
       }));
       const question = redact(request.content);
-      const userContent = client
-        ? `${describeClient({ client: client.snapshot, managerRequest: '' })}\n\n## 健管师的问题\n${question}`
-        : question;
+      const userContent = buildAskUserContent(client?.snapshot, question);
 
       // 固定的提醒由后端拼在开头，不依赖模型；模型拒答时也保留
       const crisis = detectCrisisKeywords([

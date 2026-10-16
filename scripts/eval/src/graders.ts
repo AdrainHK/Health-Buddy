@@ -142,3 +142,10 @@ export function gradeRecentSummary(c: SkillEvalCase, output: RecentSummaryOutput
 
   return findings;
 }
+
+/** 错误类别加上厂商返回的状态码和错误码（不含消息正文），方便在 CI 注解里排查 */
+export function describeError(err: unknown): string {
+  if (!err || typeof err !== 'object' || !('kind' in err)) return 'error';
+  const e = err as { kind: unknown; status?: unknown; code?: unknown };
+  return [e.kind, e.status, e.code].filter((v) => v !== undefined && v !== null).join(' ');
+}

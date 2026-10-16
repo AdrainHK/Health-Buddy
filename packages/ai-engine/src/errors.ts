@@ -24,8 +24,11 @@ export class GatewayError extends Error {
 
 /** 厂商错误码是固定的英文标识符；不符合这个格式的一律丢弃，避免把任意文本带进日志。 */
 function providerErrorCode(err: unknown): string | undefined {
-  if (!err || typeof err !== 'object' || !('code' in err)) return undefined;
-  const code = err.code;
+  if (!err || typeof err !== 'object') return undefined;
+  // OpenAI 放在 code 上；Anthropic 放在响应体 error.error.type 上（如 not_found_error）
+  const body =
+    'error' in err ? (err.error as { error?: { type?: unknown } } | undefined) : undefined;
+  const code = 'code' in err && err.code ? err.code : body?.error?.type;
   return typeof code === 'string' && /^[a-z][a-z0-9_.-]{0,63}$/i.test(code) ? code : undefined;
 }
 

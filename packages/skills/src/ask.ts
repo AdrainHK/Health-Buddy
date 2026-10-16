@@ -4,6 +4,8 @@
  */
 import { ASK_DISCLAIMER } from '@health-buddy/shared';
 import type { CriticalFlag } from '@health-buddy/shared';
+import { describeClient } from './client-recent-summary/index.js';
+import type { ClientSnapshot } from './framework.js';
 import { CRISIS_NOTICE } from './guardrails.js';
 import { indicatorName } from './indicators.js';
 import { SKILLS } from './registry.js';
@@ -28,8 +30,18 @@ export const ASK_SYSTEM_PROMPT = `你是协助健康管理师（下称“健管�
 4. 健管师转述客户出现胸痛、晕厥、意识不清、呼吸困难等疑似急症时，第一句就提醒健管师建议客户立即就医或拨打急救电话。
 5. 健管师转述客户有自伤、轻生等心理危机信号时（包括之前的对话里提到过），第一句醒目提示健管师按危机流程处理：立即联系客户本人和家属，必要时拨打当地急救电话。
 6. 客户资料已去掉姓名和联系方式，用“该客户”指代。即使健管师提到姓名，也不要在回答里写出来。
-7. 不写给客户看的话术或通知；需要发给客户的内容，建议健管师用技能生成草稿并审核。
+7. 不写可以原样转发给客户的成段话术或通知；需要发给客户的内容，建议健管师用技能生成草稿并审核。疑似急症、心理危机时，可以给出简短的就医或求助指引，供健管师马上转告。
 8. 回答简洁，先列要点，再给依据。不使用“诊断”“确诊”这类断言。不写免责声明，系统会统一加上。`;
+
+/**
+ * 问一问发给模型的用户消息：引用了客户时先附上客户资料。
+ * question 和 client 都必须已经去标识（后端负责），评测也走这里，保证测的是线上用的提示词。
+ */
+export function buildAskUserContent(client: ClientSnapshot | undefined, question: string): string {
+  return client
+    ? `${describeClient({ client, managerRequest: '' })}\n\n## 健管师的问题\n${question}`
+    : question;
+}
 
 const LEVEL_ZH = { urgent: '需尽快就医', attention: '建议就医评估' } as const;
 const SOURCE_ZH = { monitoring: '日常监测', report: '体检报告' } as const;

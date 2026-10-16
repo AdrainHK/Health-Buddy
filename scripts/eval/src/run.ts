@@ -3,10 +3,12 @@ import {
   buildSystemPrompt,
   clientRecentSummary,
   recentSummaryOutputSchema,
+  type AskEvalCase,
   type RecentSummaryOutput,
   type SkillEvalCase,
 } from '@health-buddy/skills';
-import { gradeRecentSummary, type Finding } from './graders.js';
+import { runAskOnce } from './ask.js';
+import { describeError, gradeRecentSummary, type Finding } from './graders.js';
 import { judgeClientText } from './judge.js';
 
 export interface RunResult {
@@ -16,7 +18,7 @@ export interface RunResult {
   run: number;
   findings: Finding[];
   /** 合成数据的输出，写进报告文件方便排查；不打印到控制台 */
-  output?: RecentSummaryOutput;
+  output?: RecentSummaryOutput | string;
 }
 
 export interface CaseSummary {
@@ -65,8 +67,7 @@ async function runOnce(
       findings.push(...(await judgeClientText(gateway, EVAL_CTX, result.data.clientFacing)));
     return { ...base, findings, output: result.data };
   } catch (err) {
-    const kind = err && typeof err === 'object' && 'kind' in err ? String(err.kind) : 'error';
-    return { ...base, findings: [{ rule: 'output.error', detail: kind }] };
+    return { ...base, findings: [{ rule: 'output.error', detail: describeError(err) }] };
   }
 }
 
@@ -85,6 +86,30 @@ export async function runEval(options: {
       (_, i) => () => runOnce(options.gateway, options.provider, c, i + 1, options.useJudge),
     ),
   );
+  return runPool(jobs, options.concurrency ?? 3);
+}
+
+/** 问一问的评测：每个用例跑 runs 次 */
+export async function runAskEval(options: {
+  gateway: LlmGateway;
+  provider: ProviderName;
+  cases: AskEvalCase[];
+  runs: number;
+  useJudge: boolean;
+  concurrency?: number;
+}): Promise<RunResult[]> {
+  const jobs = options.cases.flatMap((c) =>
+    Array.from(
+      { length: options.runs },
+      (_, i) => () =>
+        runAskOnce(options.gateway, EVAL_CTX, options.provider, c, i + 1, options.useJudge),
+    ),
+  );
+  return runPool(jobs, options.concurrency ?? 3);
+}
+
+/** 限制同时进行的调用数，结果按用例和次数排序 */
+async function runPool(jobs: (() => Promise<RunResult>)[], concurrency: number) {
   const results: RunResult[] = [];
   let next = 0;
   const worker = async () => {
@@ -93,7 +118,7 @@ export async function runEval(options: {
       if (job) results.push(await job());
     }
   };
-  await Promise.all(Array.from({ length: options.concurrency ?? 3 }, worker));
+  await Promise.all(Array.from({ length: concurrency }, worker));
   return results.sort((a, b) => a.caseId.localeCompare(b.caseId) || a.run - b.run);
 }
 
