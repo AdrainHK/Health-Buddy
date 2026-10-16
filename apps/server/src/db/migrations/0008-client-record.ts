@@ -192,5 +192,42 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     grant select, insert on client_health_history to ${app};
     grant update (category, content, recorded_on, deleted_at) on client_health_history to ${app};
     grant select, insert on client_risk_tiers to ${app};
+
+    -- 报告和指标同样只开放内容列：0003 授予的整表 update 收回，租户列和客户不能由应用改
+    revoke update on health_reports, report_indicators from ${app};
+    grant update (report_date, title, source) on health_reports to ${app};
+    grant update (code, value, unit) on report_indicators to ${app};
+  `.execute(db);
+
+  // 客户的机构或协会变了、但健管师没变（如健管师调机构经外键级联到客户）：
+  // 档案数据的租户列跟着客户同步。健管师变了的情况由外键级联和 client_record_tenant 处理，
+  // 这里不碰，否则会在级联之前写出“旧健管师 + 新机构”的行。
+  // 以所有者身份执行，属于系统操作（hb_is_system），只能追加的分层历史也能同步。
+  await sql`
+    create function clients_sync_record_tenant() returns trigger
+      language plpgsql security definer set search_path = pg_catalog, public, pg_temp
+    as $$
+    begin
+      update health_reports set operator_id = new.operator_id, org_id = new.org_id
+        where client_id = new.id
+          and (operator_id is distinct from new.operator_id or org_id is distinct from new.org_id);
+      update report_indicators set operator_id = new.operator_id, org_id = new.org_id
+        where client_id = new.id
+          and (operator_id is distinct from new.operator_id or org_id is distinct from new.org_id);
+      update client_health_history set operator_id = new.operator_id, org_id = new.org_id
+        where client_id = new.id
+          and (operator_id is distinct from new.operator_id or org_id is distinct from new.org_id);
+      update client_risk_tiers set operator_id = new.operator_id, org_id = new.org_id
+        where client_id = new.id
+          and (operator_id is distinct from new.operator_id or org_id is distinct from new.org_id);
+      return new;
+    end
+    $$;
+    revoke all on function clients_sync_record_tenant() from public;
+    create trigger clients_sync_record_tenant after update of org_id, operator_id on clients
+      for each row
+      when (new.manager_id = old.manager_id
+        and (new.org_id is distinct from old.org_id or new.operator_id is distinct from old.operator_id))
+      execute function clients_sync_record_tenant();
   `.execute(db);
 }

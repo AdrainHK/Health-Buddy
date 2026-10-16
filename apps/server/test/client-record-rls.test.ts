@@ -464,4 +464,138 @@ describe('客户档案数据表的行级安全和约束', () => {
       expect(rows, table).toHaveLength(0);
     }
   });
+
+  describe('报告和指标的写入', () => {
+    /** 以所有者身份给客户建一份报告，返回 id */
+    const reportOf = async (clientId: string) =>
+      (
+        await owner
+          .insertInto('health_reports')
+          .values({
+            client_id: clientId,
+            report_date: '2026-03-01',
+            title: '合成报告',
+            source: 'synthetic',
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow()
+      ).id as string;
+    const report = (clientId: string) => ({
+      client_id: clientId,
+      report_date: '2026-04-01',
+      title: '合成报告',
+      source: 'manual' as const,
+    });
+    const indicator = (reportId: string, clientId: string) => ({
+      report_id: reportId,
+      client_id: clientId,
+      code: 'tc',
+      value: 5,
+      unit: 'mmol/L',
+    });
+
+    it('健管师不能给同协会其他健管师或协会B的客户写报告和指标', async () => {
+      for (const clientId of [f.clients.a2, f.clients.b1, f.clients.a3]) {
+        const otherReport = await reportOf(clientId);
+        await expect(
+          asA1((trx) => trx.insertInto('health_reports').values(report(clientId)).execute()),
+        ).rejects.toMatchObject({ code: '42501' });
+        await expect(
+          asA1((trx) =>
+            trx.insertInto('report_indicators').values(indicator(otherReport, clientId)).execute(),
+          ),
+        ).rejects.toMatchObject({ code: '42501' });
+      }
+    });
+
+    it('不能把自己的报告或指标改到别人的客户名下，也不能改租户列', async () => {
+      const own = await owner
+        .selectFrom('health_reports')
+        .select('id')
+        .where('client_id', '=', f.clients.a1[0])
+        .executeTakeFirstOrThrow();
+      const attempts: ((trx: TenantTransaction) => Promise<unknown>)[] = [
+        (trx) =>
+          trx
+            .updateTable('health_reports')
+            .set({ client_id: f.clients.a2 })
+            .where('id', '=', own.id)
+            .execute(),
+        (trx) =>
+          trx
+            .updateTable('report_indicators')
+            .set({ client_id: f.clients.a2 })
+            .where('report_id', '=', own.id)
+            .execute(),
+        (trx) =>
+          trx
+            .updateTable('health_reports')
+            .set({ manager_id: f.users.managerA2.id })
+            .where('id', '=', own.id)
+            .execute(),
+        (trx) =>
+          trx
+            .updateTable('report_indicators')
+            .set({ org_id: f.orgA2 })
+            .where('report_id', '=', own.id)
+            .execute(),
+      ];
+      for (const attempt of attempts) {
+        await expect(asA1(attempt)).rejects.toMatchObject({ code: '42501' });
+      }
+      // 内容列仍可修改
+      const updated = await asA1((trx) =>
+        trx
+          .updateTable('report_indicators')
+          .set({ value: 5.6 })
+          .where('report_id', '=', own.id)
+          .executeTakeFirst(),
+      );
+      expect(updated.numUpdatedRows).toBe(1n);
+    });
+
+    it('机构管理员不能写报告和指标', async () => {
+      const own = await owner
+        .selectFrom('health_reports')
+        .select('id')
+        .where('client_id', '=', f.clients.a1[0])
+        .executeTakeFirstOrThrow();
+      await expect(
+        withTenant(app, orgAdminA(), (trx) =>
+          trx.insertInto('health_reports').values(report(f.clients.a1[0])).execute(),
+        ),
+      ).rejects.toMatchObject({ code: '42501' });
+      await expect(
+        withTenant(app, orgAdminA(), (trx) =>
+          trx.insertInto('report_indicators').values(indicator(own.id, f.clients.a1[0])).execute(),
+        ),
+      ).rejects.toMatchObject({ code: '42501' });
+    });
+  });
+
+  it('客户的机构变了而健管师没变：档案数据的租户列跟着同步', async () => {
+    // 外键 (manager_id, org_id) 在 org_id 为空时不检查，借此单独改客户的机构
+    await owner
+      .updateTable('clients')
+      .set({ org_id: null })
+      .where('id', '=', f.clients.a1[0])
+      .execute();
+    for (const table of RECORD_TABLES) {
+      const rows = await owner
+        .selectFrom(table)
+        .select(['org_id', 'operator_id', 'manager_id'])
+        .where('client_id', '=', f.clients.a1[0])
+        .execute();
+      expect(rows.length, table).toBeGreaterThan(0);
+      for (const r of rows) {
+        expect(r, table).toEqual({
+          org_id: null,
+          operator_id: f.operatorA,
+          manager_id: f.users.managerA1.id,
+        });
+      }
+    }
+    const seen = await clientIdsSeenBy(orgAdminA());
+    for (const t of RECORD_TABLES) expect(seen[t], t).not.toContain(f.clients.a1[0]);
+  });
 });
