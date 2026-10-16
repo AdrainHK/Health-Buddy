@@ -29,6 +29,8 @@ const TIER: RiskTierRecord = {
   setBy: ids.manager,
   setByName: '合成健管师',
   setAt: NOW,
+  source: 'manual',
+  sourceArtifactId: null,
 };
 
 function makeRecord(overrides: Partial<RecordData> = {}): RecordData {
@@ -253,7 +255,18 @@ describe('ClientRecord', () => {
       [`POST /clients/${ids.clientA}/risk-tiers`]: () =>
         json(201, { tier: { ...TIER, tier: 'high', reason: '合成理由二' } }),
       [`GET /clients/${ids.clientA}/risk-tiers`]: () =>
-        json(200, { tiers: [TIER, { ...TIER, id: REPORT_ID, setByName: null }] }),
+        json(200, {
+          tiers: [
+            TIER,
+            {
+              ...TIER,
+              id: REPORT_ID,
+              setByName: null,
+              source: 'artifact',
+              sourceArtifactId: null,
+            },
+          ],
+        }),
     });
     await user.click(await screen.findByRole('button', { name: '调整分层' }));
     const form = screen.getByRole('form', { name: '设定风险分层' });
@@ -275,6 +288,8 @@ describe('ClientRecord', () => {
     const list = await screen.findByRole('list', { name: '查看历史' });
     expect(within(list).getAllByRole('listitem')).toHaveLength(2);
     expect(within(list).getByText(/其他健管师 ·/)).toBeInTheDocument();
+    // 审核 /体检解读 时采用的建议分层，历史里写明来源（规格 2.7）
+    expect(within(list).getByText(/其他健管师 ·.*采用建议分层/)).toBeInTheDocument();
   });
 
   it('keeps the basic info visible when the record cannot be loaded', async () => {

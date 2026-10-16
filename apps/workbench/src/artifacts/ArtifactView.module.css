@@ -186,7 +186,8 @@
 }
 
 .mark[data-kind='banned'],
-.mark[data-kind='critical'] {
+.mark[data-kind='critical'],
+.mark[data-kind='riskTier'] {
   background: color-mix(in oklab, var(--hb-danger) 22%, transparent);
   text-decoration: underline wavy var(--hb-danger);
 }
@@ -224,7 +225,8 @@
 }
 
 .markItem[data-kind='banned'],
-.markItem[data-kind='critical'] {
+.markItem[data-kind='critical'],
+.markItem[data-kind='riskTier'] {
   border-left-color: var(--hb-danger);
 }
 
@@ -386,4 +388,33 @@
 .returnTitle {
   margin: 0;
   font-weight: 600;
+}
+
+/* 依据体检报告的产物有危急指标时：先电话联系客户（Q19） */
+.callNotice {
+  margin: 0 0 var(--hb-space-2);
+  color: var(--hb-danger);
+  font-size: var(--hb-text-sm);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* AI 建议分层（规格 2.7），只给健管师看 */
+.tierSuggestion {
+  padding: var(--hb-space-2) var(--hb-space-3);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-md);
+  background: var(--hb-surface-2);
+}
+
+.tierTitle {
+  margin: 0 0 var(--hb-space-1);
+  font-weight: 600;
+}
+
+.tierReason {
+  margin: 0;
+  color: var(--hb-text-2);
+  font-size: var(--hb-text-sm);
+  overflow-wrap: anywhere;
 }

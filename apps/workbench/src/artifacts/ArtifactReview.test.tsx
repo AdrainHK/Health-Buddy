@@ -396,6 +396,7 @@ describe('review bar on a draft', () => {
         hints: {
           judgementHints: [],
           criticalValueMentions: [{ metric: 'sbp', index: clientFacing.indexOf('185') }],
+          riskTierMentions: [],
         },
       },
     );
@@ -573,6 +574,140 @@ describe('review bar on an approved artifact', () => {
     expect(await screen.findByRole('heading', { name: /第 2 版/ })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: '通俗版内容' })).toBeInTheDocument();
     expect(api.callsTo('POST', `${ART_PATH}/revise`)).toHaveLength(1);
+  });
+});
+
+describe('体检解读和面谈提纲（M2 规格 2.5、2.7、2.8）', () => {
+  const REPORT_ID = '90000000-0000-4000-8000-0000000000a1';
+  const interpretation = (overrides: Partial<ArtifactDetailResponse['artifact']> = {}) =>
+    makeArtifactDetail(
+      {
+        skillId: 'report-interpretation',
+        sourceReportId: REPORT_ID,
+        hasCriticalFlags: true,
+        criticalFlags: [{ ...CRITICAL, source: 'report', observedOn: '2026-09-12' }],
+        riskTierSuggestion: { tier: 'medium', reason: '合成依据：空腹血糖高于参考范围' },
+        ...overrides,
+      },
+      { sourceReport: { id: REPORT_ID, reportDate: '2026-09-12', correctedSince: true } },
+    );
+
+  it('审核栏先提示电话联系客户；勾选“采用建议分层”后随确认一起提交', async () => {
+    const detail = interpretation();
+    const api = mockApi({
+      [`GET ${TASK_PATH}`]: () => json(200, taskDetail(detail)),
+      [`GET ${ART_PATH}`]: () => json(200, detail),
+      [`POST ${ART_PATH}/approve`]: () => json(200, interpretation({ status: 'approved' })),
+    });
+    const user = userEvent.setup();
+    await openArtifact(user);
+
+    expect(await screen.findByRole('heading', { name: /体检解读/ })).toBeInTheDocument();
+    const critical = within(reviewBar()).getByRole('group', { name: '危急指标' });
+    expect(critical).toHaveTextContent('本报告有危急指标，请先电话联系客户');
+    expect(screen.getByRole('note')).toHaveTextContent('2026-09-12');
+    expect(screen.getByRole('note')).toHaveTextContent('建议重新生成');
+
+    const tier = within(reviewBar()).getByRole('group', { name: /AI 建议分层：中/ });
+    expect(tier).toHaveTextContent('合成依据：空腹血糖高于参考范围');
+    // 建议分层不出现在通俗版里
+    expect(screen.getByRole('tabpanel', { name: '通俗版' })).not.toHaveTextContent('建议分层');
+
+    await user.click(within(critical).getByRole('checkbox', { name: /已知悉/ }));
+    await user.click(within(tier).getByRole('checkbox', { name: /采用建议分层/ }));
+    await user.click(button('确认'));
+    await waitFor(() => expect(api.callsTo('POST', `${ART_PATH}/approve`)).toHaveLength(1));
+    expect(api.callsTo('POST', `${ART_PATH}/approve`)[0]?.body).toEqual({
+      version: 1,
+      contentHash: 'hash-1',
+      acknowledgedCritical: true,
+      adoptRiskTier: true,
+    });
+    // 已审核后只显示建议，不再提供勾选
+    await screen.findByRole('button', { name: '复制通俗版' });
+    expect(
+      within(within(reviewBar()).getByRole('group', { name: /AI 建议分层/ })).queryByRole(
+        'checkbox',
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it('通俗版里的风险分层字样被标出，确认按钮禁用', async () => {
+    const clientFacing = `您好，您属于中风险人群，建议多走动。\n\n${SYNTHETIC_DISCLAIMER}`;
+    const detail = makeArtifactDetail(
+      { skillId: 'report-interpretation', content: { professional: '合成', clientFacing } },
+      {
+        hints: {
+          judgementHints: [],
+          criticalValueMentions: [],
+          riskTierMentions: [{ text: '中风险人群', index: clientFacing.indexOf('中风险') }],
+        },
+      },
+    );
+    mockApi({
+      [`GET ${TASK_PATH}`]: () => json(200, taskDetail(detail)),
+      [`GET ${ART_PATH}`]: () => json(200, detail),
+    });
+    const user = userEvent.setup();
+    await openArtifact(user);
+
+    expect(button('确认')).toBeDisabled();
+    expect(reviewBar()).toHaveTextContent('通俗版含风险分层字样');
+    const marks = screen.getByRole('list', { name: '需要注意的位置' });
+    expect(marks).toHaveTextContent('风险分层字样“中风险人群”');
+    expect(within(marks).getByText('中风险人群', { selector: 'mark' })).toHaveAttribute(
+      'data-kind',
+      'riskTier',
+    );
+  });
+
+  it('面谈提纲只有专业版：可以编辑和确认，确认后没有复制和导出', async () => {
+    const professional = '## 面谈提纲\n- 平时早餐一般吃什么？';
+    const detail = makeArtifactDetail({
+      skillId: 'interview-outline',
+      clientFacing: false,
+      sourceReportId: REPORT_ID,
+      content: { professional, clientFacing: '' },
+    });
+    const api = mockApi({
+      [`GET ${TASK_PATH}`]: () => json(200, taskDetail(detail)),
+      [`GET ${ART_PATH}`]: () => json(200, detail),
+      [`PATCH ${ART_PATH}`]: () =>
+        json(
+          200,
+          makeArtifactDetail({
+            ...detail.artifact,
+            contentHash: 'hash-2',
+            content: { professional: `${professional}\n- 补充`, clientFacing: '' },
+          }),
+        ),
+      [`POST ${ART_PATH}/approve`]: () =>
+        json(
+          200,
+          makeArtifactDetail({ ...detail.artifact, contentHash: 'hash-2', status: 'approved' }),
+        ),
+    });
+    const user = userEvent.setup();
+    await openArtifact(user);
+
+    expect(screen.queryByRole('tab', { name: '通俗版' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tabpanel', { name: '专业版' })).toHaveTextContent('没有通俗版');
+    const editor = screen.getByRole('textbox', { name: '专业版内容' });
+    await user.type(editor, '\n- 补充');
+    await user.click(button('保存修改'));
+    await waitFor(() => expect(api.callsTo('PATCH', ART_PATH)).toHaveLength(1));
+    expect(api.callsTo('PATCH', ART_PATH)[0]?.body).toMatchObject({
+      content: { professional: `${professional}\n- 补充`, clientFacing: '' },
+    });
+
+    await waitFor(() => expect(button('确认')).toBeEnabled());
+    await user.click(button('确认'));
+    await waitFor(() => expect(api.callsTo('POST', `${ART_PATH}/approve`)).toHaveLength(1));
+    expect(await within(reviewBar()).findByText(/不提供复制和导出/)).toBeInTheDocument();
+    expect(queryButton('复制通俗版')).not.toBeInTheDocument();
+    expect(queryButton('导出 PDF')).not.toBeInTheDocument();
+    expect(queryButton('导出图片')).not.toBeInTheDocument();
+    expect(button('基于此版修改')).toBeEnabled();
   });
 });
 

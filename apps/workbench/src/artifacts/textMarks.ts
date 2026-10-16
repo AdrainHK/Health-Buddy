@@ -8,9 +8,10 @@ import {
  * 通俗版里要标出的位置。下标按 UTF-16 码元，和后端一致。
  * - banned：禁用词，确认被拦截；
  * - critical：危急指标数值，确认被拦截；
+ * - riskTier：风险分层字样，确认被拦截（Q20，分层只给健管师看）；
  * - judgement：疾病名称、判断句式，只提示不拦截。
  */
-export type MarkKind = 'banned' | 'critical' | 'judgement';
+export type MarkKind = 'banned' | 'critical' | 'riskTier' | 'judgement';
 
 export interface TextMark {
   kind: MarkKind;
@@ -119,6 +120,24 @@ export function judgementMarks(
   hints: ClientTextHints['judgementHints'],
   sourceText: string,
 ): TextMark[] {
+  return snippetMarks('judgement', text, hints, sourceText);
+}
+
+/** 风险分层字样（Q20）。和判断句式一样按片段重新定位；拦截确认 */
+export function riskTierMarks(
+  text: string,
+  mentions: readonly { text: string; index: number }[],
+  sourceText: string,
+): TextMark[] {
+  return snippetMarks('riskTier', text, mentions, sourceText);
+}
+
+function snippetMarks(
+  kind: 'judgement' | 'riskTier',
+  text: string,
+  hints: readonly { text: string; index: number }[],
+  sourceText: string,
+): TextMark[] {
   const out: TextMark[] = [];
   for (const hint of hints) {
     if (!hint.text) continue;
@@ -136,7 +155,7 @@ export function judgementMarks(
       }
     }
     if (start < 0 || start + hint.text.length > text.length) continue;
-    out.push({ kind: 'judgement', start, end: start + hint.text.length, label: hint.text });
+    out.push({ kind, start, end: start + hint.text.length, label: hint.text });
   }
   return out;
 }
@@ -151,7 +170,7 @@ export interface Segment {
  * （调用方把拦截类标记放在前面，优先显示）。
  */
 export function segmentText(text: string, marks: readonly TextMark[]): Segment[] {
-  const priority: Record<MarkKind, number> = { banned: 0, critical: 1, judgement: 2 };
+  const priority: Record<MarkKind, number> = { banned: 0, critical: 1, riskTier: 2, judgement: 3 };
   const sorted = [...marks]
     .filter((m) => m.end > m.start && m.start >= 0 && m.end <= text.length)
     .sort((a, b) => a.start - b.start || priority[a.kind] - priority[b.kind]);

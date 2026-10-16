@@ -4,7 +4,13 @@ import {
   sendMessageRequestSchema,
   type TaskStreamEvent,
 } from '@health-buddy/shared';
-import { getSkill, type SkillDefinition } from '@health-buddy/skills';
+import {
+  PLAN_TEMPLATES,
+  getPlanTemplate,
+  getSkill,
+  type PlanTemplate,
+  type SkillDefinition,
+} from '@health-buddy/skills';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import type { ResolvedSession } from '../auth/auth.repository.js';
@@ -61,10 +67,14 @@ export class WorkbenchController {
     if (!parsed.success) throw badRequest();
     const input = parsed.data;
     let skill: SkillDefinition | undefined;
+    let plan: PlanTemplate | undefined;
     if (input.skillId !== undefined) {
       skill = getSkill(input.skillId);
+      // 多步计划（Q22）只能在想一想模式下用
+      plan = skill ? undefined : getPlanTemplate(input.skillId);
+      if (plan && input.mode !== 'plan') throw badRequest();
       // 问一问带技能已被契约拦截；技能还必须支持当前模式
-      if (!skill || !(skill.modes as string[]).includes(input.mode)) throw badRequest();
+      if (!plan && (!skill || !(skill.modes as string[]).includes(input.mode))) throw badRequest();
     }
     this.acquire(session);
 
@@ -78,17 +88,20 @@ export class WorkbenchController {
           skillId: input.skillId,
           clientRefs: input.clientRefs,
           reportRefs: input.reportRefs,
-          requiresClient: skill?.requiresClient ?? false,
+          requiresClient: (plan ?? skill)?.requiresClient ?? false,
+          requiresReport: plan?.requiresReport ?? skill?.requiresReport ?? false,
         },
         claim,
       ),
     );
     await this.stream(turn, req, res, session, (io) => {
+      if (plan) return this.generation.propose(session, turn.value, plan.skills, io);
       if (!skill) return this.generation.answer(session, turn.value, input, io);
-      if (input.mode === 'plan') return this.generation.propose(session, turn.value, skill.id, io);
+      if (input.mode === 'plan')
+        return this.generation.propose(session, turn.value, [skill.id], io);
       return this.generation.runSkill(
         session,
-        { ...turn.value, skill, managerRequest: input.content, parent: undefined },
+        { ...turn.value, skills: [skill], managerRequest: input.content, parent: undefined },
         io,
       );
     });
@@ -108,7 +121,9 @@ export class WorkbenchController {
     const plan = parseId(planId);
     this.acquire(session);
     const run = await this.claim(session, (claim) =>
-      this.repo.confirmPlan(session, taskId, plan, claim),
+      this.repo.confirmPlan(session, taskId, plan, claim, (id) =>
+        Boolean(getSkill(id)?.requiresReport),
+      ),
     );
     await this.regenerate(run, req, res, session);
   }
@@ -129,7 +144,10 @@ export class WorkbenchController {
     if (!parsed.success) throw badRequest();
     this.acquire(session);
     const run = await this.claim(session, (claim) =>
-      this.repo.returnArtifact(session, artifactId, parsed.data.reason, claim),
+      this.repo.returnArtifact(session, artifactId, parsed.data.reason, claim, (skillId) => [
+        skillId,
+        ...PLAN_TEMPLATES.filter((p) => p.skills.includes(skillId)).map((p) => p.id),
+      ]),
     );
     await this.regenerate(run, req, res, session, parsed.data.reason);
   }
@@ -154,16 +172,20 @@ export class WorkbenchController {
     session: ResolvedSession,
     returnReason?: string,
   ): Promise<void> {
-    const skill = getSkill(run.value.skillId);
+    const skills = run.value.skillIds.map((id) => getSkill(id));
     await this.stream(run, req, res, session, async (io) => {
-      if (!skill) {
+      if (!skills.length || skills.some((s) => !s)) {
         io.emit({ type: 'error', kind: 'internal_error' });
         io.emit({ type: 'done', messageId: run.value.assistantMessageId, reason: 'error' });
         return;
       }
       await this.generation.runSkill(
         session,
-        { ...run.value, skill, ...(returnReason !== undefined ? { returnReason } : {}) },
+        {
+          ...run.value,
+          skills: skills as SkillDefinition[],
+          ...(returnReason !== undefined ? { returnReason } : {}),
+        },
         io,
       );
     });

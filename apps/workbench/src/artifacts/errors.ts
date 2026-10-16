@@ -1,7 +1,15 @@
 import { ApiError } from '../api/http';
 
 export type ArtifactErrorKey =
-  'busy' | 'tooMany' | 'readOnly' | 'badRequest' | 'notFound' | 'conflict' | 'network' | 'unknown';
+  | 'busy'
+  | 'tooMany'
+  | 'readOnly'
+  | 'notClientFacing'
+  | 'badRequest'
+  | 'notFound'
+  | 'conflict'
+  | 'network'
+  | 'unknown';
 
 /**
  * 产物接口错误的分类。stale 表示版本号或内容指纹已过期（别处改过），
@@ -16,6 +24,8 @@ export function classifyArtifactError(err: unknown): ArtifactErrorKind {
   if (err.status === 409) {
     if (err.reasons.includes('read_only')) return { kind: 'error', key: 'readOnly' };
     if (err.reasons.includes('busy')) return { kind: 'error', key: 'busy' };
+    // 只有专业版的产物（/面谈提纲）不能复制、导出
+    if (err.reasons.includes('not_client_facing')) return { kind: 'error', key: 'notClientFacing' };
     if (err.reasons.includes('not_latest_draft')) return { kind: 'stale' };
     // 没有具体原因的 409：状态已经变了，同样按过期处理并刷新
     return { kind: 'error', key: 'conflict' };

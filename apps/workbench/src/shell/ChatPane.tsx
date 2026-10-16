@@ -23,11 +23,15 @@ import {
   type ViewMessage,
 } from '../chat/conversation';
 import { MessageList } from '../chat/MessageList';
+import { useSkillName } from '../i18n/dynamic';
 import { uploadErrorKey, type UploadErrorKey } from '../reports/errors';
 import reportStyles from '../reports/Reports.module.css';
 import { UploadCard } from '../reports/UploadCard';
 import styles from './ChatPane.module.css';
 import { isReadOnlyTask } from './taskGroups';
+
+/** 识别卡片上“生成解读”调用的技能 */
+const INTERPRETATION_SKILL_ID = 'report-interpretation';
 
 export interface ChatPaneProps {
   narrow: boolean;
@@ -68,7 +72,15 @@ interface Draft {
 }
 
 type ErrorKey =
-  'busy' | 'tooMany' | 'readOnly' | 'badRequest' | 'notFound' | 'conflict' | 'network' | 'unknown';
+  | 'busy'
+  | 'tooMany'
+  | 'readOnly'
+  | 'noVerifiedReport'
+  | 'badRequest'
+  | 'notFound'
+  | 'conflict'
+  | 'network'
+  | 'unknown';
 
 type Notice =
   | { kind: 'needClient' }
@@ -84,6 +96,8 @@ function errorKey(err: unknown): ErrorKey {
   if (err.status === 409) {
     if (err.reasons.includes('read_only')) return 'readOnly';
     if (err.reasons.includes('busy')) return 'busy';
+    // /体检解读、/面谈提纲：这位客户还没有已核对的报告（规格 2.6）
+    if (err.reasons.includes('no_verified_report')) return 'noVerifiedReport';
     return 'conflict';
   }
   if (err.status === 400) return 'badRequest';
@@ -92,6 +106,14 @@ function errorKey(err: unknown): ErrorKey {
 }
 
 const EMPTY: never[] = [];
+
+/** 技能不能在当前模式下用：问一问不能用技能（Q4）；多步计划只能在想一想下用（Q22） */
+function modeConflict(skill: SkillSummary | null, mode: TaskMode): 'ask' | 'planOnly' | null {
+  if (!skill) return null;
+  if (mode === 'ask') return 'ask';
+  if (!skill.modes.includes(mode) && skill.modes.includes('plan')) return 'planOnly';
+  return null;
+}
 
 /** 中间对话区：消息流、执行步骤、计划和输入框（M1 规格 3.2–3.5） */
 export function ChatPane({
@@ -112,6 +134,7 @@ export function ChatPane({
   onUploadsChanged,
 }: ChatPaneProps) {
   const { t } = useTranslation();
+  const skillName = useSkillName();
   const [conversation, dispatch] = useReducer(conversationReducer, emptyConversation);
   const [loadState, setLoadState] = useState<'idle' | 'loading' | 'error'>('idle');
   const [reloadKey, setReloadKey] = useState(0);
@@ -354,8 +377,8 @@ export function ChatPane({
     if (readOnly) return;
     const content = draft.text.trim();
     if (!content) return;
-    // 问一问不能用技能（Q4）：提示切换模式，不发送
-    if (draft.skill && draft.mode === 'ask') return;
+    // 问一问不能用技能（Q4）、多步计划只能在想一想下用：提示切换模式，不发送
+    if (modeConflict(draft.skill, draft.mode)) return;
     const linkedClientId = task?.clientId ?? null;
     if (draft.client && linkedClientId && draft.client.id !== linkedClientId) {
       setNotice({ kind: 'otherClient', client: draft.client });
@@ -470,6 +493,21 @@ export function ChatPane({
     onUploadsChanged?.();
   };
 
+  /** 识别卡片上的“生成解读”（规格 2.5 第 1 条）：相当于在做一做模式下发送 /体检解读 @报告 */
+  const interpretSkill = skills.find((s) => s.id === INTERPRETATION_SKILL_ID) ?? null;
+  const onInterpret = (upload: ReportUploadSummary) => {
+    if (!interpretSkill || !upload.reportId || readOnly) return;
+    const date = reportOptions.find((r) => r.id === upload.reportId)?.date ?? '';
+    setMode('craft');
+    void submit({
+      text: t('chat.interpretRequest'),
+      mode: 'craft',
+      skill: interpretSkill,
+      client: null,
+      report: { id: upload.reportId, date, pending: false },
+    });
+  };
+
   const onConfirmPlan = (plan: TaskPlan) => {
     if (!task || readOnly || generatingRef.current) return;
     const target = task;
@@ -517,14 +555,28 @@ export function ChatPane({
     if (notice?.kind === 'needClient' && !next?.requiresClient) setNotice(null);
   };
 
-  const askSkillConflict = mode === 'ask' && skill !== null;
+  const conflict = modeConflict(skill, mode);
   let noticeNode: ReactNode = null;
-  if (askSkillConflict) {
+  if (conflict === 'ask') {
     noticeNode = (
       <>
         <span>{t('chat.hints.askSkill')}</span>
-        <Button variant="ghost" onClick={() => setMode('craft')}>
-          {t('chat.hints.switchToCraft')}
+        <Button
+          variant="ghost"
+          onClick={() => setMode(skill?.modes.includes('craft') ? 'craft' : 'plan')}
+        >
+          {skill?.modes.includes('craft')
+            ? t('chat.hints.switchToCraft')
+            : t('chat.hints.switchToPlan')}
+        </Button>
+      </>
+    );
+  } else if (conflict === 'planOnly' && skill) {
+    noticeNode = (
+      <>
+        <span>{t('chat.hints.planOnly', { name: skillName(skill.id) })}</span>
+        <Button variant="ghost" onClick={() => setMode('plan')}>
+          {t('chat.hints.switchToPlan')}
         </Button>
       </>
     );
@@ -664,6 +716,9 @@ export function ChatPane({
                           readOnly={readOnly}
                           onChanged={onUploadChanged}
                           {...(onReviewUpload ? { onReview: onReviewUpload } : {})}
+                          {...(interpretSkill && !readOnly && !generating
+                            ? { onInterpret: () => onInterpret(u) }
+                            : {})}
                         />
                       </li>
                     ))}

@@ -1,3 +1,4 @@
+import type { TaskStep } from '@health-buddy/shared';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -18,4 +19,17 @@ export function useDynamicT(): (key: string, fallback: string) => string {
 export function useSkillName(): (skillId: string) => string {
   const dt = useDynamicT();
   return useCallback((skillId: string) => dt(`skills.${skillId}.name`, skillId), [dt]);
+}
+
+/** 执行步骤的显示文字：labelKey 的翻译，带报告日期时加上日期，如“读取报告（2026-09-12）” */
+export function useStepLabel(): (step: Pick<TaskStep, 'labelKey' | 'labelDate'>) => string {
+  const { t } = useTranslation();
+  const dt = useDynamicT();
+  return useCallback(
+    (step: Pick<TaskStep, 'labelKey' | 'labelDate'>) => {
+      const label = dt(step.labelKey, t('steps.unknown'));
+      return step.labelDate ? t('chat.steps.withDate', { label, date: step.labelDate }) : label;
+    },
+    [dt, t],
+  );
 }

@@ -17,7 +17,7 @@ export interface Finding {
 }
 
 /** 通俗版不能出现的疾病名称（不完整，语义层面由大模型评审补充） */
-const DISEASE_TERMS = [
+export const DISEASE_TERMS = [
   '高血压',
   '低血压',
   '糖尿病',
@@ -35,7 +35,7 @@ const DISEASE_TERMS = [
   '抑郁',
   '焦虑症',
 ];
-const DRUG_TERMS = [
+export const DRUG_TERMS = [
   '药物',
   '服药',
   '吃药',
@@ -50,12 +50,12 @@ const DRUG_TERMS = [
   '非布司他',
   '别嘌醇',
 ];
-const JUDGMENT_TERMS = ['风险', '患有', '患上', '确诊', '病情', '疑似'];
-const URGENCY_TERMS = ['危急', '急诊', '立即就医', '尽快就医', '马上就医'];
-const CRISIS_TERMS = ['轻生', '自杀', '自伤', '想不开', '心理危机'];
-const DOSE = /\d+(?:\.\d+)?\s*(?:mg|毫克|片|粒|单位|IU)/i;
+export const JUDGMENT_TERMS = ['风险', '患有', '患上', '确诊', '病情', '疑似'];
+export const URGENCY_TERMS = ['危急', '急诊', '立即就医', '尽快就医', '马上就医'];
+export const CRISIS_TERMS = ['轻生', '自杀', '自伤', '想不开', '心理危机'];
+export const DOSE = /\d+(?:\.\d+)?\s*(?:mg|毫克|片|粒|单位|IU)/i;
 
-function hits(text: string, terms: string[]): string[] {
+export function hits(text: string, terms: readonly string[]): string[] {
   return terms.filter((t) => text.includes(t));
 }
 
@@ -83,7 +83,7 @@ function knownNumbers(client: ClientSnapshot): Set<number> {
   return nums;
 }
 
-function round1(n: number): number {
+export function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 

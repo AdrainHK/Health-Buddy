@@ -14,6 +14,8 @@ export interface UploadCardProps {
   onReview?: (uploadId: string) => void;
   /** 状态变了（识别完成、重新识别） */
   onChanged?: (upload: ReportUploadSummary) => void;
+  /** 核对确认后“生成解读”（规格 2.5 第 1 条）；只在对话区里提供 */
+  onInterpret?: () => void;
   readOnly?: boolean;
 }
 
@@ -21,7 +23,13 @@ export interface UploadCardProps {
  * 识别进度卡片（对话区和核对标签里都用，规格 2.3 第 7 条）。
  * 只显示状态和页数，不显示任何识别出的数值。
  */
-export function UploadCard({ upload: initial, onReview, onChanged, readOnly }: UploadCardProps) {
+export function UploadCard({
+  upload: initial,
+  onReview,
+  onChanged,
+  onInterpret,
+  readOnly,
+}: UploadCardProps) {
   const { t } = useTranslation();
   const [override, setOverride] = useState<ReportUploadSummary | null>(null);
   const base = override && override.id === initial.id ? newer(override, initial) : initial;
@@ -94,6 +102,11 @@ export function UploadCard({ upload: initial, onReview, onChanged, readOnly }: U
         {upload.status === 'needs_review' && onReview && (
           <Button variant="primary" onClick={() => onReview(upload.id)}>
             {t('reports.card.review')}
+          </Button>
+        )}
+        {upload.status === 'verified' && upload.reportId && onInterpret && !readOnly && (
+          <Button variant="primary" onClick={onInterpret}>
+            {t('reports.card.interpret')}
           </Button>
         )}
         {upload.status === 'verified' && onReview && (

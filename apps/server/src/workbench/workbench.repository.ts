@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import type { ExpressionBuilder } from 'kysely';
 import {
   detectCriticalFlags,
   type ArtifactSummary,
@@ -10,10 +11,16 @@ import {
   type TaskPlan,
   type TaskStep,
 } from '@health-buddy/shared';
-import type { ClientSnapshot } from '@health-buddy/skills';
+import type {
+  ClientSnapshot,
+  HealthHistoryEntry,
+  ReportDetail,
+  ReportIndicatorDetail,
+} from '@health-buddy/skills';
 import type { ChatMessage } from '@health-buddy/ai-engine';
 import { badRequest, conflict, notFound } from '../common/api-error.js';
 import { DB } from '../db/db.provider.js';
+import { asDate } from '../db/report-functions.js';
 import { withTenant, type Db, type TenantContext, type TenantTransaction } from '../db/database.js';
 import {
   clientVisible,
@@ -32,7 +39,10 @@ const MONITORING_DAYS = 30;
 export interface PreparedTurn {
   taskId: string;
   clientId: string | null;
-  /** @ 引用的已核对报告（规格 2.6）；为空时用最近一份 */
+  /**
+   * @ 引用的已核对报告（规格 2.6）。用报告的技能没有 @ 时，这里是该客户最近一份已核对报告；
+   * 其他情况为空时读档案用最近一份。
+   */
   reportId: string | null;
   managerMessageId: string;
   assistantMessageId: string;
@@ -40,6 +50,8 @@ export interface PreparedTurn {
 
 export interface ClientContext {
   snapshot: ClientSnapshot;
+  /** 这次用的已核对报告（id 和日期）；客户没有已核对报告时为空 */
+  report: { id: string; date: string } | null;
   /** 去标识化用：提示词里要替换掉的姓名等字样，只在内存里用，不写日志 */
   identifiers: string[];
   /** 通俗版开头的称呼，只在模型输出之后拼接，不发给模型 */
@@ -49,10 +61,13 @@ export interface ClientContext {
 export interface RegenerationContext {
   taskId: string;
   clientId: string | null;
-  skillId: string;
+  /** 按顺序执行的技能。确认多步计划时有多个（Q22），退回重写时只有一个 */
+  skillIds: string[];
   managerRequest: string;
   assistantMessageId: string;
   parent: { id: string; lineageId: string; version: number } | undefined;
+  /** 用报告的技能依据的已核对报告 */
+  reportId: string | null;
 }
 
 export interface NewArtifact {
@@ -62,6 +77,10 @@ export interface NewArtifact {
   clientFacing: string;
   criticalFlags: CriticalFlag[];
   parent: { id: string; lineageId: string; version: number } | undefined;
+  /** 依据的已核对报告（M2 规格 3.2） */
+  sourceReportId?: string | null;
+  /** AI 的建议分层（只有 /体检解读，规格 2.7） */
+  riskTierSuggestion?: { tier: 'high' | 'medium' | 'low'; reason: string } | null;
 }
 
 /**
@@ -86,6 +105,8 @@ export class WorkbenchRepository {
       clientRefs: string[];
       reportRefs: string[];
       requiresClient: boolean;
+      /** 用报告的技能（规格 2.6）：没有已核对报告时拒绝，不生成 */
+      requiresReport: boolean;
     },
     claim: (taskId: string) => boolean,
   ): Promise<PreparedTurn> {
@@ -122,6 +143,10 @@ export class WorkbenchRepository {
           .executeTakeFirst();
         if (!report) throw notFound();
       }
+      // 用报告的技能没有 @ 报告时用最近一份已核对报告；一份都没有时提示先上传并核对（规格 2.6）
+      const usedReportId =
+        reportId ?? (input.requiresReport && clientId ? await latestReportId(trx, clientId) : null);
+      if (input.requiresReport && !usedReportId) throw noVerifiedReport();
       if (!claim(task.id)) throw conflict({ reasons: ['busy'] });
 
       await closeStaleTurns(trx, task.id);
@@ -169,7 +194,7 @@ export class WorkbenchRepository {
       return {
         taskId: task.id,
         clientId,
-        reportId,
+        reportId: usedReportId,
         managerMessageId: manager.id,
         assistantMessageId: assistant,
       };
@@ -182,6 +207,7 @@ export class WorkbenchRepository {
     taskId: string,
     planId: string,
     claim: (taskId: string) => boolean,
+    requiresReport: (skillId: string) => boolean,
   ): Promise<RegenerationContext> {
     return withTenant(this.db, ctx, async (trx) => {
       const task = await lockTask(trx, taskId);
@@ -200,11 +226,14 @@ export class WorkbenchRepository {
         .executeTakeFirst();
       if (!plan) throw notFound();
       if (plan.status !== 'proposed') throw conflict();
-      const skillStep = (plan.steps as PlanStep[]).find((s) => s.kind === 'run_skill');
-      if (!skillStep || skillStep.kind !== 'run_skill') throw conflict();
+      // M2 起一份计划可以按顺序调用多个技能（Q22）
+      const skillIds = (plan.steps as PlanStep[]).flatMap((s) =>
+        s.kind === 'run_skill' ? [s.skillId] : [],
+      );
+      if (!skillIds.length) throw conflict();
       const request = await trx
         .selectFrom('task_messages')
-        .select('content')
+        .select(['content', 'report_refs'])
         .where('task_id', '=', task.id)
         .where('role', '=', 'manager')
         .where('created_at', '<', plan.created_at)
@@ -212,6 +241,19 @@ export class WorkbenchRepository {
         .limit(1)
         .executeTakeFirst();
       if (!request) throw conflict();
+      // 计划里有用报告的技能：用提出计划时 @ 的报告，没有就用最近一份已核对报告
+      let reportId: string | null = null;
+      if (skillIds.some(requiresReport)) {
+        const ref = request.report_refs[0];
+        if (ref) {
+          if (!task.client_id || !(await reportOfClient(trx, ref, task.client_id)))
+            throw notFound();
+          reportId = ref;
+        } else if (task.client_id) {
+          reportId = await latestReportId(trx, task.client_id);
+        }
+        if (!reportId) throw noVerifiedReport();
+      }
       if (!claim(task.id)) throw conflict({ reasons: ['busy'] });
 
       await closeStaleTurns(trx, task.id);
@@ -225,16 +267,17 @@ export class WorkbenchRepository {
         ctx,
         task.id,
         'craft',
-        skillStep.skillId,
+        skillIds.length === 1 ? skillIds[0] : undefined,
         Date.now(),
       );
       return {
         taskId: task.id,
         clientId: task.client_id,
-        skillId: skillStep.skillId,
+        skillIds,
         managerRequest: request.content,
         assistantMessageId: assistant,
         parent: undefined,
+        reportId,
       };
     });
   }
@@ -248,6 +291,7 @@ export class WorkbenchRepository {
     artifactId: string,
     reason: string,
     claim: (taskId: string) => boolean,
+    requestSkillIds: (skillId: string) => string[],
   ): Promise<RegenerationContext> {
     return withTenant(this.db, ctx, async (trx) => {
       const ref = await trx
@@ -259,7 +303,15 @@ export class WorkbenchRepository {
       const task = await lockTask(trx, ref.task_id);
       const artifact = await trx
         .selectFrom('artifacts')
-        .select(['id', 'skill_id', 'lineage_id', 'version', 'status', 'created_at'])
+        .select([
+          'id',
+          'skill_id',
+          'lineage_id',
+          'version',
+          'status',
+          'created_at',
+          'source_report_id',
+        ])
         .where('id', '=', artifactId)
         .forUpdate()
         .executeTakeFirstOrThrow();
@@ -270,12 +322,13 @@ export class WorkbenchRepository {
         .where('version', '>', artifact.version)
         .executeTakeFirst();
       if (artifact.status !== 'draft' || newer) throw conflict({ reasons: ['not_latest_draft'] });
+      // 健管师当初的要求：直接调用这个技能的消息，或调用了包含它的多步计划的消息
       const request = await trx
         .selectFrom('task_messages')
         .select('content')
         .where('task_id', '=', task.id)
         .where('role', '=', 'manager')
-        .where('skill_id', '=', artifact.skill_id)
+        .where('skill_id', 'in', requestSkillIds(artifact.skill_id))
         .orderBy('created_at', 'desc')
         .limit(1)
         .executeTakeFirst();
@@ -309,10 +362,12 @@ export class WorkbenchRepository {
       return {
         taskId: task.id,
         clientId: task.client_id,
-        skillId: artifact.skill_id,
+        skillIds: [artifact.skill_id],
         managerRequest: request?.content ?? '',
         assistantMessageId: assistant,
         parent: { id: artifact.id, lineageId: artifact.lineage_id, version: artifact.version },
+        // 重写沿用原来依据的报告
+        reportId: artifact.source_report_id,
       };
     });
   }
@@ -337,6 +392,7 @@ export class WorkbenchRepository {
     ctx: TenantContext,
     clientId: string,
     reportId: string | null = null,
+    options: { detail?: boolean } = {},
   ): Promise<ClientContext | undefined> {
     return withTenant(this.db, ctx, async (trx) => {
       const client = await trx
@@ -357,12 +413,14 @@ export class WorkbenchRepository {
       // @ 引用了报告就用那一份，否则用最近一份（都是已核对的报告）
       let reportQuery = trx
         .selectFrom('health_reports')
-        .select(['id', 'report_date'])
+        .select((eb) => ['id', 'report_date', isoDateOf(eb, 'report_date').as('date')])
         .where('client_id', '=', clientId);
       reportQuery = reportId
         ? reportQuery.where('id', '=', reportId)
         : reportQuery.orderBy('report_date', 'desc').orderBy('created_at', 'desc');
       const report = await reportQuery.limit(1).executeTakeFirst();
+      // 指定的报告看不到（不属于这位客户或已不可见）：不退回到别的报告
+      if (reportId && !report) return undefined;
       // 只用目录指标的当前值；参考范围是报告上印的（Q10）
       const indicators = (
         report
@@ -410,7 +468,7 @@ export class WorkbenchRepository {
           source: 'monitoring',
         });
       }
-      const reportDate = report ? isoDate(report.report_date) : '';
+      const reportDate = report ? report.date : '';
       for (const i of indicators) {
         observations.push({
           metric: i.code,
@@ -430,19 +488,28 @@ export class WorkbenchRepository {
         })),
         observations,
       );
+      const snapshot: ClientSnapshot = {
+        ageBand: ageBand(client.birth_year),
+        gender: client.gender,
+        monitoring: [...monitoring.values()],
+        latestReport: report
+          ? {
+              date: reportDate,
+              indicators,
+            }
+          : null,
+        criticalFlags,
+      };
+      if (options.detail) {
+        snapshot.reportDetail = report
+          ? await reportDetail(trx, clientId, report.id, reportDate)
+          : null;
+        snapshot.healthHistory = await healthHistory(trx, clientId);
+        snapshot.riskTier = await currentTier(trx, clientId);
+      }
       return {
-        snapshot: {
-          ageBand: ageBand(client.birth_year),
-          gender: client.gender,
-          monitoring: [...monitoring.values()],
-          latestReport: report
-            ? {
-                date: reportDate,
-                indicators,
-              }
-            : null,
-          criticalFlags,
-        },
+        snapshot,
+        report: report ? { id: report.id, date: reportDate } : null,
         identifiers: [client.display_name],
         displayName: client.display_name,
       };
@@ -493,6 +560,7 @@ export class WorkbenchRepository {
     seq: number,
     kind: TaskStep['kind'],
     labelKey: string,
+    labelDate: string | null = null,
   ): Promise<TaskStep> {
     return withTenant(this.db, ctx, async (trx) => {
       const row = await trx
@@ -503,6 +571,7 @@ export class WorkbenchRepository {
           seq,
           kind,
           label_key: labelKey,
+          label_date: labelDate,
           status: 'running',
         })
         .returning([
@@ -511,6 +580,7 @@ export class WorkbenchRepository {
           'seq',
           'kind',
           'label_key',
+          'label_date',
           'status',
           'started_at',
           'finished_at',
@@ -520,11 +590,21 @@ export class WorkbenchRepository {
     });
   }
 
-  finishStep(ctx: TenantContext, step: TaskStep, status: 'done' | 'failed'): Promise<TaskStep> {
+  /** labelDate：读完报告后才知道用的是哪一天的报告（规格 2.6），完成时一并写上 */
+  finishStep(
+    ctx: TenantContext,
+    step: TaskStep,
+    status: 'done' | 'failed',
+    labelDate?: string,
+  ): Promise<TaskStep> {
     return withTenant(this.db, ctx, async (trx) => {
       const row = await trx
         .updateTable('task_steps')
-        .set({ status, finished_at: new Date() })
+        .set({
+          status,
+          finished_at: new Date(),
+          ...(labelDate !== undefined ? { label_date: labelDate } : {}),
+        })
         .where('id', '=', step.id)
         .returning([
           'id',
@@ -532,6 +612,7 @@ export class WorkbenchRepository {
           'seq',
           'kind',
           'label_key',
+          'label_date',
           'status',
           'started_at',
           'finished_at',
@@ -617,6 +698,10 @@ export class WorkbenchRepository {
             clientFacing: data.clientFacing,
           }),
           critical_flags: JSON.stringify(data.criticalFlags),
+          source_report_id: data.sourceReportId ?? null,
+          risk_tier_suggestion: data.riskTierSuggestion
+            ? JSON.stringify(data.riskTierSuggestion)
+            : null,
         })
         .execute();
       await trx
@@ -698,6 +783,7 @@ function toStep(row: {
   seq: number;
   kind: TaskStep['kind'];
   label_key: string;
+  label_date: string | null;
   status: TaskStep['status'];
   started_at: Date;
   finished_at: Date | null;
@@ -708,6 +794,7 @@ function toStep(row: {
     seq: row.seq,
     kind: row.kind,
     labelKey: row.label_key,
+    labelDate: row.label_date,
     status: row.status,
     startedAt: row.started_at.toISOString(),
     finishedAt: row.finished_at?.toISOString() ?? null,
@@ -725,4 +812,160 @@ export function ageBand(birthYear: number | null, now = new Date()): string | nu
   if (age < 0 || age > 120) return null;
   const low = Math.floor(age / 10) * 10;
   return `${low}-${low + 9}`;
+}
+
+const noVerifiedReport = () => conflict({ reasons: ['no_verified_report'] });
+
+/** 该客户最近一份已核对报告（按报告日期，同一天按核对先后） */
+async function latestReportId(trx: TenantTransaction, clientId: string): Promise<string | null> {
+  const row = await trx
+    .selectFrom('health_reports')
+    .select('id')
+    .where('client_id', '=', clientId)
+    .orderBy('report_date', 'desc')
+    .orderBy('created_at', 'desc')
+    .limit(1)
+    .executeTakeFirst();
+  return row?.id ?? null;
+}
+
+async function reportOfClient(
+  trx: TenantTransaction,
+  reportId: string,
+  clientId: string,
+): Promise<boolean> {
+  const row = await trx
+    .selectFrom('health_reports')
+    .select('id')
+    .where('id', '=', reportId)
+    .where('client_id', '=', clientId)
+    .executeTakeFirst();
+  return Boolean(row);
+}
+
+/** 每项指标最多带几次之前的数值 */
+const PREVIOUS_VALUES = 3;
+
+/**
+ * 这份报告的全部当前指标（含未收录指标），以及之前已核对报告里同一指标、同一单位的数值（规格 4.2）。
+ * 高低标记用核对时后端按报告参考范围算好的结果（Q10），不重新判断。
+ */
+async function reportDetail(
+  trx: TenantTransaction,
+  clientId: string,
+  reportId: string,
+  reportDate: string,
+): Promise<ReportDetail> {
+  const rows = await trx
+    .selectFrom('report_indicators')
+    .select([
+      'code',
+      'raw_name',
+      'value',
+      'original_value',
+      'unit',
+      'ref_low',
+      'ref_high',
+      'ref_text',
+      'abnormal',
+    ])
+    .where('report_id', '=', reportId)
+    .where('superseded_by', 'is', null)
+    .orderBy((eb) => eb('code', 'is', null))
+    .orderBy('code')
+    .orderBy('raw_name')
+    .execute();
+  const earlier = await trx
+    .selectFrom('health_reports')
+    .select((eb) => ['id', isoDateOf(eb, 'report_date').as('date')])
+    .where('client_id', '=', clientId)
+    .where('id', '<>', reportId)
+    .where('report_date', '<', asDate(reportDate))
+    .orderBy('report_date')
+    .execute();
+  const codes = rows.flatMap((r) => (r.code ? [r.code] : []));
+  const previousRows =
+    earlier.length && codes.length
+      ? await trx
+          .selectFrom('report_indicators as i')
+          .innerJoin('health_reports as r', 'r.id', 'i.report_id')
+          .select((eb) => [
+            'i.code',
+            'i.value',
+            'i.unit',
+            isoDateOf(eb, 'r.report_date').as('date'),
+          ])
+          .where('r.client_id', '=', clientId)
+          .where(
+            'r.id',
+            'in',
+            earlier.map((e) => e.id),
+          )
+          .where('i.superseded_by', 'is', null)
+          .where('i.code', 'in', codes)
+          .where('i.value', 'is not', null)
+          .orderBy('r.report_date')
+          .orderBy('r.created_at')
+          .execute()
+      : [];
+  const num = (v: string | number | null) => (v === null ? null : Number(v));
+  const indicators: ReportIndicatorDetail[] = rows.map((r) => ({
+    code: r.code,
+    rawName: r.code ? null : r.raw_name,
+    value: num(r.value),
+    textValue: r.value === null ? r.original_value : null,
+    unit: r.unit || null,
+    refText: r.ref_text,
+    refLow: num(r.ref_low),
+    refHigh: num(r.ref_high),
+    abnormal: r.abnormal,
+    // 只比较同一指标、同一单位的已核对数值
+    previous: r.code
+      ? previousRows
+          .filter((p) => p.code === r.code && p.unit === r.unit && p.value !== null)
+          .map((p) => ({ date: p.date, value: Number(p.value) }))
+          .slice(-PREVIOUS_VALUES)
+      : [],
+  }));
+  return { date: reportDate, indicators, previousReportDates: earlier.map((e) => e.date) };
+}
+
+/** 健康史（未删除的），文字由生成服务在组装提示词前脱敏 */
+async function healthHistory(
+  trx: TenantTransaction,
+  clientId: string,
+): Promise<HealthHistoryEntry[]> {
+  const rows = await trx
+    .selectFrom('client_health_history')
+    .select(['category', 'content'])
+    .where('client_id', '=', clientId)
+    .where('deleted_at', 'is', null)
+    .orderBy('created_at')
+    .orderBy('id')
+    .limit(100)
+    .execute();
+  return rows;
+}
+
+async function currentTier(
+  trx: TenantTransaction,
+  clientId: string,
+): Promise<NonNullable<ClientSnapshot['riskTier']> | null> {
+  const row = await trx
+    .selectFrom('client_risk_tiers')
+    .select((eb) => ['tier', isoDateOf(eb, 'set_at').as('set_on')])
+    .where('client_id', '=', clientId)
+    .orderBy('set_at', 'desc')
+    .orderBy('id', 'desc')
+    .limit(1)
+    .executeTakeFirst();
+  return row ? { tier: row.tier, setOn: row.set_on } : null;
+}
+
+/** 日期列按 YYYY-MM-DD 文本取出，不经过 JS Date，避免时区把日期挪一天 */
+function isoDateOf<D, TB extends keyof D>(
+  eb: ExpressionBuilder<D, TB>,
+  column: Parameters<ExpressionBuilder<D, TB>['ref']>[0],
+) {
+  return eb.fn<string>('to_char', [eb.ref(column), eb.val('YYYY-MM-DD')]);
 }

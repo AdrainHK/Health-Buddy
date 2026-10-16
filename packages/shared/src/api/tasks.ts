@@ -73,15 +73,29 @@ export const taskStepSchema = z.object({
   id: z.uuid(),
   messageId: z.uuid(),
   seq: z.number().int().nonnegative(),
-  kind: z.enum(['read_client', 'detect_critical', 'run_skill', 'answer']),
+  kind: z.enum([
+    'read_client',
+    'read_report',
+    'compare_reports',
+    'detect_critical',
+    'run_skill',
+    'answer',
+  ]),
   labelKey: z.string(),
+  /** 步骤涉及的报告日期，如“正在读取报告（2026-09-12）”（M2 规格 2.6） */
+  labelDate: z.iso.date().nullable().default(null),
   status: z.enum(['running', 'done', 'failed']),
   startedAt: z.iso.datetime(),
   finishedAt: z.iso.datetime().nullable(),
 });
 export type TaskStep = z.infer<typeof taskStepSchema>;
 
-/** 想一想模式的计划。M1 只有两种步骤（规格 3.3）。 */
+/**
+ * 想一想模式的计划（M1 规格 3.3）。M2 起一份计划可以按顺序调用多个技能（Q22），
+ * 如“新客户完整评估”= 读档案 → /体检解读 → /面谈提纲，每个技能各出一份草稿。
+ */
+export const PLAN_STEPS_MAX = 6;
+
 export const planStepSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('read_client') }),
   z.object({ kind: z.literal('run_skill'), skillId: z.string().min(1) }),
@@ -91,7 +105,7 @@ export type PlanStep = z.infer<typeof planStepSchema>;
 export const taskPlanSchema = z.object({
   id: z.uuid(),
   messageId: z.uuid(),
-  steps: z.array(planStepSchema).min(1),
+  steps: z.array(planStepSchema).min(1).max(PLAN_STEPS_MAX),
   status: z.enum(['proposed', 'confirmed', 'revised']),
 });
 export type TaskPlan = z.infer<typeof taskPlanSchema>;

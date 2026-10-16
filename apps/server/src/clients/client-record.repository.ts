@@ -133,7 +133,7 @@ export class ClientRecordRepository {
 
       return {
         client: toClientSummary(client),
-        riskTier: tiers[0] ? toTier(tiers[0]) : null,
+        riskTier: tiers[0] ? toTier(tiers[0], ctx.role) : null,
         healthHistory: history.map(toHistoryItem),
         reports: reports.map((r) => ({
           id: r.id,
@@ -226,7 +226,9 @@ export class ClientRecordRepository {
   listTiers(ctx: TenantContext, clientId: string): Promise<RiskTierRecord[] | undefined> {
     return withTenant(this.db, ctx, async (trx) => {
       if (!(await clientVisible(trx, clientId))) return undefined;
-      return (await selectTiers(trx, clientId).limit(HISTORY_LIMIT).execute()).map(toTier);
+      return (await selectTiers(trx, clientId).limit(HISTORY_LIMIT).execute()).map((t) =>
+        toTier(t, ctx.role),
+      );
     });
   }
 
@@ -254,7 +256,7 @@ export class ClientRecordRepository {
       const tier = await selectTiers(trx, clientId)
         .where('t.id', '=', row.id)
         .executeTakeFirstOrThrow();
-      return toTier(tier);
+      return toTier(tier, ctx.role);
     });
   }
 }
@@ -314,24 +316,44 @@ function selectTiers(trx: TenantTransaction, clientId: string) {
   return trx
     .selectFrom('client_risk_tiers as t')
     .leftJoin('users as u', 'u.id', 't.set_by')
-    .select(['t.id', 't.tier', 't.reason', 't.set_by', 't.set_at', 'u.display_name as set_by_name'])
+    .select([
+      't.id',
+      't.tier',
+      't.reason',
+      't.source',
+      't.source_artifact_id',
+      't.set_by',
+      't.set_at',
+      'u.display_name as set_by_name',
+    ])
     .where('t.client_id', '=', clientId)
     .orderBy('t.set_at', 'desc')
     .orderBy('t.id', 'desc');
 }
 
-function toTier(row: {
-  id: string;
-  tier: RiskTierRecord['tier'];
-  reason: string;
-  set_by: string;
-  set_at: Date;
-  set_by_name: string | null;
-}): RiskTierRecord {
+/**
+ * 来源产物只告诉健管师本人；机构管理员看不到产物（Q14），只知道来源是“采用建议分层”。
+ * 客户转出后来源产物的引用已置空（见迁移 0010），来源仍显示“采用建议分层”。
+ */
+function toTier(
+  row: {
+    id: string;
+    tier: RiskTierRecord['tier'];
+    reason: string;
+    source: RiskTierRecord['source'];
+    source_artifact_id: string | null;
+    set_by: string;
+    set_at: Date;
+    set_by_name: string | null;
+  },
+  role: TenantContext['role'],
+): RiskTierRecord {
   return {
     id: row.id,
     tier: row.tier,
     reason: row.reason,
+    source: row.source,
+    sourceArtifactId: role === 'manager' ? row.source_artifact_id : null,
     setBy: row.set_by,
     setByName: row.set_by_name,
     setAt: row.set_at.toISOString(),

@@ -52,15 +52,15 @@ describe('skill metadata', () => {
   });
 
   it('lists skills for the API and looks them up by id', () => {
-    expect(skillSummaries()).toEqual([
-      {
-        id: 'client-recent-summary',
-        requiresClient: true,
-        modes: ['plan', 'craft'],
-        clientFacing: true,
-        involvesHealthJudgment: true,
-      },
-    ]);
+    expect(skillSummaries()[0]).toEqual({
+      id: 'client-recent-summary',
+      requiresClient: true,
+      modes: ['plan', 'craft'],
+      clientFacing: true,
+      involvesHealthJudgment: true,
+      requiresReport: false,
+      planSkills: [],
+    });
     expect(getSkill('client-recent-summary')).toBe(clientRecentSummary);
     expect(getSkill('nope')).toBeUndefined();
   });
@@ -131,6 +131,7 @@ describe('guardrails', () => {
       hasDisclaimer: true,
       judgementHints: [],
       criticalValueMentions: [],
+      riskTierMentions: [],
     });
     const bad = checkClientText('您好，可以根 治。');
     expect(bad.hasDisclaimer).toBe(false);

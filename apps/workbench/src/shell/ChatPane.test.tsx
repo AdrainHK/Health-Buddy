@@ -1,4 +1,10 @@
-import type { Task, TaskDetailResponse, TaskStep, TaskStreamEvent } from '@health-buddy/shared';
+import type {
+  SkillSummary,
+  Task,
+  TaskDetailResponse,
+  TaskStep,
+  TaskStreamEvent,
+} from '@health-buddy/shared';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {
@@ -25,6 +31,7 @@ function step(seq: number, labelKey: string, status: TaskStep['status']): TaskSt
     seq,
     kind: labelKey === 'steps.readClient' ? 'read_client' : 'answer',
     labelKey,
+    labelDate: null,
     status,
     startedAt: NOW,
     finishedAt: status === 'running' ? null : NOW,
@@ -491,5 +498,134 @@ describe('ChatPane read-only and new tasks', () => {
     );
     expect(await screen.findByText('回答')).toBeInTheDocument();
     expect(api.callsTo('GET', `/tasks/${ids.task2}`)).toHaveLength(0);
+  });
+});
+
+describe('ChatPane 体检解读、面谈提纲和多步计划（M2 规格 2.5、2.6、2.9）', () => {
+  const REPORT_ID = '90000000-0000-4000-8000-0000000000b1';
+  const UPLOAD_ID = '90000000-0000-4000-8000-0000000000b2';
+  const INTERPRETATION: SkillSummary = {
+    ...SKILL,
+    id: 'report-interpretation',
+    requiresReport: true,
+  };
+  const PLAN: SkillSummary = {
+    ...SKILL,
+    id: 'new-client-assessment',
+    modes: ['plan'],
+    requiresReport: true,
+    planSkills: ['report-interpretation', 'interview-outline'],
+  };
+  const reportRoutes = {
+    [`GET /clients/${ids.clientA}/reports`]: () =>
+      json(200, {
+        reports: [
+          {
+            id: REPORT_ID,
+            reportDate: '2026-09-12',
+            institution: null,
+            source: 'upload',
+            indicatorCount: 3,
+            abnormalCount: 1,
+          },
+        ],
+      }),
+    [`GET /clients/${ids.clientA}/report-uploads`]: () => json(200, { uploads: [] }),
+  };
+
+  it('多步计划只能在想一想下用：做一做里提示切换，不发送', async () => {
+    const api = mockApi({
+      [`GET ${DETAIL_PATH}`]: () => json(200, emptyDetail()),
+      [`POST ${MSG_PATH}`]: () => sseResponse([done('complete')]),
+    });
+    const user = userEvent.setup();
+    renderPane({ task: makeTask({ clientId: ids.clientA }), skills: [SKILL, PLAN] });
+    await user.type(await screen.findByRole('textbox'), '/完整');
+    await user.click(screen.getByRole('option', { name: '新客户完整评估' }));
+    await user.type(input(), '合成请求');
+    expect(screen.getByText('“新客户完整评估”是多步计划，需要在想一想模式下使用')).toBeVisible();
+    await user.keyboard('{Enter}');
+    expect(api.callsTo('POST', MSG_PATH)).toHaveLength(0);
+
+    await user.click(screen.getByRole('button', { name: '切换到想一想' }));
+    expect(screen.getByRole('radio', { name: '想一想' })).toHaveAttribute('aria-checked', 'true');
+    await user.click(input());
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(api.callsTo('POST', MSG_PATH)).toHaveLength(1));
+    expect(api.callsTo('POST', MSG_PATH)[0]?.body).toEqual({
+      mode: 'plan',
+      content: '合成请求',
+      skillId: PLAN.id,
+      clientRefs: [],
+    });
+  });
+
+  it('没有已核对的报告时提示先上传并核对', async () => {
+    mockApi({
+      [`GET ${DETAIL_PATH}`]: () => json(200, emptyDetail()),
+      [`POST ${MSG_PATH}`]: () => json(409, { error: 'conflict', reasons: ['no_verified_report'] }),
+    });
+    const user = userEvent.setup();
+    renderPane({ task: makeTask({ clientId: ids.clientA }), skills: [INTERPRETATION] });
+    await user.type(await screen.findByRole('textbox'), '/');
+    await user.keyboard('{Enter}');
+    await user.type(input(), '合成请求');
+    await user.keyboard('{Enter}');
+    expect(await screen.findByRole('alert')).toHaveTextContent('请先上传并核对报告');
+    expect(input()).toHaveValue('合成请求');
+  });
+
+  it('核对完成的识别卡片上“生成解读”：做一做模式发送 /体检解读 @报告；步骤带报告日期', async () => {
+    const task = makeTask({ clientId: ids.clientA });
+    const api = mockApi({
+      ...reportRoutes,
+      [`GET ${DETAIL_PATH}`]: () =>
+        json(200, {
+          ...emptyDetail(task),
+          uploads: [
+            {
+              id: UPLOAD_ID,
+              clientId: ids.clientA,
+              taskId: ids.task,
+              status: 'verified',
+              failureCategory: null,
+              attempts: 1,
+              pageCount: 1,
+              progressPage: 1,
+              reportId: REPORT_ID,
+              createdAt: NOW,
+            },
+          ],
+        }),
+      [`POST ${MSG_PATH}`]: () =>
+        sseResponse([
+          {
+            type: 'step',
+            step: {
+              ...step(0, 'steps.readReport', 'done'),
+              kind: 'read_report',
+              labelDate: '2026-09-12',
+            },
+          },
+          done('complete'),
+        ]),
+    });
+    const user = userEvent.setup();
+    renderPane({ task, skills: [SKILL, INTERPRETATION] });
+    await user.click(await screen.findByRole('radio', { name: '想一想' }));
+    await user.click(await screen.findByRole('button', { name: '生成解读' }));
+
+    await waitFor(() => expect(api.callsTo('POST', MSG_PATH)).toHaveLength(1));
+    expect(api.callsTo('POST', MSG_PATH)[0]?.body).toEqual({
+      mode: 'craft',
+      content: '帮我解读这份体检报告',
+      skillId: 'report-interpretation',
+      clientRefs: [],
+      reportRefs: [REPORT_ID],
+    });
+    expect(screen.getByRole('radio', { name: '做一做' })).toHaveAttribute('aria-checked', 'true');
+    expect(
+      await screen.findByText('读取报告（2026-09-12）', { selector: 'span' }),
+    ).toBeInTheDocument();
   });
 });

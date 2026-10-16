@@ -162,8 +162,10 @@ export interface TaskStepsTable extends ManagerScoped {
   id: Generated<string>;
   message_id: string;
   seq: number;
-  kind: 'read_client' | 'detect_critical' | 'run_skill' | 'answer';
+  kind:
+    'read_client' | 'read_report' | 'compare_reports' | 'detect_critical' | 'run_skill' | 'answer';
   label_key: string;
+  label_date: ColumnType<string | null, string | null | undefined, string | null>;
   status: 'running' | 'done' | 'failed';
   started_at: Timestamp;
   finished_at: Date | null;
@@ -189,6 +191,12 @@ export interface ArtifactsTable extends ManagerScoped {
   status: 'draft' | 'approved' | 'returned' | 'voided';
   content: Json<{ professional: string; clientFacing: string }>;
   critical_flags: ColumnType<unknown[], string | undefined, string>;
+  source_report_id: ColumnType<string | null, string | null | undefined, string | null>;
+  risk_tier_suggestion: ColumnType<
+    { tier: 'high' | 'medium' | 'low'; reason: string } | null,
+    string | null | undefined,
+    string | null
+  >;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -221,6 +229,8 @@ export interface ClientRiskTiersTable extends ClientScoped {
   client_id: string;
   tier: 'high' | 'medium' | 'low';
   reason: string;
+  source: ColumnType<'manual' | 'artifact', 'manual' | 'artifact' | undefined, never>;
+  source_artifact_id: ColumnType<string | null, string | null | undefined, string | null>;
   set_by: string;
   set_at: Timestamp;
 }

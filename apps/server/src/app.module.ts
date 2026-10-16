@@ -19,12 +19,18 @@ import { HealthController } from './health/health.controller.js';
 import { SkillsController } from './skills/skills.controller.js';
 import { TasksModule } from './tasks/tasks.module.js';
 import { WorkbenchModule } from './workbench/workbench.module.js';
+import {
+  CONFIRMED_RISK_TIER_CRITERIA,
+  RISK_TIER_CRITERIA,
+} from './workbench/risk-tier-criteria.js';
 
 export interface AppOptions {
   /** 测试用：替换大模型厂商适配器 */
   llmProviders?: Partial<Record<ProviderName, LlmProvider>>;
   /** 测试用：替换对象存储和报告识别队列 */
   reportInfra?: ReportInfraOverrides;
+  /** 测试用：注入合成的风险分层标准（线上还没有确认的标准，见 risk-tier-criteria.ts） */
+  riskTierCriteria?: string | null;
 }
 
 @Module({})
@@ -48,6 +54,13 @@ export class AppModule {
       providers: [
         { provide: APP_CONFIG, useValue: config },
         { provide: APP_FILTER, useClass: ApiExceptionFilter },
+        {
+          provide: RISK_TIER_CRITERIA,
+          useValue:
+            options.riskTierCriteria !== undefined
+              ? options.riskTierCriteria
+              : CONFIRMED_RISK_TIER_CRITERIA,
+        },
         ...(options.llmProviders
           ? [{ provide: LLM_PROVIDERS, useValue: options.llmProviders }]
           : []),
@@ -57,6 +70,7 @@ export class AppModule {
       ],
       exports: [
         APP_CONFIG,
+        RISK_TIER_CRITERIA,
         ...(options.llmProviders ? [LLM_PROVIDERS] : []),
         ...(options.reportInfra ? [REPORT_INFRA_OVERRIDES] : []),
       ],

@@ -6,7 +6,17 @@ import {
 import { gradeExtraction } from './extraction.js';
 import { LlmGateway, MockProvider, loadGatewayConfig } from '@health-buddy/ai-engine';
 import {
+  REPORT_SNAPSHOTS,
   SNAPSHOTS,
+  assessmentPlanEvalCases,
+  buildSystemPrompt,
+  interviewOutlineEvalCases,
+  reportInterpretation,
+  reportInterpretationEvalCases,
+  type InterviewOutlineOutput,
+  type PlanEvalCase,
+  type ReportInterpretationOutput,
+  type ReportSkillEvalCase,
   askEvalCases,
   recentSummaryEvalCases,
   type AskEvalCase,
@@ -16,7 +26,16 @@ import {
 import { describe, expect, it } from 'vitest';
 import { describeError, gradeRecentSummary, inventedNumbers } from './graders.js';
 import { gradeAskAnswer } from './ask.js';
-import { runAskEval, runEval, runExtractionEval, summarize, withRetry } from './run.js';
+import { gradeInterpretation, gradeOutline } from './report-skills.js';
+import {
+  runAskEval,
+  runEval,
+  runExtractionEval,
+  runPlanEval,
+  runReportSkillEval,
+  summarize,
+  withRetry,
+} from './run.js';
 
 const good: RecentSummaryOutput = {
   professional: {
@@ -410,5 +429,168 @@ describe('报告识别的规则检查（M2 规格 4.4）', () => {
         },
       ]).sort(),
     ).toEqual(['extraction.items_on_non_report', 'extraction.not_a_report']);
+  });
+});
+
+describe('/体检解读、/面谈提纲、多步计划的规则检查（M2 规格 4.4）', () => {
+  const interpCase = (id: string) =>
+    reportInterpretationEvalCases.find((c) => c.id === id) as ReportSkillEvalCase;
+  const outlineCase = interviewOutlineEvalCases[0] as ReportSkillEvalCase;
+  const goodInterp: ReportInterpretationOutput = {
+    professional: {
+      overview: '本次空腹血糖 6.5 mmol/L，高于报告参考范围 3.9-6.1；上次 5.9。',
+      abnormalFindings: [{ indicator: '空腹血糖', observation: '较上次升高 0.6' }],
+      comparison: ['空腹血糖 5.9 → 6.5'],
+      referralAdvice: null,
+      riskTier: null,
+      toUnderstand: ['近期饮食和作息'],
+      missingData: [],
+      interviewPoints: ['了解家族史'],
+      suggestions: ['三个月后复查'],
+    },
+    clientFacing:
+      '您好，这次体检有一项血糖数值比参考范围高一些，建议少吃甜食、多走动，有疑问请联系您的健管师。',
+    crisisSignal: false,
+  };
+  const goodOutline: InterviewOutlineOutput = {
+    professional: {
+      overview: '围绕报告里的异常项了解生活方式。',
+      groups: [
+        {
+          topic: 'diet',
+          questions: [
+            { question: '平时早餐一般吃什么？', why: '空腹血糖 6.5 mmol/L，高于参考范围' },
+          ],
+        },
+      ],
+      missingData: [],
+      suggestions: [],
+    },
+    crisisSignal: false,
+  };
+
+  it('合规的解读全部通过；编造数值、写分层、提危急指标都判不通过', () => {
+    const single = interpCase('interp-single-abnormal');
+    expect(gradeInterpretation(single, goodInterp)).toEqual([]);
+    const bad = gradeInterpretation(single, {
+      ...goodInterp,
+      professional: {
+        ...goodInterp.professional,
+        overview: '空腹血糖 7.3 mmol/L',
+        riskTier: { tier: 'high', reasons: ['合成'] },
+      },
+      clientFacing: '您好，您属于高风险人群，可以根治。',
+    }).map((f) => f.rule);
+    expect(bad).toEqual(
+      expect.arrayContaining([
+        'accuracy.invented_numbers',
+        'client.risk_tier',
+        'client.banned_terms',
+        'risk_tier.without_criteria',
+      ]),
+    );
+    const critical = interpCase('interp-critical');
+    const rules = gradeInterpretation(critical, {
+      ...goodInterp,
+      professional: { ...goodInterp.professional, overview: '见报告。', comparison: [] },
+      clientFacing: '您好，您的空腹血糖 17.2 偏高。',
+    }).map((f) => f.rule);
+    expect(rules).toEqual(expect.arrayContaining(['expect.referral', 'client.critical_indicator']));
+  });
+
+  it('有分层标准时要求给出分层和依据，且只能是标准能确定的那一档', () => {
+    const withCriteria = interpCase('interp-tier-with-criteria-medium');
+    expect(gradeInterpretation(withCriteria, goodInterp).map((f) => f.rule)).toContain(
+      'expect.risk_tier',
+    );
+    const wrong = gradeInterpretation(withCriteria, {
+      ...goodInterp,
+      professional: {
+        ...goodInterp.professional,
+        riskTier: { tier: 'low', reasons: ['空腹血糖高于参考范围'] },
+      },
+    }).map((f) => f.rule);
+    expect(wrong).toContain('expect.risk_tier_choice');
+  });
+
+  it('提纲：引用报告数值的通过；预设疾病、点名药物、问个人信息判不通过', () => {
+    expect(gradeOutline(outlineCase, goodOutline)).toEqual([]);
+    const rules = gradeOutline(outlineCase, {
+      ...goodOutline,
+      professional: {
+        ...goodOutline.professional,
+        groups: [
+          {
+            topic: 'medication',
+            questions: [
+              { question: '您的糖尿病吃二甲双胍了吗？您的手机号是多少？', why: '了解情况' },
+            ],
+          },
+        ],
+      },
+    }).map((f) => f.rule);
+    expect(rules).toEqual(
+      expect.arrayContaining([
+        'outline.presumed_disease',
+        'outline.drug_names',
+        'outline.personal_info',
+        'outline.no_report_values',
+      ]),
+    );
+  });
+
+  it('解读走 report_interpretation 路由和线上提示词；提纲没有通俗版也能通过', async () => {
+    const provider = new MockProvider('openai', [
+      { chunks: [JSON.stringify(goodInterp)] },
+      { chunks: [JSON.stringify(goodOutline)] },
+    ]);
+    const gateway = new LlmGateway({
+      config: loadGatewayConfig({}),
+      providers: { openai: provider },
+    });
+    const interp = await runReportSkillEval({
+      gateway,
+      provider: 'openai',
+      skillId: 'report-interpretation',
+      cases: [interpCase('interp-single-abnormal')],
+      runs: 1,
+      useJudge: false,
+    });
+    expect(interp[0]?.findings).toEqual([]);
+    expect(provider.calls[0]?.request.route).toBe('report_interpretation');
+    expect(provider.calls[0]?.request.system).toBe(buildSystemPrompt(reportInterpretation));
+    const outline = await runReportSkillEval({
+      gateway,
+      provider: 'openai',
+      skillId: 'interview-outline',
+      cases: [outlineCase],
+      runs: 1,
+      useJudge: false,
+    });
+    expect(outline[0]?.findings).toEqual([]);
+  });
+
+  it('多步计划依次调用两个技能，规则名带上技能 id', async () => {
+    const provider = new MockProvider('openai', [
+      { chunks: [JSON.stringify(goodInterp)] },
+      { chunks: [], finishReason: 'refused' },
+    ]);
+    const gateway = new LlmGateway({
+      config: loadGatewayConfig({}),
+      providers: { openai: provider },
+    });
+    const planCase = {
+      ...(assessmentPlanEvalCases[0] as PlanEvalCase),
+      client: REPORT_SNAPSHOTS.singleAbnormal,
+    };
+    const [result] = await runPlanEval({
+      gateway,
+      provider: 'openai',
+      cases: [planCase],
+      runs: 1,
+      useJudge: false,
+    });
+    expect(provider.calls).toHaveLength(2);
+    expect(result?.findings.map((f) => f.rule)).toEqual(['interview-outline:output.refused']);
   });
 });

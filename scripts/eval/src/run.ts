@@ -5,13 +5,16 @@ import {
   recentSummaryOutputSchema,
   type AskEvalCase,
   type ExtractionEvalCase,
+  type PlanEvalCase,
   type RecentSummaryOutput,
+  type ReportSkillEvalCase,
   type SkillEvalCase,
 } from '@health-buddy/skills';
 import { runAskOnce } from './ask.js';
 import { runExtractionOnce } from './extraction.js';
 import { describeError, gradeRecentSummary, type Finding } from './graders.js';
 import { judgeClientText } from './judge.js';
+import { runPlanOnce, runReportSkillOnce } from './report-skills.js';
 
 export interface RunResult {
   caseId: string;
@@ -122,6 +125,53 @@ export async function runExtractionEval(options: {
     Array.from(
       { length: options.runs },
       (_, i) => () => runExtractionOnce(options.gateway, EVAL_CTX, options.provider, c, i + 1),
+    ),
+  );
+  return runPool(jobs, options.concurrency ?? 2);
+}
+
+/** /体检解读 或 /面谈提纲 的评测：每个用例跑 runs 次（M2 规格 4.4） */
+export async function runReportSkillEval(options: {
+  gateway: LlmGateway;
+  provider: ProviderName;
+  skillId: 'report-interpretation' | 'interview-outline';
+  cases: ReportSkillEvalCase[];
+  runs: number;
+  useJudge: boolean;
+  concurrency?: number;
+}): Promise<RunResult[]> {
+  const jobs = options.cases.flatMap((c) =>
+    Array.from(
+      { length: options.runs },
+      (_, i) => () =>
+        runReportSkillOnce(
+          options.gateway,
+          EVAL_CTX,
+          options.provider,
+          options.skillId,
+          c,
+          i + 1,
+          options.useJudge,
+        ),
+    ),
+  );
+  return runPool(jobs, options.concurrency ?? 3);
+}
+
+/** 多步计划的评测：按计划顺序跑每个技能（M2 规格 2.9） */
+export async function runPlanEval(options: {
+  gateway: LlmGateway;
+  provider: ProviderName;
+  cases: PlanEvalCase[];
+  runs: number;
+  useJudge: boolean;
+  concurrency?: number;
+}): Promise<RunResult[]> {
+  const jobs = options.cases.flatMap((c) =>
+    Array.from(
+      { length: options.runs },
+      (_, i) => () =>
+        runPlanOnce(options.gateway, EVAL_CTX, options.provider, c, i + 1, options.useJudge),
     ),
   );
   return runPool(jobs, options.concurrency ?? 2);
