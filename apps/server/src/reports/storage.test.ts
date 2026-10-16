@@ -3,8 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { newStorageKey, S3ObjectStorage } from './storage.js';
 
 /**
- * 验收标准 23：对象存储的 key 不含客户姓名和原文件名；写入时服务端加密、不设公开读权限；
- * 只通过后端读取（不生成直链）。用假的 S3 客户端记录发出去的命令，不连真实存储。
+ * 验收标准 23 的代码部分：对象存储的 key 不含客户姓名和原文件名；写入请求要求服务端加密、
+ * 不带 ACL；只通过后端读取（不生成直链）。用假的 S3 客户端记录发出去的命令，不连真实存储。
+ * 存储桶本身不公开访问是部署配置（Q5），这里测不到，要在配置对象存储时检查。
  */
 describe('报告原件的对象存储', () => {
   const config = {
@@ -38,7 +39,7 @@ describe('报告原件的对象存储', () => {
     for (const k of keys) expect(k).toMatch(/^reports\/[0-9a-f]{32}$/);
   });
 
-  it('写入要求服务端加密，不设置任何 ACL（存储桶不公开访问）', async () => {
+  it('写入请求要求服务端加密，不带 ACL', async () => {
     const { client, sent } = fakeClient();
     const storage = new S3ObjectStorage(config, client);
     const key = newStorageKey();
@@ -52,7 +53,7 @@ describe('报告原件的对象存储', () => {
       ContentType: 'application/pdf',
       ServerSideEncryption: 'AES256',
     });
-    // 没有 ACL、没有 Content-Disposition（不带原文件名）、没有元数据
+    // 写入请求里没有 ACL、没有 Content-Disposition（不带原文件名）、没有元数据
     expect(Object.keys(put.input).sort()).toEqual(
       ['Body', 'Bucket', 'ContentType', 'Key', 'ServerSideEncryption'].sort(),
     );

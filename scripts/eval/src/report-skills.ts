@@ -12,9 +12,11 @@ import {
   finalizeClientText,
   getPlanTemplate,
   getSkill,
+  INDICATOR_NAMES_ZH,
   indicatorName,
   interviewOutline,
   redactClientIdentity,
+  referenceText,
   reportInterpretation,
   type ClientSnapshot,
   type InterviewOutlineOutput,
@@ -96,9 +98,37 @@ export function inventedReportNumbers(
 
 const PHONE = /1[3-9]\d[-\s]?\d{4}[-\s]?\d{4}/;
 
-/** 文字里有没有这个数值（前后不紧挨别的数字，避免 18 命中 185） */
-function numberIn(text: string, value: number): boolean {
-  return new RegExp(`(?<![\\d.])${String(value).replace('.', '\\.')}(?![\\d])`).test(text);
+/** 文字里有没有这个数值（前后不紧挨别的数字，避免 18 命中 185、5 命中 5.2） */
+export function numberIn(text: string, value: number): boolean {
+  return new RegExp(`(?<![\\d.])${String(value).replace('.', '\\.')}(?![\\d]|\\.\\d)`).test(text);
+}
+
+/** 目录指标的各种写法：全名、去掉括号的名字、括号里的简称（“体重指数（BMI）”→ 体重指数、BMI） */
+function aliasesOf(name: string): string[] {
+  const m = /^(.+?)[（(](.+)[）)]$/.exec(name);
+  return m ? [name, m[1]!, m[2]!] : [name];
+}
+const CATALOG_ALIASES = Object.values(INDICATOR_NAMES_ZH).map(aliasesOf);
+
+/**
+ * 按整个指标名找：“体重”不算在“体重指数”里。
+ * 先把包含这个名字、但属于别的指标的更长名字遮掉，再看剩下的文字里有没有它；
+ * “高密度脂蛋白”这类同一指标的简称不遮（它只出现在高密度脂蛋白胆固醇的名字里）。
+ */
+export function mentions(text: string, name: string, extraNames: readonly string[] = []): boolean {
+  if (!name) return false;
+  const groups = [...CATALOG_ALIASES, ...extraNames.map((n) => [n])];
+  const exact = groups.filter((g) => g.includes(name));
+  const containing = groups.filter((g) => g.some((a) => a.includes(name)));
+  const own = exact.length ? exact : containing.length === 1 ? containing : [];
+  const longer = groups
+    .filter((g) => !own.includes(g))
+    .flat()
+    .filter((a) => a.length > name.length && a.includes(name))
+    .sort((a, b) => b.length - a.length);
+  let masked = text;
+  for (const a of longer) masked = masked.split(a).join(' ');
+  return masked.includes(name);
 }
 
 /** 输出里出现了用例给的身份信息或电话号码（红线 2） */
@@ -146,15 +176,18 @@ function gradeClientText(
     const h = hits(text, terms);
     if (h.length) add(rule, h.join('、'));
   }
-  // Q19：/体检解读 的通俗版完全不提危急指标那一项
+  // Q19：/体检解读 的通俗版完全不提危急指标那一项（按整个指标名找，含简称）
   for (const f of client.criticalFlags) {
-    if (text.includes(indicatorName(f.metric)))
+    if (aliasesOf(indicatorName(f.metric)).some((a) => mentions(text, a, rawNames(client))))
       add('client.critical_indicator', '通俗版提到了危急指标');
   }
   // 危急指标的阈值同样不进通俗版（数值前后不紧挨别的数字）
   for (const f of client.criticalFlags) {
     if (numberIn(text, f.rule.value)) add('client.critical_threshold', '通俗版写了危急指标的阈值');
   }
+  // 和上次相比只写上升、平稳、下降，不写变好、变差这类判断（skill.md 通俗版第 2 条）
+  const judged = [...hits(text, CLIENT_TREND_JUDGMENT), ...(text.match(NEGATED_JUDGMENT) ?? [])];
+  if (judged.length) add('client.trend_judgment', [...new Set(judged)].join('、'));
   if (DOSE.test(text)) add('client.dose', '通俗版出现了剂量');
   if (text.includes('该客户')) add('client.wrong_reader', '通俗版是写给客户本人的');
   if (text.length > 500) add('client.too_long', `${text.length} 字`);
@@ -168,6 +201,20 @@ const WORSE_WORDS = ['变差', '恶化', '加重', '退步', '更差'];
 /** “没有改善”“未见好转”这类否定说法不算判断写反 */
 const NEGATED_JUDGMENT =
   /(没有|未见|未|无|不见|并未|尚未)(明显)?(改善|好转|变好|进步|变差|恶化|加重)/g;
+/**
+ * 通俗版里不能有的好坏判断。“改善饮食”“避免加重负担”是建议，不是判断，所以单独的“改善”“加重”不算；
+ * “没有改善”这类否定说法在通俗版里同样是判断，由 NEGATED_JUDGMENT 另外找。
+ */
+const CLIENT_TREND_JUDGMENT = [
+  ...BETTER_WORDS,
+  ...WORSE_WORDS.filter((w) => w !== '加重'),
+  '变坏',
+  '变得更好',
+];
+
+/** 报告里未收录指标的原始名称，整名匹配时一起当作已知指标名 */
+const rawNames = (client: ClientSnapshot) =>
+  (client.reportDetail?.indicators ?? []).flatMap((i) => (i.rawName ? [i.rawName] : []));
 
 const sentences = (text: string) => text.split(/[。；;\n]/).filter((s) => s.trim());
 const clauses = (text: string) => text.split(/[。；;，,\n]/).filter((s) => s.trim());
@@ -189,15 +236,16 @@ function checkTrends(
     ),
   );
   const client = sentences(output.clientFacing);
+  const extra = rawNames(c.client);
   for (const t of c.expect.trends ?? []) {
     const right = t.direction === 'up' ? UP_WORDS : DOWN_WORDS;
     const wrong = t.direction === 'up' ? DOWN_WORDS : UP_WORDS;
-    const mentions = professional.filter((s) => s.includes(t.indicator));
-    if (!mentions.length) {
+    const named = professional.filter((s) => mentions(s, t.indicator, extra));
+    if (!named.length) {
       add('trend.missing', `历次对比没有提到${t.indicator}`);
       continue;
     }
-    for (const s of [...mentions, ...client.filter((x) => x.includes(t.indicator))]) {
+    for (const s of [...named, ...client.filter((x) => mentions(x, t.indicator, extra))]) {
       if (!hits(s, right).length && hits(s, wrong).length)
         add('trend.wrong_direction', `${t.indicator}的变化方向写反了`);
       if (t.better === undefined) continue;
@@ -226,9 +274,23 @@ const NO_REFERENCE_JUDGMENT = [
   '超过正常',
   '正常上限',
   '正常值',
+  '较高',
+  '较低',
+  '过高',
+  '过低',
+  '异常',
+  '高于报告',
+  '低于报告',
 ];
-/** “无法判断是否异常”这类说法不算判断 */
-const CANNOT_JUDGE = /(无法|不能|不好|没法|难以)(判断|确定|评估)[^，。；,;]*/g;
+const LEVEL = '(?:偏高|偏低|较高|较低|过高|过低|异常|高低|正常)';
+/** “无法判断是否偏高或偏低”这类说法本身不算判断；只遮这句话本身，同一分句后面的判断照样要查 */
+const CANNOT_JUDGE = new RegExp(
+  `(?:无法|不能|不好|没法|难以)(?:判断|确定|评估)(?:是否|其|它)?(?:${LEVEL}(?:(?:或|或者|还是|、)${LEVEL})?)?`,
+  'g',
+);
+/** “未见异常”“没有列进异常项”这类说法不算判断 */
+const NOT_ABNORMAL =
+  /(?:未见|无|没有|未发现|未提示|不提示)(?:明显)?异常|(?:未|不|没有)(?:列入|列进|计入|算作|算入)异常项?/g;
 
 /** 指标在输出里的名字：目录指标用中文名，未收录指标用报告原始名称 */
 const nameOf = (i: { code: string | null; rawName: string | null }) =>
@@ -248,23 +310,49 @@ function checkNoReference(
     .filter((i) => i.abnormal === 'no_reference')
     .map(nameOf)
     .filter(Boolean);
+  const extra = rawNames(client);
   for (const name of names) {
-    if (output.professional.abnormalFindings.some((f) => f.indicator.includes(name)))
+    if (output.professional.abnormalFindings.some((f) => mentions(f.indicator, name, extra)))
       add('no_reference.listed_as_abnormal', `${name}没有参考范围，却列进了异常项`);
     for (const clause of clauses(`${professional}\n${output.clientFacing}`)) {
-      if (!clause.includes(name)) continue;
-      if (hits(clause.replace(CANNOT_JUDGE, ' '), NO_REFERENCE_JUDGMENT).length)
+      if (!mentions(clause, name, extra)) continue;
+      const rest = clause.replace(CANNOT_JUDGE, ' ').replace(NOT_ABNORMAL, ' ');
+      if (hits(rest, NO_REFERENCE_JUDGMENT).length)
         add('no_reference.judged', `${name}没有参考范围，却判断了高低`);
     }
   }
 }
 
-/** 分层依据要引用报告里的具体数值（规格 4.2“逐条引用依据的数值”） */
-function citesReportValue(client: ClientSnapshot, reasons: readonly string[]): boolean {
-  const values = (client.reportDetail?.indicators ?? []).flatMap((i) =>
-    i.value === null ? [] : [i.value],
+/** 参考范围比较时忽略空格和全角、各种横线的差别（“3.9–6.1”“＜5.2”“3.9 - 6.1”都算原文） */
+const refKey = (t: string) =>
+  t
+    .normalize('NFKC')
+    .replace(/\s+/g, '')
+    .replace(/[–—−－~～至]/g, '-');
+
+/**
+ * 分层依据要逐条引用依据（规格 4.2“逐条引用依据的数值”、skill.md riskTier）：
+ * 每一条都要写出某一项指标的名字（整名匹配）、它这次的数值和报告上的参考范围原文。
+ * 返回没有做到的依据的序号（从 1 开始）。
+ */
+export function uncitedReasons(client: ClientSnapshot, reasons: readonly string[]): number[] {
+  const extra = rawNames(client);
+  const cited = (client.reportDetail?.indicators ?? []).flatMap((i) => {
+    const ref = referenceText(i);
+    if (i.value === null || !ref || i.abnormal === 'no_reference') return [];
+    const names = i.code ? aliasesOf(indicatorName(i.code)) : i.rawName ? [i.rawName] : [];
+    return [{ names, value: i.value, ref: refKey(ref) }];
+  });
+  return reasons.flatMap((r, n) =>
+    cited.some(
+      (i) =>
+        i.names.some((name) => mentions(r, name, extra)) &&
+        numberIn(r, i.value) &&
+        refKey(r).includes(i.ref),
+    )
+      ? []
+      : [n + 1],
   );
-  return reasons.some((r) => values.some((v) => numberIn(r, v)));
 }
 
 /** 对一次 /体检解读 输出做规则检查 */
@@ -304,8 +392,12 @@ export function gradeInterpretation(
     else if (c.expect.allowedTiers && !c.expect.allowedTiers.includes(p.riskTier.tier))
       add('expect.risk_tier_choice', `按合成标准应为 ${c.expect.allowedTiers.join('/')}`);
   }
-  if (criteria && p.riskTier && !citesReportValue(c.client, p.riskTier.reasons))
-    add('risk_tier.no_cited_value', '分层依据没有引用报告里的具体数值');
+  const uncited = criteria && p.riskTier ? uncitedReasons(c.client, p.riskTier.reasons) : [];
+  if (uncited.length)
+    add(
+      'risk_tier.no_cited_value',
+      `第 ${uncited.join('、')} 条分层依据没有写全指标名、这次的数值和报告上的参考范围`,
+    );
   checkTrends(c, output, add);
   checkNoReference(c.client, output, professional, add);
   if (c.expect.riskTier === 'absent' && p.riskTier) add('expect.no_risk_tier', '不应给出分层');

@@ -9,6 +9,8 @@ export const API_ERROR_CODES = [
   'unauthenticated',
   'invalid_credentials',
   'forbidden_origin',
+  /** 角色不允许做这件事（如非健管师新建客户，M2 规格 3.4）。不涉及具体资源，不泄露存在与否 */
+  'forbidden',
   'not_found',
   'conflict',
   'too_many_requests',

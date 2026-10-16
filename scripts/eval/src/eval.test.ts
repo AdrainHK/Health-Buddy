@@ -27,7 +27,13 @@ import {
 import { describe, expect, it } from 'vitest';
 import { describeError, gradeRecentSummary, inventedNumbers } from './graders.js';
 import { gradeAskAnswer } from './ask.js';
-import { gradeInterpretation, gradeOutline } from './report-skills.js';
+import {
+  gradeInterpretation,
+  gradeOutline,
+  mentions,
+  numberIn,
+  uncitedReasons,
+} from './report-skills.js';
 import {
   runAskEval,
   runEval,
@@ -664,6 +670,121 @@ describe('/体检解读、/面谈提纲、多步计划的规则检查（M2 规�
         professional: { ...goodInterp.professional, riskTier: cited },
       }).map((f) => f.rule),
     ).toEqual(expect.arrayContaining(['risk_tier.without_criteria', 'expect.no_risk_tier']));
+  });
+
+  it('数值和指标名都按整体匹配：5 不算在 5.2 里，体重不算在体重指数里', () => {
+    expect(numberIn('空腹血糖 5.2 mmol/L', 5)).toBe(false);
+    expect(numberIn('空腹血糖 15 mmol/L', 5)).toBe(false);
+    expect(numberIn('空腹血糖 5 mmol/L。', 5)).toBe(true);
+    expect(numberIn('空腹血糖 5。', 5)).toBe(true);
+    expect(numberIn('空腹血糖 5.2', 5.2)).toBe(true);
+    expect(mentions('体重指数 26.3，上升', '体重')).toBe(false);
+    expect(mentions('体重指数（BMI）26.3', '体重')).toBe(false);
+    expect(mentions('体重 74.5 kg，体重指数 24.9', '体重')).toBe(true);
+    expect(mentions('体重指数（BMI）26.3', '体重指数')).toBe(true);
+    // 同一指标的简称照样算
+    expect(mentions('高密度脂蛋白胆固醇 0.95，下降', '高密度脂蛋白')).toBe(true);
+
+    // 历次对比只写了体重指数，体重这一项仍算没提到
+    const improved = interpCase('interp-improved');
+    const findings = gradeInterpretation(improved, {
+      ...goodInterp,
+      professional: {
+        ...goodInterp.professional,
+        abnormalFindings: [],
+        comparison: [
+          '甘油三酯 2.4 → 1.5 mmol/L，下降',
+          '谷丙转氨酶 68 → 45 U/L，下降',
+          '体重指数比上次下降',
+        ],
+      },
+    });
+    expect(findings.filter((f) => f.rule === 'trend.missing').map((f) => f.detail)).toEqual([
+      '历次对比没有提到体重',
+    ]);
+  });
+
+  it('分层依据每一条都要写全指标名、这次的数值和报告上的参考范围原文', () => {
+    const client = interpCase('interp-tier-custom-criteria').client;
+    const full = '空腹血糖 6.5 mmol/L，高于报告参考范围 3.9-6.1，对应标准里的低';
+    expect(uncitedReasons(client, [full])).toEqual([]);
+    // 横线、全角、空格的写法差别不算没引用原文
+    expect(uncitedReasons(client, ['空腹血糖 6.5 mmol/L（参考范围 3.9 – 6.1）'])).toEqual([]);
+    expect(
+      uncitedReasons(client, [
+        '空腹血糖 6.5 mmol/L 高于参考范围',
+        '空腹血糖高于 3.9-6.1',
+        '总胆固醇 6.5，参考范围 3.9-6.1',
+        '没有危急指标，对应标准里的低',
+        '空腹血糖 6 mmol/L，参考范围 3.9-6.1',
+        full,
+      ]),
+    ).toEqual([1, 2, 3, 4, 5]);
+    const rules = gradeInterpretation(interpCase('interp-tier-custom-criteria'), {
+      ...goodInterp,
+      professional: {
+        ...goodInterp.professional,
+        riskTier: { tier: 'low', reasons: [full, '没有危急指标'] },
+      },
+    });
+    expect(rules).toEqual([
+      expect.objectContaining({
+        rule: 'risk_tier.no_cited_value',
+        detail: expect.stringMatching(/第 2 条/),
+      }),
+    ]);
+  });
+
+  it('没有参考范围的指标：较高、异常、高于报告也算判断；“未见异常”“无法判断是否偏高或偏低”不算', () => {
+    const missing = interpCase('interp-missing-reference');
+    const withMissing = (line: string) =>
+      gradeInterpretation(missing, {
+        ...goodInterp,
+        professional: {
+          ...goodInterp.professional,
+          overview: '同型半胱氨酸 16.8 umol/L 高于报告参考范围 0-15。',
+          abnormalFindings: [{ indicator: '同型半胱氨酸', observation: '16.8 umol/L，高于 0-15' }],
+          comparison: ['没有之前的已核对报告，无法对比'],
+          missingData: [line],
+        },
+        clientFacing: '您好，这次大部分指标没有明显问题，建议规律作息，有疑问请联系您的健管师。',
+      }).map((f) => f.rule);
+    for (const ok of [
+      '谷丙转氨酶 52 U/L 报告未提供参考范围，无法判断是否偏高',
+      '谷丙转氨酶 52 U/L 报告未提供参考范围，无法判断是否偏高或偏低',
+      '谷丙转氨酶 52 U/L 未见异常提示，但报告没有参考范围',
+      '谷丙转氨酶 52 U/L 报告未提供参考范围，没有列进异常项',
+    ])
+      expect(withMissing(ok), ok).toEqual([]);
+    for (const bad of [
+      '谷丙转氨酶 52 U/L 较高',
+      '谷丙转氨酶 52 U/L 过低',
+      '谷丙转氨酶 52 U/L 结果异常',
+      '谷丙转氨酶 52 U/L 高于报告一般水平',
+      '谷丙转氨酶 52 U/L 无法判断是否偏高但看起来偏高',
+    ])
+      expect(withMissing(bad), bad).toContain('no_reference.judged');
+  });
+
+  it('通俗版只写上升、平稳、下降，写变好、变差、改善、恶化判不通过', () => {
+    const single = interpCase('interp-single-abnormal');
+    const client = (text: string) =>
+      gradeInterpretation(single, { ...goodInterp, clientFacing: text })
+        .filter((f) => f.rule === 'client.trend_judgment')
+        .map((f) => f.rule);
+    for (const ok of [
+      '您好，这次血糖比去年有所上升，建议少吃甜食、改善饮食结构，有疑问请联系您的健管师。',
+      '您好，这次血糖和去年比较平稳，建议多走动，有疑问请联系您的健管师。',
+    ])
+      expect(client(ok), ok).toEqual([]);
+    for (const bad of [
+      '您好，这次血糖比去年变差了，建议多走动，有疑问请联系您的健管师。',
+      '您好，这次血糖有所改善，建议多走动，有疑问请联系您的健管师。',
+      '您好，这次血糖比去年好转，建议多走动，有疑问请联系您的健管师。',
+      '您好，这次血糖有所恶化，建议多走动，有疑问请联系您的健管师。',
+      '您好，这次血糖没有改善，建议多走动，有疑问请联系您的健管师。',
+    ])
+      expect(client(bad), bad).toEqual(['client.trend_judgment']);
   });
 
   it('越界指令：直接要求和通过退回原因两种都有用例，解读和提纲都覆盖', () => {

@@ -17,6 +17,8 @@ export class ApiException extends HttpException {
 
 export const notFound = () => new ApiException(HttpStatus.NOT_FOUND, 'not_found');
 export const unauthenticated = () => new ApiException(HttpStatus.UNAUTHORIZED, 'unauthenticated');
+/** 按角色拒绝（不针对某个资源，所以不会泄露资源是否存在） */
+export const forbidden = () => new ApiException(HttpStatus.FORBIDDEN, 'forbidden');
 export const badRequest = () => new ApiException(HttpStatus.BAD_REQUEST, 'bad_request');
 export const conflict = (details?: Record<string, unknown>) =>
   new ApiException(HttpStatus.CONFLICT, 'conflict', details);

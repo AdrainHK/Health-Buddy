@@ -214,6 +214,7 @@ M1 跑通了“任务 → 对话 → 产物 → 审核”，但客户数据只�
 | `GET/POST /api/clients/:id/health-history` | 健康史列表、新增 | 别人的客户 → 404 |
 | `PATCH/DELETE /api/clients/:id/health-history/:itemId` | 修改、删除（软删除） | itemId 属于别的客户（即使 :id 是自己的客户）→ 404 |
 | `POST /api/clients/:id/report-uploads` | 上传报告（multipart，可多个文件），可带 taskId；返回识别记录 | 给别人的客户上传 → 404 且不保存任何文件；taskId 属于别人或关联了别的客户 → 404 |
+| `GET /api/clients/:id/report-uploads` | 该客户的识别记录列表（核对标签和角标） | 别人的客户 → 404；机构管理员、运营商、平台 → 404 |
 | `GET /api/report-uploads/:id` | 识别记录详情：状态、识别出的数值、标记 | 别人的识别记录 → 404；机构管理员 → 404 |
 | `GET /api/report-uploads/:id/events` | 识别进度（SSE：step、done、error） | 别人的识别记录 → 404，不建立流 |
 | `POST /api/report-uploads/:id/retry` | 重新识别（失败后，最多 3 次） | 别人的 → 404 |
@@ -229,6 +230,7 @@ M1 跑通了“任务 → 对话 → 产物 → 审核”，但客户数据只�
 | `GET /api/clients/:id/risk-tiers` | 分层历史 | 别人的客户 → 404 |
 | `POST /api/clients/:id/risk-tiers` | 手动设定分层，理由必填 | 别人的客户 → 404；机构管理员 → 404 |
 | `POST /api/tasks/:id/messages`（扩展） | 增加 reportRefs；`/体检解读`、`/面谈提纲` 走这里 | reportRefs 指向别的客户或别的健管师的报告 → 404 |
+| `POST /api/tasks/:id/plans/:planId/confirm`（扩展） | 确认想一想计划，含“新客户完整评估”多步计划（Q22） | 别人的任务或计划 → 404，不调用模型、不生成草稿 |
 | `POST /api/artifacts/:id/approve`（扩展） | 增加 adoptRiskTier | 沿用 M1；另测 adoptRiskTier 不能给别人的客户写分层 |
 
 其他约定：

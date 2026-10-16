@@ -21,6 +21,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { withTenant, type TenantContext } from '../src/db/database.js';
 import type { Database } from '../src/db/types.js';
 import { InlineExtractionQueue } from '../src/reports/extraction-queue.js';
+import { ReportsRepository } from '../src/reports/reports.repository.js';
 import { InMemoryObjectStorage } from '../src/reports/storage.js';
 import { TEST_APP_URL } from './env.js';
 import { PASSWORD, ownerDb, seedFixtures, type Account, type Fixtures } from './fixtures.js';
@@ -82,17 +83,31 @@ const MODEL_OVERVIEW = '合成模型输出：血脂几项需要重点关注，�
 const MODEL_CLIENT_TEXT =
   '这次体检总胆固醇和低密度脂蛋白胆固醇比报告上的参考范围高一些，晚餐后散步的习惯值得保持。建议少吃油炸食物，每周快走三到五次。有疑问请随时联系您的健管师。';
 const MODEL_QUESTION = '合成模型输出：您平时晚餐大概几点吃，口味偏咸还是偏淡？';
+const MODEL_FINDING = '合成模型输出：异常项说明标记，比报告参考范围高一些';
+const MODEL_TIER_REASON = '合成模型输出：分层依据标记，对应标准里的中';
+const MODEL_WHY = '合成模型输出：提问理由标记，总胆固醇高于报告参考范围';
+
+/** 从整段文字里均匀取几段（每段 24 个字），用来检查提示词有没有被整段或部分记下来 */
+function slicesOf(text: string, count = 6, len = 24): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const start = Math.floor(((text.length - len) * i) / (count - 1));
+    const piece = text.slice(Math.max(start, 0), Math.max(start, 0) + len).trim();
+    if (piece.length >= 10) out.push(piece);
+  }
+  return out;
+}
 
 const interpretationJson = (reasonValue: string) =>
   JSON.stringify({
     professional: {
       overview: MODEL_OVERVIEW,
-      abnormalFindings: [{ indicator: '总胆固醇', observation: '高于报告参考范围' }],
+      abnormalFindings: [{ indicator: '总胆固醇', observation: MODEL_FINDING }],
       comparison: ['没有之前同一单位的已核对数值，无法对比'],
       referralAdvice: null,
       riskTier: {
         tier: 'medium',
-        reasons: [`总胆固醇 ${reasonValue} mmol/L 高于报告参考范围 <5.2`],
+        reasons: [`总胆固醇 ${reasonValue} mmol/L 高于报告参考范围 <5.2，${MODEL_TIER_REASON}`],
       },
       toUnderstand: [],
       missingData: [],
@@ -110,7 +125,7 @@ const outlineJson = () =>
       groups: [
         {
           topic: 'diet',
-          questions: [{ question: MODEL_QUESTION, why: '总胆固醇高于报告参考范围' }],
+          questions: [{ question: MODEL_QUESTION, why: MODEL_WHY }],
         },
       ],
       missingData: [],
@@ -277,6 +292,7 @@ describe('M2 验收补齐', () => {
         return res;
       };
       let interpretationCall: GatewayRequest | undefined;
+      let outlineCall: GatewayRequest | undefined;
       try {
         const agent = request.agent(app.getHttpServer());
         await agent
@@ -410,6 +426,7 @@ describe('M2 验收补齐', () => {
           }),
         );
         expect(parseSse(outline.text).some((e) => e.type === 'artifact')).toBe(true);
+        outlineCall = provider.calls.filter((c) => c.route === 'skill').at(-1);
 
         // 想一想“新客户完整评估”：先出计划，确认后依次生成解读和提纲
         const proposed = await track(
@@ -503,6 +520,18 @@ describe('M2 验收补齐', () => {
 
       const userMessage = String(interpretationCall?.messages[0]?.content ?? '');
       expect(userMessage).toContain('5.64');
+      const outlineMessage = String(outlineCall?.messages[0]?.content ?? '');
+      expect(outlineMessage).toContain('5.64');
+      const extractionSystem = provider.calls.find((c) => c.route === 'report_extraction')?.system;
+      // 发给模型的提示词（系统提示词和组装好的客户资料），每段都均匀取几处来搜
+      const prompts = [
+        extractionSystem ?? REPORT_EXTRACTION_PROMPT,
+        interpretationCall?.system ?? '',
+        outlineCall?.system ?? '',
+        userMessage,
+        outlineMessage,
+      ];
+      for (const prompt of prompts) expect(prompt.length).toBeGreaterThan(100);
       const forbidden = [
         // 客户姓名（合成）、报告上印的合成个人信息、文件原名
         demoClient.displayName,
@@ -514,20 +543,25 @@ describe('M2 验收补齐', () => {
         sample.institution,
         // 指标数值和原文片段（核对时改过、补录、更正的也算）
         ...rows.filter((r) => /\.\d{2}$/.test(r.value)).map((r) => r.value),
+        // 一位小数和整数的数值单独搜容易误中，带上单位搜
+        ...rows.filter((r) => r.unit).map((r) => `${r.value} ${r.unit}`),
         '5.63',
         '5.64',
         '11.27',
+        '5.64 mmol/L',
         ...rows.map(snippet),
         '同型半胱氨酸',
         // 提示词（系统提示词、组装好的客户资料）和回答原文
-        REPORT_EXTRACTION_PROMPT.slice(0, 30),
-        reportInterpretation.prompt.slice(0, 30),
-        interviewOutline.prompt.slice(0, 30),
-        userMessage.slice(0, 30),
+        ...prompts.flatMap((p) => slicesOf(p)),
+        ...slicesOf(reportInterpretation.prompt),
+        ...slicesOf(interviewOutline.prompt),
         '### 这次的体检报告',
         MODEL_OVERVIEW,
         MODEL_CLIENT_TEXT.slice(0, 20),
         MODEL_QUESTION,
+        MODEL_FINDING,
+        MODEL_TIER_REASON,
+        MODEL_WHY,
         'provider exploded',
       ];
       const sinks: [string, string][] = [
@@ -598,7 +632,16 @@ describe('M2 验收补齐', () => {
         .executeTakeFirstOrThrow();
       const artifact = (await a1.get(`/api/artifacts/${artifactRow.id}`).expect(200)).body
         .artifact as { id: string; version: number; contentHash: string };
+      // 想一想：A1 的一份待确认的“新客户完整评估”计划
+      const proposed = await a1
+        .post(`/api/tasks/${taskId}/messages`)
+        .send({ mode: 'plan', content: '完整评估', skillId: 'new-client-assessment' })
+        .expect(200);
+      const plan = parseSse(proposed.text).find((e) => e.type === 'plan');
+      const planId = plan?.type === 'plan' ? plan.plan.id : '';
+      expect(planId).not.toBe('');
       return {
+        planId,
         c,
         historyId,
         pending,
@@ -654,6 +697,10 @@ describe('M2 验收补齐', () => {
             other
               .post(`/api/clients/${d.c}/report-uploads`)
               .attach('files', syntheticPng(), { filename: 'a.png', contentType: 'image/png' }),
+        },
+        {
+          row: 'GET /api/clients/:id/report-uploads',
+          call: () => other.get(`/api/clients/${d.c}/report-uploads`),
         },
         {
           row: 'GET /api/report-uploads/:id',
@@ -740,6 +787,10 @@ describe('M2 验收补齐', () => {
             }),
         },
         {
+          row: 'POST /api/tasks/:id/plans/:planId/confirm',
+          call: () => other.post(`/api/tasks/${d.taskId}/plans/${d.planId}/confirm`),
+        },
+        {
           row: 'POST /api/artifacts/:id/approve (adoptRiskTier)',
           call: () =>
             other.post(`/api/artifacts/${d.artifact.id}/approve`).send({
@@ -764,13 +815,31 @@ describe('M2 验收补齐', () => {
         'report_indicators',
         'artifacts',
         'artifact_events',
-        'task_messages',
       ]) {
         out[t] = Number(
           (await sql<{ n: string }>`select count(*) as n from ${sql.table(t)}`.execute(owner))
             .rows[0]?.n,
         );
       }
+      // 别的健管师在自己任务里发的消息不算；A1 任务里的消息和计划状态不能变
+      out.a1_task_messages = Number(
+        (
+          await sql<{
+            n: string;
+          }>`select count(*) as n from task_messages m join tasks t on t.id = m.task_id where t.manager_id = ${f.users.managerA1.id}`.execute(
+            owner,
+          )
+        ).rows[0]?.n,
+      );
+      out.a1_plans_not_proposed = Number(
+        (
+          await sql<{
+            n: string;
+          }>`select count(*) as n from task_plans where manager_id = ${f.users.managerA1.id} and status <> 'proposed'`.execute(
+            owner,
+          )
+        ).rows[0]?.n,
+      );
       return out;
     };
 
@@ -809,10 +878,8 @@ describe('M2 验收补齐', () => {
         expect(provider.calls, account.email).toEqual([]);
       }
       // 表里每一行都测到了（POST /api/clients 单独测）
-      expect(covered.size).toBe(23);
-      const after = await snapshotCounts();
-      // 别人的任务（自己建的）会多出来，其余什么都没变
-      expect({ ...after, task_messages: 0 }).toEqual({ ...before, task_messages: 0 });
+      expect(covered.size).toBe(25);
+      expect(await snapshotCounts()).toEqual(before);
       expect(storage.objects.size).toBe(objects);
       const a1 = await loginAs(app, f.users.managerA1.email);
       const pending = (await a1.get(`/api/report-uploads/${d.pending.id}`)).body.upload;
@@ -839,31 +906,50 @@ describe('M2 验收补齐', () => {
       expect(await snapshotCounts()).toEqual(before);
     });
 
-    it('POST /api/clients：请求体里的租户字段被忽略，只建在自己名下；非健管师不能新建', async () => {
+    it('POST /api/clients：请求体里的租户字段（驼峰和下划线）被忽略，只建在自己名下；非健管师 403', async () => {
       const b1 = await loginAs(app, f.users.managerB1.email);
-      const res = await b1
-        .post('/api/clients')
-        .send({
-          displayName: '合成新客户',
+      for (const injected of [
+        { operatorId: f.operatorA, orgId: f.orgA, managerId: f.users.managerA1.id },
+        { operator_id: f.operatorA, org_id: f.orgA, manager_id: f.users.managerA1.id },
+        {
           operatorId: f.operatorA,
-          orgId: f.orgA,
-          managerId: f.users.managerA1.id,
-        })
-        .expect(201);
-      const row = await owner
-        .selectFrom('clients')
-        .select(['operator_id', 'org_id', 'manager_id'])
-        .where('id', '=', res.body.client.id)
-        .executeTakeFirstOrThrow();
-      expect(row).toEqual({
-        operator_id: f.operatorB,
-        org_id: f.orgB,
-        manager_id: f.users.managerB1.id,
-      });
-      for (const account of [f.users.orgAdminA, f.users.operatorAdminA, f.users.platform]) {
+          org_id: f.orgA2,
+          managerId: f.users.managerA3.id,
+          manager_id: f.users.managerA1.id,
+        },
+      ]) {
+        const res = await b1
+          .post('/api/clients')
+          .send({ displayName: '合成新客户', ...injected })
+          .expect(201);
+        const row = await owner
+          .selectFrom('clients')
+          .select(['operator_id', 'org_id', 'manager_id'])
+          .where('id', '=', res.body.client.id)
+          .executeTakeFirstOrThrow();
+        expect(row, JSON.stringify(Object.keys(injected))).toEqual({
+          operator_id: f.operatorB,
+          org_id: f.orgB,
+          manager_id: f.users.managerB1.id,
+        });
+      }
+      // 规格 3.4：非健管师角色按角色拒绝，返回 403
+      for (const account of [
+        f.users.orgAdminA,
+        f.users.orgAdminA2,
+        f.users.operatorAdminA,
+        f.users.operatorAdminB,
+        f.users.platform,
+      ]) {
         const other = await loginAs(app, account.email);
-        const denied = await other.post('/api/clients').send({ displayName: '合成客户丁' });
-        expect([403, 404], account.email).toContain(denied.status);
+        const denied = await other.post('/api/clients').send({
+          displayName: '合成客户丁',
+          operator_id: f.operatorA,
+          org_id: f.orgA,
+          manager_id: f.users.managerA1.id,
+        });
+        expect(denied.status, account.email).toBe(403);
+        expect(denied.body, account.email).toEqual({ error: 'forbidden' });
       }
       expect(
         await owner
@@ -872,6 +958,65 @@ describe('M2 验收补齐', () => {
           .where('display_name', '=', '合成客户丁')
           .execute(),
       ).toEqual([]);
+    });
+  });
+
+  describe('混用 id：路径里是自己的资源，子资源 id 是别人的', () => {
+    it('B1 自己的识别记录 + A1 的识别结果 id、B1 自己的报告 + A1 的指标 id：都是 404，两边数据都不变', async () => {
+      const a1 = await loginAs(app, f.users.managerA1.email);
+      const b1 = await loginAs(app, f.users.managerB1.email);
+      const item = { indicator: '总胆固醇', value: '5.62', unit: 'mmol/L', referenceRange: '<5.2' };
+      const a1Pending = await extracted(a1, f.clients.a1[0], [item]);
+      const a1Done = await extracted(a1, f.clients.a1[0], [item], '2026-09-12');
+      const a1Report = (
+        await a1
+          .post(`/api/report-uploads/${a1Done.id}/verify`)
+          .send(verifyBody(a1Done, '2026-09-12'))
+          .expect(200)
+      ).body.upload.reportId as string;
+      const b1Pending = await extracted(b1, f.clients.b1, [item]);
+      const b1Done = await extracted(b1, f.clients.b1, [item], '2026-09-12');
+      const b1Report = (
+        await b1
+          .post(`/api/report-uploads/${b1Done.id}/verify`)
+          .send(verifyBody(b1Done, '2026-09-12'))
+          .expect(200)
+      ).body.upload.reportId as string;
+      const a1Indicator = (await a1.get(`/api/reports/${a1Report}`).expect(200)).body.report
+        .indicators[0].id as string;
+      const indicatorsBefore = await owner
+        .selectFrom('report_indicators')
+        .select(['id', 'value', 'superseded_by'])
+        .orderBy('id')
+        .execute();
+
+      for (const body of [{ checked: true }, { rawValue: '9.99' }]) {
+        const res = await b1
+          .patch(`/api/report-uploads/${b1Pending.id}/values/${a1Pending.values[0]!.id}`)
+          .send(body);
+        expect(res.status).toBe(404);
+        expect(res.body).toEqual({ error: 'not_found' });
+      }
+      const corrected = await b1
+        .post(`/api/reports/${b1Report}/indicators/${a1Indicator}/correct`)
+        .send({ rawValue: '9.99' });
+      expect(corrected.status).toBe(404);
+      expect(corrected.body).toEqual({ error: 'not_found' });
+
+      const a1After = (await a1.get(`/api/report-uploads/${a1Pending.id}`)).body
+        .upload as ReportUpload;
+      expect(a1After.version).toBe(a1Pending.version);
+      expect(a1After.values).toEqual(a1Pending.values);
+      const b1After = (await b1.get(`/api/report-uploads/${b1Pending.id}`)).body
+        .upload as ReportUpload;
+      expect(b1After.version).toBe(b1Pending.version);
+      expect(
+        await owner
+          .selectFrom('report_indicators')
+          .select(['id', 'value', 'superseded_by'])
+          .orderBy('id')
+          .execute(),
+      ).toEqual(indicatorsBefore);
     });
   });
 
@@ -973,6 +1118,15 @@ describe('M2 验收补齐', () => {
       );
       // 没有上下文
       for (const t of TABLES) expect(await countA1(appDb, t), `no context ${t}`).toBe(0);
+      // 原件清除队列：应用角色无论有没有上下文都不能直接读，只有系统函数能用
+      await expect(sql`select * from storage_purge_queue`.execute(appDb)).rejects.toThrow(
+        /permission denied/,
+      );
+      await expect(
+        withTenant(appDb, ctx(f.users.managerA1, 'manager', f.operatorA, f.orgA), (trx) =>
+          sql`select * from storage_purge_queue`.execute(trx),
+        ),
+      ).rejects.toThrow(/permission denied/);
       // 其他健管师、运营商和平台管理员、别的机构管理员
       for (const other of [
         ctx(f.users.managerA2, 'manager', f.operatorA, f.orgA),
@@ -1057,6 +1211,126 @@ describe('M2 验收补齐', () => {
         get.mockRestore();
         queue.jobs.length = 0;
         queue.paused = false;
+      }
+    });
+
+    /** 协会 B 里另一位健管师 B2（只用来把识别记录指到别人名下，不登录） */
+    async function insertManagerB2(): Promise<string> {
+      const b1Row = await owner
+        .selectFrom('users')
+        .select('password_hash')
+        .where('id', '=', f.users.managerB1.id)
+        .executeTakeFirstOrThrow();
+      const row = await owner
+        .insertInto('users')
+        .values({
+          email: 'manager-b2@test.example',
+          password_hash: b1Row.password_hash,
+          display_name: '测试 manager-b2',
+          role: 'manager',
+          operator_id: f.operatorB,
+          org_id: f.orgB,
+          status: 'active',
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      return row.id as string;
+    }
+
+    /** B1 的一份排队中的识别记录（队列暂停，任务不会自己执行） */
+    async function queuedB1Upload(): Promise<string> {
+      const b1 = await loginAs(app, f.users.managerB1.email);
+      queue.paused = true;
+      const res = await b1
+        .post(`/api/clients/${f.clients.b1}/report-uploads`)
+        .attach('files', syntheticPng(), { filename: 'b.png', contentType: 'image/png' })
+        .expect(201);
+      return res.body.upload.id as string;
+    }
+
+    /** 以所有者身份直接改识别记录，绕过触发器和外键（模拟数据被篡改，只在测试里这样做） */
+    async function tamper(uploadId: string, set: { manager_id: string; requested_by?: string }) {
+      await owner.transaction().execute(async (trx) => {
+        await sql`set local session_replication_role = replica`.execute(trx);
+        await trx.updateTable('report_uploads').set(set).where('id', '=', uploadId).execute();
+      });
+    }
+
+    it('次数正确、但记录被指到别人名下的任务：在租户检查处失败，不调模型、不读原件、不写结果', async () => {
+      const b2 = await insertManagerB2();
+      const repo = app.get(ReportsRepository);
+      // 情况一：记录的健管师和发起人都改成 B2，客户仍是 B1 的。
+      // 任务以 B2 的身份认领，行级安全放行了记录本身，但客户不归 B2，认领失败
+      const a = await queuedB1Upload();
+      await tamper(a, { manager_id: b2, requested_by: b2 });
+      // 情况二：只把记录的健管师改成 B2，发起人仍是 B1：查不到发起人
+      const b = await queuedB1Upload();
+      await tamper(b, { manager_id: b2 });
+
+      provider.reset();
+      const get = vi.spyOn(storage, 'get');
+      const claim = vi.spyOn(repo, 'claimExtraction');
+      const valuesBefore = await owner.selectFrom('extracted_values').select('id').execute();
+      const eventsBefore = await owner.selectFrom('report_events').select('id').execute();
+      try {
+        expect(await queue.run({ uploadId: a, attempt: 1 })).toBe('failed');
+        // 确实走到了认领（租户检查），用的是记录上发起人 B2 的上下文，认领没有成功
+        expect(claim).toHaveBeenCalledTimes(1);
+        expect(claim.mock.calls[0]![0]).toEqual({
+          userId: b2,
+          role: 'manager',
+          operatorId: f.operatorB,
+          orgId: f.orgB,
+        });
+        expect(await claim.mock.results[0]!.value).toBeUndefined();
+
+        expect(await queue.run({ uploadId: b, attempt: 1 })).toBe('failed');
+        expect(claim).toHaveBeenCalledTimes(1);
+
+        expect(get).not.toHaveBeenCalled();
+        expect(provider.calls).toEqual([]);
+        expect(await owner.selectFrom('extracted_values').select('id').execute()).toEqual(
+          valuesBefore,
+        );
+        expect(await owner.selectFrom('report_events').select('id').execute()).toEqual(
+          eventsBefore,
+        );
+        const rows = await owner
+          .selectFrom('report_uploads')
+          .select(['id', 'status', 'progress_page'])
+          .where('id', 'in', [a, b])
+          .execute();
+        for (const r of rows) expect(r).toMatchObject({ status: 'queued', progress_page: 0 });
+      } finally {
+        get.mockRestore();
+        claim.mockRestore();
+        queue.jobs.length = 0;
+        queue.paused = false;
+      }
+    });
+
+    it('正常的任务：用上传者 B1 的身份（userId、operatorId、orgId）认领和识别', async () => {
+      const repo = app.get(ReportsRepository);
+      const requester = vi.spyOn(repo, 'requester');
+      const claim = vi.spyOn(repo, 'claimExtraction');
+      try {
+        const b1 = await loginAs(app, f.users.managerB1.email);
+        const u = await extracted(b1, f.clients.b1, [
+          { indicator: '空腹血糖', value: '5.1', unit: 'mmol/L' },
+        ]);
+        expect(u.status).toBe('needs_review');
+        const uploader = {
+          userId: f.users.managerB1.id,
+          role: 'manager',
+          operatorId: f.operatorB,
+          orgId: f.orgB,
+        };
+        expect(requester).toHaveBeenCalledWith(u.id);
+        expect(await requester.mock.results[0]!.value).toEqual(uploader);
+        expect(claim).toHaveBeenCalledWith(uploader, u.id, 1);
+      } finally {
+        requester.mockRestore();
+        claim.mockRestore();
       }
     });
   });
