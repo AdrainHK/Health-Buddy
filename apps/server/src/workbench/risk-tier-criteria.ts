@@ -1,12 +1,13 @@
+import { DEFAULT_RISK_TIER_GUIDE } from '@health-buddy/skills';
+
 /**
- * 风险分层标准（M2 规格 2.7、4.2、Q8、Q9）。
+ * 风险分层定义的注入点（M2 规格 2.7、4.2、Q8、Q9）。
  *
- * 分层标准是医学和服务规则，要由产品负责人或医学顾问提供，标准确定后由平台管理员在总后台设置（Q9）。
- * 在那之前没有确认的标准：/体检解读 不给出建议分层，只写“需要了解的情况”，
- * 后端也会丢弃模型给出的分层（规格 4.3 第 4 条“分层只用确认后的分层标准”）。
- * 测试通过 AppOptions.riskTierCriteria 注入合成标准，验证“采用建议分层”的流程。
+ * 线上用通用默认定义 DEFAULT_RISK_TIER_GUIDE（packages/skills/src/risk-tier-guide.ts，只维护那一处）：
+ * /体检解读 按它给出建议分层和依据，只给健管师看，勾选“采用建议分层”才写进档案。
+ * 正式标准确定后替换那份定义即可。测试可以通过 AppOptions.riskTierCriteria 覆盖，
+ * 传 null 表示没有定义：此时不给建议分层，模型给出的分层也会被丢弃。
  */
 export const RISK_TIER_CRITERIA = Symbol('RISK_TIER_CRITERIA');
 
-/** 已确认的分层标准。还没有，保持为空，不要在这里自己编写标准 */
-export const CONFIRMED_RISK_TIER_CRITERIA: string | null = null;
+export const RISK_TIER_GUIDE: string | null = DEFAULT_RISK_TIER_GUIDE;

@@ -9,8 +9,9 @@ import { APP_DB_ROLE } from '../../config.js';
  * - artifacts 加 risk_tier_suggestion：AI 的建议分层，生成后不能改（和危急指标快照一样）。
  * - client_risk_tiers 加 source_artifact_id：复合外键 (source_artifact_id, client_id) → artifacts，
  *   保证来源产物属于同一位客户；触发器再要求来源产物是当前健管师已审核的 /体检解读。
- * - 客户转出或删除时，原健管师的产物和客户断开（client_id 置空），分层历史跟着客户走，
- *   来源产物的引用随之置空（新健管师看不到原健管师的产物，M1 Q11），source = 'artifact' 保留。
+ * - 客户转出或删除时，原健管师的产物和客户断开（client_id 置空），产物依据的报告也置空；
+ *   分层历史跟着客户走，来源产物的引用随之置空（新健管师看不到原健管师的产物，M1 Q11），
+ *   source = 'artifact' 保留。
  * - task_steps 增加步骤类型 read_report、compare_reports 和 label_date（“正在读取报告（日期）”）。
  */
 export async function up(db: Kysely<unknown>): Promise<void> {
@@ -77,6 +78,75 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       for each row execute function artifacts_source_guard();
   `.execute(db);
 
+  // 0004 的产物状态机：已审核、已退回、已作废的产物也允许系统把依据的报告置空
+  // （客户转出或删除时由 detach_client_work 置空，报告删除时由外键置空），其余照旧
+  await sql`
+    create or replace function artifacts_guard() returns trigger language plpgsql as $$
+    declare
+      is_app boolean := not hb_is_system(tg_relid);
+    begin
+      if tg_op = 'INSERT' then
+        if new.status <> 'draft' then
+          raise exception 'artifact must be inserted as draft' using errcode = 'check_violation';
+        end if;
+        if is_app and task_detached(new.task_id) then
+          raise exception 'task is read-only' using errcode = 'check_violation';
+        end if;
+        -- 外键在 client_id 为空时不检查，这里补上：产物的客户必须和任务当前的客户一致
+        if new.client_id is distinct from (select t.client_id from tasks t where t.id = new.task_id) then
+          raise exception 'artifact client must match its task' using errcode = 'check_violation';
+        end if;
+        if new.parent_id is not null and new.lineage_id is distinct from
+          (select a.lineage_id from artifacts a where a.id = new.parent_id)
+        then
+          raise exception 'artifact version must stay in its lineage' using errcode = 'check_violation';
+        end if;
+        return new;
+      end if;
+
+      if old.status <> 'draft' then
+        -- 非草稿行只允许系统把客户和依据的报告置空（客户转出或删除、报告删除）和跟随健管师调机构
+        if is_app
+          or (to_jsonb(new) - 'client_id' - 'org_id' - 'updated_at' - 'source_report_id')
+             <> (to_jsonb(old) - 'client_id' - 'org_id' - 'updated_at' - 'source_report_id')
+          or (new.client_id is distinct from old.client_id and new.client_id is not null)
+          or (new.source_report_id is distinct from old.source_report_id
+              and new.source_report_id is not null)
+        then
+          raise exception 'artifact is no longer a draft' using errcode = 'check_violation';
+        end if;
+        return new;
+      end if;
+
+      if new.id <> old.id or new.task_id <> old.task_id or new.manager_id <> old.manager_id
+        or new.operator_id <> old.operator_id or new.skill_id <> old.skill_id
+        or new.kind <> old.kind or new.lineage_id <> old.lineage_id
+        or new.version <> old.version or new.parent_id is distinct from old.parent_id
+        or new.created_at <> old.created_at
+        or new.critical_flags <> old.critical_flags
+      then
+        raise exception 'artifact identity is immutable' using errcode = 'check_violation';
+      end if;
+      if is_app then
+        if task_detached(old.task_id) then
+          raise exception 'task is read-only' using errcode = 'check_violation';
+        end if;
+        if new.client_id is distinct from old.client_id then
+          raise exception 'artifact client is immutable' using errcode = 'check_violation';
+        end if;
+        if new.status = 'voided' then
+          raise exception 'only the system can void a draft' using errcode = 'check_violation';
+        end if;
+      end if;
+      if new.status <> 'draft' and new.content <> old.content then
+        raise exception 'content and status cannot change together' using errcode = 'check_violation';
+      end if;
+      new.updated_at := now();
+      return new;
+    end
+    $$;
+  `.execute(db);
+
   // 分层：应用只能以本人名义、当前时间写入；来源产物必须是当前健管师已审核的 /体检解读。
   // 以调用者身份查产物（受行级安全约束），看不到的产物按不存在处理。
   await sql`
@@ -129,6 +199,12 @@ export async function up(db: Kysely<unknown>): Promise<void> {
 
       update client_risk_tiers set source_artifact_id = null
         where client_id = p_client_id and source_artifact_id is not null;
+
+      -- 原健管师的产物不再指向这位客户的报告（报告跟着客户走）
+      update artifacts set source_report_id = null
+        where source_report_id is not null
+          and (client_id = p_client_id
+               or task_id in (select t.id from tasks t where t.client_id = p_client_id));
 
       update task_messages set client_refs = '{}', report_refs = '{}'
         where task_id in (select t.id from tasks t where t.client_id = p_client_id);

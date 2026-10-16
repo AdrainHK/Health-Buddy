@@ -5,6 +5,7 @@ export type ArtifactErrorKey =
   | 'tooMany'
   | 'readOnly'
   | 'notClientFacing'
+  | 'sourceReportGone'
   | 'badRequest'
   | 'notFound'
   | 'conflict'
@@ -26,6 +27,10 @@ export function classifyArtifactError(err: unknown): ArtifactErrorKind {
     if (err.reasons.includes('busy')) return { kind: 'error', key: 'busy' };
     // 只有专业版的产物（/面谈提纲）不能复制、导出
     if (err.reasons.includes('not_client_facing')) return { kind: 'error', key: 'notClientFacing' };
+    // 依据的报告已不可用：不能按原报告重写
+    if (err.reasons.includes('source_report_unavailable')) {
+      return { kind: 'error', key: 'sourceReportGone' };
+    }
     if (err.reasons.includes('not_latest_draft')) return { kind: 'stale' };
     // 没有具体原因的 409：状态已经变了，同样按过期处理并刷新
     return { kind: 'error', key: 'conflict' };

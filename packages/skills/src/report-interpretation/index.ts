@@ -148,7 +148,7 @@ export const reportInterpretation: SkillDefinition<typeof reportInterpretationOu
       lines.push(
         input?.riskTierCriteria?.trim()
           ? '这次没有给出建议分层。'
-          : '还没有确认的分层标准，这次不给出建议分层。',
+          : '没有提供分层标准，这次不给出建议分层。',
       );
     }
     if (p.toUnderstand.length) {

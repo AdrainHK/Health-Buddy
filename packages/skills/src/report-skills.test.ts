@@ -5,7 +5,13 @@ import { clientRecentSummary } from './client-recent-summary/index.js';
 import { interviewOutline, type InterviewOutlineOutput } from './interview-outline/index.js';
 import { interviewOutlineEvalCases } from './interview-outline/evals/cases.js';
 import { assessmentPlanEvalCases } from './plan-evals.js';
-import { GUARDRAILS, buildSystemPrompt, guardrails } from './guardrails.js';
+import {
+  GUARDRAILS,
+  buildSystemPrompt,
+  checkClientText,
+  findRiskTierMentions,
+  guardrails,
+} from './guardrails.js';
 import {
   CRITICAL_CALL_NOTICE,
   reportInterpretation,
@@ -13,7 +19,8 @@ import {
   type ReportInterpretationOutput,
 } from './report-interpretation/index.js';
 import { reportInterpretationEvalCases } from './report-interpretation/evals/cases.js';
-import { REPORT_SNAPSHOTS, RISK_TIER_CRITERIA_FIXTURE } from './report-fixtures.js';
+import { REPORT_SNAPSHOTS } from './report-fixtures.js';
+import { DEFAULT_RISK_TIER_GUIDE } from './risk-tier-guide.js';
 import { PLAN_TEMPLATES, SKILLS, getPlanTemplate, getSkill, skillSummaries } from './registry.js';
 
 const interpretation = (
@@ -176,9 +183,9 @@ describe('/体检解读 的输入', () => {
     const msg = reportInterpretation.buildUserMessage({
       client: REPORT_SNAPSHOTS.singleAbnormal,
       managerRequest: '解读',
-      riskTierCriteria: RISK_TIER_CRITERIA_FIXTURE,
+      riskTierCriteria: DEFAULT_RISK_TIER_GUIDE,
     });
-    expect(msg).toContain(RISK_TIER_CRITERIA_FIXTURE);
+    expect(msg).toContain(DEFAULT_RISK_TIER_GUIDE);
   });
 });
 
@@ -201,13 +208,13 @@ describe('/体检解读 的产物', () => {
       managerRequest: '解读',
     });
     expect(without.riskTierSuggestion).toBeNull();
-    expect(without.professional).toContain('还没有确认的分层标准，这次不给出建议分层。');
+    expect(without.professional).toContain('没有提供分层标准，这次不给出建议分层。');
     expect(without.professional).not.toContain('建议分层：');
 
     const input = {
       client: REPORT_SNAPSHOTS.singleAbnormal,
       managerRequest: '解读',
-      riskTierCriteria: RISK_TIER_CRITERIA_FIXTURE,
+      riskTierCriteria: DEFAULT_RISK_TIER_GUIDE,
     };
     const withCriteria = reportInterpretation.render(output, input);
     expect(withCriteria.riskTierSuggestion).toEqual({
@@ -277,10 +284,26 @@ describe('/面谈提纲 的产物', () => {
     const msg = interviewOutline.buildUserMessage({
       client: REPORT_SNAPSHOTS.singleAbnormal,
       managerRequest: '提纲',
-      riskTierCriteria: RISK_TIER_CRITERIA_FIXTURE,
+      riskTierCriteria: DEFAULT_RISK_TIER_GUIDE,
     });
     expect(msg).not.toContain('风险分层标准');
     expect(msg).toContain('空腹血糖：6.5 mmol/L');
+  });
+});
+
+describe('通俗版的确定性检查（Q20、规格 3.6）', () => {
+  it('风险分层字样：插空格、全角、零宽字符和“高档”“低等级”都能找出，位置按原文', () => {
+    const text = '您好，您属于中 风险人群，按高档管理，指标在低等级。分\u200b层见附件。';
+    const found = findRiskTierMentions(text);
+    expect(found.map((m) => m.text)).toEqual(['中 风险人群', '高档', '低等级', '分\u200b层']);
+    for (const m of found) expect(text.slice(m.index, m.index + m.text.length)).toBe(m.text);
+  });
+
+  it('判断句式提示也先规范化：“糖 尿病”“高 血压”能标出，位置按原文', () => {
+    const text = '您好，这不是糖 尿病，也不是高\u200b血压。';
+    const hints = checkClientText(text).judgementHints;
+    expect(hints.map((h) => h.text)).toEqual(['糖 尿病', '高\u200b血压']);
+    for (const h of hints) expect(text.slice(h.index, h.index + h.text.length)).toBe(h.text);
   });
 });
 

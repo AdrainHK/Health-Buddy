@@ -11,11 +11,12 @@ import {
   type TaskPlan,
   type TaskStep,
 } from '@health-buddy/shared';
-import type {
-  ClientSnapshot,
-  HealthHistoryEntry,
-  ReportDetail,
-  ReportIndicatorDetail,
+import {
+  getSkill,
+  type ClientSnapshot,
+  type HealthHistoryEntry,
+  type ReportDetail,
+  type ReportIndicatorDetail,
 } from '@health-buddy/skills';
 import type { ChatMessage } from '@health-buddy/ai-engine';
 import { badRequest, conflict, notFound } from '../common/api-error.js';
@@ -322,6 +323,11 @@ export class WorkbenchRepository {
         .where('version', '>', artifact.version)
         .executeTakeFirst();
       if (artifact.status !== 'draft' || newer) throw conflict({ reasons: ['not_latest_draft'] });
+      // 依据报告的技能只能按原来的报告重写；原报告已不可用（客户转出、报告删除）时拒绝，
+      // 不悄悄换成最近一份报告
+      if (getSkill(artifact.skill_id)?.requiresReport && !artifact.source_report_id) {
+        throw conflict({ reasons: ['source_report_unavailable'] });
+      }
       // 健管师当初的要求：直接调用这个技能的消息，或调用了包含它的多步计划的消息
       const request = await trx
         .selectFrom('task_messages')

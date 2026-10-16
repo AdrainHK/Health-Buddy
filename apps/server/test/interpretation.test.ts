@@ -5,8 +5,8 @@ import type {
   ResolvedRoute,
 } from '@health-buddy/ai-engine';
 import { DISCLAIMER, type TaskStreamEvent } from '@health-buddy/shared';
-import { RISK_TIER_CRITERIA_FIXTURE } from '@health-buddy/skills';
 import type { INestApplication } from '@nestjs/common';
+import { sql } from 'kysely';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, loginAs } from './http.js';
 import { ownerDb, seedFixtures, type Fixtures } from './fixtures.js';
@@ -91,10 +91,11 @@ function parseSse(text: string): TaskStreamEvent[] {
 describe('体检解读、面谈提纲、建议分层和多步计划', () => {
   const owner = ownerDb();
   const provider = new ScriptedProvider();
-  const criteriaProvider = new ScriptedProvider();
+  const noGuideProvider = new ScriptedProvider();
+  /** 线上配置：带通用默认分层定义（DEFAULT_RISK_TIER_GUIDE） */
   let app: INestApplication;
-  /** 注入了合成分层标准的实例，验证“采用建议分层” */
-  let criteriaApp: INestApplication;
+  /** 去掉了分层定义的实例：不给建议分层，模型给出的分层也丢弃 */
+  let noGuideApp: INestApplication;
   let f: Fixtures;
   /** A1 第一位客户的第二份已核对报告（2026-09-12，比种子里 2026-01-01 那份新） */
   let reportA1: string;
@@ -173,9 +174,9 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
 
   beforeAll(async () => {
     app = await createTestApp({}, { llmProviders: { openai: provider } });
-    criteriaApp = await createTestApp(
+    noGuideApp = await createTestApp(
       {},
-      { llmProviders: { openai: criteriaProvider }, riskTierCriteria: RISK_TIER_CRITERIA_FIXTURE },
+      { llmProviders: { openai: noGuideProvider }, riskTierCriteria: null },
     );
   });
 
@@ -183,7 +184,7 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
     f = await seedFixtures(owner);
     reportA1 = await insertReport(f.clients.a1[0], '2026-09-12', 6.5);
     reportB1 = await insertReport(f.clients.b1, '2026-09-12', 6.5);
-    for (const p of [provider, criteriaProvider]) {
+    for (const p of [provider, noGuideProvider]) {
       p.queue = [];
       p.calls.length = 0;
     }
@@ -191,7 +192,7 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
 
   afterAll(async () => {
     await app.close();
-    await criteriaApp.close();
+    await noGuideApp.close();
     await owner.destroy();
   });
 
@@ -223,8 +224,11 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
         kind: 'report_interpretation',
         status: 'draft',
         source_report_id: reportA1,
-        // 没有确认的分层标准：模型给了分层也丢弃（规格 4.3 第 4 条）
-        risk_tier_suggestion: null,
+        // 按默认分层定义给出建议分层，只给健管师看（规格 2.7、Q8）
+        risk_tier_suggestion: {
+          tier: 'medium',
+          reason: '空腹血糖 6.5 mmol/L 高于报告参考范围 3.9-6.1',
+        },
       });
       const content = artifact.content as { professional: string; clientFacing: string };
       expect(content.professional).toContain(
@@ -233,12 +237,16 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
       expect(content.professional).toContain(
         '同型半胱氨酸（未收录指标）：12 umol/L（报告未提供参考范围）',
       );
-      expect(content.professional).toContain('还没有确认的分层标准');
+      expect(content.professional).toContain('建议分层：**中**');
+      expect(content.clientFacing).not.toMatch(/分层|中风险/);
       expect(content.clientFacing.startsWith('测试客户 A1-1，您好！')).toBe(true);
       expect(content.clientFacing.endsWith(DISCLAIMER)).toBe(true);
 
       const d = await detail(agent, artifact.id);
-      expect(d.artifact).toMatchObject({ sourceReportId: reportA1, riskTierSuggestion: null });
+      expect(d.artifact).toMatchObject({
+        sourceReportId: reportA1,
+        riskTierSuggestion: { tier: 'medium' },
+      });
       expect(d.sourceReport).toEqual({
         id: reportA1,
         reportDate: '2026-09-12',
@@ -407,21 +415,21 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
     });
 
     it('退回重写沿用原来的报告；导出文件名是“体检解读-报告日期”，不含客户姓名，不含分层', async () => {
-      const agent = await as(f.users.managerA1.email, criteriaApp);
+      const agent = await as(f.users.managerA1.email);
       const taskId = await newTask(agent, f.clients.a1[0]);
-      criteriaProvider.queue.push({ text: interpretationJson() });
+      provider.queue.push({ text: interpretationJson() });
       await interpret(agent, taskId, [reportA1]).expect(200);
       const first = (await artifactsOf(taskId))[0]!;
       // 之后又有了一份更新的报告：重写仍用原来那份
       await insertReport(f.clients.a1[0], '2026-10-05', 5.0);
-      criteriaProvider.queue.push({ text: interpretationJson() });
+      provider.queue.push({ text: interpretationJson() });
       await agent
         .post(`/api/artifacts/${first.id}/return`)
         .send({ reason: '语气再温和一点' })
         .expect(200);
       const second = (await artifactsOf(taskId)).at(-1);
       expect(second).toMatchObject({ version: 2, source_report_id: reportA1 });
-      expect(JSON.stringify(criteriaProvider.calls[1])).toContain('报告日期：2026-09-12');
+      expect(JSON.stringify(provider.calls[1])).toContain('报告日期：2026-09-12');
 
       const approved = await approve(agent, second!.id);
       expect(approved.status).toBe(200);
@@ -434,15 +442,49 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
       expect(copy.body.text).not.toMatch(/分层|风险/);
       expect(copy.body.text).not.toContain('建议分层');
     });
+
+    it('依据的报告已不可用时不能退回重写，不会换成最近一份报告', async () => {
+      const agent = await as(f.users.managerA1.email);
+      const taskId = await newTask(agent, f.clients.a1[0]);
+      provider.queue.push({ text: interpretationJson() });
+      await interpret(agent, taskId, [reportA1]).expect(200);
+      const first = (await artifactsOf(taskId))[0]!;
+      await owner.deleteFrom('health_reports').where('id', '=', reportA1).execute();
+      expect((await artifactsOf(taskId))[0]?.source_report_id).toBeNull();
+      const res = await agent
+        .post(`/api/artifacts/${first.id}/return`)
+        .send({ reason: '语气再温和一点' });
+      expect(res.status).toBe(409);
+      expect(res.body.reasons).toEqual(['source_report_unavailable']);
+      expect(provider.calls).toHaveLength(1);
+      expect((await artifactsOf(taskId)).map((a) => [a.version, a.status])).toEqual([[1, 'draft']]);
+    });
   });
 
   describe('建议分层（规格 2.7，验收 12）', () => {
-    it('有分层标准时保存建议；确认时勾选“采用建议分层”写入分层历史，来源是这份产物', async () => {
-      const agent = await as(f.users.managerA1.email, criteriaApp);
+    it('分层定义被去掉时不给建议：模型给了分层也丢弃，勾选采用被拒绝', async () => {
+      const agent = await as(f.users.managerA1.email, noGuideApp);
       const taskId = await newTask(agent, f.clients.a1[0]);
-      criteriaProvider.queue.push({ text: interpretationJson() });
+      noGuideProvider.queue.push({ text: interpretationJson() });
       await interpret(agent, taskId, [reportA1]).expect(200);
-      expect(JSON.stringify(criteriaProvider.calls[0])).toContain('评测用合成标准');
+      expect(JSON.stringify(noGuideProvider.calls[0])).toContain('没有提供分层标准');
+      const artifact = (await artifactsOf(taskId))[0]!;
+      expect(artifact.risk_tier_suggestion).toBeNull();
+      expect((artifact.content as { professional: string }).professional).toContain(
+        '没有提供分层标准，这次不给出建议分层。',
+      );
+      const res = await approve(agent, artifact.id, { adoptRiskTier: true });
+      expect(res.status).toBe(409);
+      expect(res.body.reasons).toEqual(['no_risk_tier_suggestion']);
+    });
+
+    it('按默认定义保存建议；确认时勾选“采用建议分层”写入分层历史，来源是这份产物', async () => {
+      const agent = await as(f.users.managerA1.email);
+      const taskId = await newTask(agent, f.clients.a1[0]);
+      provider.queue.push({ text: interpretationJson() });
+      await interpret(agent, taskId, [reportA1]).expect(200);
+      // 发给模型的是通用默认分层定义（DEFAULT_RISK_TIER_GUIDE）
+      expect(JSON.stringify(provider.calls[0])).toContain('通用默认分层定义');
       const artifact = (await artifactsOf(taskId))[0]!;
       expect(artifact.risk_tier_suggestion).toEqual({
         tier: 'medium',
@@ -470,22 +512,22 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
         sourceArtifactId: artifact.id,
       });
       // 机构管理员看得到分层，看不到来源产物（Q14）
-      const orgAdmin = await as(f.users.orgAdminA.email, criteriaApp);
+      const orgAdmin = await as(f.users.orgAdminA.email);
       const seen = await orgAdmin.get(`/api/clients/${f.clients.a1[0]}/risk-tiers`).expect(200);
       expect(seen.body.tiers[0]).toMatchObject({ source: 'artifact', sourceArtifactId: null });
     });
 
     it('不勾选不改分层；产物没有建议分层时勾选被拒绝；手动修改仍要理由', async () => {
-      const agent = await as(f.users.managerA1.email, criteriaApp);
+      const agent = await as(f.users.managerA1.email);
       const taskId = await newTask(agent, f.clients.a1[0]);
-      criteriaProvider.queue.push({ text: interpretationJson() });
+      provider.queue.push({ text: interpretationJson() });
       await interpret(agent, taskId, [reportA1]).expect(200);
       const artifact = (await artifactsOf(taskId))[0]!;
       expect((await approve(agent, artifact.id)).status).toBe(200);
       expect(await tiersOf(f.clients.a1[0])).toEqual([]);
 
       const task2 = await newTask(agent, f.clients.a1[0]);
-      criteriaProvider.queue.push({ text: interpretationJson({ riskTier: null }) });
+      provider.queue.push({ text: interpretationJson({ riskTier: null }) });
       await interpret(agent, task2, [reportA1]).expect(200);
       const noSuggestion = (await artifactsOf(task2))[0]!;
       const rejected = await approve(agent, noSuggestion.id, { adoptRiskTier: true });
@@ -501,9 +543,9 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
     });
 
     it('跨租户：别人不能确认这份产物，也就不能借它给客户写分层', async () => {
-      const a1 = await as(f.users.managerA1.email, criteriaApp);
+      const a1 = await as(f.users.managerA1.email);
       const taskId = await newTask(a1, f.clients.a1[0]);
-      criteriaProvider.queue.push({ text: interpretationJson() });
+      provider.queue.push({ text: interpretationJson() });
       await interpret(a1, taskId, [reportA1]).expect(200);
       const artifact = (await artifactsOf(taskId))[0]!;
       const d = await detail(a1, artifact.id);
@@ -511,8 +553,11 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
         f.users.managerA2.email,
         f.users.managerB1.email,
         f.users.orgAdminA.email,
+        f.users.operatorAdminA.email,
+        f.users.operatorAdminB.email,
+        f.users.platform.email,
       ]) {
-        const other = await as(email, criteriaApp);
+        const other = await as(email);
         const res = await other.post(`/api/artifacts/${artifact.id}/approve`).send({
           version: d.artifact.version,
           contentHash: d.artifact.contentHash,
@@ -523,10 +568,63 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
       expect(await tiersOf(f.clients.a1[0])).toEqual([]);
     });
 
-    it('客户转出后：分层跟着客户走，来源产物的引用置空，来源仍记为“采用建议分层”', async () => {
-      const agent = await as(f.users.managerA1.email, criteriaApp);
+    it('确认并采用建议分层和客户转出并发：先锁客户再锁任务，不会死锁', async () => {
+      const agent = await as(f.users.managerA1.email);
       const taskId = await newTask(agent, f.clients.a1[0]);
-      criteriaProvider.queue.push({ text: interpretationJson() });
+      provider.queue.push({ text: interpretationJson() });
+      await interpret(agent, taskId, [reportA1]).expect(200);
+      const artifact = (await artifactsOf(taskId))[0]!;
+      const d = await detail(agent, artifact.id);
+
+      // 模拟正在进行的转出：先锁住客户行（和 UPDATE clients 一样的行锁）
+      let result: Promise<{ status: number }> = Promise.resolve({ status: 0 });
+      await owner.transaction().execute(async (trx) => {
+        await trx
+          .selectFrom('clients')
+          .select('id')
+          .where('id', '=', f.clients.a1[0])
+          .forUpdate()
+          .execute();
+        const pending = agent.post(`/api/artifacts/${artifact.id}/approve`).send({
+          version: d.artifact.version,
+          contentHash: d.artifact.contentHash,
+          adoptRiskTier: true,
+        });
+        result = pending.then((r) => r);
+        // 等确认请求在客户行上等锁
+        for (let i = 0; i < 50; i++) {
+          const waiting = await owner
+            .selectFrom('pg_stat_activity' as never)
+            .select(sql<number>`count(*)::int`.as('n'))
+            .where(sql<boolean>`wait_event_type = 'Lock' and datname = current_database()`)
+            .executeTakeFirstOrThrow();
+          if ((waiting as { n: number }).n > 0) break;
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        // 转出接着锁任务（detach_client_work 的顺序）。确认请求如果先拿了任务锁，这里会等到超时
+        await sql`set local lock_timeout = '3s'`.execute(trx);
+        await trx
+          .selectFrom('tasks')
+          .select('id')
+          .where('client_id', '=', f.clients.a1[0])
+          .forUpdate()
+          .execute();
+        await trx
+          .updateTable('clients')
+          .set({ manager_id: f.users.managerA2.id })
+          .where('id', '=', f.clients.a1[0])
+          .execute();
+      });
+      // 转出提交后，等锁的确认请求按只读拒绝，不会写入分层
+      expect([404, 409]).toContain((await result).status);
+      expect((await artifactsOf(taskId))[0]?.status).toBe('voided');
+      expect(await tiersOf(f.clients.a1[0])).toEqual([]);
+    });
+
+    it('客户转出后：分层跟着客户走，来源产物的引用置空，来源仍记为“采用建议分层”', async () => {
+      const agent = await as(f.users.managerA1.email);
+      const taskId = await newTask(agent, f.clients.a1[0]);
+      provider.queue.push({ text: interpretationJson() });
       await interpret(agent, taskId, [reportA1]).expect(200);
       const artifact = (await artifactsOf(taskId))[0]!;
       expect((await approve(agent, artifact.id, { adoptRiskTier: true })).status).toBe(200);
@@ -546,7 +644,10 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
         .select(['client_id', 'source_report_id'])
         .where('id', '=', artifact.id)
         .executeTakeFirstOrThrow();
-      expect(after).toEqual({ client_id: null, source_report_id: reportA1 });
+      // 原健管师的产物不再指向这位客户的报告（T2）
+      expect(after).toEqual({ client_id: null, source_report_id: null });
+      const old = await as(f.users.managerA1.email);
+      expect((await detail(old, artifact.id)).sourceReport).toBeNull();
       // 客户删除时也不因为引用而失败
       await owner.deleteFrom('clients').where('id', '=', f.clients.a1[0]).execute();
       expect(await tiersOf(f.clients.a1[0])).toEqual([]);
@@ -669,6 +770,31 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
         .send({ reason: '多问一些运动的问题' })
         .expect(200);
       expect(JSON.stringify(provider.calls.at(-1))).toContain('新客户，帮我做个完整评估');
+    });
+
+    it('计划出好之后客户被转出：确认被拒绝，不生成草稿', async () => {
+      const agent = await as(f.users.managerA1.email);
+      const taskId = await newTask(agent, f.clients.a1[0]);
+      const proposed = await send(agent, taskId, {
+        mode: 'plan',
+        content: '新客户，帮我做个完整评估',
+        skillId: 'new-client-assessment',
+      }).expect(200);
+      const planEvent = parseSse(proposed.text).find((e) => e.type === 'plan');
+      const planId = planEvent?.type === 'plan' ? planEvent.plan.id : '';
+      await owner
+        .updateTable('clients')
+        .set({ manager_id: f.users.managerA2.id })
+        .where('id', '=', f.clients.a1[0])
+        .execute();
+      provider.queue.push({ text: interpretationJson() }, { text: outlineJson() });
+      const res = await agent.post(`/api/tasks/${taskId}/plans/${planId}/confirm`);
+      expect([404, 409]).toContain(res.status);
+      expect(provider.calls).toEqual([]);
+      expect(await artifactsOf(taskId)).toEqual([]);
+      // 新健管师也不能确认原健管师的计划
+      const a2 = await as(f.users.managerA2.email);
+      await a2.post(`/api/tasks/${taskId}/plans/${planId}/confirm`).expect(404);
     });
 
     it('多步计划只能在想一想里用；客户没有已核对报告时不出计划', async () => {

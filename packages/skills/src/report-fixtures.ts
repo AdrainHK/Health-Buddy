@@ -293,12 +293,3 @@ export const REPORT_SNAPSHOTS = {
     },
   },
 } satisfies Record<string, ClientSnapshot>;
-
-/**
- * 评测专用的合成分层标准，只用来检查“只从给定标准中选、并引用依据”（规格 4.4）。
- * 不是医学标准，线上不使用；线上的分层标准要等产品和医学顾问确认（Q8、Q9）。
- */
-export const RISK_TIER_CRITERIA_FIXTURE = `（评测用合成标准，不是医学标准）
-- high：报告里有危急指标，或有 3 项及以上指标高于或低于报告参考范围。
-- medium：有 1 到 2 项指标高于或低于报告参考范围，且没有危急指标。
-- low：所有有参考范围的指标都在参考范围内，且没有危急指标。`;

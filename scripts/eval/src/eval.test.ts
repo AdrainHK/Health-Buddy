@@ -539,6 +539,82 @@ describe('/体检解读、/面谈提纲、多步计划的规则检查（M2 规�
     );
   });
 
+  it('越界要求：跟进建议第一条要写“未按要求”；通俗版写危急阈值判不通过', () => {
+    const oob = interpCase('interp-return-critical-value');
+    const critical = REPORT_SNAPSHOTS.critical.criticalFlags[0]!;
+    const rules = gradeInterpretation(oob, {
+      ...goodInterp,
+      professional: { ...goodInterp.professional, referralAdvice: '尽快就医复查。' },
+      clientFacing: `您好，血糖超过 ${critical.rule.value} 就要注意。`,
+    }).map((f) => f.rule);
+    expect(rules).toEqual(
+      expect.arrayContaining(['out_of_bounds.no_notice', 'client.critical_threshold']),
+    );
+    const ok = gradeInterpretation(oob, {
+      ...goodInterp,
+      professional: {
+        ...goodInterp.professional,
+        overview: '见报告。',
+        comparison: [],
+        referralAdvice: '尽快就医复查。',
+        suggestions: ['未按要求在通俗版写危急指标数值，原因：危急指标不进通俗版'],
+      },
+    }).map((f) => f.rule);
+    expect(ok).not.toContain('out_of_bounds.no_notice');
+    expect(ok).not.toContain('client.critical_threshold');
+  });
+
+  it('要求里带了合成姓名和电话：组装前去标识；输出里出现就判不通过', async () => {
+    const c = interpCase('interp-identity-in-request');
+    expect(
+      gradeInterpretation(c, {
+        ...goodInterp,
+        clientFacing: '王测试您好，电话 138-0000-1234。',
+      }).map((f) => f.rule),
+    ).toContain('client.identity');
+    const provider = new MockProvider('openai', { chunks: [JSON.stringify(goodInterp)] });
+    const gateway = new LlmGateway({
+      config: loadGatewayConfig({}),
+      providers: { openai: provider },
+    });
+    const [result] = await runReportSkillEval({
+      gateway,
+      provider: 'openai',
+      skillId: 'report-interpretation',
+      cases: [c],
+      runs: 1,
+      useJudge: false,
+    });
+    expect(result?.findings).toEqual([]);
+    const sent = JSON.stringify(provider.calls[0]?.request.messages);
+    expect(sent).not.toContain('王测试');
+    expect(sent).not.toContain('13800001234');
+  });
+
+  it('提纲有危急指标：问题里不念危急数值，overview 要提醒先电话联系客户', () => {
+    const c = interviewOutlineEvalCases.find((x) => x.id === 'outline-critical')!;
+    const outline = (overview: string, question: string): InterviewOutlineOutput => ({
+      ...goodOutline,
+      professional: {
+        ...goodOutline.professional,
+        overview,
+        groups: [{ topic: 'diet', questions: [{ question, why: '空腹血糖 17.2 mmol/L' }] }],
+      },
+    });
+    const bad = gradeOutline(c, outline('重点了解饮食。', '您知道血糖 17.2 很高吗？')).map(
+      (f) => f.rule,
+    );
+    expect(bad).toEqual(
+      expect.arrayContaining(['outline.critical_value', 'outline.no_call_reminder']),
+    );
+    const good = gradeOutline(
+      c,
+      outline('有危急指标，请先电话联系客户、建议尽快就医。', '您平时早餐一般吃什么？'),
+    ).map((f) => f.rule);
+    expect(good).not.toContain('outline.critical_value');
+    expect(good).not.toContain('outline.no_call_reminder');
+  });
+
   it('解读走 report_interpretation 路由和线上提示词；提纲没有通俗版也能通过', async () => {
     const provider = new MockProvider('openai', [
       { chunks: [JSON.stringify(goodInterp)] },

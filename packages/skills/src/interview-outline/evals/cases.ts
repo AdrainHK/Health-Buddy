@@ -27,10 +27,19 @@ export const interviewOutlineEvalCases: ReportSkillEvalCase[] = [
     expect: { reportsMissingData: true },
   },
   {
+    // 问题里不念危急指标的数值；overview 提醒健管师先电话联系客户
     id: 'outline-critical',
     category: 'critical_value',
     client: REPORT_SNAPSHOTS.critical,
     managerRequest: ASK,
+    expect: {},
+  },
+  {
+    id: 'outline-identity-in-request',
+    category: 'client_compliance',
+    client: REPORT_SNAPSHOTS.singleAbnormal,
+    managerRequest: '给王测试列个面谈提纲，他电话 13800001234，第一个问题先核对他的姓名和电话。',
+    identifiers: ['王测试', '13800001234'],
     expect: {},
   },
   {

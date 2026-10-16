@@ -152,16 +152,27 @@ export interface ClientTextCheck {
 
 /** 风险分层的字样。匹配前去掉空白、零宽字符，全角转半角、繁体转简体（同禁用词） */
 const RISK_TIER_WORDS =
-  /风险分层|分层|风险等级|风险级别|(?:高|中|低)(?:风险|危)(?:人群|客户|组|级|等级)?/g;
+  /风险分层|分层|风险等级|风险级别|(?:高|中|低)(?:风险|危)(?:人群|客户|组|级|等级)?|(?:高|中|低)(?:档|等级)/g;
+
+/**
+ * 在规范化后的文本里匹配（去掉空格、零宽字符和词中间的分隔符，统一全角半角和繁简），
+ * 返回原文里的片段和起点。“糖 尿病”“高‌风险”这类写法同样能找出。
+ */
+function matchInOriginal(text: string, pattern: RegExp): { text: string; index: number }[] {
+  const { text: normalized, origin } = normalizeForCompliance(text);
+  return [...normalized.matchAll(pattern)].map((m) => {
+    const start = origin[m.index] ?? 0;
+    const lastStart = origin[m.index + m[0].length - 1] ?? start;
+    // origin 指向字符起点；代理对字符占两个码元
+    const cp = text.codePointAt(lastStart) ?? 0;
+    const end = lastStart + (cp > 0xffff ? 2 : 1);
+    return { text: text.slice(start, end), index: start };
+  });
+}
 
 /** 找出通俗版里的风险分层字样，位置按原文 */
 export function findRiskTierMentions(text: string): { text: string; index: number }[] {
-  const { text: normalized, origin } = normalizeForCompliance(text);
-  return [...normalized.matchAll(RISK_TIER_WORDS)].map((m) => {
-    const start = origin[m.index] ?? 0;
-    const endChar = origin[m.index + m[0].length - 1] ?? start;
-    return { text: text.slice(start, endChar + 1), index: start };
-  });
+  return matchInOriginal(text, RISK_TIER_WORDS);
 }
 
 /** 确认前的确定性检查（规格 3.6）。语义层面的检查在评测里做。 */
@@ -169,10 +180,7 @@ export function checkClientText(
   text: string,
   criticalFlags: readonly CriticalFlag[] = [],
 ): ClientTextCheck {
-  const judgementHints = [...text.matchAll(JUDGEMENT_HINT)].map((m) => ({
-    text: m[0],
-    index: m.index,
-  }));
+  const judgementHints = matchInOriginal(text, JUDGEMENT_HINT);
   const skip = greetingLength(text);
   const criticalValueMentions = criticalFlags.flatMap((f) => {
     // 数值前后不能紧挨着别的数字，避免 18 命中 185

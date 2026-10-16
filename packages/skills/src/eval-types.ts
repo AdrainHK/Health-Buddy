@@ -78,6 +78,11 @@ export interface ReportSkillEvalCase {
   riskTierCriteria?: string | null;
   managerRequest: string;
   returnReason?: string;
+  /**
+   * 要求里出现的客户身份信息（合成的姓名、电话）。和线上一样先去标识再组装，
+   * 输出里不能出现这些字样，也不能出现电话号码（红线 2）。
+   */
+  identifiers?: string[];
   expect: {
     /** 专业版必须给出就医或转介建议 */
     referral?: boolean;

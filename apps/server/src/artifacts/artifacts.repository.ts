@@ -89,6 +89,9 @@ export class ArtifactsRepository {
     input: Required<ApproveArtifactRequest>,
   ): Promise<ArtifactDetailResponse | undefined> {
     return this.write(ctx, async (trx) => {
+      // 采用建议分层要写客户的分层历史：先锁客户行，再锁任务和产物。
+      // 和客户转出、删除（先锁客户，再锁任务）的加锁顺序一致，避免死锁
+      const lockedClientId = input.adoptRiskTier ? await lockClientOf(trx, ctx, id) : null;
       const row = await loadArtifact(trx, id, 'lock');
       if (!row) return undefined;
       if (row.detached) throw readOnly();
@@ -143,7 +146,7 @@ export class ArtifactsRepository {
       }
       await trx.updateTable('artifacts').set({ status: 'approved' }).where('id', '=', id).execute();
       if (input.adoptRiskTier && row.risk_tier_suggestion) {
-        await adoptRiskTier(trx, ctx, row, row.risk_tier_suggestion);
+        await adoptRiskTier(trx, ctx, row, row.risk_tier_suggestion, lockedClientId);
       }
       // 有危急指标时记下“已知悉”，便于追溯
       await recordEvent(trx, ctx, row, 'approved', hasCritical ? CRITICAL_ACKNOWLEDGED : null);
@@ -493,6 +496,32 @@ async function sourceReport(
 }
 
 /**
+ * 采用建议分层前先锁住产物所属的客户行（共享锁），返回客户 id。
+ * 先不加锁地读出产物的客户，再按“客户 → 任务 → 产物”的顺序加锁；
+ * 客户已不归当前健管师（转出）时返回 null，之后按只读拒绝。
+ */
+async function lockClientOf(
+  trx: TenantTransaction,
+  ctx: TenantContext,
+  artifactId: string,
+): Promise<string | null> {
+  const ref = await trx
+    .selectFrom('artifacts')
+    .select('client_id')
+    .where('id', '=', artifactId)
+    .executeTakeFirst();
+  if (!ref?.client_id) return null;
+  const client = await trx
+    .selectFrom('clients')
+    .select('id')
+    .where('id', '=', ref.client_id)
+    .where('manager_id', '=', ctx.userId)
+    .forShare()
+    .executeTakeFirst();
+  return client?.id ?? null;
+}
+
+/**
  * 确认时采用建议分层（规格 2.7）：和确认在同一个事务里写入分层历史，来源记为这份产物。
  * 先锁住客户行，和并发的转出串行；客户已不归当前健管师时拒绝（整个确认回滚）。
  * 租户列由触发器取自客户行，行级安全和触发器再校验一遍归属和来源产物。
@@ -502,16 +531,10 @@ async function adoptRiskTier(
   ctx: TenantContext,
   row: Pick<ArtifactRow, 'id' | 'client_id'>,
   suggestion: RiskTierSuggestion,
+  lockedClientId: string | null,
 ): Promise<void> {
-  if (!row.client_id) throw readOnly();
-  const client = await trx
-    .selectFrom('clients')
-    .select('id')
-    .where('id', '=', row.client_id)
-    .where('manager_id', '=', ctx.userId)
-    .forShare()
-    .executeTakeFirst();
-  if (!client) throw readOnly();
+  // 客户行已在确认开始时锁住；锁住之后产物仍属于这位客户才写入
+  if (!row.client_id || row.client_id !== lockedClientId) throw readOnly();
   await trx
     .insertInto('client_risk_tiers')
     .values({

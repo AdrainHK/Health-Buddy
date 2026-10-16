@@ -19,10 +19,7 @@ import { HealthController } from './health/health.controller.js';
 import { SkillsController } from './skills/skills.controller.js';
 import { TasksModule } from './tasks/tasks.module.js';
 import { WorkbenchModule } from './workbench/workbench.module.js';
-import {
-  CONFIRMED_RISK_TIER_CRITERIA,
-  RISK_TIER_CRITERIA,
-} from './workbench/risk-tier-criteria.js';
+import { RISK_TIER_GUIDE, RISK_TIER_CRITERIA } from './workbench/risk-tier-criteria.js';
 
 export interface AppOptions {
   /** 测试用：替换大模型厂商适配器 */
@@ -57,9 +54,7 @@ export class AppModule {
         {
           provide: RISK_TIER_CRITERIA,
           useValue:
-            options.riskTierCriteria !== undefined
-              ? options.riskTierCriteria
-              : CONFIRMED_RISK_TIER_CRITERIA,
+            options.riskTierCriteria !== undefined ? options.riskTierCriteria : RISK_TIER_GUIDE,
         },
         ...(options.llmProviders
           ? [{ provide: LLM_PROVIDERS, useValue: options.llmProviders }]
