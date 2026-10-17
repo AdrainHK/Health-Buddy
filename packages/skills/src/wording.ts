@@ -139,30 +139,31 @@ const LIFESTYLE_NOUNS = [
   '汽水',
   '苏打水',
   '汤',
-].join('|');
+]
+  // 长的先试：奶茶、苏打水在茶、水之前
+  .sort((x, y) => y.length - x.length)
+  .join('|');
 /** 数量和饮品之间可以有的修饰：几杯含糖饮料、几杯冰可乐、几杯全脂牛奶 */
 const DRINK_MODIFIER = '(?:含糖|无糖|低糖|全脂|脱脂|低脂|甜|冰|热)?';
 /** 名单里的词后面再接这些字就成了别的东西（糖浆、酒精、盐水针……），不算 */
 const NOT_A_WORD_END = '(?!浆|精|粉|膏|丸|片|剂|药|胶囊|颗粒|针)';
-/** 单位后面紧跟名单里的词：几支烟、几两白酒、几瓶啤酒、几勺盐、几杯水 */
-const COUNTED_AFTER = new RegExp(`^${DRINK_MODIFIER}(?:${LIFESTYLE_NOUNS})${NOT_A_WORD_END}`);
+/** 一样东西：可带自己的数量和一个修饰（几杯含糖饮料、冰可乐） */
+const QUANTITY =
+  '(?:\\d+|[一二两三四五六七八九十半几]+)(?:杯|瓶|两|罐|听|勺|克|g|ml|毫升|袋|包|颗)';
+const ITEM = `(?:${QUANTITY})?${DRINK_MODIFIER}(?:${LIFESTYLE_NOUNS})${NOT_A_WORD_END}`;
+const JOIN = '(?:或者|或|和|还是|以及)?';
+const TAIL = '(?:左右|上下|吗|呢|呀|啊|吧)*';
+/** 数量后面整段只有名单里的东西（用或、和、还是、以及连起来，也可以不连）：几杯水几杯咖啡、几杯奶茶或果汁 */
+const COUNTED_LIST = new RegExp(`^${ITEM}(?:${JOIN}${ITEM})*${TAIL}$`);
 /** “支”只用来数烟 */
-const CIGARETTES_AFTER = new RegExp(`^(?:香烟|烟)${NOT_A_WORD_END}`);
-/** 名单里的词是分句的话题，紧接着是问量的说法：白酒每次喝几两、盐每天放几勺 */
-const TOPIC_BEFORE = new RegExp(
-  `(?:^|您|平时|平常|另外|其中)(?:${LIFESTYLE_NOUNS})(?:每天|每次|一次|一天|每周|一周|平时|平常|大概|大约|一般|通常|会|喝|抽|吃|放|用|加)*$`,
-);
-/**
- * 话题在句首、隔了一个分句再问量：“酒多久喝一次，每天大概喝几杯”“饮料平时喝得多吗，每天大概喝几杯”。
- * 句首（可带“您”“平时”）是名单里的词；问量的分句里只剩下面这些问频次、问量的字。
- */
-const SENTENCE_TOPIC = new RegExp(
-  `^(?:您|平时|平常|另外|其中|那)?${DRINK_MODIFIER}(?:${LIFESTYLE_NOUNS})${NOT_A_WORD_END}`,
-);
+const CIGARETTES_ONLY = new RegExp(`^(?:香烟|烟)${NOT_A_WORD_END}${TAIL}$`);
+/** 分句开头的话题：每一样都在名单里（白酒、汤和茶） */
+const TOPIC_LIST = new RegExp(`^(?:您|平时|平常|另外|其中|那)?${ITEM}(?:${JOIN}${ITEM})*`);
+/** 话题和问量之间只能有这些问频次、问量的字和分句标点 */
 const QUANTITY_FILLER =
-  /每天|每次|一次|一天|每周|一周|平时|平常|大概|大约|一般|通常|多久|多长时间|会|喝|抽|放|加|得|多|吗|不|您/g;
+  /每天|每次|一次|一天|每周|一周|平时|平常|大概|大约|一般|通常|多久|多长时间|会|喝|抽|放|加|得|多|吗|呢|不|您|[，：？！,:?!]/g;
 const ASKS_AMOUNT = /喝|抽|放|加/;
-const AFTER_FILLER = /^(?:左右|上下|吗|呢|呀|啊|吧)*$/;
+const ONLY_TAIL = new RegExp(`^${TAIL}$`);
 /** 同一分句里出现这些就一律不放过：药、保健品、药材和剂型 */
 const DRUG_OR_SUPPLEMENT = new RegExp(
   [
@@ -207,25 +208,30 @@ const DRUG_OR_SUPPLEMENT = new RegExp(
 const DRUG_ONLY_UNITS = /^(?:mg|毫克|片|粒|丸|单位|IU)$/i;
 
 /**
- * 这一处数量是不是在问生活方式：数的就是名单里的东西（紧跟在单位后面，或者是前面的话题），
- * 单位不是药专用的（“支”只数烟），同一分句里也没有药、保健品、药材或剂型。
- * 话题在句首、隔了分句再问量的，整句都不能有药、保健品、药材或剂型。
+ * 这一处数量是不是在问生活方式，两种说法：
+ * - 数量后面整段只有名单里的东西：几支烟、几杯水几杯咖啡、几杯奶茶或果汁；
+ * - 话题在前：某个分句开头列的每一样都在名单里，从那里到数量之间只有问频次、问量的字
+ *   （白酒每次喝几两；酒多久喝一次，每天大概喝几杯），数量后面也不再接东西。
+ * 单位不是药专用的（“支”只数烟），整句没有药、保健品、药材或剂型。
  */
 function isLifestyleQuantity(norm: string, start: number, end: number, unit: string): boolean {
   const from = boundary(norm, start, CLAUSE_MARK, -1);
   const to = boundary(norm, end, CLAUSE_MARK, 1);
-  const before = norm.slice(from, start);
   const after = norm.slice(end, to);
-  if (DRUG_ONLY_UNITS.test(unit) || DRUG_OR_SUPPLEMENT.test(norm.slice(from, to))) return false;
-  if (unit === '支') return CIGARETTES_AFTER.test(after);
-  if (COUNTED_AFTER.test(after) || TOPIC_BEFORE.test(before)) return true;
-  // 话题在句首：问量的分句里除了问频次、问量的字没有别的东西，后面也没有再接东西
   const sFrom = boundary(norm, start, SENTENCE_MARK, -1);
   const sentence = norm.slice(sFrom, boundary(norm, end, SENTENCE_MARK, 1));
-  const topic = SENTENCE_TOPIC.exec(sentence);
-  if (!topic || DRUG_OR_SUPPLEMENT.test(sentence) || !AFTER_FILLER.test(after)) return false;
-  const head = from === sFrom ? before.slice(topic[0].length) : before;
-  return ASKS_AMOUNT.test(head) && head.replace(QUANTITY_FILLER, '') === '';
+  if (DRUG_ONLY_UNITS.test(unit) || DRUG_OR_SUPPLEMENT.test(sentence)) return false;
+  if (unit === '支') return CIGARETTES_ONLY.test(after);
+  if (COUNTED_LIST.test(after)) return true;
+  if (!ONLY_TAIL.test(after) || !ASKS_AMOUNT.test(norm.slice(from, start))) return false;
+  // 从数量所在的分句往前，逐个分句开头试话题
+  for (let k = from; k >= sFrom; k--) {
+    if (k > sFrom && !CLAUSE_MARK.test(norm[k - 1]!)) continue;
+    const topic = TOPIC_LIST.exec(norm.slice(k, start));
+    if (topic && norm.slice(k + topic[0].length, start).replace(QUANTITY_FILLER, '') === '')
+      return true;
+  }
+  return false;
 }
 
 const CLAUSE_MARK = /[，。；：！？,.;:!?\n]/;
