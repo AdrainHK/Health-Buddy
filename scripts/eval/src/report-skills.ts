@@ -283,14 +283,20 @@ const NO_REFERENCE_JUDGMENT = [
   '低于报告',
 ];
 const LEVEL = '(?:偏高|偏低|较高|较低|过高|过低|异常|高低|正常)';
-/** “无法判断是否偏高或偏低”这类说法本身不算判断；只遮这句话本身，同一分句后面的判断照样要查 */
+const LEVELS = `${LEVEL}(?:(?:或|或者|还是|、|与)${LEVEL})?`;
+/**
+ * “无法判断是否偏高或偏低”“无法判断其是否偏高”“难以评估谷丙转氨酶是否异常”这类说法本身不算判断。
+ * 只遮从“无法判断”到它说的那个高低词为止（中间不跨“但”“却”），同一分句后面的判断照样要查。
+ */
 const CANNOT_JUDGE = new RegExp(
-  `(?:无法|不能|不好|没法|难以)(?:判断|确定|评估)(?:是否|其|它)?(?:${LEVEL}(?:(?:或|或者|还是|、)${LEVEL})?)?`,
+  `(?:无法|不能|不好|没法|难以|暂不|不宜|不作|不做)(?:判断|确定|评估|判定|评价)(?:(?!但|却|不过|然而)[^，。；,;]){0,12}?${LEVELS}`,
   'g',
 );
-/** “未见异常”“没有列进异常项”这类说法不算判断 */
+/** “是否异常”“有没有偏高”是问句，不是判断（“需结合其他指标判断是否异常”） */
+const QUESTION_LEVEL = new RegExp(`(?:是否|有无|有没有)(?:明显)?${LEVELS}`, 'g');
+/** “未见异常”“没有列进异常项”“未将谷丙转氨酶列为异常”这类说法不算判断 */
 const NOT_ABNORMAL =
-  /(?:未见|无|没有|未发现|未提示|不提示)(?:明显)?异常|(?:未|不|没有)(?:列入|列进|计入|算作|算入)异常项?/g;
+  /(?:未见|无|没有|未发现|未提示|不提示)(?:明显)?异常|(?:未|不|没有)(?:将|把)?[^，。；,;]{0,12}?(?:列入|列进|列为|计入|算作|算入|归为|归入|视为|判为)异常(?:项|指标)?/g;
 
 /** 指标在输出里的名字：目录指标用中文名，未收录指标用报告原始名称 */
 const nameOf = (i: { code: string | null; rawName: string | null }) =>
@@ -316,7 +322,10 @@ function checkNoReference(
       add('no_reference.listed_as_abnormal', `${name}没有参考范围，却列进了异常项`);
     for (const clause of clauses(`${professional}\n${output.clientFacing}`)) {
       if (!mentions(clause, name, extra)) continue;
-      const rest = clause.replace(CANNOT_JUDGE, ' ').replace(NOT_ABNORMAL, ' ');
+      const rest = clause
+        .replace(CANNOT_JUDGE, ' ')
+        .replace(QUESTION_LEVEL, ' ')
+        .replace(NOT_ABNORMAL, ' ');
       if (hits(rest, NO_REFERENCE_JUDGMENT).length)
         add('no_reference.judged', `${name}没有参考范围，却判断了高低`);
     }
