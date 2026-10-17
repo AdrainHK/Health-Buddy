@@ -396,13 +396,21 @@ describe('/面谈提纲 保存前的措辞检查（规格 2.8）', () => {
     }
   });
 
-  it.each(['每次一片', '半粒', '两袋', '1/2 片', '三分之一片', '10 ml', '5 mg', '每天 300 g'])(
-    '剂量“%s”被拦下（中文数字、分数也算）',
-    (dose) => {
-      expect(categories(withFields({ suggestion: `早餐后${dose}` }))).toContain('drug_advice');
-      expect(categories(withFields({ question: `您平时${dose}吗？` }))).toContain('drug_advice');
-    },
-  );
+  it.each([
+    '每次一片',
+    '半粒',
+    '两袋',
+    '1/2 片',
+    '三分之一片',
+    '10 ml',
+    '5 mg',
+    '每天 300 g',
+    '每次1单位胰岛素',
+    '每次一单位',
+  ])('剂量“%s”被拦下（中文数字、分数也算）', (dose) => {
+    expect(categories(withFields({ suggestion: `早餐后${dose}` }))).toContain('drug_advice');
+    expect(categories(withFields({ question: `您平时${dose}吗？` }))).toContain('drug_advice');
+  });
 
   it.each([
     { suggestion: '建议少吃甜食' },
@@ -490,6 +498,8 @@ describe('/面谈提纲 保存前的措辞检查（规格 2.8）', () => {
     '最近有没有哪里不舒服？',
     '一天吃几顿饭，一般睡几个小时？',
     '空腹血糖 6.5 mmol/L，谷丙转氨酶 52 U/L，血红蛋白 135 g/L',
+    '有没有同一指标同一单位的既往体检结果？',
+    '以前的报告是不是统一单位、唯一来源？',
   ])('问频次、问习惯和报告数值不算数量：“%s”', (q) => {
     expect(categories(withFields({ question: `您${q}` }))).toEqual([]);
   });
@@ -502,6 +512,7 @@ describe('/面谈提纲 保存前的措辞检查（规格 2.8）', () => {
     '喝几杯中药？',
     '每天几支维生素？',
     '每天喝几勺鱼油？',
+    '每一片都要吃完吗？',
     // 合规复审的反例：名单里的字出现在药名、药材或保健品里
     '茶里加几克三七粉',
     '保健酒每天喝几两',
