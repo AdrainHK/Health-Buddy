@@ -54,173 +54,32 @@ export const DOSE = /\d+(?:\.\d+)?\s*(?:mg|毫克|片|粒|单位|IU)/i;
  * 更严的剂量和数量：阿拉伯数字、中文数字、分数都算（一片、半粒、1/2 片、两袋、10 ml、几杯、一瓶、二两）。
  * “一两天”“一听到”这类说法不算。
  * 只用于提纲的评测；单位后紧跟 / 或字母的检验单位（mg/dL、g/L）不算。
- * 生活方式的数量（烟、酒、盐、油、糖、水、咖啡、茶、饮料）可以问，见 strictDoseMatch。
+ * 提纲不问任何东西的数量（产品确认保持现状），烟、酒、盐、水、饮料的数量同样算。
  */
 export const STRICT_DOSE =
-  /(?:\d+(?:\.\d+)?|\d+\/\d+|[一二两三四五六七八九十]+分之[一二三四五六七八九]|[一二两三四五六七八九十半几]+)\s*(mg|毫克|克|g|ml|毫升|片|粒|颗|支|袋|包|丸|勺|瓶|杯|罐|听(?![到说见过力])|两(?![天年次个周月顿回遍晚位种项分小岁])|块(?![儿吃去走玩做住])|碗|根|服|副|单位|IU)(?![/A-Za-z])/i;
+  /(?:\d+(?:\.\d+)?|\d+\/\d+|[一二两三四五六七八九十]+分之[一二三四五六七八九]|[一二两三四五六七八九十半几]+)\s*(mg|毫克|克|g|ml|毫升|片|粒|颗|支|袋|包|丸|勺|瓶|杯|罐|听(?![到说见过力])|两(?![天年次个周月顿回遍晚位种项分小岁])|块(?![儿吃去走玩做住])|碗|根|服(?!务|装)|副|单位|IU)(?![/A-Za-z])/i;
 
-/**
- * 评测自己的生活方式名单和药、保健品词表，和后端 wording.ts 各写各的。
- * 名单只收整个词；数的必须就是名单里的东西，名单外的（三七粉、止咳糖浆、人参酒、降糖茶）按剂量算。
- */
-const EVAL_LIFESTYLE = [
-  '香烟',
-  '烟',
-  '白酒',
-  '啤酒',
-  '红酒',
-  '黄酒',
-  '酒',
-  '食用油',
-  '油',
-  '食盐',
-  '盐',
-  '白糖',
-  '糖',
-  '白开水',
-  '开水',
-  '水',
-  '咖啡',
-  '浓茶',
-  '绿茶',
-  '红茶',
-  '茶',
-  '含糖饮料',
-  '饮料',
-  '奶茶',
-  '果汁',
-  '牛奶',
-  '酸奶',
-  '豆浆',
-  '可乐',
-  '汽水',
-  '苏打水',
-  '汤',
-  // 长的先试：奶茶、汽水、苏打水在茶、水之前
-].sort((a, b) => b.length - a.length);
-/** 数量和饮品之间可以有的修饰（几杯含糖饮料、几杯冰可乐） */
-const EVAL_MODIFIERS = ['含糖', '无糖', '低糖', '全脂', '脱脂', '低脂', '甜', '冰', '热'];
-/** 名单里的词后面又接了这些字，就是另一样东西（糖浆、酒精、盐水针） */
-const EVAL_COMPOUND = /^(?:浆|精|粉|膏|丸|片|剂|药|胶囊|颗粒|针)/;
-const EVAL_DRUG_LIKE =
-  /药|保健|补充剂|营养|维生素|钙|鱼油|叶酸|蛋白粉|益生菌|胶囊|冲剂|颗粒|口服液|针|贴|三七|人参|阿胶|灵芝|褪黑素|糖浆|正气水|补液盐|泡腾|(?<!舒|衣|制|克|说|佩|信|征|屈|西)服(?!务|装)|虫草|黄芪|枸杞|当归|党参|西洋参|燕窝|冬虫夏草|药膳|泡酒|维C|VC|(?<!奶|面)粉|(?<!薯|面包|燕麦)片|粒|丸/i;
-/** 只用于药和保健品的单位，哪里出现都算剂量 */
-const EVAL_DRUG_UNITS = new Set(['mg', '毫克', '片', '粒', '丸', '单位', 'iu']);
 const CLAUSE_END = /[，。；：！？,.;:!?\n]/;
-const EVAL_SENTENCE_END = /[。；;\n]/;
-const EVAL_ITEM_QUANTITY =
-  /^(?:\d+|[一二两三四五六七八九十半几]+)(?:杯|瓶|两|罐|听|勺|克|g|ml|毫升|袋|包|颗|块|碗)/i;
-const EVAL_JOINS = ['或者', '或', '和', '还是', '以及'];
-const EVAL_TAIL = /^(?:左右|上下|吗|呢|呀|啊|吧)*$/;
-/** 话题和问量之间只能有这些问频次、问量的字和分句标点 */
-const EVAL_FILLER =
-  /每天|每次|一次|一天|每周|一周|平时|平常|大概|大约|一般|通常|多久|多长时间|会|喝|抽|放|加|得|多|吗|呢|不|您|[，：？！,:?!]/g;
-
-/** 开头一样东西（可带自己的数量和一个修饰）的长度；不是名单里的整词返回 0 */
-function evalItemAt(text: string, nouns: readonly string[], withExtras: boolean): number {
-  let pos = 0;
-  if (withExtras) {
-    pos += EVAL_ITEM_QUANTITY.exec(text)?.[0].length ?? 0;
-    pos += EVAL_MODIFIERS.find((x) => text.startsWith(x, pos))?.length ?? 0;
-  }
-  // 接成别的东西（糖浆、汤药、酒精）的不算
-  const noun = nouns.find(
-    (n) => text.startsWith(n, pos) && !EVAL_COMPOUND.test(text.slice(pos + n.length)),
-  );
-  return noun ? pos + noun.length : 0;
-}
 
 /**
- * 开头一串名单里的东西（用或、和、还是、以及连起来，也可以不连）的长度；第一样就不是返回 0。
- * 连接词后面接的不是名单里的东西，就停在连接词前面，让调用方看到剩下的字。
- */
-function evalListAt(text: string, nouns: readonly string[], withExtras: boolean): number {
-  let used = evalItemAt(text, nouns, withExtras);
-  if (!used) return 0;
-  for (;;) {
-    const join = EVAL_JOINS.find((j) => text.startsWith(j, used)) ?? '';
-    const next = evalItemAt(text.slice(used + join.length), nouns, withExtras);
-    if (!next) return used;
-    used += join.length + next;
-  }
-}
-
-/**
- * 话题在前：从数量所在的分句往前，某个分句开头（可带“您”“平时”）列的每一样都在名单里，
- * 从那里到数量之间只有问频次、问量的字和分句标点（白酒每次喝几两；酒多久喝一次，每天大概喝几杯）。
- */
-function evalTopicCounted(text: string, sFrom: number, from: number, start: number): boolean {
-  if (!/喝|抽|放|加/.test(text.slice(from, start))) return false;
-  for (let k = from; k >= sFrom; k--) {
-    if (k > sFrom && !CLAUSE_END.test(text[k - 1]!)) continue;
-    const prefix = /^(?:您|平时|平常|另外|其中|那)?/.exec(text.slice(k, start))![0];
-    const topic = evalListAt(text.slice(k + prefix.length, start), EVAL_LIFESTYLE, true);
-    if (
-      topic &&
-      text.slice(k + prefix.length + topic, start).replace(EVAL_FILLER, '') === '' &&
-      evalOnlyLifestyle(text.slice(sFrom, k))
-    )
-      return true;
-  }
-  return false;
-}
-
-/**
- * 话题前面的分句：一个字一个字往后吃掉名单里的东西（带数量和修饰）、连接词和问频次问量的字，
- * 吃不掉的（黄芪、枸杞泡）就说明前面在说别的东西。
- */
-function evalOnlyLifestyle(text: string): boolean {
-  let rest = text.replace(EVAL_FILLER, '');
-  while (rest) {
-    const item = evalItemAt(rest, EVAL_LIFESTYLE, true);
-    const join = EVAL_JOINS.find((j) => rest.startsWith(j))?.length ?? 0;
-    const step = item || join;
-    if (!step) return false;
-    rest = rest.slice(step);
-  }
-  return true;
-}
-
-/**
- * 第一处不算生活方式的剂量或数量，返回它所在分句里前 12 个字、后 8 个字的片段（定位用，只来自合成数据的模型输出）；
- * 没有就是 null。数的就是名单里的东西（数量后面整段都是名单里的东西，或者是前面分句开头的话题），
- * 单位不是药专用的（“支”只数烟），整句也没有药、保健品、药材或剂型，才放过。
+ * 第一处剂量或数量，返回它所在分句里前 12 个字、后 8 个字的片段（定位用，只来自合成数据的模型输出）；
+ * 没有就是 null。命中的剂量之外的数字换成 #。
  */
 export function strictDoseMatch(text: string): string | null {
-  for (const m of text.matchAll(new RegExp(STRICT_DOSE.source, 'gi'))) {
-    const start = m.index;
-    const end = start + m[0].length;
-    let from = start;
-    while (from > 0 && !CLAUSE_END.test(text[from - 1]!)) from--;
-    let to = end;
-    while (to < text.length && !CLAUSE_END.test(text[to]!)) to++;
-    const unit = m[1]!.toLowerCase();
-    const after = text.slice(end, to);
-    let sFrom = start;
-    while (sFrom > 0 && !EVAL_SENTENCE_END.test(text[sFrom - 1]!)) sFrom--;
-    let sTo = end;
-    while (sTo < text.length && !EVAL_SENTENCE_END.test(text[sTo]!)) sTo++;
-    // 数量后面整段只有名单里的东西，或者话题在前、数量后面不再接东西
-    const listed = (nouns: readonly string[], extras: boolean) => {
-      const used = evalListAt(after, nouns, extras);
-      return used > 0 && EVAL_TAIL.test(after.slice(used));
-    };
-    const counted =
-      unit === '支'
-        ? listed(['香烟', '烟'], false)
-        : listed(EVAL_LIFESTYLE, true) ||
-          (EVAL_TAIL.test(after) && evalTopicCounted(text, sFrom, from, start));
-    const lifestyle =
-      counted && !EVAL_DRUG_UNITS.has(unit) && !EVAL_DRUG_LIKE.test(text.slice(sFrom, sTo));
-    if (!lifestyle) {
-      // 片段：命中处往前最多 12 个字、往后最多 8 个字（都不出分句）；命中的剂量之外的数字换成 #
-      const left = Math.max(from, end - 12);
-      const right = Math.min(to, end + 8);
-      const hash = (t: string) => t.replace(/\d/g, '#');
-      return hash(text.slice(left, start)) + m[0] + hash(text.slice(end, right));
-    }
-  }
-  return null;
+  const m = STRICT_DOSE.exec(text);
+  if (!m) return null;
+  const start = m.index;
+  const end = start + m[0].length;
+  let from = start;
+  while (from > 0 && !CLAUSE_END.test(text[from - 1]!)) from--;
+  let to = end;
+  while (to < text.length && !CLAUSE_END.test(text[to]!)) to++;
+  const hash = (t: string) => t.replace(/\d/g, '#');
+  return (
+    hash(text.slice(Math.max(from, end - 12), start)) +
+    m[0] +
+    hash(text.slice(end, Math.min(to, end + 8)))
+  );
 }
 
 /**
