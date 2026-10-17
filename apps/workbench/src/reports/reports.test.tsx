@@ -107,6 +107,8 @@ function upload(overrides: Partial<ReportUpload> = {}): ReportUpload {
 
 afterEach(() => vi.unstubAllGlobals());
 
+const IDENTITY = '我已对照原件确认，报告上的姓名是本客户';
+
 describe('核对界面', () => {
   it('需特别注意的行逐行勾选后才能确认，勾选保存在后端；原件走后端地址', async () => {
     const user = userEvent.setup();
@@ -135,6 +137,7 @@ describe('核对界面', () => {
     expect(screen.getByText('（原值 108 mg/dL）')).toBeVisible();
     const confirm = screen.getByRole('button', { name: '确认核对' });
     expect(confirm).toBeDisabled();
+    await user.click(screen.getByRole('checkbox', { name: IDENTITY }));
 
     await user.click(screen.getByRole('checkbox', { name: '已核对' }));
     expect(
@@ -149,6 +152,8 @@ describe('核对界面', () => {
       reportDate: '2026-09-01',
       acknowledgedCritical: false,
       saveAsNew: false,
+      identityConfirmed: true,
+      confirmAll: false,
     });
     expect(await screen.findByText('已核对，已写入档案')).toBeVisible();
     expect(screen.queryByRole('button', { name: '确认核对' })).not.toBeInTheDocument();
@@ -187,6 +192,7 @@ describe('核对界面', () => {
     await user.click(box);
     await waitFor(() => expect(screen.getByRole('checkbox', { name: '已核对' })).toBeChecked());
     expect(screen.getByText('需特别注意的行都已核对')).toBeVisible();
+    await user.click(screen.getByRole('checkbox', { name: IDENTITY }));
     const confirm = screen.getByRole('button', { name: '确认核对' });
     await waitFor(() => expect(confirm).toBeEnabled());
     await user.click(confirm);
@@ -257,7 +263,8 @@ describe('核对界面', () => {
       },
     });
     render(<ReviewView uploadId={UPLOAD_ID} />);
-    await user.click(await screen.findByRole('button', { name: '确认核对' }));
+    await user.click(await screen.findByRole('checkbox', { name: IDENTITY }));
+    await user.click(screen.getByRole('button', { name: '确认核对' }));
     expect(await screen.findByText('有危急指标，请勾选“已知悉”后再确认')).toBeVisible();
     expect(screen.getByText('空腹血糖 2.5 mmol/L')).toBeVisible();
     await user.click(screen.getByRole('checkbox', { name: '已知悉以上危急指标，会及时联系客户' }));
@@ -266,6 +273,108 @@ describe('核对界面', () => {
     expect(api.callsTo('POST', `/report-uploads/${UPLOAD_ID}/verify`)[1]?.body).toMatchObject({
       acknowledgedCritical: true,
     });
+  });
+
+  it('验收反馈 4：原件上方固定提醒核对姓名，勾选前两个确认按钮都不能点', async () => {
+    const user = userEvent.setup();
+    // 没有需特别注意的行，只差身份确认
+    mockApi({
+      [`GET /report-uploads/${UPLOAD_ID}`]: () =>
+        json(200, { upload: upload({ values: [value({})] }) }),
+    });
+    render(<ReviewView uploadId={UPLOAD_ID} />);
+    const notice = await screen.findByText('请确认报告上的姓名是本客户');
+    // 提醒在原件预览上面
+    expect(
+      notice.compareDocumentPosition(screen.getByRole('region', { name: '报告原件' })) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    const confirm = screen.getByRole('button', { name: '确认核对' });
+    const confirmAll = screen.getByRole('button', { name: '确认所有数据' });
+    expect(confirm).toBeDisabled();
+    expect(confirmAll).toBeDisabled();
+    expect(screen.getByText('请先在原件上方勾选“报告上的姓名是本客户”')).toBeVisible();
+
+    const box = screen.getByRole('checkbox', { name: IDENTITY });
+    await user.click(box);
+    expect(confirm).toBeEnabled();
+    expect(confirmAll).toBeEnabled();
+    await user.click(box);
+    expect(confirm).toBeDisabled();
+    expect(confirmAll).toBeDisabled();
+  });
+
+  it('验收反馈 2：“确认所有数据”不用逐行勾选、不用“已知悉”，一键确认', async () => {
+    const user = userEvent.setup();
+    // 一行需特别注意（未勾选），后端会识别出危急指标，但一键确认不再要求“已知悉”
+    let current = upload();
+    const api = mockApi({
+      [`GET /report-uploads/${UPLOAD_ID}`]: () => json(200, { upload: current }),
+      [`POST /report-uploads/${UPLOAD_ID}/verify`]: () => {
+        current = {
+          ...current,
+          status: 'verified',
+          reportId: REPORT_ID,
+          version: 2,
+          criticalAcknowledged: true,
+          values: current.values.map((v) => ({ ...v, checked: true })),
+        };
+        return json(200, { upload: current });
+      },
+    });
+    const onChanged = vi.fn();
+    render(<ReviewView uploadId={UPLOAD_ID} onChanged={onChanged} />);
+    expect(
+      await screen.findByText('还有 1 行需特别注意，请对照原件逐行勾选“已核对”'),
+    ).toBeVisible();
+    await user.click(screen.getByRole('checkbox', { name: IDENTITY }));
+    // 逐行确认仍要先勾选；一键确认可以直接点
+    expect(screen.getByRole('button', { name: '确认核对' })).toBeDisabled();
+    const confirmAll = screen.getByRole('button', { name: '确认所有数据' });
+    expect(confirmAll).toBeEnabled();
+    await user.click(confirmAll);
+
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    expect(api.callsTo('PATCH', `/report-uploads/${UPLOAD_ID}/values/${VALUE_FPG}`)).toHaveLength(
+      0,
+    );
+    expect(api.callsTo('POST', `/report-uploads/${UPLOAD_ID}/verify`)).toHaveLength(1);
+    expect(api.callsTo('POST', `/report-uploads/${UPLOAD_ID}/verify`)[0]?.body).toEqual({
+      version: 1,
+      checkedValueIds: [],
+      reportDate: '2026-09-01',
+      acknowledgedCritical: false,
+      saveAsNew: false,
+      identityConfirmed: true,
+      confirmAll: true,
+    });
+    expect(await screen.findByText('已核对，已写入档案')).toBeVisible();
+    expect(
+      screen.queryByRole('checkbox', { name: '已知悉以上危急指标，会及时联系客户' }),
+    ).toBeNull();
+  });
+
+  it('“确认所有数据”遇到没有数值的行仍被拒绝，并点名要处理的行', async () => {
+    const user = userEvent.setup();
+    const broken = value({ rawName: '总胆固醇', rawValue: '模糊', value: null, unit: null });
+    mockApi({
+      [`GET /report-uploads/${UPLOAD_ID}`]: () =>
+        json(200, { upload: upload({ values: [broken, FPG] }) }),
+      [`POST /report-uploads/${UPLOAD_ID}/verify`]: () =>
+        json(409, { error: 'conflict', reasons: ['missing_value'], valueIds: [VALUE_TC] }),
+    });
+    render(<ReviewView uploadId={UPLOAD_ID} />);
+    await user.click(await screen.findByRole('checkbox', { name: IDENTITY }));
+    await user.click(screen.getByRole('button', { name: '确认所有数据' }));
+    const alert = await screen.findByRole('alert');
+    expect(
+      within(alert).getByText('有指标没有数值（看不清或单位未识别），请修改或删除'),
+    ).toBeVisible();
+    expect(within(alert).getByText('需要先修改或删除的行：总胆固醇')).toBeVisible();
+    // 那一行醒目标出
+    const row = screen.getByRole('button', { name: '修改 总胆固醇' }).closest('li');
+    expect(row).toHaveAttribute('data-highlighted', 'true');
+    expect(screen.getByRole('button', { name: '确认所有数据' })).toBeEnabled();
   });
 
   it('同一天已有报告时要选择作为新报告保存', async () => {

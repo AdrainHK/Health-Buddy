@@ -374,7 +374,6 @@ export function ResultsPanel({
             client={client}
             refreshKey={`${refreshKey ?? ''}:${recordVersion}`}
             onClientSaved={(saved) => onClientSaved?.(saved)}
-            onNewClient={() => setCreatingClient(true)}
             onReportUploaded={() => {
               uploadsChanged();
               setReviewId(null);

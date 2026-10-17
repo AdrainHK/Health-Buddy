@@ -374,6 +374,14 @@ test('核对：375px 下不横向滚动，原件在上、数值在下', async ({
   const image = panel.getByRole('img').first();
   await expect(image).toBeVisible();
   await expect(panel.getByText('确认核对').first()).toBeVisible();
+  // 验收反馈 4：原件上方固定提醒核对姓名；勾选前“确认核对”和“确认所有数据”都不能点
+  const notice = panel.getByText('请确认报告上的姓名是本客户');
+  await expect(notice).toBeVisible();
+  const confirmAll = panel.getByRole('button', { name: '确认所有数据' });
+  await expect(confirmAll).toBeDisabled();
+  await expect(panel.getByRole('button', { name: '确认核对' })).toBeDisabled();
+  await panel.getByRole('checkbox', { name: '我已对照原件确认，报告上的姓名是本客户' }).check();
+  await expect(confirmAll).toBeEnabled();
   // 等原件加载完，避免布局还在变化
   await expect.poll(() => image.evaluate((el: HTMLImageElement) => el.complete)).toBe(true);
   await expectNoHorizontalScroll(page, 'review');
@@ -383,6 +391,8 @@ test('核对：375px 下不横向滚动，原件在上、数值在下', async ({
   const firstValue = await panel.getByText('总胆固醇').first().boundingBox();
   expect(imageBox && firstValue).toBeTruthy();
   expect(imageBox!.y).toBeLessThan(firstValue!.y);
+  const noticeBox = await notice.boundingBox();
+  expect(noticeBox!.y).toBeLessThan(imageBox!.y);
   expect(imageBox!.x + imageBox!.width).toBeLessThanOrEqual(375 + 1);
 });
 

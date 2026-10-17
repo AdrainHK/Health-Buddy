@@ -51,7 +51,7 @@ M1 跑通了“任务 → 对话 → 产物 → 审核”，但客户数据只�
   - 上传后对话区出现一张**识别卡片**，显示进度步骤：“正在上传 → 正在识别第 1/3 页 → 识别完成，请核对”。识别完成后卡片上有“去核对”按钮。
   - 输入 `@` 时，除了客户，还能引用**当前客户已核对的报告**（显示为“报告 · 2026-09-12”，不显示文件名），见 2.6。
 - **右侧结果区**
-  - **档案**标签（替换 M1 的“客户”标签）：见 2.2。
+  - **档案**标签（替换 M1 的“客户”标签）：见 2.2。已选中客户（如 `@客户名称` 之后）时档案右上角不放“新建客户”按钮（产品负责人验收反馈）；没有关联客户时档案标签的空状态里仍有“新建客户”。
   - **核对**标签（新增，仅在有待核对的识别结果时出现，带数字角标）：见 2.4。
   - **产物**、**记录**标签和**审核栏**：沿用 M1。审核栏在 M2 增加风险分层的确认入口（2.7）。
 
@@ -95,11 +95,14 @@ M1 跑通了“任务 → 对话 → 产物 → 审核”，但客户数据只�
 - 需要特别注意的行醒目标出：看不清、超出合理范围、做过单位换算、未收录指标、和已有记录冲突。这些行必须逐行勾选“已核对”才能整份确认（Q18）。
 - 健管师可以修改任何一项的数值、单位和参考范围，删除识别错的行，补录漏掉的行。每次修改记一条记录（谁、什么时候、改了哪一项），不记数值。
 - 报告日期必须由健管师确认，不能为空。
-- 底部是“确认核对”按钮。确认时后端在同一个事务里：
+- **核对客户身份**（产品负责人 2026-10 验收后决定：“固定提醒，人工看”）：原件预览上方固定显示“请确认报告上的姓名是本客户”和一个勾选框。不勾选，“确认核对”和“确认所有数据”都不能点；后端同样要求请求带 `identityConfirmed: true`，否则返回 409（`identity_unconfirmed`）。确认时在识别记录上记下是谁、什么时候确认的（`identity_confirmed_by`、`identity_confirmed_at`，由数据库触发器在确认核对的同一次更新里写入）。**系统不读取、不提取、不保存、也不发给模型报告上的姓名**，识别仍按 Q7 去掉姓名、电话、证件号，这一步完全由健管师对照原件人工确认。
+- 底部是“确认核对”和“确认所有数据”两个按钮。确认时后端在同一个事务里：
   - 校验请求带的版本号是最新的（别的窗口改过就拒绝）；
-  - 校验所有需特别注意的行都已勾选；
+  - 校验健管师已确认报告上的姓名是本客户；
+  - 校验所有需特别注意的行都已勾选（“确认所有数据”时不校验，见下）；
   - 写入正式的报告和指标表（`health_reports`、`report_indicators`），来源为 `upload`；
-  - 用已核对的数值做危急指标识别（沿用 M1 第五节之二），命中时在核对结果里醒目显示，要求勾选“已知悉”后才能确认，确认记录里记下“已知悉”。
+  - 用已核对的数值做危急指标识别（沿用 M1 第五节之二），命中时在核对结果里醒目显示，要求勾选“已知悉”后才能确认，确认记录里记下“已知悉”（“确认所有数据”时不要求，见下）。
+- **确认所有数据**（产品负责人 2026-10 验收后决定：“完全一键”）：点一次就把这份识别结果里所有未删除的行记为当前健管师已核对（`checked_by` 为本人，每行记一条 `value_checked`，已勾过的行不重复记），并完成确认核对。需特别注意的行不再逐行勾选，命中危急指标也不再单独勾选“已知悉”、不再弹出额外提示；一键确认本身视为已知悉，`critical_acknowledged` 照常记为 true。危急指标照常写入正式指标表，照常进入健管师的客户上下文（解读草稿和审核栏的危急指标提示），不推送给客户。以下情况仍然拒绝，并且一行都不改：没有确认姓名、数值缺失（目录指标读不出数字或单位不认识）、同一指标两行、没有任何指标、同一天已有报告但没选“作为新报告保存”、版本号过期。拒绝时界面列出原因，并点名需要修改或删除的行（这些行醒目标出）。仍然只有服务该客户的健管师能操作，接口和权限与“确认核对”相同（同一个 `verify` 接口带 `confirmAll: true`）。
 - 确认后识别记录变为只读。发现错误时，在档案的报告详情里“更正”（生成一条更正记录，旧值保留可追溯），不能直接改已确认的识别记录。更正后，基于旧数值生成、还没审核的解读草稿顶部提示“报告数值已更正，建议重新生成”。
 
 ### 2.5 `/体检解读`：专业版和通俗版
@@ -173,7 +176,7 @@ M1 跑通了“任务 → 对话 → 产物 → 审核”，但客户数据只�
 | 表 | 主要字段 | 说明 |
 |---|---|---|
 | `client_health_history` | id, operator_id, org_id, manager_id, client_id, category（past_history / family_history / medication / allergy / lifestyle）, content, recorded_on（可空）, created_by, created_at, updated_at, deleted_at（可空） | 健康史条目（Q12）。content 含健康信息，只存数据库 |
-| `report_uploads` | id, 租户列, client_id, task_id（可空）, status（queued / processing / needs_review / verified / failed / discarded）, failure_category（可空：not_a_report / unreadable / refused / timeout / too_large / error）, attempts, version, report_id（核对后填写）, uploaded_by, created_at, verified_by, verified_at, critical_acknowledged | 一次上传就是一条识别记录。状态只能按 2.3 的顺序前进，verified 和 discarded 之后不能再改（触发器） |
+| `report_uploads` | id, 租户列, client_id, task_id（可空）, status（queued / processing / needs_review / verified / failed / discarded）, failure_category（可空：not_a_report / unreadable / refused / timeout / too_large / error）, attempts, version, report_id（核对后填写）, uploaded_by, created_at, verified_by, verified_at, critical_acknowledged, identity_confirmed_by, identity_confirmed_at（谁、什么时候确认了报告上的姓名是本客户；不存姓名本身） | 一次上传就是一条识别记录。状态只能按 2.3 的顺序前进，verified 和 discarded 之后不能再改（触发器） |
 | `report_files` | id, 租户列, client_id, upload_id, seq（第几个文件）, storage_key, mime_type, size_bytes, page_count, sha256, original_name, created_at, purged_at（可空） | 报告原件，存对象存储（Q5、Q6）。storage_key 用随机 id，不含客户姓名和原文件名。original_name 只存数据库用于显示，不进日志和存储路径。sha256 用于发现重复上传 |
 | `extracted_values` | id, 租户列, client_id, upload_id, seq, raw_name, code（可空，未收录指标为空）, raw_value（文本）, raw_unit, value（可空）, unit（可空）, ref_low, ref_high, ref_text（报告上印的原文）, page, source_snippet, flags（数组：unreadable / out_of_bounds / unit_converted / unmapped / conflict / duplicate）, review_status（pending / checked / edited / deleted / added）, checked_by, updated_at | 待核对的识别结果。upload 为 verified 后整表对应行只读 |
 | `health_reports`（扩展） | 新增：operator_id, org_id, manager_id, upload_id（可空，合成数据为空）, institution（可空）, verified_by, verified_at | 已核对的正式报告。source 沿用 synthetic / upload / manual |
@@ -221,7 +224,7 @@ M1 跑通了“任务 → 对话 → 产物 → 审核”，但客户数据只�
 | `POST /api/report-uploads/:id/discard` | 放弃 | 别人的 → 404 |
 | `PATCH /api/report-uploads/:id/values/:valueId` | 修改一项，或勾选“已核对” | valueId 属于别的识别记录 → 404 |
 | `POST /api/report-uploads/:id/values` | 补录一项 | 别人的 → 404 |
-| `POST /api/report-uploads/:id/verify` | 确认核对，写入正式报告；有危急指标时须 acknowledgedCritical；版本号过期返回 409 | 别人的 → 404；已核对或已放弃的 → 409 |
+| `POST /api/report-uploads/:id/verify` | 确认核对，写入正式报告；须 identityConfirmed（核对姓名）；有危急指标时须 acknowledgedCritical；`confirmAll: true` 为“确认所有数据”，不要求逐行勾选和 acknowledgedCritical；版本号过期返回 409 | 别人的（含 confirmAll）→ 404；机构管理员、运营商、平台 → 404；已核对或已放弃的 → 409 |
 | `GET /api/report-files/:id/content?page=` | 原件预览，由后端读对象存储后转发（不给出对象存储的直链），响应 `Cache-Control: no-store`，每次查看记 file_viewed | 别人的文件、机构管理员、运营商、平台 → 404 |
 | `GET /api/clients/:id/reports` | 已核对报告列表 | 别人的客户 → 404 |
 | `GET /api/reports/:id` | 报告详情（指标、参考范围、高低标记、更正历史） | 别人的报告 → 404 |
@@ -312,9 +315,9 @@ M1 跑通了“任务 → 对话 → 产物 → 审核”，但客户数据只�
 **档案和识别**
 3. 档案标签显示基本信息、风险分层、健康史、历次报告、指标趋势、日常监测和产物；每个数值注明来源和日期。
 4. 未核对的识别结果不出现在档案、趋势、`@` 列表和解读输入里；直接调用接口用未核对报告做解读返回 404。
-5. 核对时：需特别注意的行未逐行勾选不能确认（后端也拒绝）；版本号过期被拒绝；已核对的识别记录不能再改；更正已核对指标时旧值保留，可在更正历史中看到。
+5. 核对时：没有勾选“报告上的姓名是本客户”不能确认（两个按钮都不能点，后端也拒绝）；需特别注意的行未逐行勾选不能“确认核对”（后端也拒绝），“确认所有数据”一键记为全部已核对并确认，数值缺失等仍被拒绝；版本号过期被拒绝；已核对的识别记录不能再改；更正已核对指标时旧值保留，可在更正历史中看到。
 6. mg/dL 的血糖经后端换算成 mmol/L，原值和原单位保留；超出合理范围的数值被标出。
-7. 已核对数值命中危急指标阈值时，确认核对前必须勾选“已知悉”；解读草稿的专业版和审核栏显示危急指标，通俗版、复制文本和导出文件里没有危急指标数值。
+7. 已核对数值命中危急指标阈值时，“确认核对”前必须勾选“已知悉”（“确认所有数据”不需要，危急指标照常流转）；解读草稿的专业版和审核栏显示危急指标，通俗版、复制文本和导出文件里没有危急指标数值。
 8. 上传不支持的类型（如把 .exe 改名为 .pdf）、超过大小或页数上限时被拒绝，不保存文件。
 9. 非报告图片识别为“不是体检报告”，不产生任何数值。
 
@@ -383,6 +386,7 @@ M1 跑通了“任务 → 对话 → 产物 → 审核”，但客户数据只�
     - 推荐：不覆盖任何已有记录。同一文件重复上传（文件指纹相同）直接提示“已上传过”；同一报告日期已有报告时，核对界面标出冲突项，由健管师选择“作为新报告保存”或“放弃”。
 18. **Q18 核对要做到多细？**
     - 推荐：所有行都显示给健管师，需特别注意的行（看不清、超出合理范围、单位换算、未收录、冲突）必须逐行勾选；其余行整份确认即可。
+    - **更新（产品负责人 2026-10 验收后决定）**：另加“确认所有数据”，一键把所有行（包括需特别注意的行和危急指标）记为由当前健管师核对并确认，见 2.4。逐行勾选的“确认核对”保留。
 19. **Q19 有危急指标时，通俗版怎么写？** 通俗版不能出现危急指标数值（M1 规则）。
     - 推荐：通俗版不提这项指标，由健管师自己联系客户；审核栏提示“本报告有危急指标，请先电话联系客户”。
 20. **Q20 风险分层给客户看吗？**

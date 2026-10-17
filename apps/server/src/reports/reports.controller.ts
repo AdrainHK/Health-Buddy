@@ -303,7 +303,10 @@ export class ReportUploadsController {
     return this.repo.addValue(session, uploadId, parsed.data);
   }
 
-  /** 确认核对，写入正式报告（规格 2.4）。版本号过期、未逐行勾选、未知悉危急指标等返回 409 */
+  /**
+   * 确认核对，写入正式报告（规格 2.4）。未确认姓名、版本号过期、未逐行勾选、未知悉危急指标等返回 409。
+   * confirmAll 为“确认所有数据”：所有行记为本人已核对，不要求逐行勾选和“已知悉”。
+   */
   @Post('report-uploads/:id/verify')
   @HttpCode(200)
   async verify(

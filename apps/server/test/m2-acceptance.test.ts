@@ -224,6 +224,7 @@ describe('M2 验收补齐', () => {
     version: u.version,
     checkedValueIds: u.values.filter((v) => v.attention).map((v) => v.id),
     reportDate,
+    identityConfirmed: true,
   });
 
   /** 上传一张合成图片并识别完，返回待核对的识别记录 */

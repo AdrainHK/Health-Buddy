@@ -689,8 +689,12 @@ export class ReportsRepository {
   }
 
   /**
-   * 确认核对（规格 2.4）：同一个事务里校验版本号、逐行勾选、同日报告和危急指标，
+   * 确认核对（规格 2.4）：同一个事务里校验版本号、身份确认、逐行勾选、同日报告和危急指标，
    * 写入正式的报告和指标表（来源 upload），识别记录变为只读。
+   *
+   * confirmAll（“确认所有数据”，产品负责人决定完全一键）：不再要求逐行勾选和危急指标“已知悉”，
+   * 校验通过后把所有未删除、未勾选的行记为当前健管师已核对（每行一条 value_checked）。
+   * 数值缺失、重复指标、没有指标、同日报告未选择、未确认身份仍然拒绝，并且一行都不改。
    */
   verify(
     ctx: TenantContext,
@@ -715,10 +719,12 @@ export class ReportsRepository {
 
       const reasons = new Set<VerifyRejection['reasons'][number]>();
       const valueIds = new Set<string>();
+      // 报告上的姓名由健管师人工确认；系统不读取姓名
+      if (!input.identityConfirmed) reasons.add('identity_unconfirmed');
       if (!rows.length) reasons.add('no_values');
       const checked = new Set(input.checkedValueIds);
       for (const r of rows) {
-        if (needsAttention(r.flags) && !checked.has(r.id)) {
+        if (!input.confirmAll && needsAttention(r.flags) && !checked.has(r.id)) {
           reasons.add('unchecked_attention');
           valueIds.add(r.id);
         }
@@ -769,7 +775,10 @@ export class ReportsRepository {
         })),
         observations,
       );
-      if (critical.length && !input.acknowledgedCritical) reasons.add('critical_unacknowledged');
+      // 确认所有数据时不再单独“已知悉”；危急指标照常进入随访和提醒（来自正式指标表）
+      if (critical.length && !input.acknowledgedCritical && !input.confirmAll) {
+        reasons.add('critical_unacknowledged');
+      }
 
       if (reasons.size) {
         throw verifyRejected({
@@ -778,6 +787,32 @@ export class ReportsRepository {
           ...(critical.length ? { critical } : {}),
           ...(sameDate.length ? { sameDateReportIds: sameDate.map((r) => r.id) } : {}),
         });
+      }
+
+      if (input.confirmAll) {
+        const marked = await trx
+          .updateTable('extracted_values')
+          .set((eb) => ({
+            checked_by: ctx.userId,
+            review_status: eb
+              .case()
+              .when('review_status', '=', 'pending')
+              .then('checked' as const)
+              .else(eb.ref('review_status'))
+              .end(),
+          }))
+          .where('upload_id', '=', uploadId)
+          .where('review_status', '<>', 'deleted')
+          .where('checked_by', 'is', null)
+          .returning('id')
+          .execute();
+        for (const m of marked) {
+          await addEvent(trx, ctx, upload.client_id, {
+            upload_id: uploadId,
+            action: 'value_checked',
+            extracted_value_id: m.id,
+          });
+        }
       }
 
       const report = await trx
@@ -822,7 +857,9 @@ export class ReportsRepository {
           report_id: report.id,
           verified_by: ctx.userId,
           report_date: input.reportDate,
+          // 逐行确认时是勾选了“已知悉”；确认所有数据时一键确认即视为知悉（产品负责人决定）
           critical_acknowledged: critical.length > 0,
+          identity_confirmed_by: ctx.userId,
           version: upload.version + 1,
         })
         .where('id', '=', uploadId)

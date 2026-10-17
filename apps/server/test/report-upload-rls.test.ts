@@ -125,7 +125,12 @@ describe('报告上传数据表的行级安全和约束', () => {
   }
 
   /** 以健管师身份确认核对：写报告和指标，识别记录改为已核对 */
-  async function verifyUpload(c: TenantContext, clientId: string, uploadId: string) {
+  async function verifyUpload(
+    c: TenantContext,
+    clientId: string,
+    uploadId: string,
+    identityConfirmedBy: string | null = c.userId,
+  ) {
     return withTenant(app, c, async (trx) => {
       const report = await trx
         .insertInto('health_reports')
@@ -158,7 +163,13 @@ describe('报告上传数据表的行级安全和约束', () => {
         .executeTakeFirstOrThrow();
       await trx
         .updateTable('report_uploads')
-        .set({ status: 'verified', report_id: report.id, verified_by: c.userId, version: 2 })
+        .set({
+          status: 'verified',
+          report_id: report.id,
+          verified_by: c.userId,
+          identity_confirmed_by: identityConfirmedBy,
+          version: 2,
+        })
         .where('id', '=', uploadId)
         .execute();
       return { reportId: report.id, indicatorId: indicator.id };
@@ -427,6 +438,35 @@ describe('报告上传数据表的行级安全和约束', () => {
     ).rejects.toThrow(/point to its report/);
     await expect(update({ attempts: 2 })).rejects.toThrow();
     await expect(update({ version: 0 })).rejects.toThrow(/immutable/);
+  });
+
+  it('姓名确认（验收反馈 4）：只能在确认核对时由本人写入，没有确认不能核对', async () => {
+    const update = (set: Record<string, unknown>) =>
+      asA1((trx) =>
+        trx.updateTable('report_uploads').set(set).where('id', '=', a1.uploadId).execute(),
+      );
+    // 不核对、单独写入身份确认
+    await expect(update({ identity_confirmed_by: f.users.managerA1.id })).rejects.toThrow(
+      /only on verification/,
+    );
+    // 核对时没有确认，或者写成别人
+    await expect(verifyUpload(managerA1(), f.clients.a1[0], a1.uploadId, null)).rejects.toThrow(
+      /confirm the client identity/,
+    );
+    await expect(
+      verifyUpload(managerA1(), f.clients.a1[0], a1.uploadId, f.users.managerA2.id),
+    ).rejects.toThrow(/confirm the client identity/);
+    // 时间只由数据库填写（没有更新权限）
+    await expect(update({ identity_confirmed_at: new Date() })).rejects.toThrow();
+
+    await verifyUpload(managerA1(), f.clients.a1[0], a1.uploadId);
+    const row = await owner
+      .selectFrom('report_uploads')
+      .select(['identity_confirmed_by', 'identity_confirmed_at'])
+      .where('id', '=', a1.uploadId)
+      .executeTakeFirstOrThrow();
+    expect(row.identity_confirmed_by).toBe(f.users.managerA1.id);
+    expect(row.identity_confirmed_at).toBeInstanceOf(Date);
   });
 
   it('已核对、已放弃的识别记录和识别结果只读；操作记录只能追加', async () => {

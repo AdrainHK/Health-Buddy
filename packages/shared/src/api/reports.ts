@@ -133,7 +133,7 @@ export const extractedValueSchema = z.object({
    * 也可以勾选，reviewStatus 只记录这一行是怎么来的。
    */
   checked: z.boolean(),
-  /** 需特别注意，确认前必须逐行勾选 */
+  /** 需特别注意，确认前必须逐行勾选（“确认所有数据”时一并记为已核对） */
   attention: z.boolean(),
   /** 按参考范围算的高低标记，仅供核对时参考 */
   abnormal: abnormalFlagSchema,
@@ -225,6 +225,17 @@ export const verifyUploadRequestSchema = z.object({
   acknowledgedCritical: z.boolean().default(false),
   /** 同一报告日期已有报告时，选择“作为新报告保存”（Q17） */
   saveAsNew: z.boolean().default(false),
+  /**
+   * 健管师已确认报告上的姓名是本客户（产品负责人决定：固定提醒，人工看）。
+   * 必须为 true 才能确认；系统不读取、不保存报告上的姓名，只记下谁在什么时候确认的。
+   */
+  identityConfirmed: z.boolean().default(false),
+  /**
+   * 确认所有数据（产品负责人决定：完全一键）：后端把所有未删除的行记为当前健管师已核对，
+   * 不再要求逐行勾选需特别注意的行，也不再要求危急指标勾选“已知悉”；
+   * 危急指标照常进入健管师的随访和提醒。数值缺失、重复指标等仍然拒绝。
+   */
+  confirmAll: z.boolean().default(false),
 });
 export type VerifyUploadRequest = z.input<typeof verifyUploadRequestSchema>;
 
@@ -245,6 +256,8 @@ export const VERIFY_REJECTION_REASONS = [
   'duplicate_code',
   /** 没有任何指标 */
   'no_values',
+  /** 没有勾选“报告上的姓名是本客户” */
+  'identity_unconfirmed',
 ] as const;
 export const verifyRejectionReasonSchema = z.enum(VERIFY_REJECTION_REASONS);
 

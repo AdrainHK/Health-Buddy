@@ -99,11 +99,8 @@ function renderRecord(record = makeRecord(), routes: Routes = {}) {
     ...routes,
   });
   const onClientSaved = vi.fn();
-  const onNewClient = vi.fn();
-  render(
-    <ClientRecord client={CLIENTS[0]!} onClientSaved={onClientSaved} onNewClient={onNewClient} />,
-  );
-  return { api, onClientSaved, onNewClient };
+  render(<ClientRecord client={CLIENTS[0]!} onClientSaved={onClientSaved} />);
+  return { api, onClientSaved };
 }
 
 const section = (name: string) => screen.getByRole('region', { name });
@@ -140,6 +137,12 @@ describe('ClientRecord', () => {
     expect(within(monitoring).getByText(/· 测试数据 · 近 30 天 12 条/)).toBeInTheDocument();
 
     expect(within(section('产物')).getByText('已审核')).toBeInTheDocument();
+  });
+
+  it('has no “新建客户” button once a client is selected (owner feedback)', async () => {
+    renderRecord();
+    expect(await screen.findByText('合成记录：青霉素过敏')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '新建客户' })).not.toBeInTheDocument();
   });
 
   it('shows empty states when nothing has been recorded yet', async () => {
@@ -294,7 +297,7 @@ describe('ClientRecord', () => {
 
   it('keeps the basic info visible when the record cannot be loaded', async () => {
     mockApi({});
-    render(<ClientRecord client={CLIENTS[0]!} onClientSaved={vi.fn()} onNewClient={vi.fn()} />);
+    render(<ClientRecord client={CLIENTS[0]!} onClientSaved={vi.fn()} />);
     expect(await screen.findByText('客户不存在或已不可见')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /合成客户甲/ })).toBeInTheDocument();
   });
@@ -341,6 +344,8 @@ describe('creating a client from the record tab', () => {
 
     const panel = screen.getByRole('tabpanel');
     expect(await within(panel).findByRole('heading', { name: '合成客户丙' })).toBeInTheDocument();
+    // 空状态里有“新建客户”；选中客户后档案右上角不再有
+    expect(within(panel).queryByRole('button', { name: '新建客户' })).not.toBeInTheDocument();
     expect(await within(panel).findByText('还没有已核对的报告')).toBeInTheDocument();
     expect(api.callsTo('POST', '/clients')[0]?.body).toEqual({
       displayName: '合成客户丙',
