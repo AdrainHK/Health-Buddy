@@ -1236,6 +1236,87 @@ describe('报告上传、识别和核对接口', () => {
     });
   });
 
+  describe('产物标题用的报告日期和原件文件名（M2 规格 2.11）跟着行级安全走', () => {
+    it('真实上传并核对的报告：转出前原健管师能看到文件名，转出后为空；机构管理员档案里没有产物', async () => {
+      const a1 = await loginAs(app, f.users.managerA1.email);
+      const clientId = f.clients.a1[1];
+      const done = await extracted(a1, clientId, [
+        { indicator: '空腹血糖', value: '5.1', unit: 'mmol/L', referenceRange: '3.9-6.1' },
+      ]);
+      const verified = (await verify(a1, done).expect(200)).body.upload as ReportUpload;
+      const taskId = (await a1.post('/api/tasks').send({ clientId }).expect(201)).body.task
+        .id as string;
+      // /面谈提纲 走 skill 用途，模拟厂商按顺序返回下一条脚本
+      provider.push(
+        JSON.stringify({
+          professional: {
+            overview: '重点了解饮食。',
+            groups: [
+              {
+                topic: 'diet',
+                questions: [{ question: '您晚餐一般吃些什么？', why: '空腹血糖 5.1 mmol/L' }],
+              },
+            ],
+            missingData: [],
+            suggestions: [],
+          },
+          crisisSignal: false,
+        }),
+      );
+      const sent = await a1
+        .post(`/api/tasks/${taskId}/messages`)
+        .send({
+          mode: 'craft',
+          content: '列个面谈提纲',
+          skillId: 'interview-outline',
+          reportRefs: [verified.reportId],
+        })
+        .expect(200);
+      expect(sent.text).toContain('"type":"artifact"');
+
+      const before = (await a1.get(`/api/tasks/${taskId}`).expect(200)).body.artifacts;
+      expect(before).toEqual([
+        expect.objectContaining({ sourceReportDate: '2026-05-01', sourceFileName: FILE_NAME }),
+      ]);
+      const artifactId = before[0].id as string;
+      expect(
+        (await a1.get(`/api/artifacts/${artifactId}`).expect(200)).body.artifact,
+      ).toMatchObject({ sourceReportDate: '2026-05-01', sourceFileName: FILE_NAME });
+
+      // 机构管理员只读档案：产物不在档案里（Q14），也就看不到文件名
+      const admin = await loginAs(app, f.users.orgAdminA.email);
+      const adminRecord = async () =>
+        (await admin.get(`/api/clients/${clientId}/record`).expect(200)).body.record;
+      expect((await adminRecord()).artifacts).toEqual([]);
+      expect(JSON.stringify(await adminRecord())).not.toContain(FILE_NAME);
+
+      await owner
+        .updateTable('clients')
+        .set({ manager_id: f.users.managerA2.id })
+        .where('id', '=', clientId)
+        .execute();
+
+      // 原健管师仍能看到自己的任务和已作废的产物，但报告和原件已跟着客户走：日期和文件名都取不到
+      const after = (await a1.get(`/api/tasks/${taskId}`).expect(200)).body.artifacts;
+      expect(after).toEqual([
+        expect.objectContaining({
+          id: artifactId,
+          status: 'voided',
+          sourceReportDate: null,
+          sourceFileName: null,
+        }),
+      ]);
+      expect(
+        (await a1.get(`/api/artifacts/${artifactId}`).expect(200)).body.artifact,
+      ).toMatchObject({ sourceReportDate: null, sourceFileName: null });
+      // 新健管师看不到原健管师的产物
+      const a2 = await loginAs(app, f.users.managerA2.email);
+      await a2.get(`/api/tasks/${taskId}`).expect(404);
+      await a2.get(`/api/artifacts/${artifactId}`).expect(404);
+      expect((await adminRecord()).artifacts).toEqual([]);
+    });
+  });
+
   describe('队列任务（验收标准 22）', () => {
     it('构造的任务：不存在的、别人已核对的、已在待核对的 upload_id 都读不到数据并以失败结束', async () => {
       const b1 = await loginAs(app, f.users.managerB1.email);
