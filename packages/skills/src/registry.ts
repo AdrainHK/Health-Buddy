@@ -1,6 +1,6 @@
 import type { SkillSummary } from '@health-buddy/shared';
 import { clientRecentSummary } from './client-recent-summary/index.js';
-import type { PlanTemplate, SkillDefinition } from './framework.js';
+import { skillUsesReport, type PlanTemplate, type SkillDefinition } from './framework.js';
 import { interviewOutline } from './interview-outline/index.js';
 import { reportInterpretation } from './report-interpretation/index.js';
 
@@ -44,6 +44,7 @@ export function skillSummaries(): SkillSummary[] {
       clientFacing: s.clientFacing,
       involvesHealthJudgment: s.involvesHealthJudgment,
       requiresReport: s.requiresReport ?? false,
+      usesReport: skillUsesReport(s),
       allowsEmptyRequest: s.defaultRequest !== null,
       planSkills: [],
     })),
@@ -56,6 +57,7 @@ export function skillSummaries(): SkillSummary[] {
         clientFacing: skills.some((s) => s.clientFacing),
         involvesHealthJudgment: skills.some((s) => s.involvesHealthJudgment),
         requiresReport: p.requiresReport,
+        usesReport: p.requiresReport || skills.some(skillUsesReport),
         allowsEmptyRequest: p.defaultRequest !== null,
         planSkills: [...p.skills],
       };

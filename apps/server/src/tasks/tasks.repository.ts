@@ -230,10 +230,34 @@ function toTask(row: {
   };
 }
 
+/**
+ * 产物摘要。依据的报告日期和原件文件名用于界面上的标题（验收反馈：“体检报告（文件名）解读 · 第 1 版”），
+ * 用子查询取，同样受行级安全约束：看不到的报告和原件取出来是空。
+ */
 export function selectArtifactSummary(trx: TenantTransaction) {
   return trx
     .selectFrom('artifacts')
-    .select(['id', 'task_id', 'skill_id', 'version', 'status', 'critical_flags', 'created_at']);
+    .select(['id', 'task_id', 'skill_id', 'version', 'status', 'critical_flags', 'created_at'])
+    .select((eb) => [
+      eb
+        .selectFrom('health_reports')
+        .select((r) =>
+          r
+            .fn<string>('to_char', [r.ref('health_reports.report_date'), r.val('YYYY-MM-DD')])
+            .as('d'),
+        )
+        .whereRef('health_reports.id', '=', 'artifacts.source_report_id')
+        .as('source_report_date'),
+      eb
+        .selectFrom('report_files')
+        .innerJoin('report_uploads', 'report_uploads.id', 'report_files.upload_id')
+        .select('report_files.original_name')
+        .whereRef('report_uploads.report_id', '=', 'artifacts.source_report_id')
+        .orderBy('report_uploads.created_at', 'desc')
+        .orderBy('report_files.seq')
+        .limit(1)
+        .as('source_file_name'),
+    ]);
 }
 
 export function toArtifactSummary(row: {
@@ -244,6 +268,8 @@ export function toArtifactSummary(row: {
   status: ArtifactSummary['status'];
   critical_flags: unknown[];
   created_at: Date;
+  source_report_date: string | null;
+  source_file_name: string | null;
 }): ArtifactSummary {
   return {
     id: row.id,
@@ -253,5 +279,7 @@ export function toArtifactSummary(row: {
     status: row.status,
     hasCriticalFlags: row.critical_flags.length > 0,
     createdAt: row.created_at.toISOString(),
+    sourceReportDate: row.source_report_date,
+    sourceFileName: row.source_file_name,
   };
 }

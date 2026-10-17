@@ -8,6 +8,7 @@ import {
   PLAN_TEMPLATES,
   getPlanTemplate,
   getSkill,
+  skillUsesReport,
   type PlanTemplate,
   type SkillDefinition,
 } from '@health-buddy/skills';
@@ -96,6 +97,7 @@ export class WorkbenchController {
           reportRefs: input.reportRefs,
           requiresClient: (plan ?? skill)?.requiresClient ?? false,
           requiresReport: plan?.requiresReport ?? skill?.requiresReport ?? false,
+          usesReport: plan ? true : skill ? skillUsesReport(skill) : false,
         },
         claim,
       ),
@@ -127,9 +129,11 @@ export class WorkbenchController {
     const plan = parseId(planId);
     this.acquire(session);
     const run = await this.claim(session, (claim) =>
-      this.repo.confirmPlan(session, taskId, plan, claim, (id) =>
-        Boolean(getSkill(id)?.requiresReport),
-      ),
+      this.repo.confirmPlan(session, taskId, plan, claim, (id) => {
+        const skill = getSkill(id);
+        if (skill?.requiresReport) return 'required';
+        return skill && skillUsesReport(skill) ? 'optional' : 'none';
+      }),
     );
     await this.regenerate(run, req, res, session);
   }

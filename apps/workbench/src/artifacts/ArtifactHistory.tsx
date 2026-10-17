@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import styles from './ArtifactHistory.module.css';
 import { StatusBadge } from './ArtifactView';
+import { useArtifactTitle } from './artifactTitle';
 
 /** 确认时勾选了“已知悉”危急指标，后端记在 reason 里 */
 const CRITICAL_ACKNOWLEDGED = 'critical_acknowledged';
@@ -10,14 +11,21 @@ const CRITICAL_ACKNOWLEDGED = 'critical_acknowledged';
 export interface ArtifactHistoryProps {
   detail: ArtifactDetailResponse;
   onOpenVersion: (artifactId: string) => void;
+  /** 客户称呼，放进版本标题（验收反馈：只写“第 1 版”难以识别） */
+  clientName?: string | null;
 }
 
 /**
  * 版本列表和修改、审核、复制、导出记录。
  * 只显示谁、什么时候、做了什么，不显示内容（退回原因也不显示）。
  */
-export function ArtifactHistory({ detail, onOpenVersion }: ArtifactHistoryProps) {
+export function ArtifactHistory({
+  detail,
+  onOpenVersion,
+  clientName = null,
+}: ArtifactHistoryProps) {
   const { t, i18n } = useTranslation();
+  const title = useArtifactTitle();
   const format = useMemo(
     () => new Intl.DateTimeFormat(i18n.language, { dateStyle: 'medium', timeStyle: 'short' }),
     [i18n.language],
@@ -42,6 +50,7 @@ export function ArtifactHistory({ detail, onOpenVersion }: ArtifactHistoryProps)
 
   return (
     <div className={styles.root}>
+      <h3 className={styles.title}>{title(detail.artifact, clientName)}</h3>
       <section aria-labelledby="hb-history-versions">
         <h3 id="hb-history-versions" className={styles.heading}>
           {t('results.history.versions')}
@@ -60,9 +69,7 @@ export function ArtifactHistory({ detail, onOpenVersion }: ArtifactHistoryProps)
                     aria-label={t('results.history.open', { version: v.version })}
                     onClick={() => onOpenVersion(v.id)}
                   >
-                    <span className={styles.versionName}>
-                      {t('results.history.versionTag', { version: v.version })}
-                    </span>
+                    <span className={styles.versionName}>{title(v, clientName)}</span>
                     <time className={styles.time} dateTime={v.createdAt}>
                       {format.format(new Date(v.createdAt))}
                     </time>

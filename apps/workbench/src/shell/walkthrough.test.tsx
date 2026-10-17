@@ -30,13 +30,16 @@ const INTERPRETATION: SkillSummary = {
   ...SKILL,
   id: 'report-interpretation',
   requiresReport: true,
+  usesReport: true,
   allowsEmptyRequest: true,
 };
+// 报告可选（验收反馈）：不选报告也能发送
 const OUTLINE: SkillSummary = {
   ...SKILL,
   id: 'interview-outline',
   clientFacing: false,
-  requiresReport: true,
+  requiresReport: false,
+  usesReport: true,
   allowsEmptyRequest: true,
 };
 const SUMMARY_EMPTY: SkillSummary = { ...SKILL, allowsEmptyRequest: true };
@@ -388,11 +391,14 @@ describe('验收反馈 8：不需要再写要求的技能可以空着发送', ()
     await user.click(screen.getByRole('button', { name: '移除技能 客户近况小结' }));
 
     await pickSkill(user, '面谈提纲');
-    // 要报告的技能：没引用报告时还不能空着发送
-    expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
-    const picker = await screen.findByRole('group', { name: '选择要用的报告' });
-    await user.click(within(picker).getByRole('button', { name: '报告 · 2026-09-12' }));
+    // 报告可选（验收反馈）：没选报告也能空着发送；列出报告供选择，并说明可以不选
     const send = screen.getByRole('button', { name: '发送' });
+    expect(send).toBeEnabled();
+    const picker = await screen.findByRole('group', { name: '选择要用的报告' });
+    expect(
+      within(picker).getByText('可以不选：不选时用最近一份已核对的报告，没有报告就按档案生成'),
+    ).toBeVisible();
+    await user.click(within(picker).getByRole('button', { name: '报告 · 2026-09-12' }));
     expect(send).toBeEnabled();
     await user.click(send);
     await waitFor(() => expect(api.callsTo('POST', MSG_PATH)).toHaveLength(1));
@@ -403,6 +409,43 @@ describe('验收反馈 8：不需要再写要求的技能可以空着发送', ()
       clientRefs: [],
       reportRefs: [REPORT_ID],
     });
+  });
+
+  it('/面谈提纲 客户还没有已核对报告：选了技能就能空着发送，不带报告（验收反馈）', async () => {
+    const user = userEvent.setup();
+    const api = mockApi({
+      [`GET ${DETAIL_PATH}`]: () => json(200, emptyDetail(makeTask({ clientId: ids.clientA }))),
+      [`GET /clients/${ids.clientA}/reports`]: reports([]),
+      [`GET /clients/${ids.clientA}/report-uploads`]: () => json(200, { uploads: [] }),
+      [`POST ${MSG_PATH}`]: () => sseResponse([]),
+    });
+    renderPane();
+    await pickSkill(user, '面谈提纲');
+    expect(screen.queryByRole('group', { name: '选择要用的报告' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: '发送' }));
+    await waitFor(() => expect(api.callsTo('POST', MSG_PATH)).toHaveLength(1));
+    expect(api.callsTo('POST', MSG_PATH)[0]?.body).toEqual({
+      mode: 'craft',
+      content: '',
+      skillId: 'interview-outline',
+      clientRefs: [],
+    });
+  });
+
+  it('/体检解读 仍然要先选报告才能空着发送', async () => {
+    const user = userEvent.setup();
+    mockApi({
+      [`GET ${DETAIL_PATH}`]: () => json(200, emptyDetail(makeTask({ clientId: ids.clientA }))),
+      [`GET /clients/${ids.clientA}/reports`]: reports([{ id: REPORT_ID, date: '2026-09-12' }]),
+      [`GET /clients/${ids.clientA}/report-uploads`]: () => json(200, { uploads: [] }),
+    });
+    renderPane();
+    await pickSkill(user, '体检解读');
+    expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
+    const picker = await screen.findByRole('group', { name: '选择要用的报告' });
+    expect(within(picker).getByText('不选时用最近一份已核对的报告')).toBeVisible();
+    await user.click(within(picker).getByRole('button', { name: '报告 · 2026-09-12' }));
+    expect(screen.getByRole('button', { name: '发送' })).toBeEnabled();
   });
 
   it('不需要报告的技能：选了技能就能发送（任务已关联客户）', async () => {

@@ -154,6 +154,12 @@ export interface SkillDefinition<S extends z.ZodType = z.ZodType> extends SkillM
    */
   requiresReport?: boolean;
   /**
+   * 用报告，但报告可选（/面谈提纲，产品负责人验收反馈）：@ 了报告就用那一份，没有 @ 时用
+   * 最近一份已核对报告，客户一份已核对报告都没有时照常生成（按健康史、日常监测和档案）。
+   * 后端同样组装 reportDetail（可能为空）、健康史和当前分层。requiresReport 为 true 时隐含这一项。
+   */
+  usesReport?: boolean;
+  /**
    * 通俗版怎么处理危急指标。defer（默认，M1）：只写“您的健管师会和您单独沟通”；
    * omit（/体检解读，Q19）：通俗版完全不提这项指标，由健管师先电话联系客户。
    */
@@ -175,6 +181,11 @@ export interface SkillDefinition<S extends z.ZodType = z.ZodType> extends SkillM
   checkOutput?(output: z.output<S>): WordingIssue[];
   /** 重新生成时附在用户消息后面的纠正说明。只按问题类别写，不复述上次的输出 */
   correctionNote?(issues: readonly WordingIssue[]): string;
+}
+
+/** 技能是否读取报告（必需或可选） */
+export function skillUsesReport(skill: Pick<SkillDefinition, 'requiresReport' | 'usesReport'>) {
+  return Boolean(skill.requiresReport || skill.usesReport);
 }
 
 /**

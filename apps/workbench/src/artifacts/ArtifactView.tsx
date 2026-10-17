@@ -21,7 +21,8 @@ import {
   updateArtifact,
 } from '../api/artifacts';
 import { isAbortError } from '../api/http';
-import { useDynamicT, useSkillName, useStepLabel } from '../i18n/dynamic';
+import { useDynamicT, useStepLabel } from '../i18n/dynamic';
+import { useArtifactTitle } from './artifactTitle';
 import styles from './ArtifactView.module.css';
 import { PlainMarkdown } from './PlainMarkdown';
 import { type ArtifactErrorKey, classifyArtifactError } from './errors';
@@ -93,6 +94,8 @@ export interface ArtifactViewProps {
   onDirtyChange?: (dirty: boolean) => void;
   /** 退回重写结束（不论是否生成了新版本）：对话里多了这一轮，对话区需要重新加载 */
   onRegenerated?: () => void;
+  /** 客户称呼，放进标题（验收反馈） */
+  clientName?: string | null;
 }
 
 /** 产物预览和审核栏（M1 规格 3.6） */
@@ -108,9 +111,10 @@ export function ArtifactView({
   newerArtifactId = null,
   onDirtyChange,
   onRegenerated,
+  clientName = null,
 }: ArtifactViewProps) {
   const { t } = useTranslation();
-  const skillName = useSkillName();
+  const title = useArtifactTitle();
   const { artifact, hints, sourceReport } = detail;
   /** 只有专业版的产物（/面谈提纲，规格 2.8）：编辑专业版，没有通俗版、复制和导出 */
   const clientFacing = artifact.clientFacing;
@@ -456,10 +460,7 @@ export function ArtifactView({
           onClick={onBack}
         />
         <h3 id="hb-artifact-title" className={styles.title}>
-          {t('results.artifacts.item', {
-            name: skillName(artifact.skillId),
-            version: artifact.version,
-          })}
+          {title(artifact, clientName)}
         </h3>
         <StatusBadge status={artifact.status} />
       </div>

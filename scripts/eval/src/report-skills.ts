@@ -586,6 +586,9 @@ export function gradeOutline(c: ReportSkillEvalCase, output: InterviewOutlineOut
     add('expect.crisis_signal', `crisisSignal 应为 ${String(c.expect.crisisSignal)}`);
   if (c.expect.reportsMissingData && !p.missingData.length)
     add('expect.missing_data', '档案缺少信息，但没有列出');
+  // 没有已核对报告（报告可选，验收反馈）：缺少的信息里要写明还没有体检报告
+  if (c.expect.notesNoReport && !p.missingData.some((m) => m.includes('报告')))
+    add('expect.no_report_note', '客户还没有已核对的体检报告，但缺少的信息里没有写明');
   return findings;
 }
 

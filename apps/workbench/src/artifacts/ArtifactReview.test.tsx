@@ -1,4 +1,9 @@
-import type { ArtifactDetailResponse, CriticalFlag, Task } from '@health-buddy/shared';
+import type {
+  ArtifactDetailResponse,
+  ArtifactSummary,
+  CriticalFlag,
+  Task,
+} from '@health-buddy/shared';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -6,6 +11,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ResultsPanel, type ResultsPanelProps } from '../shell/ResultsPanel';
 import {
+  CLIENTS,
   NOW,
   SYNTHETIC_DISCLAIMER,
   emptyDetail,
@@ -95,11 +101,12 @@ describe('artifact list', () => {
       [`GET /artifacts/${ids.artifact2}`]: () => json(200, draft),
     });
     const user = userEvent.setup();
-    renderPanel();
+    renderPanel({ client: CLIENTS[0]!, task: makeTask({ clientId: ids.clientA }) });
 
     const list = await screen.findByRole('list', { name: '本任务的产物' });
     const items = within(list).getAllByRole('button');
-    expect(items[0]).toHaveTextContent('客户近况小结 · 第 2 版');
+    // 验收反馈 4：标题带客户称呼，不只是“第几版”
+    expect(items[0]).toHaveTextContent('合成客户甲 近况小结 · 第 2 版');
     expect(items[0]).toHaveTextContent('草稿');
     expect(items[0]).toHaveTextContent('含危急指标');
     expect(items[1]).toHaveTextContent('第 1 版');
@@ -577,6 +584,80 @@ describe('review bar on an approved artifact', () => {
   });
 });
 
+describe('产物标题（验收反馈 4：不只写“第 1 版”）', () => {
+  it('写明客户称呼、依据的报告日期和原件文件名；记录标签的版本也用同样的标题', async () => {
+    const summary = (skillId: string, extra: Partial<ArtifactSummary> = {}) =>
+      makeArtifactSummary({ skillId, ...extra });
+    const interp = makeArtifactDetail(
+      {
+        skillId: 'report-interpretation',
+        sourceReportDate: '2026-09-12',
+        sourceFileName: 'synthetic-scan.pdf',
+      },
+      {},
+    );
+    mockApi({
+      [`GET ${TASK_PATH}`]: () =>
+        json(200, {
+          ...emptyDetail(),
+          artifacts: [
+            summary('report-interpretation', {
+              sourceReportDate: '2026-09-12',
+              sourceFileName: 'synthetic-scan.pdf',
+              createdAt: '2026-10-15T09:00:00.000Z',
+            }),
+            summary('interview-outline', {
+              id: ids.artifact2,
+              createdAt: '2026-10-15T08:30:00.000Z',
+            }),
+            summary('interview-outline', {
+              id: ids.artifact3,
+              sourceReportDate: '2026-09-12',
+              createdAt: '2026-10-15T08:20:00.000Z',
+            }),
+            summary('client-recent-summary', {
+              id: '70000000-0000-4000-8000-000000000004',
+              version: 2,
+              createdAt: '2026-10-15T08:00:00.000Z',
+            }),
+          ],
+        }),
+      [`GET ${ART_PATH}`]: () => json(200, interp),
+    });
+    const user = userEvent.setup();
+    renderPanel({ client: CLIENTS[0]!, task: makeTask({ clientId: ids.clientA }) });
+    const list = await screen.findByRole('list', { name: '本任务的产物' });
+    expect(
+      within(list)
+        .getAllByRole('button')
+        .map((b) => b.firstChild?.textContent),
+    ).toEqual([
+      '合成客户甲 体检报告（2026-09-12 · synthetic-scan.pdf）解读 · 第 1 版',
+      '合成客户甲 面谈提纲（依据档案）· 第 1 版',
+      '合成客户甲 面谈提纲（依据 2026-09-12）· 第 1 版',
+      '合成客户甲 近况小结 · 第 2 版',
+    ]);
+    await user.click(within(list).getAllByRole('button')[0]!);
+    const title = '合成客户甲 体检报告（2026-09-12 · synthetic-scan.pdf）解读 · 第 1 版';
+    expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: '记录' }));
+    expect(screen.getByRole('button', { name: '查看第 1 版' })).toHaveTextContent(title);
+  });
+
+  it('没有关联客户、没有依据报告时省略称呼和来源', async () => {
+    mockApi({
+      [`GET ${TASK_PATH}`]: () =>
+        json(200, {
+          ...emptyDetail(),
+          artifacts: [makeArtifactSummary({ skillId: 'report-interpretation' })],
+        }),
+    });
+    renderPanel();
+    const list = await screen.findByRole('list', { name: '本任务的产物' });
+    expect(within(list).getByRole('button')).toHaveTextContent('体检报告解读 · 第 1 版');
+  });
+});
+
 describe('体检解读和面谈提纲（M2 规格 2.5、2.7、2.8）', () => {
   const REPORT_ID = '90000000-0000-4000-8000-0000000000a1';
   const interpretation = (overrides: Partial<ArtifactDetailResponse['artifact']> = {}) =>
@@ -602,7 +683,7 @@ describe('体检解读和面谈提纲（M2 规格 2.5、2.7、2.8）', () => {
     const user = userEvent.setup();
     await openArtifact(user);
 
-    expect(await screen.findByRole('heading', { name: /体检解读/ })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /体检报告.*解读/ })).toBeInTheDocument();
     const critical = within(reviewBar()).getByRole('group', { name: '危急指标' });
     expect(critical).toHaveTextContent('本报告有危急指标，请先电话联系客户');
     expect(screen.getByRole('note')).toHaveTextContent('2026-09-12');

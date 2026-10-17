@@ -455,3 +455,23 @@
   font-size: var(--hb-text-xs);
   white-space: nowrap;
 }
+
+/* 确认按钮旁列出还不能确认的原因 */
+.blockers {
+  margin: 0;
+  padding-left: var(--hb-space-5);
+  color: var(--hb-text-2);
+  font-size: var(--hb-text-sm);
+}
+
+/* 勾选框在手机上好点：加大点击区域 */
+.check input[type='checkbox'] {
+  flex: none;
+  inline-size: var(--hb-space-5);
+  block-size: var(--hb-space-5);
+  margin: 0;
+}
+
+.check {
+  min-block-size: var(--hb-space-10);
+}

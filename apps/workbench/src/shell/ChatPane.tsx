@@ -781,14 +781,15 @@ export function ChatPane({
     );
   }
 
-  // 选了要报告的技能、还没引用报告：列出这位客户已核对的报告供选择（验收反馈 6）
+  // 选了用报告的技能、还没引用报告：列出这位客户已核对的报告供选择（验收反馈 6）。
+  // /面谈提纲 报告可选：不选也能直接发送，提示里写明
   const verifiedReports = reportOptions
     .filter((r) => !r.pending)
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, REPORT_PICKER_MAX);
   if (
     noticeNode === null &&
-    skill?.requiresReport &&
+    skill?.usesReport &&
     skill.planSkills.length === 0 &&
     !report &&
     !readOnly &&
@@ -813,7 +814,9 @@ export function ChatPane({
             )}
           </Button>
         ))}
-        <span className={styles.pickerHint}>{t('chat.reportPickerHint')}</span>
+        <span className={styles.pickerHint}>
+          {t(skill.requiresReport ? 'chat.reportPickerHint' : 'chat.reportPickerOptionalHint')}
+        </span>
       </div>
     );
   }

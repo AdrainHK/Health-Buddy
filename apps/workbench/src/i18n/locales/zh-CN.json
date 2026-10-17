@@ -120,6 +120,7 @@
     "interpretRequest": "帮我解读这份体检报告",
     "reportPicker": "选择要用的报告",
     "reportPickerHint": "不选时用最近一份已核对的报告",
+    "reportPickerOptionalHint": "可以不选：不选时用最近一份已核对的报告，没有报告就按档案生成",
     "duplicateVerified": "这份文件已经上传并核对过（报告 · {{date}}），已为你引用这份报告",
     "duplicatePending": "这份文件已经上传过，还没核对完，请先在核对标签里核对",
     "duplicateFailed": "这份文件已经上传过，识别没有成功，请在核对标签里重新识别或放弃后再上传",
@@ -180,6 +181,17 @@
       "retry": "重试",
       "item": "{{name}} · 第 {{version}} 版",
       "version": "第 {{version}} 版",
+      "title": {
+        "client": "{{name}} ",
+        "sourceSeparator": " · ",
+        "default": "{{client}}{{name}} · 第 {{version}} 版",
+        "report-interpretation": "{{client}}体检报告（{{source}}）解读 · 第 {{version}} 版",
+        "report-interpretationNoSource": "{{client}}体检报告解读 · 第 {{version}} 版",
+        "client-recent-summary": "{{client}}近况小结 · 第 {{version}} 版",
+        "client-recent-summaryNoSource": "{{client}}近况小结 · 第 {{version}} 版",
+        "interview-outline": "{{client}}面谈提纲（依据 {{source}}）· 第 {{version}} 版",
+        "interview-outlineNoSource": "{{client}}面谈提纲（依据档案）· 第 {{version}} 版"
+      },
       "back": "返回产物列表",
       "criticalBadge": "含危急指标",
       "status": {
@@ -335,6 +347,7 @@
       },
       "noEvents": "还没有记录",
       "selectArtifact": "打开一个产物后，这里显示它的版本和记录",
+      "pickArtifact": "选择要查看记录的产物",
       "withDetail": "{{action}}（{{detail}}）",
       "separator": "，"
     }
@@ -557,7 +570,14 @@
       "identityTitle": "核对客户身份",
       "identityNotice": "请确认报告上的姓名是本客户",
       "identityConfirm": "我已对照原件确认，报告上的姓名是本客户",
-      "identityHint": "请先在原件上方勾选“报告上的姓名是本客户”",
+      "identityConfirmNearButtons": "报告上的姓名是本客户（已对照原件）",
+      "blockers": {
+        "title": "确认前还需要",
+        "identity": "勾选“报告上的姓名是本客户”（原件上方或这里都可以）",
+        "reportDate": "填写报告日期（报告上没有识别出日期）",
+        "noRows": "没有识别出指标：请补录，或放弃这份识别",
+        "attention": "“确认核对”还要逐行勾选 {{count}} 行需特别注意的行；也可以直接点“确认所有数据”"
+      },
       "discard": "放弃这份识别",
       "confirmDiscard": "确定放弃",
       "cancel": "取消",

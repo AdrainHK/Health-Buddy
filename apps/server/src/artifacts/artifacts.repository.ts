@@ -394,9 +394,15 @@ async function buildDetail(
     .orderBy('artifact_events.created_at')
     .orderBy('artifact_events.id')
     .execute();
+  // 当前这一版在版本列表里，标题用的报告日期和文件名从那里取
+  const self = versions.find((v) => v.id === row.id);
   return {
     artifact: {
-      ...toArtifactSummary(row),
+      ...toArtifactSummary({
+        ...row,
+        source_report_date: self?.source_report_date ?? null,
+        source_file_name: self?.source_file_name ?? null,
+      }),
       clientId: row.client_id,
       parentId: row.parent_id,
       content: row.content,

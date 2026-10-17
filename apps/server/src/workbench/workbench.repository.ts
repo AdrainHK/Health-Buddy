@@ -108,6 +108,11 @@ export class WorkbenchRepository {
       requiresClient: boolean;
       /** 用报告的技能（规格 2.6）：没有已核对报告时拒绝，不生成 */
       requiresReport: boolean;
+      /**
+       * 读取报告的技能（含报告可选的 /面谈提纲）：没有 @ 报告时用最近一份已核对报告；
+       * 报告可选时一份都没有也照常生成
+       */
+      usesReport?: boolean;
     },
     claim: (taskId: string) => boolean,
   ): Promise<PreparedTurn> {
@@ -144,9 +149,11 @@ export class WorkbenchRepository {
           .executeTakeFirst();
         if (!report) throw notFound();
       }
-      // 用报告的技能没有 @ 报告时用最近一份已核对报告；一份都没有时提示先上传并核对（规格 2.6）
+      // 用报告的技能没有 @ 报告时用最近一份已核对报告；一份都没有时，必须要报告的技能提示
+      // 先上传并核对（规格 2.6），报告可选的技能（/面谈提纲）按档案生成
+      const usesReport = input.requiresReport || Boolean(input.usesReport);
       const usedReportId =
-        reportId ?? (input.requiresReport && clientId ? await latestReportId(trx, clientId) : null);
+        reportId ?? (usesReport && clientId ? await latestReportId(trx, clientId) : null);
       if (input.requiresReport && !usedReportId) throw noVerifiedReport();
       if (!claim(task.id)) throw conflict({ reasons: ['busy'] });
 
@@ -208,7 +215,8 @@ export class WorkbenchRepository {
     taskId: string,
     planId: string,
     claim: (taskId: string) => boolean,
-    requiresReport: (skillId: string) => boolean,
+    /** 技能对报告的要求：required（/体检解读）、optional（/面谈提纲）、none */
+    reportUsage: (skillId: string) => 'required' | 'optional' | 'none',
   ): Promise<RegenerationContext> {
     return withTenant(this.db, ctx, async (trx) => {
       const task = await lockTask(trx, taskId);
@@ -242,9 +250,11 @@ export class WorkbenchRepository {
         .limit(1)
         .executeTakeFirst();
       if (!request) throw conflict();
-      // 计划里有用报告的技能：用提出计划时 @ 的报告，没有就用最近一份已核对报告
+      // 计划里有用报告的技能：用提出计划时 @ 的报告，没有就用最近一份已核对报告；
+      // 只有报告可选的技能时，一份都没有也照常执行
       let reportId: string | null = null;
-      if (skillIds.some(requiresReport)) {
+      const usage = skillIds.map(reportUsage);
+      if (usage.some((u) => u !== 'none')) {
         const ref = request.report_refs[0];
         if (ref) {
           if (!task.client_id || !(await reportOfClient(trx, ref, task.client_id)))
@@ -253,7 +263,7 @@ export class WorkbenchRepository {
         } else if (task.client_id) {
           reportId = await latestReportId(trx, task.client_id);
         }
-        if (!reportId) throw noVerifiedReport();
+        if (!reportId && usage.includes('required')) throw noVerifiedReport();
       }
       if (!claim(task.id)) throw conflict({ reasons: ['busy'] });
 
@@ -398,7 +408,12 @@ export class WorkbenchRepository {
     ctx: TenantContext,
     clientId: string,
     reportId: string | null = null,
-    options: { detail?: boolean } = {},
+    /**
+     * detail：组装报告详情、健康史和分层（用报告的技能）。
+     * latestReport：没有指定报告时用最近一份（默认）；为 false 时不用报告
+     * （用报告的技能，报告已在发消息、确认计划或退回时定好，为空就是没有报告）
+     */
+    options: { detail?: boolean; latestReport?: boolean } = {},
   ): Promise<ClientContext | undefined> {
     return withTenant(this.db, ctx, async (trx) => {
       const client = await trx
@@ -424,7 +439,10 @@ export class WorkbenchRepository {
       reportQuery = reportId
         ? reportQuery.where('id', '=', reportId)
         : reportQuery.orderBy('report_date', 'desc').orderBy('created_at', 'desc');
-      const report = await reportQuery.limit(1).executeTakeFirst();
+      const report =
+        reportId || options.latestReport !== false
+          ? await reportQuery.limit(1).executeTakeFirst()
+          : undefined;
       // 指定的报告看不到（不属于这位客户或已不可见）：不退回到别的报告
       if (reportId && !report) return undefined;
       // 只用目录指标的当前值；参考范围是报告上印的（Q10）

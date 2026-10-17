@@ -269,12 +269,6 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
       const empty = await newTask(agent, f.clients.a1[1]);
       const rejected = await interpret(agent, empty).expect(409);
       expect(rejected.body).toEqual({ error: 'conflict', reasons: ['no_verified_report'] });
-      const outline = await send(agent, empty, {
-        mode: 'craft',
-        content: '列提纲',
-        skillId: 'interview-outline',
-      }).expect(409);
-      expect(outline.body.reasons).toEqual(['no_verified_report']);
       const messages = await owner
         .selectFrom('task_messages')
         .select('id')
@@ -282,6 +276,105 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
         .execute();
       expect(messages).toEqual([]);
       expect(provider.calls).toHaveLength(1);
+
+      // /面谈提纲 报告可选（验收反馈）：没有已核对报告时按档案生成，不依据任何报告
+      provider.queue.push({ text: outlineJson() });
+      const outline = await send(agent, empty, {
+        mode: 'craft',
+        content: '列提纲',
+        skillId: 'interview-outline',
+      }).expect(200);
+      const steps = parseSse(outline.text).flatMap((e) =>
+        e.type === 'step' && e.step.status === 'done' ? [e.step.kind] : [],
+      );
+      expect(steps).toEqual(['read_client', 'detect_critical', 'run_skill']);
+      expect(JSON.stringify(provider.calls[1]?.messages)).toContain('没有已核对的体检报告');
+      const [drafted] = await artifactsOf(empty);
+      expect(drafted).toMatchObject({ kind: 'interview_outline', source_report_id: null });
+      expect((drafted?.content as { professional: string }).professional).toContain(
+        '依据：客户档案',
+      );
+    });
+
+    it('产物摘要带依据报告的日期（标题用）；客户转出后看不到报告，日期为空', async () => {
+      const agent = await as(f.users.managerA1.email);
+      const taskId = await newTask(agent, f.clients.a1[0]);
+      provider.queue.push({ text: interpretationJson() });
+      await interpret(agent, taskId, [reportA1]).expect(200);
+      const before = (await agent.get(`/api/tasks/${taskId}`).expect(200)).body.artifacts;
+      // 直接写进库的报告没有上传记录，没有文件名
+      expect(before).toEqual([
+        expect.objectContaining({ sourceReportDate: '2026-09-12', sourceFileName: null }),
+      ]);
+      const artifactId = before[0].id as string;
+      expect(
+        (await agent.get(`/api/artifacts/${artifactId}`).expect(200)).body.artifact,
+      ).toMatchObject({ sourceReportDate: '2026-09-12' });
+      // 别的健管师看不到这份产物
+      const a2 = await as(f.users.managerA2.email);
+      await a2.get(`/api/tasks/${taskId}`).expect(404);
+      await a2.get(`/api/artifacts/${artifactId}`).expect(404);
+
+      await owner
+        .updateTable('clients')
+        .set({ manager_id: f.users.managerA2.id })
+        .where('id', '=', f.clients.a1[0])
+        .execute();
+      // 任务和已作废的产物仍归 A1，但报告已跟着客户转走：标题用的日期和文件名都取不到
+      const after = (await agent.get(`/api/tasks/${taskId}`).expect(200)).body.artifacts;
+      expect(after).toEqual([
+        expect.objectContaining({ status: 'voided', sourceReportDate: null, sourceFileName: null }),
+      ]);
+    });
+
+    it('/面谈提纲 不选报告时用最近一份已核对报告，@ 了报告就用那一份', async () => {
+      const agent = await as(f.users.managerA1.email);
+      const taskId = await newTask(agent, f.clients.a1[0]);
+      provider.queue.push({ text: outlineJson() });
+      const res = await send(agent, taskId, {
+        mode: 'craft',
+        content: '',
+        skillId: 'interview-outline',
+      }).expect(200);
+      const read = parseSse(res.text).find(
+        (e) => e.type === 'step' && e.step.kind === 'read_report' && e.step.status === 'done',
+      );
+      expect(read).toMatchObject({ step: { labelDate: '2026-09-12' } });
+      expect((await artifactsOf(taskId))[0]?.source_report_id).toBe(reportA1);
+      // 别的客户的报告仍是 404
+      const other = await newTask(agent, f.clients.a1[1]);
+      await send(agent, other, {
+        mode: 'craft',
+        content: '',
+        skillId: 'interview-outline',
+        reportRefs: [reportA1],
+      }).expect(404);
+    });
+
+    it('/面谈提纲 在想一想里：客户没有已核对报告也能出计划并执行', async () => {
+      const agent = await as(f.users.managerA1.email);
+      const empty = await newTask(agent, f.clients.a1[1]);
+      const proposed = await send(agent, empty, {
+        mode: 'plan',
+        content: '列提纲',
+        skillId: 'interview-outline',
+      }).expect(200);
+      const plan = parseSse(proposed.text).find((e) => e.type === 'plan');
+      provider.queue.push({ text: outlineJson() });
+      await agent
+        .post(`/api/tasks/${empty}/plans/${plan?.type === 'plan' ? plan.plan.id : ''}/confirm`)
+        .expect(200);
+      const artifacts = await artifactsOf(empty);
+      expect(artifacts.map((a) => [a.skill_id, a.source_report_id])).toEqual([
+        ['interview-outline', null],
+      ]);
+      // 退回重写：仍不依据报告
+      provider.queue.push({ text: outlineJson() });
+      await agent
+        .post(`/api/artifacts/${artifacts[0]!.id}/return`)
+        .send({ reason: '多问一些睡眠的问题' })
+        .expect(200);
+      expect((await artifactsOf(empty)).map((a) => a.source_report_id)).toEqual([null, null]);
     });
 
     it('验收反馈 8：/体检解读 不写要求也能发送，后端用默认要求；没有技能时内容不能为空', async () => {
@@ -307,12 +400,12 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
       // 没有技能：空内容是无效请求；只写空格也一样
       await send(agent, taskId, { mode: 'craft', content: '' }).expect(400);
       await send(agent, taskId, { mode: 'ask', content: '   ' }).expect(400);
-      // 空内容也照样校验报告：客户没有已核对报告时 409
+      // 空内容也照样校验报告：/体检解读 在客户没有已核对报告时 409
       const empty = await newTask(agent, f.clients.a1[1]);
       const rejected = await send(agent, empty, {
         mode: 'craft',
         content: '',
-        skillId: 'interview-outline',
+        skillId: 'report-interpretation',
       }).expect(409);
       expect(rejected.body.reasons).toEqual(['no_verified_report']);
       expect(provider.calls).toHaveLength(1);
@@ -955,5 +1048,18 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
     expect(
       res.body.skills.map((s: { allowsEmptyRequest: boolean }) => s.allowsEmptyRequest),
     ).toEqual([true, true, true, true]);
+    // /体检解读 必须有报告；/面谈提纲 报告可选（验收反馈）
+    expect(
+      res.body.skills.map((s: { id: string; requiresReport: boolean; usesReport: boolean }) => [
+        s.id,
+        s.requiresReport,
+        s.usesReport,
+      ]),
+    ).toEqual([
+      ['client-recent-summary', false, false],
+      ['report-interpretation', true, true],
+      ['interview-outline', false, true],
+      ['new-client-assessment', true, true],
+    ]);
   });
 });

@@ -227,6 +227,18 @@ export function ReviewView({ uploadId, onChanged, onBack }: ReviewViewProps) {
   const needsSameDate = upload.sameDateReportIds.length > 0;
   const canConfirmAll = editable && !busy && identityConfirmed && rows.length > 0 && !!reportDate;
   const canConfirm = canConfirmAll && pendingAttention.length === 0;
+  // 按钮不能点的原因逐条列在按钮旁边（验收反馈：手机上原件很长，看不到上方的勾选框和日期为空）
+  const blockers: string[] = [];
+  if (!identityConfirmed) blockers.push(t('reports.review.blockers.identity'));
+  if (!reportDate) blockers.push(t('reports.review.blockers.reportDate'));
+  if (rows.length === 0) blockers.push(t('reports.review.blockers.noRows'));
+  if (pendingAttention.length > 0) {
+    blockers.push(t('reports.review.blockers.attention', { count: pendingAttention.length }));
+  }
+  const setIdentity = (checked: boolean) => {
+    setIdentityConfirmed(checked);
+    setRejection(null);
+  };
   // 被拒绝时点名需要处理的行（数值缺失、重复指标等）
   const blockedNames = rows.filter((v) => highlighted.has(v.id)).map((v) => v.rawName);
 
@@ -254,10 +266,7 @@ export function ReviewView({ uploadId, onChanged, onBack }: ReviewViewProps) {
             <input
               type="checkbox"
               checked={identityConfirmed}
-              onChange={(e) => {
-                setIdentityConfirmed(e.target.checked);
-                setRejection(null);
-              }}
+              onChange={(e) => setIdentity(e.target.checked)}
             />
             {t('reports.review.identityConfirm')}
           </label>
@@ -423,7 +432,22 @@ export function ReviewView({ uploadId, onChanged, onBack }: ReviewViewProps) {
               )}
             </ul>
           )}
-          {!identityConfirmed && <p className={styles.note}>{t('reports.review.identityHint')}</p>}
+          {/* 手机上原件预览很长，确认按钮离原件上方的勾选框很远：按钮旁放一个同步的勾选框 */}
+          <label className={styles.check}>
+            <input
+              type="checkbox"
+              checked={identityConfirmed}
+              onChange={(e) => setIdentity(e.target.checked)}
+            />
+            {t('reports.review.identityConfirmNearButtons')}
+          </label>
+          {blockers.length > 0 && (
+            <ul className={styles.blockers} aria-label={t('reports.review.blockers.title')}>
+              {blockers.map((b) => (
+                <li key={b}>{b}</li>
+              ))}
+            </ul>
+          )}
           {error && (
             <p className={styles.error} role="alert">
               {error}

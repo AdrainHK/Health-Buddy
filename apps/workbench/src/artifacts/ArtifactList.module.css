@@ -39,9 +39,8 @@
 .name {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* 标题带客户称呼和报告文件名，换行显示全，不截断 */
+  overflow-wrap: anywhere;
 }
 
 .critical {

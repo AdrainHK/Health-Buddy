@@ -55,7 +55,8 @@ export const interviewOutline: SkillDefinition<typeof interviewOutlineOutputSche
   ...parseSkillMeta(meta),
   prompt: body,
   outputSchema: interviewOutlineOutputSchema,
-  requiresReport: true,
+  // 报告可选（验收反馈）：没有已核对报告时按健康史、日常监测和档案里缺少的信息列问题
+  usesReport: true,
   runStepLabel: 'steps.generateOutline',
 
   buildUserMessage(input) {
@@ -68,6 +69,8 @@ export const interviewOutline: SkillDefinition<typeof interviewOutlineOutputSche
     if (output.crisisSignal) lines.push('## 心理危机提示', CRISIS_NOTICE, '');
     if (input?.client.reportDetail) {
       lines.push(`依据报告：${input.client.reportDetail.date}`, '');
+    } else if (input) {
+      lines.push('依据：客户档案（健康史、日常监测），这位客户还没有已核对的体检报告', '');
     }
     lines.push('## 面谈重点', p.overview);
     for (const g of p.groups) {

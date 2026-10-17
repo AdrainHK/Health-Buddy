@@ -21,6 +21,7 @@ import { ClientRecord } from '../record/ClientRecord';
 import { ReviewTab } from '../reports/ReviewTab';
 import styles from './ResultsPanel.module.css';
 import { isReadOnlyTask } from './taskGroups';
+import { readUrlId, writeUrlId } from './urlState';
 
 const TABS = ['artifacts', 'client', 'review', 'history'] as const;
 type Tab = (typeof TABS)[number];
@@ -106,9 +107,18 @@ export function ResultsPanel({
   const dirtyRef = useRef(false);
   const selectedRef = useRef<string | null>(null);
   const [newerId, setNewerId] = useState<string | null>(null);
+  /**
+   * 刷新页面前打开的产物（记在地址栏）：任务恢复、产物列表加载后重新打开它
+   * （验收反馈：刷新后产物和记录都空了）。列表里没有就不打开。
+   */
+  const restoringArtifactRef = useRef<string | null>(
+    readUrlId('task') ? readUrlId('artifact') : null,
+  );
 
   useEffect(() => {
     selectedRef.current = selectedId;
+    // 恢复完成前不改地址栏，免得把要恢复的产物 id 清掉
+    if (restoringArtifactRef.current === null) writeUrlId('artifact', selectedId);
   }, [selectedId]);
 
   const onDirtyChange = useCallback((dirty: boolean) => {
@@ -179,6 +189,16 @@ export function ResultsPanel({
       .then(({ artifacts: items }) => {
         setArtifacts(items);
         setListState('ready');
+        const restoring = restoringArtifactRef.current;
+        if (restoring !== null) {
+          restoringArtifactRef.current = null;
+          if (items.some((a) => a.id === restoring)) {
+            setSelectedId(restoring);
+            setDetailVersion((v) => v + 1);
+            return;
+          }
+          writeUrlId('artifact', selectedRef.current);
+        }
         const latest = sortArtifacts(items)[0];
         if (openLatest && latest) {
           const current = selectedRef.current;
@@ -246,6 +266,8 @@ export function ResultsPanel({
   };
 
   const classes = [styles.panel, mode === 'sheet' && styles.sheet].filter(Boolean).join(' ');
+  /** 产物标题里的客户称呼（只在健管师界面上显示） */
+  const clientName = client?.displayName ?? null;
   const shownDetail = detail && detail.artifact.id === selectedId ? detail : null;
 
   const renderArtifacts = () => {
@@ -279,6 +301,7 @@ export function ResultsPanel({
             onBack={() => setSelectedId(null)}
             newerArtifactId={newerId}
             onDirtyChange={onDirtyChange}
+            clientName={clientName}
             {...(onConversationChanged ? { onRegenerated: onConversationChanged } : {})}
           />
         );
@@ -301,7 +324,59 @@ export function ResultsPanel({
         </p>
       );
     }
-    return <ArtifactList artifacts={artifacts} selectedId={selectedId} onSelect={openArtifact} />;
+    return (
+      <ArtifactList
+        artifacts={artifacts}
+        selectedId={selectedId}
+        onSelect={openArtifact}
+        clientName={clientName}
+      />
+    );
+  };
+
+  // 记录标签：打开了产物就显示它的版本和记录；还没打开时列出本任务的产物，点一个看它的记录
+  // （验收反馈：刷新后记录页是空的）
+  const renderHistory = () => {
+    if (shownDetail) {
+      return (
+        <ArtifactHistory
+          detail={shownDetail}
+          clientName={clientName}
+          onOpenVersion={(id) => {
+            openArtifact(id);
+            setTab('artifacts');
+          }}
+        />
+      );
+    }
+    if (selectedId !== null && detailState !== 'error') {
+      return (
+        <p className={styles.status} role="status">
+          {t('results.artifacts.loading')}
+        </p>
+      );
+    }
+    if (artifacts.length > 0) {
+      return (
+        <>
+          <p className={styles.status}>{t('results.history.selectArtifact')}</p>
+          <ArtifactList
+            artifacts={artifacts}
+            selectedId={selectedId}
+            onSelect={openArtifact}
+            clientName={clientName}
+            label={t('results.history.pickArtifact')}
+          />
+        </>
+      );
+    }
+    return (
+      <EmptyState
+        icon={<History size={20} />}
+        title={t('results.empty.history')}
+        description={t('results.history.selectArtifact')}
+      />
+    );
   };
 
   return (
@@ -408,22 +483,7 @@ export function ResultsPanel({
             readOnly={readOnly}
           />
         )}
-        {tab === 'history' &&
-          (shownDetail ? (
-            <ArtifactHistory
-              detail={shownDetail}
-              onOpenVersion={(id) => {
-                openArtifact(id);
-                setTab('artifacts');
-              }}
-            />
-          ) : (
-            <EmptyState
-              icon={<History size={20} />}
-              title={t('results.empty.history')}
-              description={t('results.history.selectArtifact')}
-            />
-          ))}
+        {tab === 'history' && renderHistory()}
       </div>
     </aside>
   );

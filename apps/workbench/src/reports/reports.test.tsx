@@ -4,7 +4,7 @@ import type {
   ReportUploadSummary,
   ReportUploadStreamEvent,
 } from '@health-buddy/shared';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ChatPane, type ChatPaneProps } from '../shell/ChatPane';
 import {
@@ -293,7 +293,11 @@ describe('核对界面', () => {
     const confirmAll = screen.getByRole('button', { name: '确认所有数据' });
     expect(confirm).toBeDisabled();
     expect(confirmAll).toBeDisabled();
-    expect(screen.getByText('请先在原件上方勾选“报告上的姓名是本客户”')).toBeVisible();
+    // 按钮旁列出还不能确认的原因
+    const blockers = screen.getByRole('list', { name: '确认前还需要' });
+    expect(
+      within(blockers).getByText('勾选“报告上的姓名是本客户”（原件上方或这里都可以）'),
+    ).toBeVisible();
 
     const box = screen.getByRole('checkbox', { name: IDENTITY });
     await user.click(box);
@@ -301,6 +305,42 @@ describe('核对界面', () => {
     expect(confirmAll).toBeEnabled();
     await user.click(box);
     expect(confirm).toBeDisabled();
+    expect(confirmAll).toBeDisabled();
+  });
+
+  it('手机验收反馈 1：按钮旁的勾选框和上方同步，报告日期为空时说明原因', async () => {
+    const user = userEvent.setup();
+    // 报告上没有识别出日期
+    mockApi({
+      [`GET /report-uploads/${UPLOAD_ID}`]: () =>
+        json(200, { upload: upload({ values: [value({})], reportDate: null }) }),
+    });
+    render(<ReviewView uploadId={UPLOAD_ID} />);
+    const near = await screen.findByRole('checkbox', {
+      name: '报告上的姓名是本客户（已对照原件）',
+    });
+    const top = screen.getByRole('checkbox', { name: IDENTITY });
+    const confirm = screen.getByRole('button', { name: '确认核对' });
+    const confirmAll = screen.getByRole('button', { name: '确认所有数据' });
+    // 按钮旁的勾选框在按钮前面、原件后面
+    expect(
+      screen.getByRole('region', { name: '报告原件' }).compareDocumentPosition(near) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    await user.click(near);
+    expect(top).toBeChecked();
+    // 只差日期：两个按钮仍不能点，原因写在按钮旁
+    expect(confirmAll).toBeDisabled();
+    const blockers = screen.getByRole('list', { name: '确认前还需要' });
+    expect(within(blockers).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(blockers).getByText('填写报告日期（报告上没有识别出日期）')).toBeVisible();
+    fireEvent.change(screen.getByLabelText('报告日期'), { target: { value: '2026-09-01' } });
+    expect(confirm).toBeEnabled();
+    expect(confirmAll).toBeEnabled();
+    expect(screen.queryByRole('list', { name: '确认前还需要' })).toBeNull();
+    // 取消上方的勾选，下方同步取消
+    await user.click(top);
+    expect(near).not.toBeChecked();
     expect(confirmAll).toBeDisabled();
   });
 

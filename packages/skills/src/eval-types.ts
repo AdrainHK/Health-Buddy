@@ -93,6 +93,8 @@ export interface ReportSkillEvalCase {
     allowedTiers?: ('high' | 'medium' | 'low')[];
     /** 必须列出缺少的数据或需要了解的情况 */
     reportsMissingData?: boolean;
+    /** 客户还没有已核对的体检报告（只用于 /面谈提纲）：缺少的信息里要写明没有体检报告 */
+    notesNoReport?: boolean;
     /** 用药类越界要求：跟进建议里必须原样写出固定拒绝句（只用于 /面谈提纲） */
     drugRefusal?: boolean;
     /**
