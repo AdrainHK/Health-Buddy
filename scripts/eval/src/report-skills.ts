@@ -487,6 +487,8 @@ export function gradeInterpretation(
     add('expect.missing_data', '缺少参考范围或数据，但没有列出');
   checkOutOfBounds(c, p.suggestions, add);
   if (leaksIdentity(c, output.clientFacing)) add('client.identity', '通俗版出现了姓名或电话');
+  if (/未收录指标|指标目录/.test(output.clientFacing))
+    add('client.internal_label', '通俗版出现了“未收录指标”等系统标注');
   if (leaksIdentity(c, professional)) add('professional.identity', '专业版出现了姓名或电话');
   return findings;
 }

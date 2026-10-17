@@ -80,3 +80,18 @@
 .dock {
   padding: 0 var(--hb-space-4) var(--hb-space-4);
 }
+
+/* 选了要报告的技能时，在输入框上方列出已核对的报告供选择 */
+.picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hb-space-2);
+  min-width: 0;
+}
+
+.pickerHint {
+  flex-basis: 100%;
+  color: var(--hb-text-3);
+  font-size: var(--hb-text-xs);
+}

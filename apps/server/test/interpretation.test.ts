@@ -284,6 +284,40 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
       expect(provider.calls).toHaveLength(1);
     });
 
+    it('验收反馈 8：/体检解读 不写要求也能发送，后端用默认要求；没有技能时内容不能为空', async () => {
+      const agent = await as(f.users.managerA1.email);
+      const taskId = await newTask(agent, f.clients.a1[0]);
+      provider.queue.push({ text: interpretationJson() });
+      await send(agent, taskId, {
+        mode: 'craft',
+        content: '',
+        skillId: 'report-interpretation',
+        reportRefs: [reportA1],
+      }).expect(200);
+      expect(JSON.stringify(provider.calls[0])).toContain('请解读这份体检报告');
+      const saved = await owner
+        .selectFrom('task_messages')
+        .select(['role', 'content'])
+        .where('task_id', '=', taskId)
+        .where('role', '=', 'manager')
+        .execute();
+      expect(saved).toEqual([{ role: 'manager', content: '请解读这份体检报告' }]);
+      expect(await artifactsOf(taskId)).toHaveLength(1);
+
+      // 没有技能：空内容是无效请求；只写空格也一样
+      await send(agent, taskId, { mode: 'craft', content: '' }).expect(400);
+      await send(agent, taskId, { mode: 'ask', content: '   ' }).expect(400);
+      // 空内容也照样校验报告：客户没有已核对报告时 409
+      const empty = await newTask(agent, f.clients.a1[1]);
+      const rejected = await send(agent, empty, {
+        mode: 'craft',
+        content: '',
+        skillId: 'interview-outline',
+      }).expect(409);
+      expect(rejected.body.reasons).toEqual(['no_verified_report']);
+      expect(provider.calls).toHaveLength(1);
+    });
+
     it('验收 4：用未核对的识别结果、别的客户或别的健管师的报告做解读，一律 404', async () => {
       const agent = await as(f.users.managerA1.email);
       const taskId = await newTask(agent, f.clients.a1[0]);
@@ -917,5 +951,9 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
       'interview-outline',
       'new-client-assessment',
     ]);
+    // 都不需要再写要求（验收反馈 8）
+    expect(
+      res.body.skills.map((s: { allowsEmptyRequest: boolean }) => s.allowsEmptyRequest),
+    ).toEqual([true, true, true, true]);
   });
 });

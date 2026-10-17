@@ -1,3 +1,5 @@
+import { abnormalFromColumns } from '@health-buddy/shared';
+import { CODED_PANEL } from '@health-buddy/skills';
 import { describe, expect, it } from 'vitest';
 import { markConflicts, processItem, type RawItem } from './process-values.js';
 
@@ -41,5 +43,26 @@ describe('识别结果的确定性处理', () => {
     expect(markConflicts(items, new Map()).map((i) => i.flags)).toEqual([[], ['conflict']]);
     expect(markConflicts([items[0]!], new Map([['fpg', [5.1]]]))[0]!.flags).toEqual(['duplicate']);
     expect(markConflicts([items[0]!], new Map([['fpg', [6]]]))[0]!.flags).toEqual(['conflict']);
+  });
+});
+
+describe('验收反馈 7：带代号的检验表格（合成样本 coded-unlisted-panel）', () => {
+  it('都是未收录指标，但参考范围照样解析，按报告参考范围标出高低', () => {
+    const flags = CODED_PANEL.map((row) => {
+      const r = processItem(
+        raw({ rawName: row.name, rawValue: row.value, rawUnit: row.unit, refText: row.ref }),
+      );
+      expect(r, row.name).toMatchObject({ code: null, flags: ['unmapped'], refText: row.ref });
+      expect(r.refLow, row.name).not.toBeNull();
+      return [row.code, abnormalFromColumns(r.value, r.refLow, r.refHigh, r.refText)];
+    });
+    expect(Object.fromEntries(flags)).toEqual({
+      CD14: 'normal',
+      CD16: 'low',
+      CD41: 'low',
+      CD61: 'low',
+      CD34: 'high',
+      VEGFR2: 'low',
+    });
   });
 });

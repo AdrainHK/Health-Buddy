@@ -388,7 +388,11 @@ export function ResultsPanel({
             title={t('results.empty.client')}
             description={t('results.empty.clientHint')}
             action={
-              <Button icon={<Plus size={16} />} onClick={() => setCreatingClient(true)}>
+              <Button
+                variant="primary"
+                icon={<Plus size={16} />}
+                onClick={() => setCreatingClient(true)}
+              >
                 {t('record.newClient')}
               </Button>
             }

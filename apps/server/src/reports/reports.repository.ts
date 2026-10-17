@@ -2,11 +2,13 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   abnormalFromColumns,
   detectCriticalFlags,
+  mapIndicatorName,
   needsAttention,
   REPORT_UPLOAD_LIMITS,
   type AddExtractedValueRequest,
   type CorrectIndicatorRequest,
   type CriticalFlag,
+  type DuplicateUpload,
   type ExtractedValue,
   type ExtractedValueFlag,
   type IndicatorCode,
@@ -130,6 +132,7 @@ function toExtractedValue(row: Selectable<ExtractedValuesTable>): ExtractedValue
     sourceSnippet: row.source_snippet,
     flags: row.flags,
     reviewStatus: row.review_status,
+    checked: row.checked_by !== null,
     attention: needsAttention(row.flags),
     abnormal: abnormalFromColumns(value, num(row.ref_low), num(row.ref_high), row.ref_text),
   };
@@ -225,10 +228,17 @@ export class ReportsRepository {
           }
         }
         // 同一文件重复上传（文件指纹相同）直接提示“已上传过”（Q17）；已放弃的不算
+        // 附带已有那一份的 id、状态和报告日期，对话里据此引用已核对的报告或去核对（验收反馈 6）
         const dup = await trx
           .selectFrom('report_files as f')
           .innerJoin('report_uploads as u', 'u.id', 'f.upload_id')
-          .select('f.id')
+          .leftJoin('health_reports as r', 'r.id', 'u.report_id')
+          .select((eb) => [
+            'u.id as upload_id',
+            'u.status',
+            'u.report_id',
+            isoDate(eb, 'r.report_date').as('report_date'),
+          ])
           .where('f.client_id', '=', input.clientId)
           .where(
             'f.sha256',
@@ -236,8 +246,17 @@ export class ReportsRepository {
             input.files.map((f) => f.inspected.sha256),
           )
           .where('u.status', '<>', 'discarded')
+          .orderBy('u.created_at', 'desc')
           .executeTakeFirst();
-        if (dup) throw conflict({ reasons: ['duplicate_file'] });
+        if (dup) {
+          const existing: DuplicateUpload = {
+            uploadId: dup.upload_id,
+            status: dup.status,
+            reportId: dup.report_id,
+            reportDate: dup.report_date ?? null,
+          };
+          throw conflict({ reasons: ['duplicate_file'], existing });
+        }
 
         const pageCount = input.files.reduce((n, f) => n + f.inspected.pageCount, 0);
         await reservePages(trx, ctx, pageCount);
@@ -562,7 +581,14 @@ export class ReportsRepository {
         action = 'value_deleted';
         set = { review_status: 'deleted', checked_by: null };
       } else if (edits) {
-        const code = patch.code === undefined ? row.code : patch.code;
+        // 没指定指标时：原来是未收录指标、又改了名称，就按新名称重新对应（验收反馈 7）；
+        // 否则保持原来的指标。健管师明确选了“未收录指标”时 code 为 null，照原样保存。
+        const code =
+          patch.code !== undefined
+            ? patch.code
+            : row.code === null && patch.rawName !== undefined
+              ? mapIndicatorName(patch.rawName)
+              : row.code;
         if (code !== null && !isCatalogCode(code)) throw badRequest();
         const item = processItem(
           {

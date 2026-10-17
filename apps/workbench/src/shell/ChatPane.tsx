@@ -2,18 +2,19 @@ import { Button, IconButton } from '@health-buddy/ui';
 import type {
   ArtifactSummary,
   ClientSummary,
+  DuplicateUpload,
   ReportUploadSummary,
   SkillSummary,
   Task,
   TaskMode,
   TaskPlan,
 } from '@health-buddy/shared';
-import { Menu, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { FileText, Menu, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { type ReactNode, useEffect, useReducer, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ApiError, isAbortError } from '../api/http';
 import { confirmPlan, sendMessage, type StreamOptions } from '../api/stream';
-import { listReports, listUploads, uploadReport } from '../api/reports';
+import { DuplicateFileError, listReports, listUploads, uploadReport } from '../api/reports';
 import { createTask, getTask, stopTask } from '../api/workbench';
 import { Composer, type ReportOption } from '../chat/Composer';
 import {
@@ -29,6 +30,9 @@ import reportStyles from '../reports/Reports.module.css';
 import { UploadCard } from '../reports/UploadCard';
 import styles from './ChatPane.module.css';
 import { isReadOnlyTask } from './taskGroups';
+
+/** 报告选择里最多列出几份（新的在前） */
+const REPORT_PICKER_MAX = 5;
 
 /** 识别卡片上“生成解读”调用的技能 */
 const INTERPRETATION_SKILL_ID = 'report-interpretation';
@@ -61,6 +65,11 @@ export interface ChatPaneProps {
   onReviewUpload?: (uploadId: string) => void;
   /** 对话里上传了报告或识别状态变了：结果区的核对标签需要刷新 */
   onUploadsChanged?: () => void;
+  /**
+   * 识别记录在对话区之外有了变化（结果区里确认核对、放弃、重新识别）时改变，
+   * 对话区据此刷新识别卡片（验收反馈 3）。
+   */
+  uploadsVersion?: number;
 }
 
 interface Draft {
@@ -69,6 +78,11 @@ interface Draft {
   skill: SkillSummary | null;
   client: ClientSummary | null;
   report?: ReportOption | null;
+  /**
+   * 不是从输入框发出的（识别卡片上的“生成解读”、核对后自动解读）：
+   * 发送时不清空、失败时也不恢复输入框，健管师正在输入的内容不受影响。
+   */
+  auto?: boolean;
 }
 
 type ErrorKey =
@@ -87,6 +101,7 @@ type Notice =
   | { kind: 'uploadNeedClient' }
   | { kind: 'uploadError'; key: UploadErrorKey }
   | { kind: 'otherClient'; client: ClientSummary }
+  | { kind: 'duplicate'; status: ReportUploadSummary['status']; uploadId: string; date: string }
   | { kind: 'error'; key: ErrorKey };
 
 function errorKey(err: unknown): ErrorKey {
@@ -132,6 +147,7 @@ export function ChatPane({
   onNewTask,
   onReviewUpload,
   onUploadsChanged,
+  uploadsVersion = 0,
 }: ChatPaneProps) {
   const { t } = useTranslation();
   const skillName = useSkillName();
@@ -168,6 +184,17 @@ export function ChatPane({
   const submitRef = useRef<(draft: Draft) => void>(() => {});
   /** 为另一位客户新建任务时带到欢迎页的输入内容 */
   const carryRef = useRef<Draft | null>(null);
+  /**
+   * 上传时就想要解读的识别记录（选了 /体检解读，或要求里写了“解读”）：核对确认后自动开始解读，
+   * 每份只开始一次。只在本页面里记住，刷新后不再自动开始。
+   */
+  const [interpretIntent, setInterpretIntent] = useState<ReadonlySet<string>>(new Set());
+  const interpretIntentRef = useRef<ReadonlySet<string>>(interpretIntent);
+  interpretIntentRef.current = interpretIntent;
+  const interpretedRef = useRef(new Set<string>());
+  const autoInterpretRef = useRef<(upload: ReportUploadSummary) => void>(() => {});
+  /** /体检解读 因为“还没有已核对的报告”被拒绝：接下来上传的报告核对后自动解读 */
+  const wantsInterpretRef = useRef(false);
 
   const taskId = task?.id ?? null;
   const readOnly = task !== null && (isReadOnlyTask(task) || readOnlyTaskId === task.id);
@@ -191,6 +218,8 @@ export function ChatPane({
     setReport(null);
     setUploads([]);
     setSentClient(null);
+    setInterpretIntent(new Set());
+    wantsInterpretRef.current = false;
     dispatch({ type: 'reset' });
     if (taskId === null) {
       setLoadState('idle');
@@ -303,7 +332,7 @@ export function ChatPane({
     target: Task,
     start: { manager?: ViewMessage; assistant: ViewMessage },
     open: (options: StreamOptions) => Promise<void>,
-    hooks: { onOpen?: () => void; draft?: Draft } = {},
+    hooks: { onOpen?: () => void; draft?: Draft; restore?: boolean } = {},
   ): Promise<void> {
     const controller = new AbortController();
     abortRef.current = controller;
@@ -337,9 +366,13 @@ export function ChatPane({
       } else if (!opened) {
         const ids = [start.manager?.id, start.assistant.id].filter((x): x is string => !!x);
         dispatch({ type: 'rollback', ids });
-        if (hooks.draft) restoreComposer(hooks.draft);
+        if (hooks.draft && hooks.restore !== false) restoreComposer(hooks.draft);
         const key = errorKey(err);
         if (key === 'readOnly') setReadOnlyTaskId(target.id);
+        // 想解读但还没有已核对的报告：接下来上传的报告核对后自动开始解读
+        if (key === 'noVerifiedReport' && hooks.draft?.skill?.id === INTERPRETATION_SKILL_ID) {
+          wantsInterpretRef.current = true;
+        }
         setNotice({ kind: 'error', key });
       } else {
         dispatch({ type: 'end', errorKind: 'network' });
@@ -373,10 +406,23 @@ export function ChatPane({
     }
   }
 
+  /**
+   * 输入框为空也能发送：技能不需要再写要求（技能元数据 allowsEmptyRequest），客户已选好，
+   * 要报告的技能已引用报告（验收反馈 8）。后端用技能的默认要求。
+   */
+  function canSendEmpty(draft: Draft): boolean {
+    const s = draft.skill;
+    if (!s?.allowsEmptyRequest || modeConflict(s, draft.mode)) return false;
+    if (s.requiresClient && !draft.client && !task?.clientId) return false;
+    if (s.requiresReport && s.planSkills.length === 0 && !draft.report) return false;
+    return true;
+  }
+
   async function submit(draft: Draft): Promise<void> {
     if (readOnly) return;
+    const fromComposer = !draft.auto;
     const content = draft.text.trim();
-    if (!content) return;
+    if (!content && !canSendEmpty(draft)) return;
     // 问一问不能用技能（Q4）、多步计划只能在想一想下用：提示切换模式，不发送
     if (modeConflict(draft.skill, draft.mode)) return;
     const linkedClientId = task?.clientId ?? null;
@@ -392,18 +438,18 @@ export function ChatPane({
       // 生成中的追问排队，当前回答结束或被停止后再发（规格 3.2）
       queuedRef.current = draft;
       setQueued(draft);
-      clearComposer();
+      if (fromComposer) clearComposer();
       return;
     }
 
-    clearComposer();
+    if (fromComposer) clearComposer();
     if (draft.client) setSentClient(draft.client);
     let target = task;
     if (!target) {
       try {
         target = await createTask();
       } catch (err) {
-        restoreComposer(draft);
+        if (fromComposer) restoreComposer(draft);
         setNotice({ kind: 'error', key: errorKey(err) });
         return;
       }
@@ -446,7 +492,7 @@ export function ChatPane({
           },
           options,
         ),
-      { draft },
+      { draft, restore: fromComposer },
     );
   }
 
@@ -469,6 +515,11 @@ export function ChatPane({
       return;
     }
     setNotice(null);
+    // 上传时就想要解读：选了 /体检解读、要求里写了“解读”，或刚才 /体检解读 因为没有已核对的报告被拒绝
+    const wantsInterpret =
+      skill?.id === INTERPRETATION_SKILL_ID ||
+      text.includes(t('chat.interpretKeyword')) ||
+      wantsInterpretRef.current;
     let taskForUpload = task;
     try {
       if (!taskForUpload) {
@@ -479,19 +530,77 @@ export function ChatPane({
       }
       const created = await uploadReport(target.id, files, taskForUpload.id);
       setUploads((list) => [...list.filter((u) => u.id !== created.id), created]);
+      if (wantsInterpret) addInterpretIntent(created.id);
       setUploadVersion((v) => v + 1);
       onTaskChanged?.();
       onUploadsChanged?.();
     } catch (err) {
+      if (err instanceof DuplicateFileError && err.existing) {
+        onDuplicate(err.existing, wantsInterpret);
+        return;
+      }
       setNotice({ kind: 'uploadError', key: uploadErrorKey(err) });
     }
+  };
+
+  const addInterpretIntent = (uploadId: string) => {
+    wantsInterpretRef.current = false;
+    setInterpretIntent((set) => new Set(set).add(uploadId));
+  };
+
+  /**
+   * 同一个文件已经上传过（验收反馈 6）：已核对的直接引用那份报告；还没核对完的引导去核对，
+   * 想要解读时核对后自动开始。只有已核对的报告能解读，这一点后端也校验。
+   */
+  const onDuplicate = (existing: DuplicateUpload, wantsInterpret: boolean) => {
+    if (existing.status === 'verified' && existing.reportId) {
+      const date = existing.reportDate ?? '';
+      setReport({ id: existing.reportId, date, pending: false });
+      if (wantsInterpret && interpretSkill && !skill) setSkill(interpretSkill);
+      setNotice({ kind: 'duplicate', status: 'verified', uploadId: existing.uploadId, date });
+      return;
+    }
+    if (wantsInterpret && existing.status !== 'failed') addInterpretIntent(existing.uploadId);
+    setNotice({
+      kind: 'duplicate',
+      status: existing.status,
+      uploadId: existing.uploadId,
+      date: '',
+    });
   };
 
   const onUploadChanged = (next: ReportUploadSummary) => {
     setUploads((list) => list.map((u) => (u.id === next.id ? next : u)));
     setUploadVersion((v) => v + 1);
     onUploadsChanged?.();
+    // 识别完成：自动打开核对界面（产品决定，验收反馈 6）
+    if (next.status === 'needs_review' && !readOnly) onReviewUpload?.(next.id);
   };
+
+  // 识别记录在结果区里有了变化（确认核对、放弃、重新识别）：刷新卡片；想要解读的报告核对完成时自动开始解读
+  const seenUploadsVersion = useRef(uploadsVersion);
+  useEffect(() => {
+    if (seenUploadsVersion.current === uploadsVersion) return;
+    seenUploadsVersion.current = uploadsVersion;
+    if (reportClientId === null) return;
+    const controller = new AbortController();
+    listUploads(reportClientId, controller.signal)
+      .then((fresh) => {
+        const byId = new Map(fresh.map((u) => [u.id, u]));
+        setUploads((list) =>
+          list.map((u) => {
+            const f = byId.get(u.id);
+            return f && f.attempts >= u.attempts ? f : u;
+          }),
+        );
+        setUploadVersion((v) => v + 1);
+        for (const u of fresh) autoInterpretRef.current(u);
+      })
+      .catch(() => {
+        // 刷新失败时保留当前卡片，切换任务或刷新页面后可以看到
+      });
+    return () => controller.abort();
+  }, [uploadsVersion, reportClientId]);
 
   /** 识别卡片上的“生成解读”（规格 2.5 第 1 条）：相当于在做一做模式下发送 /体检解读 @报告 */
   const interpretSkill = skills.find((s) => s.id === INTERPRETATION_SKILL_ID) ?? null;
@@ -505,8 +614,28 @@ export function ChatPane({
       skill: interpretSkill,
       client: null,
       report: { id: upload.reportId, date, pending: false },
+      auto: true,
     });
   };
+
+  // 上传时就想要解读的报告核对完成：自动开始 /体检解读（产品决定，验收反馈 6），每份只开始一次
+  useEffect(() => {
+    autoInterpretRef.current = (upload) => {
+      if (!interpretIntentRef.current.has(upload.id) || interpretedRef.current.has(upload.id)) {
+        return;
+      }
+      if (upload.status !== 'verified' || !upload.reportId || !interpretSkill || readOnly) return;
+      interpretedRef.current.add(upload.id);
+      setInterpretIntent((set) => {
+        const next = new Set(set);
+        next.delete(upload.id);
+        return next;
+      });
+      // 输入框里只选了 /体检解读、没写别的：已经替健管师发出了，去掉这个技能
+      if (skill?.id === INTERPRETATION_SKILL_ID && !text.trim()) setSkill(null);
+      onInterpret(upload);
+    };
+  });
 
   const onConfirmPlan = (plan: TaskPlan) => {
     if (!task || readOnly || generatingRef.current) return;
@@ -599,6 +728,23 @@ export function ChatPane({
         )}
       </>
     );
+  } else if (notice?.kind === 'duplicate') {
+    const { status, uploadId, date } = notice;
+    noticeNode =
+      status === 'verified' ? (
+        <span role="status">{t('chat.duplicateVerified', { date })}</span>
+      ) : (
+        <>
+          <span role="alert">
+            {status === 'failed' ? t('chat.duplicateFailed') : t('chat.duplicatePending')}
+          </span>
+          {onReviewUpload && (
+            <Button variant="ghost" onClick={() => onReviewUpload(uploadId)}>
+              {t('chat.openReview')}
+            </Button>
+          )}
+        </>
+      );
   } else if (notice) {
     noticeNode = (
       <span role="alert">
@@ -630,6 +776,37 @@ export function ChatPane({
     );
   }
 
+  // 选了要报告的技能、还没引用报告：列出这位客户已核对的报告供选择（验收反馈 6）
+  const verifiedReports = reportOptions
+    .filter((r) => !r.pending)
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, REPORT_PICKER_MAX);
+  if (
+    noticeNode === null &&
+    skill?.requiresReport &&
+    skill.planSkills.length === 0 &&
+    !report &&
+    !readOnly &&
+    verifiedReports.length > 0
+  ) {
+    noticeNode = (
+      <div className={styles.picker} role="group" aria-label={t('chat.reportPicker')}>
+        <span>{t('chat.reportPicker')}</span>
+        {verifiedReports.map((r) => (
+          <Button
+            key={r.id}
+            variant="secondary"
+            icon={<FileText size={14} />}
+            onClick={() => setReport(r)}
+          >
+            {t('chat.reportOption', { date: r.date })}
+          </Button>
+        ))}
+        <span className={styles.pickerHint}>{t('chat.reportPickerHint')}</span>
+      </div>
+    );
+  }
+
   const composer = (
     <Composer
       inputRef={inputRef}
@@ -646,6 +823,7 @@ export function ChatPane({
       disabled={readOnly || loadState !== 'idle'}
       generating={generating}
       onSubmit={() => void submit({ text, mode, skill, client, report })}
+      canSendEmpty={canSendEmpty({ text, mode, skill, client, report })}
       onStop={onStop}
       notice={noticeNode}
       reports={reportOptions}
@@ -714,6 +892,10 @@ export function ChatPane({
                         <UploadCard
                           upload={u}
                           readOnly={readOnly}
+                          inChat
+                          {...(interpretIntent.has(u.id) && u.status !== 'verified'
+                            ? { note: t('chat.autoInterpret') }
+                            : {})}
                           onChanged={onUploadChanged}
                           {...(onReviewUpload ? { onReview: onReviewUpload } : {})}
                           {...(interpretSkill && !readOnly && !generating

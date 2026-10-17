@@ -17,6 +17,13 @@ export interface UploadCardProps {
   /** 核对确认后“生成解读”（规格 2.5 第 1 条）；只在对话区里提供 */
   onInterpret?: () => void;
   readOnly?: boolean;
+  /**
+   * 对话区里的卡片：核对完成后“去核对”变成不能点的“已完成核对”，并提示可以继续提问
+   * （验收反馈 3）。核对标签里的卡片仍是“查看”。
+   */
+  inChat?: boolean;
+  /** 卡片上的附加说明（如“核对完成后会自动开始体检解读”） */
+  note?: string;
 }
 
 /**
@@ -29,6 +36,8 @@ export function UploadCard({
   onChanged,
   onInterpret,
   readOnly,
+  inChat = false,
+  note,
 }: UploadCardProps) {
   const { t } = useTranslation();
   const [override, setOverride] = useState<ReportUploadSummary | null>(null);
@@ -93,6 +102,12 @@ export function UploadCard({
       {upload.status === 'failed' && upload.failureCategory && (
         <p className={styles.muted}>{t(`reports.failure.${upload.failureCategory}`)}</p>
       )}
+      {note && <p className={styles.muted}>{note}</p>}
+      {inChat && upload.status === 'verified' && (
+        <p className={styles.muted} role="status">
+          {t('reports.card.verifiedNotice')}
+        </p>
+      )}
       {error && (
         <p className={styles.error} role="alert">
           {error}
@@ -109,7 +124,10 @@ export function UploadCard({
             {t('reports.card.interpret')}
           </Button>
         )}
-        {upload.status === 'verified' && onReview && (
+        {upload.status === 'verified' && inChat && (
+          <Button disabled>{t('reports.card.verifiedDone')}</Button>
+        )}
+        {upload.status === 'verified' && !inChat && onReview && (
           <Button variant="ghost" onClick={() => onReview(upload.id)}>
             {t('reports.card.view')}
           </Button>

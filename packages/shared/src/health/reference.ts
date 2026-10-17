@@ -19,10 +19,13 @@ export interface ReferenceRange {
 }
 
 const NUM = String.raw`(\d+(?:\.\d+)?)`;
+/** 范围数字后面印的单位（如 %、mmol/L、×10^9/L、MFI），不以数字开头 */
+const UNIT = String.raw`[a-zμµ%×*/][a-z0-9μµ%×*/^.]*`;
 
 /**
  * 解析报告上印的参考范围文字。认得这几种写法：
- * “3.9-6.1”“3.9～6.1”“3.9 — 6.1”“<1.7”“≤5.2”“>1.0”“≥1.04”“1.0 以上”“5.2 以下”。
+ * “3.9-6.1”“3.9～6.1”“3.9 — 6.1”“3.9 至 6.1”“<1.7”“≤5.2”“>1.0”“≥1.04”“1.0 以上”“5.2 以下”，
+ * 外面包着括号、后面或两端都跟着单位（“(0-15)”“0-15 μmol/L”“2.0%-10.0%”）也认得。
  * 认不出时返回 null（不猜），健管师可以在核对时手动填写。
  */
 export function parseReferenceRange(text: string | null | undefined): ReferenceRange | null {
@@ -30,16 +33,28 @@ export function parseReferenceRange(text: string | null | undefined): ReferenceR
   const t = text
     .normalize('NFKC')
     .replace(/\s+/g, '')
-    .replace(/[～〜~—–－]/g, '-')
+    // 整段包在括号里：“(0-15)”“[3.9-6.1]”
+    .replace(/^[([【（]+|[)\]】）]+$/g, '')
+    .replace(/[～〜~—–－‐‑‒―−至到]/g, '-')
+    .replace(/-{2,}/g, '-')
     .replace(/[≤⩽]/g, '<=')
     .replace(/[≥⩾]/g, '>=');
-  let m = new RegExp(`^${NUM}-${NUM}$`).exec(t);
+  // 两端都可以带同一个单位：“2.0%-10.0%”“0.1%-1.0%”“3.9mmol/L-6.1mmol/L”；只有一端带也行
+  const m = new RegExp(`^${NUM}(${UNIT})?-${NUM}(${UNIT})?$`, 'i').exec(t);
   if (m) {
     const low = Number(m[1]);
-    const high = Number(m[2]);
+    const high = Number(m[3]);
+    const [lowUnit, highUnit] = [m[2], m[4]];
+    if (lowUnit && highUnit && lowUnit.toLowerCase() !== highUnit.toLowerCase()) return null;
     if (low > high) return null;
     return { low, high, lowInclusive: true, highInclusive: true };
   }
+  return parseOneSided(t.replace(new RegExp(`(\\d)${UNIT}$`, 'i'), '$1'));
+}
+
+/** 单侧界限：“<1.7”“≤5.2”“>1.0”“≥1.04”“1.0 以上”“5.2 以下”（后面的单位已去掉） */
+function parseOneSided(t: string): ReferenceRange | null {
+  let m: RegExpExecArray | null;
   m = new RegExp(`^(<=|<)${NUM}$`).exec(t);
   if (m) return { low: null, high: Number(m[2]), lowInclusive: true, highInclusive: m[1] === '<=' };
   m = new RegExp(`^(>=|>)${NUM}$`).exec(t);

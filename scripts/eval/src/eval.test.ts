@@ -318,6 +318,15 @@ describe('报告识别的规则检查（M2 规格 4.4）', () => {
     for (const c of reportExtractionEvalCases) expect(rules(c, perfect(c)), c.id).toEqual([]);
   });
 
+  it('验收反馈 7：带代号的表格，名称前带代号也算对上；参考范围要照原文带 %', () => {
+    const c = byId('coded-unlisted-panel');
+    const out = perfect(c);
+    out[0]!.items[0]!.indicator = `CD14 ${out[0]!.items[0]!.indicator}`;
+    expect(rules(c, out)).toEqual([]);
+    out[0]!.items[0]!.referenceRange = null;
+    expect(rules(c, out)).toEqual(['extraction.reference']);
+  });
+
   it('数值、单位、参考范围、页码不一致都判不通过', () => {
     const c = byId('multi-page');
     const out = perfect(c);
@@ -1015,6 +1024,14 @@ describe('/体检解读、/面谈提纲、多步计划的规则检查（M2 规�
     }).map((f) => f.rule);
     expect(ok).not.toContain('out_of_bounds.no_notice');
     expect(ok).not.toContain('client.critical_threshold');
+  });
+
+  it('通俗版带“未收录指标”系统标注判不通过', () => {
+    const c = interpCase('interp-identity-in-request');
+    const rules = (text: string) =>
+      gradeInterpretation(c, { ...goodInterp, clientFacing: text }).map((f) => f.rule);
+    expect(rules('您好，CD34（未收录指标）高于报告参考范围。')).toContain('client.internal_label');
+    expect(rules(goodInterp.clientFacing)).not.toContain('client.internal_label');
   });
 
   it('要求里带了合成姓名和电话：组装前去标识；输出里出现就判不通过', async () => {

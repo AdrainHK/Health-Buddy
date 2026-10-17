@@ -90,6 +90,29 @@ describe('reference range (Q10)', () => {
     expect(parseReferenceRange(null)).toBeNull();
   });
 
+  it('reads ranges wrapped in brackets, followed by a unit, or written with 至', () => {
+    // 验收反馈 7：核对时看得到参考范围，但带单位或括号的写法以前解析不出，高低标记变成“未提供”
+    expect(parseReferenceRange('0-15 μmol/L')).toMatchObject({ low: 0, high: 15 });
+    expect(parseReferenceRange('3.90-6.10mmol/L')).toMatchObject({ low: 3.9, high: 6.1 });
+    expect(parseReferenceRange('<5.2 mmol/L')).toMatchObject({ high: 5.2, highInclusive: false });
+    expect(parseReferenceRange('（0-15）')).toMatchObject({ low: 0, high: 15 });
+    expect(parseReferenceRange('[3.9-6.1]')).toMatchObject({ low: 3.9, high: 6.1 });
+    expect(parseReferenceRange('3.9 至 6.1')).toMatchObject({ low: 3.9, high: 6.1 });
+    expect(parseReferenceRange('3.9--6.1')).toMatchObject({ low: 3.9, high: 6.1 });
+    expect(parseReferenceRange('30 ~ 400 ng/mL')).toMatchObject({ low: 30, high: 400 });
+    expect(parseReferenceRange('4.0-10.0×10^9/L')).toMatchObject({ low: 4, high: 10 });
+    // 两端都带单位（检验科表格常见，验收反馈 7）
+    expect(parseReferenceRange('2.0%-10.0%')).toMatchObject({ low: 2, high: 10 });
+    expect(parseReferenceRange('0.1%-1.0%')).toMatchObject({ low: 0.1, high: 1 });
+    expect(parseReferenceRange('3.9mmol/L-6.1mmol/L')).toMatchObject({ low: 3.9, high: 6.1 });
+    expect(parseReferenceRange('2.0-10.0%')).toMatchObject({ low: 2, high: 10 });
+    // 两端单位不一样：不猜
+    expect(parseReferenceRange('2.0%-10.0MFI')).toBeNull();
+    expect(parseReferenceRange('<5.2%')).toMatchObject({ high: 5.2 });
+    expect(parseReferenceRange('3.9-')).toBeNull();
+    expect(parseReferenceRange('12')).toBeNull();
+  });
+
   it('boundary values of an inclusive range are normal', () => {
     const r = parseReferenceRange('3.9-6.1');
     expect(classifyAgainstReference(3.9, r)).toBe('normal');
@@ -130,6 +153,25 @@ describe('indicator names', () => {
     expect(mapIndicatorName('Fasting Glucose')).toBe('fpg');
     expect(mapIndicatorName('谷丙转氨酶')).toBe('alt');
     expect(mapIndicatorName('尿酸')).toBe('uric_acid');
+  });
+
+  it('maps a Chinese name followed by an abbreviation without brackets (feedback 7)', () => {
+    expect(mapIndicatorName('空腹血糖 GLU')).toBe('fpg');
+    expect(mapIndicatorName('空腹血糖GLU')).toBe('fpg');
+    expect(mapIndicatorName('糖化血红蛋白 HbA1c')).toBe('hba1c');
+    expect(mapIndicatorName('TC 总胆固醇')).toBe('tc');
+    expect(mapIndicatorName('谷丙转氨酶 ALT')).toBe('alt');
+    expect(mapIndicatorName('空腹血糖【GLU】')).toBe('fpg');
+    expect(mapIndicatorName('空腹血糖[GLU]')).toBe('fpg');
+    expect(mapIndicatorName('1. 空腹血糖')).toBe('fpg');
+    expect(mapIndicatorName('2、尿酸')).toBe('uric_acid');
+    expect(mapIndicatorName('总胆固醇 TC ↑')).toBe('tc');
+  });
+
+  it('does not map when the Chinese name and the abbreviation disagree', () => {
+    expect(mapIndicatorName('HDL-C 低密度脂蛋白胆固醇')).toBeNull();
+    expect(mapIndicatorName('尿葡萄糖 GLU')).toBeNull();
+    expect(mapIndicatorName('肌酐 Cr (尿)')).toBeNull();
   });
 
   it('does not guess ambiguous or unknown names', () => {

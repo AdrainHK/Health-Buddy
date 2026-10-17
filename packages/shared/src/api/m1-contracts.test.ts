@@ -47,6 +47,21 @@ describe('sendMessageRequestSchema', () => {
   });
 });
 
+describe('sendMessageRequestSchema empty content (M2 feedback 8)', () => {
+  it('allows empty content only together with a skill; the server checks the skill', () => {
+    expect(
+      sendMessageRequestSchema.safeParse({
+        mode: 'craft',
+        content: '',
+        skillId: 'interview-outline',
+      }).success,
+    ).toBe(true);
+    expect(sendMessageRequestSchema.parse({ mode: 'craft', skillId: 's' }).content).toBe('');
+    expect(sendMessageRequestSchema.safeParse({ mode: 'craft', content: '' }).success).toBe(false);
+    expect(sendMessageRequestSchema.safeParse({ mode: 'ask', content: '  ' }).success).toBe(false);
+  });
+});
+
 describe('updateTaskRequestSchema', () => {
   it('requires at least one field', () => {
     expect(updateTaskRequestSchema.safeParse({}).success).toBe(false);

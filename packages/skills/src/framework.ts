@@ -35,6 +35,11 @@ export interface SkillMeta {
   clientFacing: boolean;
   /** 是否涉及健康判断（涉及的产物必须审核，M1 所有产物都审核） */
   involvesHealthJudgment: boolean;
+  /**
+   * 不需要健管师再写要求的技能（验收反馈 8）：输入框为空也能发送，后端用这段文字当作要求。
+   * skill.md 里不写 defaultRequest 时为 null，必须写要求。
+   */
+  defaultRequest: string | null;
 }
 
 /**
@@ -181,6 +186,8 @@ export interface PlanTemplate {
   skills: string[];
   requiresClient: boolean;
   requiresReport: boolean;
+  /** 同 SkillMeta.defaultRequest */
+  defaultRequest: string | null;
 }
 
 /** 读取同目录下的 skill.md：--- 包起来的 key: value 元数据，加上正文提示词。 */
@@ -223,5 +230,6 @@ export function parseSkillMeta(meta: Record<string, string>): SkillMeta {
     modes: modes as SkillMode[],
     clientFacing: bool('clientFacing'),
     involvesHealthJudgment: bool('involvesHealthJudgment'),
+    defaultRequest: meta.defaultRequest?.trim() || null,
   };
 }

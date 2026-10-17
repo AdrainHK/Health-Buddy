@@ -64,6 +64,7 @@ const skills: SkillSummary[] = [
     clientFacing: true,
     involvesHealthJudgment: true,
     requiresReport: true,
+    allowsEmptyRequest: false,
     planSkills: [],
   },
 ];
@@ -85,6 +86,7 @@ function value(seq: number, overrides: Partial<ExtractedValue>): ExtractedValue 
     sourceSnippet: '总胆固醇 5.62 mmol/L <5.2',
     flags: [],
     reviewStatus: 'pending',
+    checked: false,
     attention: false,
     abnormal: 'high',
     ...overrides,
@@ -382,4 +384,28 @@ test('核对：375px 下不横向滚动，原件在上、数值在下', async ({
   expect(imageBox && firstValue).toBeTruthy();
   expect(imageBox!.y).toBeLessThan(firstValue!.y);
   expect(imageBox!.x + imageBox!.width).toBeLessThanOrEqual(375 + 1);
+});
+
+test('对话：375px 下选了 /体检解读 后的报告选择不横向滚动（验收反馈 6）', async ({ page }) => {
+  await mockApi(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: '打开菜单' }).click();
+  await page
+    .getByRole('button', { name: /合成客户甲的体检报告/ })
+    .first()
+    .click();
+  const box = page.getByRole('textbox');
+  await box.fill('/');
+  await page.getByRole('option', { name: '体检解读' }).click();
+  const picker = page.getByRole('group', { name: '选择要用的报告' });
+  await expect(picker).toBeVisible();
+  const sizes = await page.evaluate(() => ({
+    viewport: window.innerWidth,
+    doc: document.documentElement.scrollWidth,
+  }));
+  expect(sizes.doc).toBeLessThanOrEqual(sizes.viewport);
+  const pickerBox = await picker.boundingBox();
+  expect(pickerBox!.x + pickerBox!.width).toBeLessThanOrEqual(375 + 1);
+  await picker.getByRole('button', { name: '报告 · 2026-09-12' }).click();
+  await expect(page.getByRole('button', { name: '移除报告 2026-09-12' })).toBeVisible();
 });

@@ -44,6 +44,7 @@ function value(overrides: Partial<ExtractedValue>): ExtractedValue {
     sourceSnippet: null,
     flags: [],
     reviewStatus: 'pending',
+    checked: false,
     attention: false,
     abnormal: 'normal',
     ...overrides,
@@ -113,7 +114,7 @@ describe('核对界面', () => {
     const api = mockApi({
       [`GET /report-uploads/${UPLOAD_ID}`]: () => json(200, { upload: current }),
       [`PATCH /report-uploads/${UPLOAD_ID}/values/${VALUE_FPG}`]: () =>
-        json(200, { value: { ...FPG, reviewStatus: 'checked' }, version: 2 }),
+        json(200, { value: { ...FPG, reviewStatus: 'checked', checked: true }, version: 2 }),
       [`POST /report-uploads/${UPLOAD_ID}/verify`]: () => {
         current = { ...current, status: 'verified', reportId: REPORT_ID, version: 3 };
         return json(200, { upload: current });
@@ -151,6 +152,81 @@ describe('核对界面', () => {
     });
     expect(await screen.findByText('已核对，已写入档案')).toBeVisible();
     expect(screen.queryByRole('button', { name: '确认核对' })).not.toBeInTheDocument();
+  });
+
+  it('验收反馈 5：修改过的行再勾选“已核对”能勾上，确认时带上这一行', async () => {
+    const user = userEvent.setup();
+    const patches: unknown[] = [];
+    // 和后端一致：修改后 reviewStatus 是 edited、需要重新勾选；勾选后仍是 edited，checked 为 true
+    const edited = { ...FPG, rawValue: '109', value: 6.05, reviewStatus: 'edited' as const };
+    const api = mockApi({
+      [`GET /report-uploads/${UPLOAD_ID}`]: () => json(200, { upload: upload() }),
+      [`PATCH /report-uploads/${UPLOAD_ID}/values/${VALUE_FPG}`]: (req) => {
+        patches.push(req.body);
+        const body = req.body as { checked?: boolean };
+        if (body.checked === true && patches.length > 1) {
+          return json(200, { value: { ...edited, checked: true }, version: 3 });
+        }
+        return json(200, { value: { ...edited, checked: false }, version: 2 });
+      },
+      [`POST /report-uploads/${UPLOAD_ID}/verify`]: () =>
+        json(200, { upload: upload({ status: 'verified', reportId: REPORT_ID, version: 4 }) }),
+    });
+    render(<ReviewView uploadId={UPLOAD_ID} />);
+
+    await user.click(await screen.findByRole('button', { name: '修改 空腹血糖' }));
+    const valueInput = screen.getByRole('textbox', { name: '数值' });
+    await user.clear(valueInput);
+    await user.type(valueInput, '109');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+    // 修改后的行要重新勾选
+    const box = await screen.findByRole('checkbox', { name: '已核对' });
+    expect(box).not.toBeChecked();
+    expect(patches[0]).toMatchObject({ rawValue: '109', code: 'fpg' });
+
+    await user.click(box);
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: '已核对' })).toBeChecked());
+    expect(screen.getByText('需特别注意的行都已核对')).toBeVisible();
+    const confirm = screen.getByRole('button', { name: '确认核对' });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    await user.click(confirm);
+    await waitFor(() =>
+      expect(api.callsTo('POST', `/report-uploads/${UPLOAD_ID}/verify`)[0]?.body).toMatchObject({
+        version: 3,
+        checkedValueIds: [VALUE_FPG],
+      }),
+    );
+  });
+
+  it('验收反馈 7：补录一行时默认按名称自动对应指标，不传 code', async () => {
+    const user = userEvent.setup();
+    const api = mockApi({
+      [`GET /report-uploads/${UPLOAD_ID}`]: () => json(200, { upload: upload() }),
+      [`POST /report-uploads/${UPLOAD_ID}/values`]: () =>
+        json(200, {
+          value: value({
+            id: 'a0000000-0000-4000-8000-000000000009',
+            seq: 2,
+            rawName: '尿酸 UA',
+            code: 'uric_acid',
+            reviewStatus: 'added',
+            checked: true,
+          }),
+          version: 2,
+        }),
+    });
+    render(<ReviewView uploadId={UPLOAD_ID} />);
+    await user.click(await screen.findByRole('button', { name: '补录一项' }));
+    expect(screen.getByRole('combobox', { name: '对应指标' })).toHaveValue('__auto');
+    await user.type(screen.getByRole('textbox', { name: '报告上的名称' }), '尿酸 UA');
+    await user.type(screen.getByRole('textbox', { name: '数值' }), '380');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() =>
+      expect(api.callsTo('POST', `/report-uploads/${UPLOAD_ID}/values`)).toHaveLength(1),
+    );
+    const body = api.callsTo('POST', `/report-uploads/${UPLOAD_ID}/values`)[0]?.body;
+    expect(body).toMatchObject({ rawName: '尿酸 UA', rawValue: '380' });
+    expect(body).not.toHaveProperty('code');
   });
 
   it('后端说有危急指标时显示危急指标和“已知悉”，勾选后再确认', async () => {
@@ -275,6 +351,9 @@ describe('对话里上传报告', () => {
     const form = post?.body as FormData;
     expect(form.get('taskId')).toBe(ids.task);
     expect(form.getAll('files')).toHaveLength(2);
+    // 识别完成后自动打开核对界面（验收反馈 6 的产品决定）
+    await waitFor(() => expect(onReviewUpload).toHaveBeenCalledWith(UPLOAD_ID));
+    onReviewUpload.mockClear();
     await user.click(within(card).getByRole('button', { name: '去核对' }));
     expect(onReviewUpload).toHaveBeenCalledWith(UPLOAD_ID);
   });

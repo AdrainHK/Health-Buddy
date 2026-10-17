@@ -35,6 +35,7 @@ type LoadState = 'loading' | 'ready' | 'error';
 
 interface RowDraft {
   rawName: string;
+  /** 指标编码；null 表示作为未收录指标保存；AUTO 表示按名称自动对应 */
   code: string | null;
   rawValue: string;
   rawUnit: string;
@@ -42,11 +43,13 @@ interface RowDraft {
 }
 
 const UNMAPPED = '';
+/** 按名称自动对应指标（补录的行、原来是未收录指标的行默认用它，验收反馈 7） */
+const AUTO = '__auto';
 
 function draftOf(v?: ExtractedValue): RowDraft {
   return {
     rawName: v?.rawName ?? '',
-    code: v ? v.code : null,
+    code: v?.code ?? AUTO,
     rawValue: v?.rawValue ?? '',
     rawUnit: v?.rawUnit ?? '',
     refText: v?.refText ?? '',
@@ -119,7 +122,8 @@ export function ReviewView({ uploadId, onChanged, onBack }: ReviewViewProps) {
   const editable = upload.status === 'needs_review';
   const rows = upload.values.filter((v) => v.reviewStatus !== 'deleted');
   const deletedCount = upload.values.length - rows.length;
-  const pendingAttention = rows.filter((v) => v.attention && v.reviewStatus !== 'checked');
+  // 用 checked 而不是 reviewStatus：修改过、补录的行勾选后 reviewStatus 仍是 edited、added（验收反馈 5）
+  const pendingAttention = rows.filter((v) => v.attention && !v.checked);
   const file = upload.files[fileIndex] ?? upload.files[0];
   const highlighted = new Set(rejection?.valueIds ?? []);
 
@@ -169,7 +173,8 @@ export function ReviewView({ uploadId, onChanged, onBack }: ReviewViewProps) {
     run(async () => {
       const body = {
         rawName: d.rawName.trim(),
-        code: d.code,
+        // 自动对应时不传，后端按名称对应
+        ...(d.code === AUTO ? {} : { code: d.code }),
         rawValue: d.rawValue.trim(),
         rawUnit: d.rawUnit.trim() || null,
         refText: d.refText.trim() || null,
@@ -185,7 +190,7 @@ export function ReviewView({ uploadId, onChanged, onBack }: ReviewViewProps) {
       try {
         const next = await verifyUpload(upload.id, {
           version: upload.version,
-          checkedValueIds: rows.filter((v) => v.reviewStatus === 'checked').map((v) => v.id),
+          checkedValueIds: rows.filter((v) => v.checked).map((v) => v.id),
           reportDate,
           acknowledgedCritical: ackCritical,
           saveAsNew,
@@ -499,7 +504,7 @@ function ValueRow({
               <input
                 id={checkId}
                 type="checkbox"
-                checked={v.reviewStatus === 'checked'}
+                checked={v.checked}
                 disabled={busy}
                 onChange={(e) => onToggle(e.target.checked)}
               />
@@ -578,6 +583,7 @@ function RowForm({
           value={d.code ?? UNMAPPED}
           onChange={(e) => setD({ ...d, code: e.target.value || null })}
         >
+          <option value={AUTO}>{t('reports.form.auto')}</option>
           <option value={UNMAPPED}>{t('reports.form.unmapped')}</option>
           {REPORT_INDICATORS.map((i) => (
             <option key={i.code} value={i.code}>

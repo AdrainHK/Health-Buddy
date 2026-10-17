@@ -124,7 +124,8 @@ export type TaskDetailResponse = z.infer<typeof taskDetailResponseSchema>;
 export const sendMessageRequestSchema = z
   .object({
     mode: taskModeSchema,
-    content: z.string().trim().min(1).max(MESSAGE_CONTENT_MAX),
+    /** 可以为空，但只限不需要再写要求的技能（后端按技能元数据校验，用默认要求文字） */
+    content: z.string().trim().max(MESSAGE_CONTENT_MAX).default(''),
     skillId: z.string().min(1).optional(),
     /** 每个任务只关联一位客户（Q6） */
     clientRefs: z.array(z.uuid()).max(1).default([]),
@@ -135,6 +136,11 @@ export const sendMessageRequestSchema = z
   .refine((v) => !(v.mode === 'ask' && v.skillId !== undefined), {
     message: 'skills are not available in ask mode',
     path: ['skillId'],
+  })
+  // 没有技能时必须有内容
+  .refine((v) => v.content.length > 0 || v.skillId !== undefined, {
+    message: 'content is required without a skill',
+    path: ['content'],
   });
 export type SendMessageRequest = z.input<typeof sendMessageRequestSchema>;
 

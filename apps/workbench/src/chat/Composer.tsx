@@ -81,6 +81,8 @@ export interface ComposerProps {
   disabled: boolean;
   generating: boolean;
   onSubmit: () => void;
+  /** 输入框为空也能发送（技能不需要再写要求，验收反馈 8） */
+  canSendEmpty?: boolean;
   onStop: () => void;
   /** 输入框上方的提示（技能和模式不匹配、请先 @ 客户、出错等） */
   notice?: ReactNode;
@@ -108,6 +110,7 @@ export function Composer({
   disabled,
   generating,
   onSubmit,
+  canSendEmpty = false,
   onStop,
   notice,
   reports = [],
@@ -376,7 +379,7 @@ export function Composer({
               variant="primary"
               label={t('chat.send')}
               icon={<ArrowUp size={18} />}
-              disabled={disabled || !text.trim()}
+              disabled={disabled || (!text.trim() && !canSendEmpty)}
             />
           )}
         </div>

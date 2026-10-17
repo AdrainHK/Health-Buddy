@@ -695,7 +695,12 @@ export function ArtifactView({
               <p className={styles.blockNote}>{t(`results.artifacts.review.${approveBlock}`)}</p>
             )}
             <div className={styles.actions}>
-              <Button disabled={!editable || working || !dirty || newerLoaded} onClick={save}>
+              {/* 保存按钮统一用主色（验收反馈 1）；有未保存的修改时“确认”不能点，不会同时有两个可点的主色按钮 */}
+              <Button
+                variant="primary"
+                disabled={!editable || working || !dirty || newerLoaded}
+                onClick={save}
+              >
                 {busy === 'save'
                   ? t('results.artifacts.review.saving')
                   : t('results.artifacts.review.save')}

@@ -43,6 +43,9 @@ describe('skill metadata', () => {
       involvesHealthJudgment: 'false',
     };
     expect(() => parseSkillMeta(ok)).not.toThrow();
+    // defaultRequest 可以不写：不写时必须写要求才能发送
+    expect(parseSkillMeta(ok).defaultRequest).toBeNull();
+    expect(parseSkillMeta({ ...ok, defaultRequest: ' 请写一份 ' }).defaultRequest).toBe('请写一份');
     expect(() => parseSkillMeta({ ...ok, id: 'Bad Id' })).toThrow();
     expect(() => parseSkillMeta({ ...ok, modes: 'ask' })).toThrow();
     expect(() => parseSkillMeta({ ...ok, clientFacing: 'yes' })).toThrow();
@@ -59,6 +62,7 @@ describe('skill metadata', () => {
       clientFacing: true,
       involvesHealthJudgment: true,
       requiresReport: false,
+      allowsEmptyRequest: true,
       planSkills: [],
     });
     expect(getSkill('client-recent-summary')).toBe(clientRecentSummary);
