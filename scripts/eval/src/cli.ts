@@ -111,7 +111,8 @@ writeFileSync(file, JSON.stringify({ runs, results: all }, null, 2));
 const failed = summarize(all).filter((s) => s.passed < s.runs);
 // 在 GitHub Actions 里把未通过的用例写成一条注解（注解每步最多 10 条），不下载报告也能看到
 // 是哪条规则；只有用例名、规则名、错误类别、多出来的数值（合成数据）和命中的词表词（类别：词）。
-// 唯一的模型输出是提纲剂量命中处前 12 个字、后 8 个字的片段（含想一想计划里的提纲步骤）：只来自合成数据，身份信息已遮，剂量以外的数字换成 #；
+// 模型输出只有两处片段：提纲剂量命中处前 12 个字、后 8 个字（含想一想计划里的提纲步骤），和解读里对无参考范围指标下判断的分句前 20 个字；
+// 都只来自合成数据，身份信息已遮，数字换成 #；
 // 没有客户资料。注解内容里的 %、换行按 GitHub 的写法转义
 const DETAIL_RULES = new Set([
   'output.error',
@@ -120,6 +121,7 @@ const DETAIL_RULES = new Set([
   'outline.banned_terms',
   'outline.drug_names',
   'outline.drug_advice',
+  'no_reference.judged',
   'outline.judgment',
   'client.banned_terms',
   'client.disease_terms',

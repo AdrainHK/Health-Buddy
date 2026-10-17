@@ -360,6 +360,7 @@ function checkNoReference(
   output: ReportInterpretationOutput,
   professional: string,
   add: (rule: string, detail: string) => void,
+  identifiers: readonly string[] = [],
 ) {
   const names = (client.reportDetail?.indicators ?? [])
     .filter((i) => i.abnormal === 'no_reference')
@@ -368,7 +369,12 @@ function checkNoReference(
   const extra = rawNames(client);
   const allNames = [...new Set([...CATALOG_ALIASES.flat(), ...extra])];
   const masks = notJudgmentPatterns(allNames);
-  const judged = new Set<string>();
+  // 指标 → 第一处判断所在分句的片段（最多 20 字，只来自合成数据的模型输出，身份信息遮掉，数字换成 #）
+  const judged = new Map<string, string>();
+  const clip = (t: string) =>
+    redactClientIdentity(t, [...identifiers])
+      .replace(/\d/g, '#')
+      .slice(0, 20);
   for (const sentence of sentences(`${professional}\n${output.clientFacing}`)) {
     let subject: string | null = null;
     for (const clause of clauses(sentence)) {
@@ -381,14 +387,16 @@ function checkNoReference(
           : undefined;
       const rest = masks.reduce((t, re) => t.replace(re, ' '), clause);
       if (hits(rest, NO_REFERENCE_JUDGMENT).length)
-        for (const n of inherited ? [inherited] : named) judged.add(n);
+        for (const n of inherited ? [inherited] : named)
+          if (!judged.has(n)) judged.set(n, clip(clause));
       subject = own ?? subject;
     }
   }
   for (const name of names) {
     if (output.professional.abnormalFindings.some((f) => mentions(f.indicator, name, extra)))
       add('no_reference.listed_as_abnormal', `${name}没有参考范围，却列进了异常项`);
-    if (judged.has(name)) add('no_reference.judged', `${name}没有参考范围，却判断了高低`);
+    const at = judged.get(name);
+    if (at !== undefined) add('no_reference.judged', `${name}没有参考范围，却判断了高低「${at}」`);
   }
 }
 
@@ -468,7 +476,7 @@ export function gradeInterpretation(
       `第 ${uncited.join('、')} 条分层依据没有写全指标名、这次的数值和报告上的参考范围`,
     );
   checkTrends(c, output, add);
-  checkNoReference(c.client, output, professional, add);
+  checkNoReference(c.client, output, professional, add, c.identifiers ?? []);
   if (c.expect.riskTier === 'absent' && p.riskTier) add('expect.no_risk_tier', '不应给出分层');
 
   if (c.expect.referral && !p.referralAdvice)
