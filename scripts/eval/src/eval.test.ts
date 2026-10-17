@@ -573,6 +573,23 @@ describe('/体检解读、/面谈提纲、多步计划的规则检查（M2 规�
       expect.arrayContaining(['accuracy.invented_numbers', 'expect.no_report_note']),
     );
     expect(rules).not.toContain('outline.no_report_values');
+    // 不带数字的编造也算；缺少的信息只提到“报告”不算写明
+    const vague = gradeOutline(noReport, {
+      ...good,
+      professional: {
+        ...good.professional,
+        groups: [
+          {
+            topic: 'diet',
+            questions: [{ question: '平时吃得咸吗？', why: '报告显示血脂超出参考范围' }],
+          },
+        ],
+        missingData: ['请客户下次带上以往的报告'],
+      },
+    }).map((f) => f.rule);
+    expect(vague).toEqual(
+      expect.arrayContaining(['outline.invented_report', 'expect.no_report_note']),
+    );
   });
 
   it('提纲：引用报告数值的通过；预设疾病、点名药物、问个人信息判不通过', () => {

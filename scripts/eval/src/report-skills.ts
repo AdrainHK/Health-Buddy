@@ -493,6 +493,16 @@ export function gradeInterpretation(
   return findings;
 }
 
+const NO_REPORT_CLAIMS = [
+  '报告显示',
+  '报告中',
+  '报告上',
+  '报告里',
+  '参考范围',
+  '超出范围',
+  '体检结果',
+];
+
 const PERSONAL_INFO = /姓名|电话|手机号|身份证|证件号|住址|地址/;
 
 /** 具体药名（评测词表 + 后端词表的并集）；“药物”“用药”这类泛称不算 */
@@ -587,8 +597,17 @@ export function gradeOutline(c: ReportSkillEvalCase, output: InterviewOutlineOut
   if (c.expect.reportsMissingData && !p.missingData.length)
     add('expect.missing_data', '档案缺少信息，但没有列出');
   // 没有已核对报告（报告可选，验收反馈）：缺少的信息里要写明还没有体检报告
-  if (c.expect.notesNoReport && !p.missingData.some((m) => m.includes('报告')))
+  if (
+    c.expect.notesNoReport &&
+    !p.missingData.some((m) => /体检报告/.test(m) && /没有|未|缺/.test(m))
+  )
     add('expect.no_report_note', '客户还没有已核对的体检报告，但缺少的信息里没有写明');
+  // 没有报告时，重点、问题和为什么问里不能说“报告显示”“参考范围”这类话（缺少的信息除外）
+  if (!c.client.reportDetail) {
+    const claims = [p.overview, ...questions.map((q) => `${q.question} ${q.why}`)].join('\n');
+    const said = hits(claims, NO_REPORT_CLAIMS);
+    if (said.length) add('outline.invented_report', `invented_report：${said.join('、')}`);
+  }
   return findings;
 }
 
