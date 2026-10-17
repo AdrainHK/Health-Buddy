@@ -29,7 +29,7 @@ export function describeError(err: unknown): string {
 /**
  * 全局异常处理：所有错误都转成 { error: 错误码 }。
  * 未预期的错误只记录错误类型，不记录消息和堆栈里可能出现的客户数据（红线 2）。
- * 403 也按 not_found 返回，不暴露数据是否存在。
+ * 非 ApiException 的 403 按 not_found 返回，不暴露数据是否存在。
  */
 @Catch()
 export class ApiExceptionFilter implements ExceptionFilter {

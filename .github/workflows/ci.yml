@@ -41,4 +41,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      # 端到端测试（手机宽度下的界面检查）：接口在浏览器里模拟，不需要后端
+      - run: pnpm --filter @health-buddy/workbench exec playwright install --with-deps chromium
+      - run: pnpm e2e
       - run: pnpm build

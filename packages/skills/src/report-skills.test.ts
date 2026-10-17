@@ -20,6 +20,7 @@ import {
 } from './report-interpretation/index.js';
 import { reportInterpretationEvalCases } from './report-interpretation/evals/cases.js';
 import { REPORT_SNAPSHOTS } from './report-fixtures.js';
+import { indicatorName } from './indicators.js';
 import { DEFAULT_RISK_TIER_GUIDE } from './risk-tier-guide.js';
 import { checkSpokenWording, findDiseaseTerms } from './wording.js';
 import { PLAN_TEMPLATES, SKILLS, getPlanTemplate, getSkill, skillSummaries } from './registry.js';
@@ -446,6 +447,114 @@ describe('/面谈提纲 保存前的措辞检查（规格 2.8）', () => {
     expect(categories(withFields({ suggestion: `了解${drug}的情况` }))).toContain('drug_name');
   });
 
+  it.each([
+    '每天抽几支烟？',
+    '每次喝几两白酒？',
+    '每天喝几杯咖啡？',
+    '每天放几勺盐？',
+    '一天喝几瓶水？',
+    '白酒每次喝几两？',
+    '每天喝几杯水？',
+    // 饮品：评测 39035850333 里提纲这样问
+    '每天大概喝几杯水、几杯含糖饮料？',
+    '每天喝几杯水、几杯咖啡？',
+    '每天喝几杯奶茶或果汁？',
+    '每天喝几杯冰可乐？',
+    '每天喝几杯全脂牛奶？',
+    '含糖饮料多久喝一次，每天大概喝几杯？',
+    '酒多久喝一次，每天大概喝几杯？',
+    '饮料平时喝得多吗？每天大概喝几杯？',
+    '奶茶多久喝一次、每天大概喝几杯？',
+    '每天喝几杯苏打水或汽水？',
+    '平时抽烟吗，白酒每次喝几两？',
+    '汤和茶多久喝一次，每天大概喝几杯？',
+    '每天吃几块糖？',
+    '每天喝几碗汤？',
+    '每天喝几杯茶，白酒每次喝几两？',
+    '每天抽几根烟？',
+    '平时和家人一块吃饭吗？每天喝几杯水？',
+    '最近有没有哪里不舒服？每天喝几杯水？',
+  ])('产品确认保持现状：生活习惯的数量同样不能问：“%s”', (q) => {
+    expect(categories(withFields({ question: `您${q}` }))).toContain('drug_advice');
+  });
+
+  it.each([
+    '平时抽烟吗？',
+    '多久喝一次酒？',
+    '口味偏咸还是偏淡？',
+    '每天喝水多不多？',
+    '平时常喝含糖饮料吗？',
+    '每周运动几次、每次多长时间？',
+    '最近一两天有没有熬夜？',
+    '平时和家人一块吃饭吗？',
+    '最近有没有哪里不舒服？',
+    '一天吃几顿饭，一般睡几个小时？',
+    '空腹血糖 6.5 mmol/L，谷丙转氨酶 52 U/L，血红蛋白 135 g/L',
+  ])('问频次、问习惯和报告数值不算数量：“%s”', (q) => {
+    expect(categories(withFields({ question: `您${q}` }))).toEqual([]);
+  });
+
+  it.each([
+    '保健品每天吃几片？',
+    '鱼油两粒',
+    '阿司匹林100mg',
+    '每天吃几片钙片？',
+    '喝几杯中药？',
+    '每天几支维生素？',
+    '每天喝几勺鱼油？',
+    // 合规复审的反例：名单里的字出现在药名、药材或保健品里
+    '茶里加几克三七粉',
+    '保健酒每天喝几两',
+    '每天喝几勺止咳糖浆',
+    '每次几毫升止咳糖浆',
+    '每次喝几瓶藿香正气水',
+    '每天喝几袋口服补液盐',
+    '睡前喝几杯水吃几颗褪黑素',
+    '每天喝几两人参酒',
+    '每天喝几杯降糖茶',
+    '每天打几支针再抽烟',
+    '每天喝几勺糖浆',
+    '药酒每天喝几两',
+    '酒多久喝一次，每天吃几片？',
+    '饮料平时喝得多吗，每天大概喝几杯中药？',
+    '水多久喝一次，吃药时每天喝几杯？',
+    '每天喝几杯汤药？',
+    '每天喝几袋冰糖浆？',
+    // 第三轮合规复审：用或、和、顿号接名单外的东西
+    '每天喝几杯汤或凉茶',
+    '每天喝几杯牛奶或蛋白奶',
+    '每天喝几杯牛奶、酵素饮料',
+    '每天喝几杯汤和降糖茶',
+    '汤和凉茶多久喝一次，每天大概喝几杯',
+    '果汁或蛋白奶平时喝吗？每天大概喝几杯',
+    '汤多久喝一次，凉茶呢，每天喝几杯',
+    '每天喝几杯凉茶',
+    '每天喝几杯蛋白奶',
+    '每天喝几瓶酵素饮料',
+    '每天喝几杯酒精',
+    '每天喝几支口服液',
+    '每天喝几杯汤，药一次几片',
+    '每天喝几杯热汤药',
+    '牛奶每天喝几杯，钙片吃几片',
+    '果汁多久喝一次？鱼油每天几粒',
+    // 第四轮合规复审：块、碗、根、服、副，话题前面的分句，药材和送服
+    '咖啡平时喝吗？阿胶每天几块',
+    '每天喝几碗中药',
+    '每天吃几块阿胶',
+    '人参每天几根',
+    '一天几服药',
+    '黄芪，汤每天放几克',
+    '枸杞，茶每天加几颗',
+    '枸杞泡酒，酒每天加几颗',
+    // 不在药材词表里也一样：话题前面的分句在说名单外的东西
+    '红枣，茶每天加几颗',
+    '桂圆，汤每天放几勺',
+    '每天喝几杯水，送服',
+    '每天喝几两酒，虫草泡的',
+  ])('药和保健品的数量照样拦下：“%s”', (q) => {
+    expect(categories(withFields({ suggestion: q }))).toContain('drug_advice');
+  });
+
   it.each(['两颗', '一勺', '几片', '一包', '三丸'])('剂量“%s”被拦下', (dose) => {
     expect(categories(withFields({ suggestion: `每天${dose}` }))).toContain('drug_advice');
   });
@@ -494,6 +603,28 @@ describe('M2 评测用例', () => {
     expect(reportInterpretationEvalCases.some((c) => c.returnReason)).toBe(true);
     expect(reportInterpretationEvalCases.some((c) => c.expect.riskTier === 'absent')).toBe(true);
     expect(interviewOutlineEvalCases.some((c) => c.category === 'out_of_bounds')).toBe(true);
+    expect(interviewOutlineEvalCases.some((c) => c.returnReason)).toBe(true);
     for (const p of assessmentPlanEvalCases) expect(getPlanTemplate(p.planId)).toBeDefined();
+    // 和上次相比变好、变差各有用例，并检查变化方向
+    const trends = reportInterpretationEvalCases.flatMap((c) => c.expect.trends ?? []);
+    expect(trends.some((t) => t.better === true)).toBe(true);
+    expect(trends.some((t) => t.better === false)).toBe(true);
+    // 分层：默认定义和另一套标准都有用例；没给标准时不输出分层
+    const tierCases = reportInterpretationEvalCases.filter((c) => c.category === 'risk_tier');
+    expect(new Set(tierCases.map((c) => c.riskTierCriteria ?? null)).size).toBe(3);
+  });
+
+  it('评测资料里变化方向和高低标记与数值一致', () => {
+    const cases = reportInterpretationEvalCases.filter((c) => c.expect.trends?.length);
+    for (const c of cases) {
+      for (const t of c.expect.trends ?? []) {
+        const row = c.client.reportDetail?.indicators.find((i) =>
+          (i.code ? indicatorName(i.code) : (i.rawName ?? '')).includes(t.indicator),
+        );
+        expect(row, `${c.id} ${t.indicator}`).toBeDefined();
+        const prev = row!.previous.at(-1)!.value;
+        expect(row!.value! > prev ? 'up' : 'down', `${c.id} ${t.indicator}`).toBe(t.direction);
+      }
+    }
   });
 });

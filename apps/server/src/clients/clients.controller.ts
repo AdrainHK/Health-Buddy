@@ -16,7 +16,7 @@ import {
 import { z } from 'zod';
 import type { ResolvedSession } from '../auth/auth.repository.js';
 import { CurrentSession } from '../auth/decorators.js';
-import { badRequest, notFound } from '../common/api-error.js';
+import { badRequest, forbidden, notFound } from '../common/api-error.js';
 import { requireManager } from '../common/manager-only.js';
 import { ClientRecordRepository } from './client-record.repository.js';
 import { ClientsRepository } from './clients.repository.js';
@@ -49,13 +49,16 @@ export class ClientsController {
     return { clients: await this.clients.list(session) };
   }
 
-  /** 新建客户（Q13）。只有健管师能建，且只能建在自己名下 */
+  /**
+   * 新建客户（Q13）。只有健管师能建，且只能建在自己名下。
+   * 规格 3.4：非健管师角色返回 403。这里只按角色判断，不涉及任何已有资源，不会泄露存在与否
+   */
   @Post()
   async create(
     @CurrentSession() session: ResolvedSession,
     @Body() body: unknown,
   ): Promise<ClientResponse> {
-    requireManager(session);
+    if (session.role !== 'manager') throw forbidden();
     const parsed = createClientRequestSchema.safeParse(body);
     if (!parsed.success) throw badRequest();
     return { client: await this.clients.create(session, parsed.data) };

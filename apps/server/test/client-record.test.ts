@@ -98,11 +98,11 @@ describe('客户档案接口', () => {
       );
     });
 
-    it('健管师以外的角色不能新建客户', async () => {
+    it('健管师以外的角色不能新建客户：按角色返回 403（规格 3.4）', async () => {
       for (const email of [f.users.orgAdminA.email, ...adminEmails()]) {
         const agent = await as(email);
-        const res = await agent.post('/api/clients').send({ displayName: '合成客户' }).expect(404);
-        expect(res.body).toEqual(NOT_FOUND);
+        const res = await agent.post('/api/clients').send({ displayName: '合成客户' }).expect(403);
+        expect(res.body).toEqual({ error: 'forbidden' });
       }
       const rows = await owner
         .selectFrom('clients')

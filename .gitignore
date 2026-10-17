@@ -7,3 +7,5 @@ dist/
 coverage/
 .turbo/
 eval-results/
+test-results/
+playwright-report/

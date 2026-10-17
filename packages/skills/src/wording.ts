@@ -95,11 +95,18 @@ export const DRUG_ADVICE = new RegExp(
 );
 
 /**
- * 剂量：阿拉伯数字、中文数字或分数加剂量单位（5 mg、一片、半粒、1/2 片、两袋、10 ml）。
- * 单位后面紧跟 / 或字母的不算（mg/dL、g/L 是检验单位）。
+ * 剂量或数量：阿拉伯数字、中文数字或分数加单位（5 mg、一片、半粒、1/2 片、两袋、10 ml、几杯、二两）。
+ * 单位后面紧跟 / 或字母的不算（mg/dL、g/L 是检验单位）；“一两天”“一听到”不算。
+ * 提纲不问任何东西的数量（规格 2.8，产品确认保持现状）：烟、酒、盐、水、饮料的数量同样算。
  */
 export const DOSE =
-  /(?:\d+(?:\.\d+)?|\d+\/\d+|[一二两三四五六七八九十]+分之[一二三四五六七八九]|[一二两三四五六七八九十半几]+)\s*(?:mg|毫克|克|g|ml|毫升|片|粒|颗|支|袋|包|丸|勺|单位|IU)(?![/A-Za-z])/i;
+  /(?:\d+(?:\.\d+)?|\d+\/\d+|[一二两三四五六七八九十]+分之[一二三四五六七八九]|[一二两三四五六七八九十半几]+)\s*(mg|毫克|克|g|ml|毫升|片|粒|颗|支|袋|包|丸|勺|瓶|杯|罐|听(?![到说见过力])|两(?![天年次个周月顿回遍晚位种项分小岁])|块(?![儿吃去走玩做住])|碗|根|服(?!务|装)|副|单位|IU)(?![/A-Za-z])/i;
+
+/** 第一处剂量或数量（在规范化后的文本上找），没有就是 null */
+export function findDoseMatch(norm: string): { index: number; text: string } | null {
+  const m = DOSE.exec(norm);
+  return m ? { index: m.index, text: m[0] } : null;
+}
 
 /** 疑似、患有、得了这类判断句式：问题里不能用（skill.md“问题的措辞”） */
 export const JUDGMENT_PHRASES = ['疑似', '患有', '患上', '得了', '确诊', '病情', '风险'] as const;
@@ -167,7 +174,7 @@ export function findDrugAdvice(text: string): WordingIssue[] {
 }
 
 function findDose(norm: string, origin: number[]): WordingIssue[] {
-  const dose = DOSE.exec(norm);
+  const dose = findDoseMatch(norm);
   return dose ? [{ category: 'drug_advice', term: '剂量', index: origin[dose.index] ?? 0 }] : [];
 }
 

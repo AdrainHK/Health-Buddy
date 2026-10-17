@@ -1,0 +1,385 @@
+import { expect, test, type Page, type Route } from '@playwright/test';
+import type {
+  ClientRecord,
+  ClientSummary,
+  CurrentUser,
+  ExtractedValue,
+  ReportUpload,
+  SkillSummary,
+  Task,
+  TaskDetailResponse,
+} from '@health-buddy/shared';
+
+/**
+ * M2 验收标准 25：手机宽度（375px）下，档案和核对界面不横向滚动；核对界面改为上下排列
+ * （原件在上，数值在下，规格 2.1）。接口全部在浏览器里模拟，只用合成数据。
+ * 数据故意带上很长的机构名、指标名、单位、原文件名和不带空格的英文，检查不会把页面撑宽。
+ */
+
+const NOW = '2026-10-15T08:00:00.000Z';
+const ids = {
+  manager: '30000000-0000-4000-8000-000000000001',
+  operator: '30000000-0000-4000-8000-000000000002',
+  org: '30000000-0000-4000-8000-000000000003',
+  client: '20000000-0000-4000-8000-00000000000a',
+  task: '10000000-0000-4000-8000-000000000001',
+  upload: 'a0000000-0000-4000-8000-000000000001',
+  file: 'a0000000-0000-4000-8000-000000000002',
+  report: 'a0000000-0000-4000-8000-000000000005',
+  history: '90000000-0000-4000-8000-000000000002',
+  tier: '90000000-0000-4000-8000-000000000003',
+};
+const LONG_LATIN = 'SyntheticHealthLaboratoryOfVeryLongNamesWithoutAnySpacesForWrapping';
+
+const user: CurrentUser = {
+  id: ids.manager,
+  email: 'manager@test.example',
+  displayName: '合成健管师',
+  role: 'manager',
+  operator: { id: ids.operator, name: '合成协会', brandColor: null },
+  orgId: ids.org,
+};
+const client: ClientSummary = {
+  id: ids.client,
+  displayName: '合成客户甲（测试）',
+  gender: 'female',
+  birthYear: 1968,
+  managerId: ids.manager,
+  isSynthetic: true,
+};
+const task: Task = {
+  id: ids.task,
+  title: '合成客户甲的体检报告',
+  clientId: ids.client,
+  archived: false,
+  detachedReason: null,
+  createdAt: NOW,
+  updatedAt: NOW,
+};
+const skills: SkillSummary[] = [
+  {
+    id: 'report-interpretation',
+    requiresClient: true,
+    modes: ['plan', 'craft'],
+    clientFacing: true,
+    involvesHealthJudgment: true,
+    requiresReport: true,
+    planSkills: [],
+  },
+];
+
+function value(seq: number, overrides: Partial<ExtractedValue>): ExtractedValue {
+  return {
+    id: `b0000000-0000-4000-8000-${String(seq).padStart(12, '0')}`,
+    seq,
+    rawName: '总胆固醇',
+    code: 'tc',
+    rawValue: '5.62',
+    rawUnit: 'mmol/L',
+    value: 5.62,
+    unit: 'mmol/L',
+    refLow: null,
+    refHigh: 5.2,
+    refText: '<5.2',
+    page: 1,
+    sourceSnippet: '总胆固醇 5.62 mmol/L <5.2',
+    flags: [],
+    reviewStatus: 'pending',
+    attention: false,
+    abnormal: 'high',
+    ...overrides,
+  };
+}
+
+const upload: ReportUpload = {
+  id: ids.upload,
+  clientId: ids.client,
+  taskId: ids.task,
+  status: 'needs_review',
+  failureCategory: null,
+  attempts: 1,
+  pageCount: 1,
+  progressPage: 1,
+  reportId: null,
+  createdAt: NOW,
+  version: 3,
+  reportDate: '2026-09-12',
+  institution: `合成健康体检中心 ${LONG_LATIN}`,
+  files: [
+    {
+      id: ids.file,
+      seq: 0,
+      mimeType: 'image/png',
+      sizeBytes: 123456,
+      pageCount: 1,
+      originalName: `${LONG_LATIN}-synthetic-report-scan-2026-09-12.png`,
+    },
+  ],
+  values: [
+    value(1, {}),
+    value(2, {
+      rawName: 'Fasting Plasma Glucose (Hexokinase Method, Serum)',
+      code: 'fpg',
+      rawValue: '104',
+      rawUnit: 'mg/dL',
+      value: 5.772,
+      unit: 'mmol/L',
+      refLow: 3.885,
+      refHigh: 5.495,
+      refText: '70-99',
+      flags: ['unit_converted'],
+      attention: true,
+    }),
+    value(3, {
+      rawName: `同型半胱氨酸${LONG_LATIN}`,
+      code: null,
+      rawValue: '11.2',
+      rawUnit: 'μmol/L',
+      value: 11.2,
+      unit: 'μmol/L',
+      refLow: 0,
+      refHigh: 15,
+      refText: '0-15',
+      flags: ['unmapped'],
+      attention: true,
+      abnormal: 'normal',
+    }),
+    value(4, {
+      rawName: '谷丙转氨酶',
+      code: 'alt',
+      rawValue: '52',
+      rawUnit: 'U/L',
+      value: 52,
+      unit: 'U/L',
+      refHigh: null,
+      refText: null,
+      abnormal: 'no_reference',
+    }),
+    value(5, {
+      rawName: '体重',
+      code: 'weight',
+      rawValue: '650',
+      rawUnit: 'kg',
+      value: 650,
+      unit: 'kg',
+      refHigh: null,
+      refText: null,
+      flags: ['out_of_bounds'],
+      attention: true,
+      abnormal: 'no_reference',
+    }),
+  ],
+  sameDateReportIds: [],
+  criticalAcknowledged: false,
+};
+
+const record: ClientRecord = {
+  client,
+  riskTier: {
+    id: ids.tier,
+    tier: 'medium',
+    reason: `合成理由：总胆固醇 5.62 mmol/L 高于报告参考范围 <5.2；${LONG_LATIN}`,
+    setBy: ids.manager,
+    setByName: '合成健管师',
+    setAt: NOW,
+    source: 'manual',
+    sourceArtifactId: null,
+  },
+  healthHistory: [
+    {
+      id: ids.history,
+      category: 'lifestyle',
+      content: `合成记录：每周快走三次，晚餐偏咸。${LONG_LATIN}`,
+      recordedOn: '2026-05-01',
+      createdAt: NOW,
+      updatedAt: NOW,
+    },
+  ],
+  reports: [
+    {
+      id: ids.report,
+      reportDate: '2026-09-12',
+      source: 'upload',
+      institution: `合成健康体检中心 ${LONG_LATIN}`,
+      indicatorCount: 12,
+      abnormalCount: 3,
+    },
+  ],
+  indicators: [
+    {
+      code: 'tc',
+      points: [
+        {
+          reportId: ids.report,
+          reportDate: '2026-09-12',
+          source: 'upload',
+          value: 5.62,
+          unit: 'mmol/L',
+          originalValue: '217.3',
+          originalUnit: 'mg/dL',
+          refText: '<5.2',
+          abnormal: 'high',
+        },
+      ],
+    },
+    {
+      code: 'fpg',
+      points: [
+        {
+          reportId: ids.report,
+          reportDate: '2026-09-12',
+          source: 'upload',
+          value: 5.772,
+          unit: 'mmol/L',
+          originalValue: '104',
+          originalUnit: 'mg/dL',
+          refText: '70-99',
+          abnormal: 'high',
+        },
+      ],
+    },
+  ],
+  monitoring: [
+    {
+      metric: 'sbp',
+      unit: 'mmHg',
+      count: 30,
+      latest: { value: 128, measuredAt: NOW, source: 'synthetic' },
+    },
+  ],
+  artifacts: [],
+  readOnly: false,
+};
+
+const detail: TaskDetailResponse = {
+  task,
+  messages: [],
+  steps: [],
+  plans: [],
+  artifacts: [],
+  uploads: [upload],
+};
+
+/** 合成的“报告原件”：一张比手机屏幕宽得多的图片 */
+const ORIGINAL_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="1754" viewBox="0 0 1240 1754"><rect width="1240" height="1754" fill="#fff"/><text x="40" y="80" font-size="40">synthetic report</text></svg>`;
+
+async function mockApi(page: Page): Promise<string[]> {
+  const unknown: string[] = [];
+  const json = (route: Route, body: unknown, status = 200) =>
+    route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+  // 只拦截接口；开发服务器的模块路径里也可能带 /api/（如 packages/shared/dist/api）
+  await page.route(
+    (url) => url.pathname.startsWith('/api/'),
+    (route) => {
+      const req = route.request();
+      const url = new URL(req.url());
+      const path = `${url.pathname}${url.search}`;
+      const key = `${req.method()} ${path}`;
+      switch (true) {
+        case key === 'GET /api/auth/me':
+          return json(route, { user });
+        case key === 'GET /api/tasks':
+          return json(route, { tasks: [task] });
+        case key === 'GET /api/tasks?archived=true':
+          return json(route, { tasks: [] });
+        case key === 'GET /api/clients':
+          return json(route, { clients: [client] });
+        case key === 'GET /api/skills':
+          return json(route, { skills });
+        case key === `GET /api/tasks/${ids.task}`:
+          return json(route, detail);
+        case key === `GET /api/clients/${ids.client}/record`:
+          return json(route, { record });
+        case key === `GET /api/clients/${ids.client}/reports`:
+          return json(route, { reports: record.reports });
+        case key === `GET /api/clients/${ids.client}/report-uploads`:
+          return json(route, { uploads: [upload] });
+        case key === `GET /api/report-uploads/${ids.upload}`:
+          return json(route, { upload });
+        case key.startsWith(`GET /api/report-files/${ids.file}/content`):
+          return route.fulfill({ status: 200, contentType: 'image/svg+xml', body: ORIGINAL_SVG });
+        default:
+          unknown.push(key);
+          return json(route, { error: 'not_found' }, 404);
+      }
+    },
+  );
+  return unknown;
+}
+
+/** 页面（以及 body）的内容宽度不超过视口：没有横向滚动 */
+async function expectNoHorizontalScroll(page: Page, where: string) {
+  const sizes = await page.evaluate(() => ({
+    viewport: window.innerWidth,
+    doc: document.documentElement.scrollWidth,
+    body: document.body.scrollWidth,
+  }));
+  expect(sizes.doc, `${where}: document ${JSON.stringify(sizes)}`).toBeLessThanOrEqual(
+    sizes.viewport,
+  );
+  expect(sizes.body, `${where}: body ${JSON.stringify(sizes)}`).toBeLessThanOrEqual(sizes.viewport);
+  // 结果区浮层本身也不能横向滚动
+  const overflowing = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('[role="tabpanel"], [role="tabpanel"] *')]
+      .filter((el) => {
+        const style = getComputedStyle(el);
+        const scrolls = style.overflowX === 'auto' || style.overflowX === 'scroll';
+        return scrolls && el.scrollWidth > el.clientWidth + 1;
+      })
+      .map((el) => `${el.tagName.toLowerCase()}.${el.className}`),
+  );
+  expect(overflowing, `${where}: horizontally scrolling elements`).toEqual([]);
+  // 没有元素伸到视口右边以外
+  const outside = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('[role="tabpanel"] *')]
+      .filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.right > window.innerWidth + 1;
+      })
+      .map((el) => `${el.tagName.toLowerCase()} ${el.textContent?.slice(0, 20) ?? ''}`),
+  );
+  expect(outside, `${where}: elements past the right edge`).toEqual([]);
+}
+
+async function openResults(page: Page) {
+  await page.goto('/');
+  await page.getByRole('button', { name: '打开菜单' }).click();
+  await page
+    .getByRole('button', { name: /合成客户甲的体检报告/ })
+    .first()
+    .click();
+  await page.getByRole('button', { name: '打开结果区' }).click();
+}
+
+test('档案：375px 下不横向滚动', async ({ page }) => {
+  const unknown = await mockApi(page);
+  await openResults(page);
+  await page.getByRole('tab', { name: '档案' }).click();
+  const panel = page.getByRole('tabpanel');
+  await expect(panel.getByRole('region', { name: '健康史' })).toBeVisible();
+  await expect(panel.getByRole('region', { name: '指标趋势' })).toBeVisible();
+  await expect(panel.getByText(/合成理由/)).toBeVisible();
+  await expectNoHorizontalScroll(page, 'record');
+  expect(unknown.filter((k) => k.startsWith('GET /api/clients'))).toEqual([]);
+});
+
+test('核对：375px 下不横向滚动，原件在上、数值在下', async ({ page }) => {
+  await mockApi(page);
+  await openResults(page);
+  await page.getByRole('tab', { name: /核对/ }).click();
+  const panel = page.getByRole('tabpanel');
+  await panel.getByRole('button', { name: '去核对' }).first().click();
+  const image = panel.getByRole('img').first();
+  await expect(image).toBeVisible();
+  await expect(panel.getByText('确认核对').first()).toBeVisible();
+  // 等原件加载完，避免布局还在变化
+  await expect.poll(() => image.evaluate((el: HTMLImageElement) => el.complete)).toBe(true);
+  await expectNoHorizontalScroll(page, 'review');
+
+  // 上下排列：原件在识别结果上面，原件宽度不超过视口
+  const imageBox = await image.boundingBox();
+  const firstValue = await panel.getByText('总胆固醇').first().boundingBox();
+  expect(imageBox && firstValue).toBeTruthy();
+  expect(imageBox!.y).toBeLessThan(firstValue!.y);
+  expect(imageBox!.x + imageBox!.width).toBeLessThanOrEqual(375 + 1);
+});

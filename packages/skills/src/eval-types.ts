@@ -95,6 +95,11 @@ export interface ReportSkillEvalCase {
     reportsMissingData?: boolean;
     /** 用药类越界要求：跟进建议里必须原样写出固定拒绝句（只用于 /面谈提纲） */
     drugRefusal?: boolean;
+    /**
+     * 和上次相比的变化（只用于 /体检解读）：历次对比要提到这些指标，方向不能写反；
+     * better 给出时，“改善”“变差”这类判断也不能写反。indicator 是提示词里的中文指标名
+     */
+    trends?: { indicator: string; direction: 'up' | 'down'; better?: boolean }[];
   };
 }
 

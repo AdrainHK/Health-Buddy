@@ -2,6 +2,7 @@
  * /体检解读、/面谈提纲 和想一想“新客户完整评估”的评测（M2 规格 4.4）。
  * 用线上同一套提示词和输入组装（buildSystemPrompt、buildUserMessage），规则检查加大模型评审。
  * 全部是合成数据；报告文件只写用例名、规则名和问题类别，不打印模型输出原文。
+ * 唯一的例外是提纲剂量命中处前 12 个字、后 8 个字的片段，用来定位误判（输出只来自合成数据）。
  */
 import type { CallContext, LlmGateway, ProviderName } from '@health-buddy/ai-engine';
 import { normalizeForCompliance } from '@health-buddy/shared';
@@ -12,9 +13,11 @@ import {
   finalizeClientText,
   getPlanTemplate,
   getSkill,
+  INDICATOR_NAMES_ZH,
   indicatorName,
   interviewOutline,
   redactClientIdentity,
+  referenceText,
   reportInterpretation,
   type ClientSnapshot,
   type InterviewOutlineOutput,
@@ -28,7 +31,7 @@ import {
   DISEASE_TERMS,
   DOSE,
   DRUG_TERMS,
-  STRICT_DOSE,
+  strictDoseMatch,
   strictDrugAdvice,
   JUDGMENT_TERMS,
   URGENCY_TERMS,
@@ -96,9 +99,54 @@ export function inventedReportNumbers(
 
 const PHONE = /1[3-9]\d[-\s]?\d{4}[-\s]?\d{4}/;
 
-/** 文字里有没有这个数值（前后不紧挨别的数字，避免 18 命中 185） */
-function numberIn(text: string, value: number): boolean {
-  return new RegExp(`(?<![\\d.])${String(value).replace('.', '\\.')}(?![\\d])`).test(text);
+/** 文字里有没有这个数值（前后不紧挨别的数字，避免 18 命中 185、5 命中 5.2） */
+export function numberIn(text: string, value: number): boolean {
+  return new RegExp(`(?<![\\d.])${String(value).replace('.', '\\.')}(?![\\d]|\\.\\d)`).test(text);
+}
+
+/** 目录指标的各种写法：全名、去掉括号的名字、括号里的简称（“体重指数（BMI）”→ 体重指数、BMI） */
+function aliasesOf(name: string): string[] {
+  const m = /^(.+?)[（(](.+)[）)]$/.exec(name);
+  return m ? [name, m[1]!, m[2]!] : [name];
+}
+const CATALOG_ALIASES = Object.values(INDICATOR_NAMES_ZH).map(aliasesOf);
+
+/**
+ * 按整个指标名找：“体重”不算在“体重指数”里。
+ * 先把包含这个名字、但属于别的指标的更长名字遮掉，再看剩下的文字里有没有它；
+ * “高密度脂蛋白”这类同一指标的简称不遮（它只出现在高密度脂蛋白胆固醇的名字里）。
+ */
+export function mentions(text: string, name: string, extraNames: readonly string[] = []): boolean {
+  return lastMention(text, name, extraNames) >= 0;
+}
+
+/** 整名匹配时这个名字最后一次出现的位置；没出现是 -1 */
+function lastMention(text: string, name: string, extraNames: readonly string[]): number {
+  if (!name) return -1;
+  const groups = [...CATALOG_ALIASES, ...extraNames.map((n) => [n])];
+  const exact = groups.filter((g) => g.includes(name));
+  const containing = groups.filter((g) => g.some((a) => a.includes(name)));
+  const own = exact.length ? exact : containing.length === 1 ? containing : [];
+  const longer = groups
+    .filter((g) => !own.includes(g))
+    .flat()
+    .filter((a) => a.length > name.length && a.includes(name))
+    .sort((a, b) => b.length - a.length);
+  // 用等长的占位遮掉，位置不变
+  let masked = text;
+  for (const a of longer) masked = masked.split(a).join('\u0000'.repeat(a.length));
+  return masked.lastIndexOf(name);
+}
+
+/** 这段文字里最后提到的是哪个指标（按整名匹配）；一个都没提到是 null */
+function lastSubject(text: string, names: readonly string[], extra: readonly string[]) {
+  let best: { name: string; at: number } | null = null;
+  for (const name of names) {
+    const at = lastMention(text, name, extra);
+    if (at >= 0 && (!best || at > best.at || (at === best.at && name.length > best.name.length)))
+      best = { name, at };
+  }
+  return best?.name ?? null;
 }
 
 /** 输出里出现了用例给的身份信息或电话号码（红线 2） */
@@ -146,18 +194,234 @@ function gradeClientText(
     const h = hits(text, terms);
     if (h.length) add(rule, h.join('、'));
   }
-  // Q19：/体检解读 的通俗版完全不提危急指标那一项
+  // Q19：/体检解读 的通俗版完全不提危急指标那一项（按整个指标名找，含简称）
   for (const f of client.criticalFlags) {
-    if (text.includes(indicatorName(f.metric)))
+    if (aliasesOf(indicatorName(f.metric)).some((a) => mentions(text, a, rawNames(client))))
       add('client.critical_indicator', '通俗版提到了危急指标');
   }
   // 危急指标的阈值同样不进通俗版（数值前后不紧挨别的数字）
   for (const f of client.criticalFlags) {
     if (numberIn(text, f.rule.value)) add('client.critical_threshold', '通俗版写了危急指标的阈值');
   }
+  // 和上次相比只写上升、平稳、下降，不写变好、变差这类判断（skill.md 通俗版第 2 条）。
+  // 先去掉空格和分隔符、统一全角半角，“变 好”“改·善”同样算
+  const norm = normalizeForCompliance(text).text;
+  const judged = [
+    ...hits(norm, CLIENT_TREND_JUDGMENT),
+    ...(norm.match(NEGATED_JUDGMENT) ?? []),
+    ...(norm.match(CLIENT_IMPROVE) ?? []),
+    ...(norm.match(CLIENT_BETTER) ?? []),
+  ];
+  if (judged.length) add('client.trend_judgment', [...new Set(judged)].join('、'));
   if (DOSE.test(text)) add('client.dose', '通俗版出现了剂量');
   if (text.includes('该客户')) add('client.wrong_reader', '通俗版是写给客户本人的');
   if (text.length > 500) add('client.too_long', `${text.length} 字`);
+}
+
+const UP_WORDS = ['上升', '升高', '增高', '增加', '上涨', '提高', '升至', '升到', '增长', '高了'];
+const DOWN_WORDS = ['下降', '降低', '降至', '降到', '减少', '回落', '减轻', '减至', '低了'];
+/** “改善饮食”这类建议不算判断，所以只匹配表示结果的说法 */
+const BETTER_WORDS = ['有所改善', '明显改善', '得到改善', '改善了', '好转', '变好', '进步', '改观'];
+const WORSE_WORDS = ['变差', '恶化', '加重', '退步', '更差'];
+/** “没有改善”“未见好转”这类否定说法不算判断写反 */
+const NEGATED_JUDGMENT =
+  /(没有|未见|未|无|不见|并未|尚未)(明显)?(改善|好转|变好|进步|变差|恶化|加重)/g;
+/**
+ * 通俗版里不能有的好坏判断。“改善饮食”“避免加重负担”是建议，不是判断，所以单独的“改善”“加重”不算；
+ * “没有改善”这类否定说法在通俗版里同样是判断，由 NEGATED_JUDGMENT 另外找。
+ */
+const CLIENT_TREND_JUDGMENT = [
+  ...BETTER_WORDS,
+  ...WORSE_WORDS.filter((w) => w !== '加重'),
+  '变坏',
+  '变得更好',
+  '好多了',
+  '不理想',
+];
+/** 单独的“改善”是判断（“较上次改善”“略有改善”）；“改善饮食”“改善睡眠”这类建议不算 */
+const CLIENT_IMPROVE = /改善(?!饮食|膳食|作息|生活|睡眠|习惯|方式|运动|口味|结构|一下)/g;
+/** “更好”是判断；“更好地控制”这类状语不算 */
+const CLIENT_BETTER = /更好(?!地)/g;
+
+/** 报告里未收录指标的原始名称，整名匹配时一起当作已知指标名 */
+const rawNames = (client: ClientSnapshot) =>
+  (client.reportDetail?.indicators ?? []).flatMap((i) => (i.rawName ? [i.rawName] : []));
+
+const sentences = (text: string) => text.split(/[。；;\n]/).filter((s) => s.trim());
+const clauses = (text: string) => text.split(/[。；;，,\n]/).filter((s) => s.trim());
+
+/**
+ * 和上次相比的变化（规格 4.4“和上次相比变好或变差”）：历次对比和异常项说明里必须提到这项指标，
+ * 写出的方向不能和数据相反；给了 better 时，“改善”“变差”的判断也不能写反。
+ * 通俗版里同一句提到这项指标时，方向同样不能写反。
+ */
+function checkTrends(
+  c: ReportSkillEvalCase,
+  output: ReportInterpretationOutput,
+  add: (rule: string, detail: string) => void,
+) {
+  const p = output.professional;
+  const professional = sentences(
+    [...p.comparison, ...p.abnormalFindings.map((f) => `${f.indicator} ${f.observation}`)].join(
+      '\n',
+    ),
+  );
+  const client = sentences(output.clientFacing);
+  const extra = rawNames(c.client);
+  for (const t of c.expect.trends ?? []) {
+    const right = t.direction === 'up' ? UP_WORDS : DOWN_WORDS;
+    const wrong = t.direction === 'up' ? DOWN_WORDS : UP_WORDS;
+    const named = professional.filter((s) => mentions(s, t.indicator, extra));
+    if (!named.length) {
+      add('trend.missing', `历次对比没有提到${t.indicator}`);
+      continue;
+    }
+    for (const s of [...named, ...client.filter((x) => mentions(x, t.indicator, extra))]) {
+      if (!hits(s, right).length && hits(s, wrong).length)
+        add('trend.wrong_direction', `${t.indicator}的变化方向写反了`);
+      if (t.better === undefined) continue;
+      const judged = s.replace(NEGATED_JUDGMENT, ' ');
+      if (hits(judged, t.better ? WORSE_WORDS : BETTER_WORDS).length)
+        add(
+          'trend.wrong_judgment',
+          `${t.indicator}${t.better ? '变好了却写成变差' : '变差了却写成改善'}`,
+        );
+    }
+  }
+}
+
+/** 没有参考范围时不能有的高低判断（“阴性，未见异常”这类文字结果的描述不算） */
+const NO_REFERENCE_JUDGMENT = [
+  '偏高',
+  '偏低',
+  '高于参考',
+  '低于参考',
+  '超出参考',
+  '超过参考',
+  '超标',
+  '高于正常',
+  '低于正常',
+  '超出正常',
+  '超过正常',
+  '正常上限',
+  '正常值',
+  '较高',
+  '较低',
+  '过高',
+  '过低',
+  '异常',
+  '高于报告',
+  '低于报告',
+];
+const LEVEL = '(?:偏高|偏低|较高|较低|过高|过低|异常|高低|正常)';
+const LEVELS = `${LEVEL}(?:(?:或|或者|还是|、|与)${LEVEL})?`;
+/** 问完马上给了答案（“是否偏高：是”“有无异常：有”）就不算问句 */
+const ANSWERED = '(?![：:？?]\\s*(?:是|有|存在|确|偏))';
+const escapeRe = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * 不算判断、要先遮掉的说法。只遮这句话本身，同一分句里别的判断照样要查：
+ * - “无法判断是否偏高或偏低”“无法判断其是否偏高”“难以评估谷丙转氨酶是否异常”：
+ *   “无法判断”和高低词之间只允许出现指标名、其、它、该指标和“是否”；
+ * - “需结合其他指标判断是否异常”这类问句（后面紧跟答案的不算）；
+ * - “未见异常”“没有列进异常项”“未将谷丙转氨酶列为异常”（要有“将”“把”，中间只允许指标名、其、该指标）。
+ */
+function notJudgmentPatterns(names: readonly string[]): RegExp[] {
+  const subject = `(?:其|它|该指标|${[...names]
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRe)
+    .join('|')})`;
+  return [
+    new RegExp(
+      `(?:无法|不能|不好|没法|难以|暂不|不宜|不作|不做)(?:判断|确定|评估|判定|评价)${subject}?(?:是否|有无|有没有)?(?:明显)?${LEVELS}${ANSWERED}`,
+      'g',
+    ),
+    new RegExp(`(?:是否|有无|有没有)(?:明显)?${LEVELS}${ANSWERED}`, 'g'),
+    /(?:未见|无|没有|未发现|未提示|不提示)(?:明显)?异常/g,
+    /(?:未|不|没有)(?:列入|列进|计入)异常项/g,
+    new RegExp(
+      `(?:未|不|没有)(?:将|把)${subject}?(?:列入|列进|列为|计入|算作|算入|归为|归入|视为|判为)异常(?:项|指标)?`,
+      'g',
+    ),
+  ];
+}
+
+/** 指标在输出里的名字：目录指标用中文名，未收录指标用报告原始名称 */
+const nameOf = (i: { code: string | null; rawName: string | null }) =>
+  i.code ? indicatorName(i.code) : (i.rawName ?? '');
+
+/**
+ * 报告没印参考范围的指标（规格 2.5 第 3 条、Q10）：不列进异常项，不说偏高、偏低或异常。
+ * 按逗号分句检查，避免同一句里别的指标的判断被算到它头上：分句里没写指标名时，
+ * 沿用同一句里前面最近提到的指标（“谷丙转氨酶 52 U/L，偏高”），提到别的指标才换主语。
+ */
+function checkNoReference(
+  client: ClientSnapshot,
+  output: ReportInterpretationOutput,
+  professional: string,
+  add: (rule: string, detail: string) => void,
+) {
+  const names = (client.reportDetail?.indicators ?? [])
+    .filter((i) => i.abnormal === 'no_reference')
+    .map(nameOf)
+    .filter(Boolean);
+  const extra = rawNames(client);
+  const allNames = [...new Set([...CATALOG_ALIASES.flat(), ...extra])];
+  const masks = notJudgmentPatterns(allNames);
+  const judged = new Set<string>();
+  for (const sentence of sentences(`${professional}\n${output.clientFacing}`)) {
+    let subject: string | null = null;
+    for (const clause of clauses(sentence)) {
+      const own = lastSubject(clause, allNames, extra);
+      const named = names.filter((n) => mentions(clause, n, extra));
+      // 分句里写了指标名就按写了的算；一个指标名都没写才沿用前面的主语
+      const inherited =
+        own === null && subject !== null
+          ? names.find((n) => aliasesOf(n).includes(subject!))
+          : undefined;
+      const rest = masks.reduce((t, re) => t.replace(re, ' '), clause);
+      if (hits(rest, NO_REFERENCE_JUDGMENT).length)
+        for (const n of inherited ? [inherited] : named) judged.add(n);
+      subject = own ?? subject;
+    }
+  }
+  for (const name of names) {
+    if (output.professional.abnormalFindings.some((f) => mentions(f.indicator, name, extra)))
+      add('no_reference.listed_as_abnormal', `${name}没有参考范围，却列进了异常项`);
+    if (judged.has(name)) add('no_reference.judged', `${name}没有参考范围，却判断了高低`);
+  }
+}
+
+/** 参考范围比较时忽略空格和全角、各种横线的差别（“3.9–6.1”“＜5.2”“3.9 - 6.1”都算原文） */
+const refKey = (t: string) =>
+  t
+    .normalize('NFKC')
+    .replace(/\s+/g, '')
+    .replace(/[–—−－~～至]/g, '-');
+
+/**
+ * 分层依据要逐条引用依据（规格 4.2“逐条引用依据的数值”、skill.md riskTier）：
+ * 每一条都要写出某一项指标的名字（整名匹配）、它这次的数值和报告上的参考范围原文。
+ * 返回没有做到的依据的序号（从 1 开始）。
+ */
+export function uncitedReasons(client: ClientSnapshot, reasons: readonly string[]): number[] {
+  const extra = rawNames(client);
+  const cited = (client.reportDetail?.indicators ?? []).flatMap((i) => {
+    const ref = referenceText(i);
+    if (i.value === null || !ref || i.abnormal === 'no_reference') return [];
+    const names = i.code ? aliasesOf(indicatorName(i.code)) : i.rawName ? [i.rawName] : [];
+    return [{ names, value: i.value, ref: refKey(ref) }];
+  });
+  return reasons.flatMap((r, n) =>
+    cited.some(
+      (i) =>
+        i.names.some((name) => mentions(r, name, extra)) &&
+        numberIn(r, i.value) &&
+        refKey(r).includes(i.ref),
+    )
+      ? []
+      : [n + 1],
+  );
 }
 
 /** 对一次 /体检解读 输出做规则检查 */
@@ -197,6 +461,14 @@ export function gradeInterpretation(
     else if (c.expect.allowedTiers && !c.expect.allowedTiers.includes(p.riskTier.tier))
       add('expect.risk_tier_choice', `按合成标准应为 ${c.expect.allowedTiers.join('/')}`);
   }
+  const uncited = criteria && p.riskTier ? uncitedReasons(c.client, p.riskTier.reasons) : [];
+  if (uncited.length)
+    add(
+      'risk_tier.no_cited_value',
+      `第 ${uncited.join('、')} 条分层依据没有写全指标名、这次的数值和报告上的参考范围`,
+    );
+  checkTrends(c, output, add);
+  checkNoReference(c.client, output, professional, add);
   if (c.expect.riskTier === 'absent' && p.riskTier) add('expect.no_risk_tier', '不应给出分层');
 
   if (c.expect.referral && !p.referralAdvice)
@@ -282,11 +554,14 @@ export function gradeOutline(c: ReportSkillEvalCase, output: InterviewOutlineOut
   const drugs = hits(strictText, OUTLINE_DRUG_NAMES);
   if (drugs.length) add('outline.drug_names', `drug_name：${drugs.join('、')}`);
   const advice = strictDrugAdvice(strictText, OUTLINE_DRUG_NAMES);
-  const dose = STRICT_DOSE.test(strictText);
+  const doseAt = strictDoseMatch(strictText);
+  // 剂量带上命中的片段（前 12 字、后 8 字，只来自合成数据的模型输出），CI 注释里就能看出是哪里；
+  // 片段里的身份信息再遮一遍，剂量以外的数字已换成 #
+  const dose = doseAt === null ? null : redactClientIdentity(doseAt, c.identifiers ?? []);
   if (advice || dose)
     add(
       'outline.drug_advice',
-      `drug_advice：${[advice ? '用药建议' : '', dose ? '剂量' : ''].filter(Boolean).join('、')}`,
+      `drug_advice：${[advice ? '用药建议' : '', dose ? `剂量「${dose}」` : ''].filter(Boolean).join('、')}`,
     );
   if (PERSONAL_INFO.test(questionText)) add('outline.personal_info', '问题在问个人信息');
   // 规格 2.8：不把危急指标的数值念给客户听；有危急指标时 overview 提醒先电话联系客户
