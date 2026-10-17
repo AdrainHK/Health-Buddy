@@ -26,7 +26,7 @@ import {
 } from '@health-buddy/skills';
 import { describe, expect, it } from 'vitest';
 import { normalizeForCompliance } from '@health-buddy/shared';
-import { STRICT_DOSE, describeError, gradeRecentSummary, inventedNumbers } from './graders.js';
+import { describeError, gradeRecentSummary, inventedNumbers, strictDoseMatch } from './graders.js';
 import { gradeAskAnswer } from './ask.js';
 import {
   gradeInterpretation,
@@ -788,9 +788,9 @@ describe('/体检解读、/面谈提纲、多步计划的规则检查（M2 规�
       expect(withMissing(bad), bad).toContain('no_reference.judged');
   });
 
-  it('提纲的剂量检查：报告数值的单位和频次词不算，剂量和数量单位照样算', () => {
-    const dose = (t: string) => STRICT_DOSE.test(normalizeForCompliance(t).text);
-    for (const lab of [
+  it('提纲的剂量检查：报告单位、频次词和生活方式的数量不算，药和保健品的剂量照样算', () => {
+    const dose = (t: string) => strictDoseMatch(normalizeForCompliance(t).text);
+    for (const ok of [
       '谷丙转氨酶 52 U/L，报告未提供参考范围',
       '同型半胱氨酸 16.8 μmol/L，高于报告参考范围 0-15',
       '肌酐 71 umol/L',
@@ -805,23 +805,57 @@ describe('/体检解读、/面谈提纲、多步计划的规则检查（M2 规�
       '近一两年体重有没有明显变化？',
       '最近一两天有没有熬夜？',
       '一听到要抽血就紧张吗？',
+      // 产品决定：生活方式的数量可以问
+      '每天抽几支烟？',
+      '每次喝几两白酒？',
+      '每天喝几杯咖啡？',
+      '每天放几勺盐？',
+      '一次喝几瓶啤酒？',
+      '一听啤酒',
+      '每次喝 200 ml 啤酒',
+      '每天喝几杯水？',
+      '每天喝几杯茶或饮料？',
     ])
-      expect(dose(lab), lab).toBe(false);
+      expect(dose(ok), ok).toBeNull();
     for (const real of [
       '每次一片',
       '500 mg',
       '两粒',
       '半粒',
-      '每天抽几支烟？',
-      '每天喝几杯咖啡？',
-      '一次喝几瓶啤酒？',
-      '每次喝二两白酒吗？',
-      '每天喝一罐可乐吗？',
-      '一听啤酒',
-      '每次喝 200 ml 啤酒',
-      '每天几勺盐',
+      '保健品每天吃几片？',
+      '鱼油两粒',
+      '阿司匹林100mg',
+      '每天吃几片钙片？',
+      '喝几杯中药？',
+      '每天几支维生素？',
+      '喝酒时吃几片药？',
+      '每天几支？',
+      '每天喝几勺鱼油？',
     ])
-      expect(dose(real), real).toBe(true);
+      expect(dose(real), real).not.toBeNull();
+    // 命中时带上最多 12 个字的片段，方便从 CI 注释定位
+    expect(dose('您平时每天大概会吃几片保健品？')).toBe('您平时每天大概会吃几片');
+    const outline = gradeOutline(outlineCase, {
+      ...goodOutline,
+      professional: {
+        ...goodOutline.professional,
+        groups: [
+          {
+            topic: 'medication',
+            questions: [
+              { question: '保健品每天吃几片？', why: '空腹血糖 6.5 mmol/L，高于参考范围' },
+            ],
+          },
+          {
+            topic: 'lifestyle',
+            questions: [{ question: '您每天抽几支烟？', why: '档案里缺少吸烟情况' }],
+          },
+        ],
+      },
+    });
+    expect(outline.filter((f) => f.rule === 'outline.drug_advice')).toEqual([
+      { rule: 'outline.drug_advice', detail: 'drug_advice：剂量「保健品每天吃几片」' },
+    ]);
   });
 
   it('通俗版只写上升、平稳、下降，写变好、变差、改善、恶化判不通过', () => {

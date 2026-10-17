@@ -54,9 +54,42 @@ export const DOSE = /\d+(?:\.\d+)?\s*(?:mg|毫克|片|粒|单位|IU)/i;
  * 更严的剂量和数量：阿拉伯数字、中文数字、分数都算（一片、半粒、1/2 片、两袋、10 ml、几杯、一瓶、二两）。
  * “一两天”“一听到”这类说法不算。
  * 只用于提纲的评测；单位后紧跟 / 或字母的检验单位（mg/dL、g/L）不算。
+ * 生活方式的数量（烟、酒、盐、油、糖、水、咖啡、茶、饮料）可以问，见 strictDoseMatch。
  */
 export const STRICT_DOSE =
-  /(?:\d+(?:\.\d+)?|\d+\/\d+|[一二两三四五六七八九十]+分之[一二三四五六七八九]|[一二两三四五六七八九十半几]+)\s*(?:mg|毫克|克|g|ml|毫升|片|粒|颗|支|袋|包|丸|勺|瓶|杯|罐|听(?![到说见过力])|两(?![天年次个周月顿回遍晚位种项分小岁])|单位|IU)(?![/A-Za-z])/i;
+  /(?:\d+(?:\.\d+)?|\d+\/\d+|[一二两三四五六七八九十]+分之[一二三四五六七八九]|[一二两三四五六七八九十半几]+)\s*(mg|毫克|克|g|ml|毫升|片|粒|颗|支|袋|包|丸|勺|瓶|杯|罐|听(?![到说见过力])|两(?![天年次个周月顿回遍晚位种项分小岁])|单位|IU)(?![/A-Za-z])/i;
+
+/** 评测自己的生活方式词表和药、保健品词表，和后端 wording.ts 各写各的 */
+const EVAL_LIFESTYLE = ['烟', '酒', '盐', '油', '糖', '水', '咖啡', '茶', '饮料'];
+const EVAL_DRUG_LIKE =
+  /药|保健|补充剂|营养|维生素|钙|鱼油|叶酸|蛋白粉|益生菌|胶囊|冲剂|颗粒|口服液|(?<!薯|面包|燕麦)片|粒|丸|针|贴/;
+/** 只用于药和保健品的单位，哪里出现都算剂量；“支”只在说烟时放过 */
+const EVAL_DRUG_UNITS = new Set(['mg', '毫克', '片', '粒', '丸', '单位', 'iu']);
+const CLAUSE_END = /[，。；：！？,.;:!?\n]/;
+
+/**
+ * 第一处不算生活方式的剂量或数量，返回它所在分句里最多 12 个字的片段（定位用，只来自合成数据的模型输出）；
+ * 没有就是 null。同一分句里有生活方式词、没有药和保健品词、单位也不是药专用的，才放过。
+ */
+export function strictDoseMatch(text: string): string | null {
+  for (const m of text.matchAll(new RegExp(STRICT_DOSE.source, 'gi'))) {
+    const start = m.index;
+    const end = start + m[0].length;
+    let from = start;
+    while (from > 0 && !CLAUSE_END.test(text[from - 1]!)) from--;
+    let to = end;
+    while (to < text.length && !CLAUSE_END.test(text[to]!)) to++;
+    const clause = text.slice(from, to);
+    const unit = m[1]!.toLowerCase();
+    const lifestyle =
+      !EVAL_DRUG_UNITS.has(unit) &&
+      (unit !== '支' || clause.includes('烟')) &&
+      EVAL_LIFESTYLE.some((w) => clause.includes(w)) &&
+      !EVAL_DRUG_LIKE.test(clause);
+    if (!lifestyle) return text.slice(Math.max(from, end - 12), end);
+  }
+  return null;
+}
 
 /**
  * 更严的用药建议：宽动词（换、停、减、加、改、别吃……）和药、剂型、剂量或药名在同一分句里，

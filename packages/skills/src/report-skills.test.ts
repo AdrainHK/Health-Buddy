@@ -447,6 +447,28 @@ describe('/面谈提纲 保存前的措辞检查（规格 2.8）', () => {
     expect(categories(withFields({ suggestion: `了解${drug}的情况` }))).toContain('drug_name');
   });
 
+  it.each([
+    '每天抽几支烟？',
+    '每次喝几两白酒？',
+    '每天喝几杯咖啡？',
+    '每天放几勺盐？',
+    '一天喝几瓶水？',
+  ])('生活方式的数量可以问：“%s”', (q) => {
+    expect(categories(withFields({ question: `您${q}` }))).toEqual([]);
+  });
+
+  it.each([
+    '保健品每天吃几片？',
+    '鱼油两粒',
+    '阿司匹林100mg',
+    '每天吃几片钙片？',
+    '喝几杯中药？',
+    '每天几支维生素？',
+    '每天喝几勺鱼油？',
+  ])('药和保健品的数量照样拦下：“%s”', (q) => {
+    expect(categories(withFields({ suggestion: q }))).toContain('drug_advice');
+  });
+
   it.each(['两颗', '一勺', '几片', '一包', '三丸'])('剂量“%s”被拦下', (dose) => {
     expect(categories(withFields({ suggestion: `每天${dose}` }))).toContain('drug_advice');
   });

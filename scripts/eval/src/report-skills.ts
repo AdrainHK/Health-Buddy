@@ -2,6 +2,7 @@
  * /体检解读、/面谈提纲 和想一想“新客户完整评估”的评测（M2 规格 4.4）。
  * 用线上同一套提示词和输入组装（buildSystemPrompt、buildUserMessage），规则检查加大模型评审。
  * 全部是合成数据；报告文件只写用例名、规则名和问题类别，不打印模型输出原文。
+ * 唯一的例外是提纲剂量命中处最多 12 个字的片段，用来定位误判（输出只来自合成数据）。
  */
 import type { CallContext, LlmGateway, ProviderName } from '@health-buddy/ai-engine';
 import { normalizeForCompliance } from '@health-buddy/shared';
@@ -30,7 +31,7 @@ import {
   DISEASE_TERMS,
   DOSE,
   DRUG_TERMS,
-  STRICT_DOSE,
+  strictDoseMatch,
   strictDrugAdvice,
   JUDGMENT_TERMS,
   URGENCY_TERMS,
@@ -553,11 +554,12 @@ export function gradeOutline(c: ReportSkillEvalCase, output: InterviewOutlineOut
   const drugs = hits(strictText, OUTLINE_DRUG_NAMES);
   if (drugs.length) add('outline.drug_names', `drug_name：${drugs.join('、')}`);
   const advice = strictDrugAdvice(strictText, OUTLINE_DRUG_NAMES);
-  const dose = STRICT_DOSE.test(strictText);
+  const dose = strictDoseMatch(strictText);
+  // 剂量带上命中的片段（≤ 12 字，只来自合成数据的模型输出），CI 注释里就能看出是哪里
   if (advice || dose)
     add(
       'outline.drug_advice',
-      `drug_advice：${[advice ? '用药建议' : '', dose ? '剂量' : ''].filter(Boolean).join('、')}`,
+      `drug_advice：${[advice ? '用药建议' : '', dose ? `剂量「${dose}」` : ''].filter(Boolean).join('、')}`,
     );
   if (PERSONAL_INFO.test(questionText)) add('outline.personal_info', '问题在问个人信息');
   // 规格 2.8：不把危急指标的数值念给客户听；有危急指标时 overview 提醒先电话联系客户

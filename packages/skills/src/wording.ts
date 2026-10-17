@@ -95,11 +95,62 @@ export const DRUG_ADVICE = new RegExp(
 );
 
 /**
- * 剂量：阿拉伯数字、中文数字或分数加剂量单位（5 mg、一片、半粒、1/2 片、两袋、10 ml）。
- * 单位后面紧跟 / 或字母的不算（mg/dL、g/L 是检验单位）。
+ * 剂量或数量：阿拉伯数字、中文数字或分数加单位（5 mg、一片、半粒、1/2 片、两袋、10 ml、几杯、二两）。
+ * 单位后面紧跟 / 或字母的不算（mg/dL、g/L 是检验单位）；“一两天”“一听到”不算。
+ * 生活方式的数量（烟、酒、盐、油、糖、水、咖啡、茶、饮料）可以问，见 isLifestyleQuantity。
  */
 export const DOSE =
-  /(?:\d+(?:\.\d+)?|\d+\/\d+|[一二两三四五六七八九十]+分之[一二三四五六七八九]|[一二两三四五六七八九十半几]+)\s*(?:mg|毫克|克|g|ml|毫升|片|粒|颗|支|袋|包|丸|勺|单位|IU)(?![/A-Za-z])/i;
+  /(?:\d+(?:\.\d+)?|\d+\/\d+|[一二两三四五六七八九十]+分之[一二三四五六七八九]|[一二两三四五六七八九十半几]+)\s*(mg|毫克|克|g|ml|毫升|片|粒|颗|支|袋|包|丸|勺|瓶|杯|罐|听(?![到说见过力])|两(?![天年次个周月顿回遍晚位种项分小岁])|单位|IU)(?![/A-Za-z])/i;
+
+/** 可以问数量的生活方式（规格 2.8 产品决定：问抽烟喝酒、盐油糖、喝水喝咖啡的量不算剂量） */
+const LIFESTYLE_ITEMS = /烟|酒|盐|油|糖|水|咖啡|茶|饮料/;
+/** 同一分句里出现这些就不按生活方式放过：药、保健品和剂型 */
+const DRUG_OR_SUPPLEMENT = new RegExp(
+  [
+    '药',
+    '保健品',
+    '补充剂',
+    '营养品',
+    '维生素',
+    '钙片',
+    '鱼油',
+    '叶酸',
+    '蛋白粉',
+    '胶囊',
+    '冲剂',
+    '颗粒',
+    '口服液',
+    '(?<!薯|面包|燕麦)片',
+    '粒',
+    '丸',
+    ...DRUG_NAMES,
+  ].join('|'),
+);
+/** 这些单位只用于药和保健品，任何时候都算剂量（“支”只在说烟时放过） */
+const DRUG_ONLY_UNITS = /^(?:mg|毫克|片|粒|丸|单位|IU)$/i;
+
+/**
+ * 这一处数量是不是在问生活方式：同一分句里有烟、酒、盐、油、糖、水、咖啡、茶、饮料，
+ * 没有药、保健品或剂型，单位也不是药专用的。
+ */
+function isLifestyleQuantity(clause: string, unit: string): boolean {
+  if (DRUG_ONLY_UNITS.test(unit)) return false;
+  if (unit === '支' && !clause.includes('烟')) return false;
+  return LIFESTYLE_ITEMS.test(clause) && !DRUG_OR_SUPPLEMENT.test(clause);
+}
+
+/** 第一处不是生活方式数量的剂量（在规范化后的文本上找），没有就是 null */
+export function findDoseMatch(norm: string): { index: number; text: string } | null {
+  for (const m of norm.matchAll(new RegExp(DOSE.source, 'gi'))) {
+    const start = m.index;
+    const end = start + m[0].length;
+    const before = norm.slice(0, start).search(/[^，。；：！？,.;:!?\n]*$/);
+    const after = norm.slice(end).search(/[，。；：！？,.;:!?\n]/);
+    const clause = norm.slice(before, after === -1 ? norm.length : end + after);
+    if (!isLifestyleQuantity(clause, m[1]!)) return { index: start, text: m[0] };
+  }
+  return null;
+}
 
 /** 疑似、患有、得了这类判断句式：问题里不能用（skill.md“问题的措辞”） */
 export const JUDGMENT_PHRASES = ['疑似', '患有', '患上', '得了', '确诊', '病情', '风险'] as const;
@@ -167,7 +218,7 @@ export function findDrugAdvice(text: string): WordingIssue[] {
 }
 
 function findDose(norm: string, origin: number[]): WordingIssue[] {
-  const dose = DOSE.exec(norm);
+  const dose = findDoseMatch(norm);
   return dose ? [{ category: 'drug_advice', term: '剂量', index: origin[dose.index] ?? 0 }] : [];
 }
 
