@@ -573,7 +573,16 @@ describe('M2 验收补齐', () => {
         ['analytics', analytics],
       ];
       expect(errorBodies.length).toBeGreaterThanOrEqual(3);
-      for (const [name, text] of sinks) {
+      // 时间戳和 uuid 先去掉：毫秒（如 01.352Z）和 uuid 里的数字会偶然撞上指标数值
+      const scrub = (text: string) =>
+        text
+          .replace(
+            /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/g,
+            '<time>',
+          )
+          .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '<uuid>');
+      for (const [name, raw] of sinks) {
+        const text = scrub(raw);
         for (const term of forbidden) {
           expect(term.length, 'forbidden term should be non-trivial').toBeGreaterThan(2);
           expect(text.includes(term), `${name} contains ${term}`).toBe(false);
