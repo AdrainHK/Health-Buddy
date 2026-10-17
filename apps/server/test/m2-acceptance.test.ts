@@ -1270,6 +1270,7 @@ describe('M2 验收补齐', () => {
       provider.reset();
       const get = vi.spyOn(storage, 'get');
       const claim = vi.spyOn(repo, 'claimExtraction');
+      const requester = vi.spyOn(repo, 'requester');
       const valuesBefore = await owner.selectFrom('extracted_values').select('id').execute();
       const eventsBefore = await owner.selectFrom('report_events').select('id').execute();
       try {
@@ -1285,6 +1286,9 @@ describe('M2 验收补齐', () => {
         expect(await claim.mock.results[0]!.value).toBeUndefined();
 
         expect(await queue.run({ uploadId: b, attempt: 1 })).toBe('failed');
+        // 情况二在查发起人这一步就失败：查了 b，没有查到，也没有去认领
+        expect(requester).toHaveBeenLastCalledWith(b);
+        expect(await requester.mock.results.at(-1)!.value).toBeUndefined();
         expect(claim).toHaveBeenCalledTimes(1);
 
         expect(get).not.toHaveBeenCalled();
@@ -1304,6 +1308,7 @@ describe('M2 验收补齐', () => {
       } finally {
         get.mockRestore();
         claim.mockRestore();
+        requester.mockRestore();
         queue.jobs.length = 0;
         queue.paused = false;
       }

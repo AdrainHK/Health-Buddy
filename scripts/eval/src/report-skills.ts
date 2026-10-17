@@ -116,7 +116,12 @@ const CATALOG_ALIASES = Object.values(INDICATOR_NAMES_ZH).map(aliasesOf);
  * “高密度脂蛋白”这类同一指标的简称不遮（它只出现在高密度脂蛋白胆固醇的名字里）。
  */
 export function mentions(text: string, name: string, extraNames: readonly string[] = []): boolean {
-  if (!name) return false;
+  return lastMention(text, name, extraNames) >= 0;
+}
+
+/** 整名匹配时这个名字最后一次出现的位置；没出现是 -1 */
+function lastMention(text: string, name: string, extraNames: readonly string[]): number {
+  if (!name) return -1;
   const groups = [...CATALOG_ALIASES, ...extraNames.map((n) => [n])];
   const exact = groups.filter((g) => g.includes(name));
   const containing = groups.filter((g) => g.some((a) => a.includes(name)));
@@ -126,9 +131,21 @@ export function mentions(text: string, name: string, extraNames: readonly string
     .flat()
     .filter((a) => a.length > name.length && a.includes(name))
     .sort((a, b) => b.length - a.length);
+  // 用等长的占位遮掉，位置不变
   let masked = text;
-  for (const a of longer) masked = masked.split(a).join(' ');
-  return masked.includes(name);
+  for (const a of longer) masked = masked.split(a).join('\u0000'.repeat(a.length));
+  return masked.lastIndexOf(name);
+}
+
+/** 这段文字里最后提到的是哪个指标（按整名匹配）；一个都没提到是 null */
+function lastSubject(text: string, names: readonly string[], extra: readonly string[]) {
+  let best: { name: string; at: number } | null = null;
+  for (const name of names) {
+    const at = lastMention(text, name, extra);
+    if (at >= 0 && (!best || at > best.at || (at === best.at && name.length > best.name.length)))
+      best = { name, at };
+  }
+  return best?.name ?? null;
 }
 
 /** 输出里出现了用例给的身份信息或电话号码（红线 2） */
@@ -185,8 +202,15 @@ function gradeClientText(
   for (const f of client.criticalFlags) {
     if (numberIn(text, f.rule.value)) add('client.critical_threshold', '通俗版写了危急指标的阈值');
   }
-  // 和上次相比只写上升、平稳、下降，不写变好、变差这类判断（skill.md 通俗版第 2 条）
-  const judged = [...hits(text, CLIENT_TREND_JUDGMENT), ...(text.match(NEGATED_JUDGMENT) ?? [])];
+  // 和上次相比只写上升、平稳、下降，不写变好、变差这类判断（skill.md 通俗版第 2 条）。
+  // 先去掉空格和分隔符、统一全角半角，“变 好”“改·善”同样算
+  const norm = normalizeForCompliance(text).text;
+  const judged = [
+    ...hits(norm, CLIENT_TREND_JUDGMENT),
+    ...(norm.match(NEGATED_JUDGMENT) ?? []),
+    ...(norm.match(CLIENT_IMPROVE) ?? []),
+    ...(norm.match(CLIENT_BETTER) ?? []),
+  ];
   if (judged.length) add('client.trend_judgment', [...new Set(judged)].join('、'));
   if (DOSE.test(text)) add('client.dose', '通俗版出现了剂量');
   if (text.includes('该客户')) add('client.wrong_reader', '通俗版是写给客户本人的');
@@ -210,7 +234,13 @@ const CLIENT_TREND_JUDGMENT = [
   ...WORSE_WORDS.filter((w) => w !== '加重'),
   '变坏',
   '变得更好',
+  '好多了',
+  '不理想',
 ];
+/** 单独的“改善”是判断（“较上次改善”“略有改善”）；“改善饮食”“改善睡眠”这类建议不算 */
+const CLIENT_IMPROVE = /改善(?!饮食|膳食|作息|生活|睡眠|习惯|方式|运动|口味|结构|一下)/g;
+/** “更好”是判断；“更好地控制”这类状语不算 */
+const CLIENT_BETTER = /更好(?!地)/g;
 
 /** 报告里未收录指标的原始名称，整名匹配时一起当作已知指标名 */
 const rawNames = (client: ClientSnapshot) =>
@@ -284,19 +314,36 @@ const NO_REFERENCE_JUDGMENT = [
 ];
 const LEVEL = '(?:偏高|偏低|较高|较低|过高|过低|异常|高低|正常)';
 const LEVELS = `${LEVEL}(?:(?:或|或者|还是|、|与)${LEVEL})?`;
+/** 问完马上给了答案（“是否偏高：是”“有无异常：有”）就不算问句 */
+const ANSWERED = '(?![：:？?]\\s*(?:是|有|存在|确|偏))';
+const escapeRe = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 /**
- * “无法判断是否偏高或偏低”“无法判断其是否偏高”“难以评估谷丙转氨酶是否异常”这类说法本身不算判断。
- * 只遮从“无法判断”到它说的那个高低词为止（中间不跨“但”“却”），同一分句后面的判断照样要查。
+ * 不算判断、要先遮掉的说法。只遮这句话本身，同一分句里别的判断照样要查：
+ * - “无法判断是否偏高或偏低”“无法判断其是否偏高”“难以评估谷丙转氨酶是否异常”：
+ *   “无法判断”和高低词之间只允许出现指标名、其、它、该指标和“是否”；
+ * - “需结合其他指标判断是否异常”这类问句（后面紧跟答案的不算）；
+ * - “未见异常”“没有列进异常项”“未将谷丙转氨酶列为异常”（要有“将”“把”，中间只允许指标名、其、该指标）。
  */
-const CANNOT_JUDGE = new RegExp(
-  `(?:无法|不能|不好|没法|难以|暂不|不宜|不作|不做)(?:判断|确定|评估|判定|评价)(?:(?!但|却|不过|然而)[^，。；,;]){0,12}?${LEVELS}`,
-  'g',
-);
-/** “是否异常”“有没有偏高”是问句，不是判断（“需结合其他指标判断是否异常”） */
-const QUESTION_LEVEL = new RegExp(`(?:是否|有无|有没有)(?:明显)?${LEVELS}`, 'g');
-/** “未见异常”“没有列进异常项”“未将谷丙转氨酶列为异常”这类说法不算判断 */
-const NOT_ABNORMAL =
-  /(?:未见|无|没有|未发现|未提示|不提示)(?:明显)?异常|(?:未|不|没有)(?:将|把)?[^，。；,;]{0,12}?(?:列入|列进|列为|计入|算作|算入|归为|归入|视为|判为)异常(?:项|指标)?/g;
+function notJudgmentPatterns(names: readonly string[]): RegExp[] {
+  const subject = `(?:其|它|该指标|${[...names]
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRe)
+    .join('|')})`;
+  return [
+    new RegExp(
+      `(?:无法|不能|不好|没法|难以|暂不|不宜|不作|不做)(?:判断|确定|评估|判定|评价)${subject}?(?:是否|有无|有没有)?(?:明显)?${LEVELS}${ANSWERED}`,
+      'g',
+    ),
+    new RegExp(`(?:是否|有无|有没有)(?:明显)?${LEVELS}${ANSWERED}`, 'g'),
+    /(?:未见|无|没有|未发现|未提示|不提示)(?:明显)?异常/g,
+    /(?:未|不|没有)(?:列入|列进|计入)异常项/g,
+    new RegExp(
+      `(?:未|不|没有)(?:将|把)${subject}?(?:列入|列进|列为|计入|算作|算入|归为|归入|视为|判为)异常(?:项|指标)?`,
+      'g',
+    ),
+  ];
+}
 
 /** 指标在输出里的名字：目录指标用中文名，未收录指标用报告原始名称 */
 const nameOf = (i: { code: string | null; rawName: string | null }) =>
@@ -304,7 +351,8 @@ const nameOf = (i: { code: string | null; rawName: string | null }) =>
 
 /**
  * 报告没印参考范围的指标（规格 2.5 第 3 条、Q10）：不列进异常项，不说偏高、偏低或异常。
- * 按逗号分句检查，避免同一句里别的指标的判断被算到它头上。
+ * 按逗号分句检查，避免同一句里别的指标的判断被算到它头上：分句里没写指标名时，
+ * 沿用同一句里前面最近提到的指标（“谷丙转氨酶 52 U/L，偏高”），提到别的指标才换主语。
  */
 function checkNoReference(
   client: ClientSnapshot,
@@ -317,18 +365,29 @@ function checkNoReference(
     .map(nameOf)
     .filter(Boolean);
   const extra = rawNames(client);
+  const allNames = [...new Set([...CATALOG_ALIASES.flat(), ...extra])];
+  const masks = notJudgmentPatterns(allNames);
+  const judged = new Set<string>();
+  for (const sentence of sentences(`${professional}\n${output.clientFacing}`)) {
+    let subject: string | null = null;
+    for (const clause of clauses(sentence)) {
+      const own = lastSubject(clause, allNames, extra);
+      const named = names.filter((n) => mentions(clause, n, extra));
+      // 分句里写了指标名就按写了的算；一个指标名都没写才沿用前面的主语
+      const inherited =
+        own === null && subject !== null
+          ? names.find((n) => aliasesOf(n).includes(subject!))
+          : undefined;
+      const rest = masks.reduce((t, re) => t.replace(re, ' '), clause);
+      if (hits(rest, NO_REFERENCE_JUDGMENT).length)
+        for (const n of inherited ? [inherited] : named) judged.add(n);
+      subject = own ?? subject;
+    }
+  }
   for (const name of names) {
     if (output.professional.abnormalFindings.some((f) => mentions(f.indicator, name, extra)))
       add('no_reference.listed_as_abnormal', `${name}没有参考范围，却列进了异常项`);
-    for (const clause of clauses(`${professional}\n${output.clientFacing}`)) {
-      if (!mentions(clause, name, extra)) continue;
-      const rest = clause
-        .replace(CANNOT_JUDGE, ' ')
-        .replace(QUESTION_LEVEL, ' ')
-        .replace(NOT_ABNORMAL, ' ');
-      if (hits(rest, NO_REFERENCE_JUDGMENT).length)
-        add('no_reference.judged', `${name}没有参考范围，却判断了高低`);
-    }
+    if (judged.has(name)) add('no_reference.judged', `${name}没有参考范围，却判断了高低`);
   }
 }
 
