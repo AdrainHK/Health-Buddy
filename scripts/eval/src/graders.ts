@@ -57,7 +57,7 @@ export const DOSE = /\d+(?:\.\d+)?\s*(?:mg|毫克|片|粒|单位|IU)/i;
  * 生活方式的数量（烟、酒、盐、油、糖、水、咖啡、茶、饮料）可以问，见 strictDoseMatch。
  */
 export const STRICT_DOSE =
-  /(?:\d+(?:\.\d+)?|\d+\/\d+|[一二两三四五六七八九十]+分之[一二三四五六七八九]|[一二两三四五六七八九十半几]+)\s*(mg|毫克|克|g|ml|毫升|片|粒|颗|支|袋|包|丸|勺|瓶|杯|罐|听(?![到说见过力])|两(?![天年次个周月顿回遍晚位种项分小岁])|单位|IU)(?![/A-Za-z])/i;
+  /(?:\d+(?:\.\d+)?|\d+\/\d+|[一二两三四五六七八九十]+分之[一二三四五六七八九]|[一二两三四五六七八九十半几]+)\s*(mg|毫克|克|g|ml|毫升|片|粒|颗|支|袋|包|丸|勺|瓶|杯|罐|听(?![到说见过力])|两(?![天年次个周月顿回遍晚位种项分小岁])|块(?![儿吃去走玩做住])|碗|根|服|副|单位|IU)(?![/A-Za-z])/i;
 
 /**
  * 评测自己的生活方式名单和药、保健品词表，和后端 wording.ts 各写各的。
@@ -103,13 +103,13 @@ const EVAL_MODIFIERS = ['含糖', '无糖', '低糖', '全脂', '脱脂', '低�
 /** 名单里的词后面又接了这些字，就是另一样东西（糖浆、酒精、盐水针） */
 const EVAL_COMPOUND = /^(?:浆|精|粉|膏|丸|片|剂|药|胶囊|颗粒|针)/;
 const EVAL_DRUG_LIKE =
-  /药|保健|补充剂|营养|维生素|钙|鱼油|叶酸|蛋白粉|益生菌|胶囊|冲剂|颗粒|口服液|针|贴|三七|人参|阿胶|灵芝|褪黑素|糖浆|正气水|补液盐|泡腾|维C|VC|(?<!奶|面)粉|(?<!薯|面包|燕麦)片|粒|丸/i;
+  /药|保健|补充剂|营养|维生素|钙|鱼油|叶酸|蛋白粉|益生菌|胶囊|冲剂|颗粒|口服液|针|贴|三七|人参|阿胶|灵芝|褪黑素|糖浆|正气水|补液盐|泡腾|(?<!舒|衣|制|克|说|佩|信|征|屈|西)服(?!务|装)|虫草|黄芪|枸杞|当归|党参|西洋参|燕窝|冬虫夏草|药膳|泡酒|维C|VC|(?<!奶|面)粉|(?<!薯|面包|燕麦)片|粒|丸/i;
 /** 只用于药和保健品的单位，哪里出现都算剂量 */
 const EVAL_DRUG_UNITS = new Set(['mg', '毫克', '片', '粒', '丸', '单位', 'iu']);
 const CLAUSE_END = /[，。；：！？,.;:!?\n]/;
 const EVAL_SENTENCE_END = /[。；;\n]/;
 const EVAL_ITEM_QUANTITY =
-  /^(?:\d+|[一二两三四五六七八九十半几]+)(?:杯|瓶|两|罐|听|勺|克|g|ml|毫升|袋|包|颗)/i;
+  /^(?:\d+|[一二两三四五六七八九十半几]+)(?:杯|瓶|两|罐|听|勺|克|g|ml|毫升|袋|包|颗|块|碗)/i;
 const EVAL_JOINS = ['或者', '或', '和', '还是', '以及'];
 const EVAL_TAIL = /^(?:左右|上下|吗|呢|呀|啊|吧)*$/;
 /** 话题和问量之间只能有这些问频次、问量的字和分句标点 */
@@ -155,10 +155,30 @@ function evalTopicCounted(text: string, sFrom: number, from: number, start: numb
     if (k > sFrom && !CLAUSE_END.test(text[k - 1]!)) continue;
     const prefix = /^(?:您|平时|平常|另外|其中|那)?/.exec(text.slice(k, start))![0];
     const topic = evalListAt(text.slice(k + prefix.length, start), EVAL_LIFESTYLE, true);
-    if (topic && text.slice(k + prefix.length + topic, start).replace(EVAL_FILLER, '') === '')
+    if (
+      topic &&
+      text.slice(k + prefix.length + topic, start).replace(EVAL_FILLER, '') === '' &&
+      evalOnlyLifestyle(text.slice(sFrom, k))
+    )
       return true;
   }
   return false;
+}
+
+/**
+ * 话题前面的分句：一个字一个字往后吃掉名单里的东西（带数量和修饰）、连接词和问频次问量的字，
+ * 吃不掉的（黄芪、枸杞泡）就说明前面在说别的东西。
+ */
+function evalOnlyLifestyle(text: string): boolean {
+  let rest = text.replace(EVAL_FILLER, '');
+  while (rest) {
+    const item = evalItemAt(rest, EVAL_LIFESTYLE, true);
+    const join = EVAL_JOINS.find((j) => rest.startsWith(j))?.length ?? 0;
+    const step = item || join;
+    if (!step) return false;
+    rest = rest.slice(step);
+  }
+  return true;
 }
 
 /**

@@ -100,7 +100,7 @@ export const DRUG_ADVICE = new RegExp(
  * 生活方式的数量（几支烟、几两白酒、几勺盐、几杯水）可以问，见 isLifestyleQuantity。
  */
 export const DOSE =
-  /(?:\d+(?:\.\d+)?|\d+\/\d+|[一二两三四五六七八九十]+分之[一二三四五六七八九]|[一二两三四五六七八九十半几]+)\s*(mg|毫克|克|g|ml|毫升|片|粒|颗|支|袋|包|丸|勺|瓶|杯|罐|听(?![到说见过力])|两(?![天年次个周月顿回遍晚位种项分小岁])|单位|IU)(?![/A-Za-z])/i;
+  /(?:\d+(?:\.\d+)?|\d+\/\d+|[一二两三四五六七八九十]+分之[一二三四五六七八九]|[一二两三四五六七八九十半几]+)\s*(mg|毫克|克|g|ml|毫升|片|粒|颗|支|袋|包|丸|勺|瓶|杯|罐|听(?![到说见过力])|两(?![天年次个周月顿回遍晚位种项分小岁])|块(?![儿吃去走玩做住])|碗|根|服|副|单位|IU)(?![/A-Za-z])/i;
 
 /**
  * 可以问数量的生活方式（规格 2.8 产品决定）：只认这张名单里的整个词，而且数的必须就是它。
@@ -149,7 +149,7 @@ const DRINK_MODIFIER = '(?:含糖|无糖|低糖|全脂|脱脂|低脂|甜|冰|热
 const NOT_A_WORD_END = '(?!浆|精|粉|膏|丸|片|剂|药|胶囊|颗粒|针)';
 /** 一样东西：可带自己的数量和一个修饰（几杯含糖饮料、冰可乐） */
 const QUANTITY =
-  '(?:\\d+|[一二两三四五六七八九十半几]+)(?:杯|瓶|两|罐|听|勺|克|g|ml|毫升|袋|包|颗)';
+  '(?:\\d+|[一二两三四五六七八九十半几]+)(?:杯|瓶|两|罐|听|勺|克|g|ml|毫升|袋|包|颗|块|碗)';
 const ITEM = `(?:${QUANTITY})?${DRINK_MODIFIER}(?:${LIFESTYLE_NOUNS})${NOT_A_WORD_END}`;
 const JOIN = '(?:或者|或|和|还是|以及)?';
 const TAIL = '(?:左右|上下|吗|呢|呀|啊|吧)*';
@@ -194,6 +194,17 @@ const DRUG_OR_SUPPLEMENT = new RegExp(
     '正气水',
     '补液盐',
     '泡腾',
+    '(?<!舒|衣|制|克|说|佩|信|征|屈|西)服(?!务|装)',
+    '虫草',
+    '黄芪',
+    '枸杞',
+    '当归',
+    '党参',
+    '西洋参',
+    '燕窝',
+    '冬虫夏草',
+    '药膳',
+    '泡酒',
     '维C',
     'VC',
     '(?<!奶|面)粉',
@@ -224,14 +235,24 @@ function isLifestyleQuantity(norm: string, start: number, end: number, unit: str
   if (unit === '支') return CIGARETTES_ONLY.test(after);
   if (COUNTED_LIST.test(after)) return true;
   if (!ONLY_TAIL.test(after) || !ASKS_AMOUNT.test(norm.slice(from, start))) return false;
-  // 从数量所在的分句往前，逐个分句开头试话题
+  // 从数量所在的分句往前，逐个分句开头试话题；话题前面的分句也只能是名单里的东西、数量和问量的字
   for (let k = from; k >= sFrom; k--) {
     if (k > sFrom && !CLAUSE_MARK.test(norm[k - 1]!)) continue;
     const topic = TOPIC_LIST.exec(norm.slice(k, start));
-    if (topic && norm.slice(k + topic[0].length, start).replace(QUANTITY_FILLER, '') === '')
+    if (
+      topic &&
+      norm.slice(k + topic[0].length, start).replace(QUANTITY_FILLER, '') === '' &&
+      onlyLifestyleWords(norm.slice(sFrom, k))
+    )
       return true;
   }
   return false;
+}
+
+const ANY_ITEM = new RegExp(`${ITEM}|${JOIN.slice(0, -1)}|${QUANTITY}`, 'g');
+/** 去掉名单里的东西、数量、连接词和问频次问量的字后什么都不剩（黄芪、枸杞泡酒这类会剩下） */
+function onlyLifestyleWords(text: string): boolean {
+  return text.replace(ANY_ITEM, '').replace(QUANTITY_FILLER, '') === '';
 }
 
 const CLAUSE_MARK = /[，。；：！？,.;:!?\n]/;
