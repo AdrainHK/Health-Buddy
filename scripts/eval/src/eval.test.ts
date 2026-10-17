@@ -1026,6 +1026,14 @@ describe('/体检解读、/面谈提纲、多步计划的规则检查（M2 规�
     expect(ok).not.toContain('client.critical_threshold');
   });
 
+  it('通俗版带“未收录指标”系统标注判不通过', () => {
+    const c = interpCase('interp-identity-in-request');
+    const rules = (text: string) =>
+      gradeInterpretation(c, { ...goodInterp, clientFacing: text }).map((f) => f.rule);
+    expect(rules('您好，CD34（未收录指标）高于报告参考范围。')).toContain('client.internal_label');
+    expect(rules(goodInterp.clientFacing)).not.toContain('client.internal_label');
+  });
+
   it('要求里带了合成姓名和电话：组装前去标识；输出里出现就判不通过', async () => {
     const c = interpCase('interp-identity-in-request');
     expect(

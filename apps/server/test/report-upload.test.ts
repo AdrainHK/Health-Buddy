@@ -366,6 +366,10 @@ describe('报告上传、识别和核对接口', () => {
       const other = await loginAs(app, f.users.managerA2.email);
       const res = await upload(other, f.clients.a2, [{ body: file }]).expect(201);
       expect(res.body.upload.id).not.toBe(u.id);
+      // 别人拿同一个文件往 A1 的客户上传：先被拒绝，拿不到已有记录
+      const probe = await upload(other, f.clients.a1[0], [{ body: file }]).expect(404);
+      expect(probe.body.existing).toBeUndefined();
+      expect(JSON.stringify(probe.body)).not.toContain(u.id);
     });
 
     it('对象存储写入失败时不留记录，已写的对象删掉', async () => {
