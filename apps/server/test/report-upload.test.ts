@@ -623,6 +623,14 @@ describe('报告上传、识别和核对接口', () => {
       ]);
       const ok = await verify(agent, u, { acknowledgedCritical: true }).expect(200);
       expect(ok.body.upload.criticalAcknowledged).toBe(true);
+      expect(ok.body.critical).toEqual([expect.objectContaining({ metric: 'fpg', value: 2.5 })]);
+      // 逐行确认：记录里没有 confirm_all
+      const events = await owner
+        .selectFrom('report_events')
+        .select('via')
+        .where('upload_id', '=', u.id)
+        .execute();
+      expect(events.every((e) => e.via === null)).toBe(true);
       const report = (await agent.get(`/api/reports/${ok.body.upload.reportId}`)).body.report;
       expect(report.indicators[0]).toMatchObject({ value: 2.5, abnormal: 'low' });
     });
@@ -680,6 +688,10 @@ describe('报告上传、识别和核对接口', () => {
       ).expect(200);
       const done = ok.body.upload as ReportUpload;
       expect(done).toMatchObject({ status: 'verified', criticalAcknowledged: true });
+      // 不用勾选“已知悉”，但响应带上危急指标，界面确认后醒目列出
+      expect(ok.body.critical).toEqual([
+        expect.objectContaining({ metric: 'fpg', value: 2.5, source: 'report' }),
+      ]);
       expect(done.values.every((v) => v.checked)).toBe(true);
       expect(done.values.find((v) => v.code === 'tc')?.reviewStatus).toBe('checked');
 
@@ -694,13 +706,50 @@ describe('报告上传、识别和核对接口', () => {
       );
       const events = await owner
         .selectFrom('report_events')
-        .select(['action', 'actor_id', 'extracted_value_id'])
+        .select(['action', 'actor_id', 'extracted_value_id', 'via'])
         .where('upload_id', '=', u.id)
         .where('action', '=', 'value_checked')
         .execute();
       expect(events).toHaveLength(4);
-      expect(events.filter((e) => e.extracted_value_id === weight.id)).toHaveLength(1);
+      expect(events.filter((e) => e.extracted_value_id === weight.id)).toEqual([
+        expect.objectContaining({ via: null }),
+      ]);
+      // 审计：一键记下的勾选和确认都标明来自“确认所有数据”（含危急指标的知悉方式）
+      expect(events.filter((e) => e.via === 'confirm_all')).toHaveLength(3);
       expect(new Set(events.map((e) => e.actor_id))).toEqual(new Set([f.users.managerA1.id]));
+      const verifiedEvent = await owner
+        .selectFrom('report_events')
+        .select(['via', 'actor_id'])
+        .where('upload_id', '=', u.id)
+        .where('action', '=', 'verified')
+        .executeTakeFirstOrThrow();
+      expect(verifiedEvent).toEqual({ via: 'confirm_all', actor_id: f.users.managerA1.id });
+
+      // 报告列表和档案里标出“含危急指标”
+      const list = (await agent.get(`/api/clients/${f.clients.a1[0]}/reports`).expect(200)).body;
+      // 夹具里那份没有危急指标的报告不标
+      expect(
+        (list.reports as { id: string; hasCritical: boolean }[]).map((r) => [r.id, r.hasCritical]),
+      ).toEqual(
+        expect.arrayContaining([
+          [done.reportId, true],
+          [expect.any(String), false],
+        ]),
+      );
+      const record = (await agent.get(`/api/clients/${f.clients.a1[0]}/record`).expect(200)).body
+        .record;
+      // 夹具里那份没有危急指标的报告不标
+      expect(
+        (record.reports as { id: string; hasCritical: boolean }[]).map((r) => [
+          r.id,
+          r.hasCritical,
+        ]),
+      ).toEqual(
+        expect.arrayContaining([
+          [done.reportId, true],
+          [expect.any(String), false],
+        ]),
+      );
 
       // 危急指标进入正式报告，并照常出现在健管师的客户上下文里（解读草稿和审核栏的危急指标来自这里）
       const report = (await agent.get(`/api/reports/${done.reportId}`)).body.report;

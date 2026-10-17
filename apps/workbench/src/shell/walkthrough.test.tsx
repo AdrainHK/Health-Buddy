@@ -57,7 +57,7 @@ function summary(overrides: Partial<ReportUploadSummary> = {}): ReportUploadSumm
   };
 }
 
-const reports = (list: { id: string; date: string }[]) => () =>
+const reports = (list: { id: string; date: string; hasCritical?: boolean }[]) => () =>
   json(200, {
     reports: list.map((r) => ({
       id: r.id,
@@ -66,6 +66,7 @@ const reports = (list: { id: string; date: string }[]) => () =>
       source: 'upload',
       indicatorCount: 3,
       abnormalCount: 0,
+      hasCritical: r.hasCritical ?? false,
     })),
   });
 
@@ -185,7 +186,7 @@ describe('验收反馈 6：用已经上传过的报告', () => {
     mockApi({
       [`GET ${DETAIL_PATH}`]: () => json(200, emptyDetail(makeTask({ clientId: ids.clientA }))),
       [`GET /clients/${ids.clientA}/reports`]: reports([
-        { id: REPORT_ID, date: '2026-09-12' },
+        { id: REPORT_ID, date: '2026-09-12', hasCritical: true },
         { id: '90000000-0000-4000-8000-0000000000c3', date: '2025-09-01' },
       ]),
       [`GET /clients/${ids.clientA}/report-uploads`]: () => json(200, { uploads: [] }),
@@ -194,7 +195,11 @@ describe('验收反馈 6：用已经上传过的报告', () => {
     await pickSkill(user, '体检解读');
     const picker = await screen.findByRole('group', { name: '选择要用的报告' });
     const buttons = within(picker).getAllByRole('button');
-    expect(buttons.map((b) => b.textContent)).toEqual(['报告 · 2026-09-12', '报告 · 2025-09-01']);
+    // 含危急指标的报告带标记（合规评审）
+    expect(buttons.map((b) => b.textContent)).toEqual([
+      '报告 · 2026-09-12 含危急指标',
+      '报告 · 2025-09-01',
+    ]);
     await user.click(buttons[0]!);
     expect(screen.getByRole('button', { name: '移除报告 2026-09-12' })).toBeVisible();
     expect(screen.queryByRole('group', { name: '选择要用的报告' })).not.toBeInTheDocument();

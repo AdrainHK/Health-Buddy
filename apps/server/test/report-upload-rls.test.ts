@@ -445,6 +445,22 @@ describe('报告上传数据表的行级安全和约束', () => {
       asA1((trx) =>
         trx.updateTable('report_uploads').set(set).where('id', '=', a1.uploadId).execute(),
       );
+    // 新建识别记录时就带上身份确认：触发器拒绝
+    await expect(
+      asA1((trx) =>
+        trx
+          .insertInto('report_uploads')
+          .values({
+            ...scope(managerA1()),
+            client_id: f.clients.a1[0],
+            page_count: 1,
+            uploaded_by: f.users.managerA1.id,
+            requested_by: f.users.managerA1.id,
+            identity_confirmed_by: f.users.managerA1.id,
+          })
+          .execute(),
+      ),
+    ).rejects.toThrow(/only on verification/);
     // 不核对、单独写入身份确认
     await expect(update({ identity_confirmed_by: f.users.managerA1.id })).rejects.toThrow(
       /only on verification/,
@@ -458,6 +474,16 @@ describe('报告上传数据表的行级安全和约束', () => {
     ).rejects.toThrow(/confirm the client identity/);
     // 时间只由数据库填写（没有更新权限）
     await expect(update({ identity_confirmed_at: new Date() })).rejects.toThrow();
+
+    // 别的健管师改不到 A1 的识别记录（行级安全看不到，0 行）
+    const other = await withTenant(app, managerA2(), (trx) =>
+      trx
+        .updateTable('report_uploads')
+        .set({ identity_confirmed_by: f.users.managerA2.id })
+        .where('id', '=', a1.uploadId)
+        .executeTakeFirst(),
+    );
+    expect(other.numUpdatedRows).toBe(0n);
 
     await verifyUpload(managerA1(), f.clients.a1[0], a1.uploadId);
     const row = await owner

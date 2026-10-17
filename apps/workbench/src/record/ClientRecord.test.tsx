@@ -145,6 +145,16 @@ describe('ClientRecord', () => {
     expect(screen.queryByRole('button', { name: '新建客户' })).not.toBeInTheDocument();
   });
 
+  it('marks reports whose current values hit a critical threshold', async () => {
+    const base = makeRecord();
+    renderRecord(makeRecord({ reports: base.reports.map((r) => ({ ...r, hasCritical: true })) }));
+    expect(
+      await within(await screen.findByRole('region', { name: '体检报告' })).findByText(
+        '含危急指标',
+      ),
+    ).toBeVisible();
+  });
+
   it('shows empty states when nothing has been recorded yet', async () => {
     renderRecord(
       makeRecord({

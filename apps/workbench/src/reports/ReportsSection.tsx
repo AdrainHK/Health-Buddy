@@ -65,6 +65,12 @@ export function ReportsSection({
                 <span className={styles.rowName}>
                   {t('record.reports.item', { date: r.reportDate })}
                   {r.institution && <span className={styles.muted}> · {r.institution}</span>}
+                  {r.hasCritical && (
+                    <>
+                      {' '}
+                      <span className={styles.criticalMark}>{t('record.reports.critical')}</span>
+                    </>
+                  )}
                 </span>
                 <span className={styles.muted}>
                   {t('record.reports.indicatorCount', { count: r.indicatorCount })}

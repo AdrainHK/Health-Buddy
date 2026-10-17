@@ -284,7 +284,12 @@ export function ChatPane({
     ])
       .then(([reports, pending]) => {
         setReportOptions([
-          ...reports.map((r) => ({ id: r.id, date: r.reportDate, pending: false })),
+          ...reports.map((r) => ({
+            id: r.id,
+            date: r.reportDate,
+            pending: false,
+            ...(r.hasCritical ? { critical: true } : {}),
+          })),
           ...pending
             .filter((u) => ['queued', 'processing', 'needs_review'].includes(u.status))
             .map((u) => ({ id: u.id, date: u.createdAt.slice(0, 10), pending: true })),
@@ -800,6 +805,12 @@ export function ChatPane({
             onClick={() => setReport(r)}
           >
             {t('chat.reportOption', { date: r.date })}
+            {r.critical && (
+              <>
+                {' '}
+                <span className={reportStyles.criticalMark}>{t('record.reports.critical')}</span>
+              </>
+            )}
           </Button>
         ))}
         <span className={styles.pickerHint}>{t('chat.reportPickerHint')}</span>

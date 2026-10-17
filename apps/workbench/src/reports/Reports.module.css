@@ -445,3 +445,13 @@
   margin: 0;
   font-weight: 600;
 }
+
+/* 已核对报告列表里的“含危急指标”标记 */
+.criticalMark {
+  padding: 0 var(--hb-space-2);
+  border-radius: var(--hb-radius-sm);
+  background: color-mix(in oklab, var(--hb-danger) 12%, var(--hb-surface));
+  color: var(--hb-danger);
+  font-size: var(--hb-text-xs);
+  white-space: nowrap;
+}

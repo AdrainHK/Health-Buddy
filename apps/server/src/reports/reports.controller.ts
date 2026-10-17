@@ -27,6 +27,7 @@ import {
   type ReportUploadResponse,
   type ReportUploadStreamEvent,
   type ReportUploadSummary,
+  type VerifyUploadResponse,
 } from '@health-buddy/shared';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
@@ -313,7 +314,7 @@ export class ReportUploadsController {
     @CurrentSession() session: ResolvedSession,
     @Param('id') id: string,
     @Body() body: unknown,
-  ): Promise<ReportUploadResponse> {
+  ): Promise<VerifyUploadResponse> {
     requireManager(session);
     const uploadId = parseId(id);
     const parsed = verifyUploadRequestSchema.safeParse(body);
@@ -324,9 +325,10 @@ export class ReportUploadsController {
         uploadId,
         values: upload.values.filter((v) => v.reviewStatus !== 'deleted').length,
         criticalFlags: critical.length,
+        confirmAll: parsed.data.confirmAll,
       })}`,
     );
-    return { upload };
+    return critical.length ? { upload, critical } : { upload };
   }
 
   /**

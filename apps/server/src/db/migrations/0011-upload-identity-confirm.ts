@@ -9,6 +9,8 @@ import { APP_DB_ROLE } from '../../config.js';
  * - report_uploads 加 identity_confirmed_by、identity_confirmed_at。
  * - 触发器：只能在 needs_review → verified 这一次更新里由当前用户写入（时间由数据库填）；
  *   从这次迁移起，新的确认核对必须带上这项确认。迁移前已核对的记录保持为空。
+ * - report_events 加 via：“确认所有数据”（产品负责人决定完全一键）一键记下的 value_checked
+ *   和 verified 记为 'confirm_all'，审计时能区分逐行勾选和一键确认（含危急指标的知悉方式）。
  */
 export async function up(db: Kysely<unknown>): Promise<void> {
   const app = sql.id(APP_DB_ROLE);
@@ -47,6 +49,12 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     -- 名字排在 report_uploads_guard 之后：状态机先校验
     create trigger report_uploads_identity_guard before insert or update on report_uploads
       for each row execute function report_uploads_identity_guard();
+
+    alter table report_events
+      add column via text check (via in ('confirm_all')),
+      add constraint report_events_via check (
+        via is null or action in ('value_checked', 'verified')
+      );
 
     grant update (identity_confirmed_by) on report_uploads to ${app};
   `.execute(db);

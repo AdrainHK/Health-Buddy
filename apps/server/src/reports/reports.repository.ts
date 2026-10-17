@@ -811,6 +811,7 @@ export class ReportsRepository {
             upload_id: uploadId,
             action: 'value_checked',
             extracted_value_id: m.id,
+            via: 'confirm_all',
           });
         }
       }
@@ -868,6 +869,8 @@ export class ReportsRepository {
         upload_id: uploadId,
         report_id: report.id,
         action: 'verified',
+        // 一键确认时危急指标的“知悉”也是这样记下的
+        ...(input.confirmAll ? { via: 'confirm_all' as const } : {}),
       });
       const detail = await loadUpload(trx, uploadId);
       if (!detail) throw notFound();
@@ -912,6 +915,10 @@ export class ReportsRepository {
     return withTenant(this.db, ctx, async (trx) => {
       if (!(await clientVisible(trx, clientId))) return undefined;
       const rows = await selectReportList(trx, clientId).limit(REPORT_LIST_LIMIT).execute();
+      const critical = await criticalReportIds(
+        trx,
+        rows.map((r) => r.id),
+      );
       return rows.map((r) => ({
         id: r.id,
         reportDate: r.report_date,
@@ -919,6 +926,7 @@ export class ReportsRepository {
         source: r.source,
         indicatorCount: Number(r.indicator_count),
         abnormalCount: Number(r.abnormal_count),
+        hasCritical: critical.has(r.id),
       }));
     });
   }
@@ -1089,6 +1097,7 @@ async function addEvent(
     extracted_value_id?: string;
     indicator_id?: string;
     file_id?: string;
+    via?: 'confirm_all';
   },
 ): Promise<void> {
   await trx
@@ -1290,6 +1299,50 @@ async function loadUpload(
     values: values.map(toExtractedValue),
     sameDateReportIds: sameDate.map((r) => r.id),
   };
+}
+
+/**
+ * 哪些已核对报告的当前指标值命中危急指标阈值（M1 第五节之二，平台阈值）。
+ * 只用于列表里的“含危急指标”标记；更正后的值按当前值算。
+ */
+export async function criticalReportIds(
+  trx: TenantTransaction,
+  reportIds: readonly string[],
+): Promise<Set<string>> {
+  if (!reportIds.length) return new Set();
+  const rules = (
+    await trx
+      .selectFrom('critical_thresholds')
+      .select(['metric', 'comparator', 'value', 'level', 'enabled'])
+      .execute()
+  ).map((r) => ({
+    metric: r.metric as IndicatorCode,
+    comparator: r.comparator,
+    value: Number(r.value),
+    level: r.level,
+    enabled: r.enabled,
+  }));
+  const indicators = await trx
+    .selectFrom('report_indicators')
+    .select(['report_id', 'code', 'value', 'unit'])
+    .where('report_id', 'in', [...reportIds])
+    .where('superseded_by', 'is', null)
+    .where('code', 'is not', null)
+    .where('value', 'is not', null)
+    .execute();
+  const byReport = new Map<string, Observation[]>();
+  for (const i of indicators) {
+    if (i.code === null || i.value === null) continue;
+    byReport.set(i.report_id, [
+      ...(byReport.get(i.report_id) ?? []),
+      { metric: i.code, value: Number(i.value), unit: i.unit, observedOn: '', source: 'report' },
+    ]);
+  }
+  const ids = new Set<string>();
+  for (const [reportId, observations] of byReport) {
+    if (detectCriticalFlags(rules, observations).length) ids.add(reportId);
+  }
+  return ids;
 }
 
 /** 已核对报告的摘要：当前指标数和高低异常数（按报告上印的参考范围，Q10） */

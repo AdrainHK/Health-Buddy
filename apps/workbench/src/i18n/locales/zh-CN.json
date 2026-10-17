@@ -446,6 +446,7 @@
         "upload": "上传后核对",
         "manual": "手动录入"
       },
+      "critical": "含危急指标",
       "abnormalCount": "{{count}} 项超出参考范围"
     },
     "indicators": {
@@ -551,7 +552,7 @@
       "saveAsNew": "这一天已有报告，作为新报告保存",
       "confirm": "确认核对",
       "confirmAll": "确认所有数据",
-      "confirmAllNote": "“确认所有数据”会把所有行（包括需特别注意的行和危急指标）一并记为由你核对并确认。",
+      "confirmAllNote": "“确认所有数据”一次确认全部行（包括需特别注意的行）；如有危急指标，确认后会在这里列出。",
       "blockedRows": "需要先修改或删除的行：{{names}}",
       "identityTitle": "核对客户身份",
       "identityNotice": "请确认报告上的姓名是本客户",

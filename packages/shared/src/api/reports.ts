@@ -239,6 +239,15 @@ export const verifyUploadRequestSchema = z.object({
 });
 export type VerifyUploadRequest = z.input<typeof verifyUploadRequestSchema>;
 
+/**
+ * 确认核对成功的响应：识别记录，加上这次命中的危急指标（没有命中时不带）。
+ * “确认所有数据”不用勾选“已知悉”，确认后界面用它醒目列出危急指标，提示先电话联系客户。
+ */
+export const verifyUploadResponseSchema = reportUploadResponseSchema.extend({
+  critical: z.array(criticalFlagSchema).optional(),
+});
+export type VerifyUploadResponse = z.infer<typeof verifyUploadResponseSchema>;
+
 export const VERIFY_REJECTION_REASONS = [
   /** 别的窗口改过，版本号过期 */
   'stale_version',
@@ -325,6 +334,8 @@ export const reportListItemSchema = z.object({
   source: reportSourceSchema,
   indicatorCount: z.number().int().nonnegative(),
   abnormalCount: z.number().int().nonnegative(),
+  /** 当前指标值命中危急指标阈值（列表里标“含危急指标”） */
+  hasCritical: z.boolean().optional(),
 });
 export type ReportListItem = z.infer<typeof reportListItemSchema>;
 

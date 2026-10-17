@@ -102,7 +102,7 @@ M1 跑通了“任务 → 对话 → 产物 → 审核”，但客户数据只�
   - 校验所有需特别注意的行都已勾选（“确认所有数据”时不校验，见下）；
   - 写入正式的报告和指标表（`health_reports`、`report_indicators`），来源为 `upload`；
   - 用已核对的数值做危急指标识别（沿用 M1 第五节之二），命中时在核对结果里醒目显示，要求勾选“已知悉”后才能确认，确认记录里记下“已知悉”（“确认所有数据”时不要求，见下）。
-- **确认所有数据**（产品负责人 2026-10 验收后决定：“完全一键”）：点一次就把这份识别结果里所有未删除的行记为当前健管师已核对（`checked_by` 为本人，每行记一条 `value_checked`，已勾过的行不重复记），并完成确认核对。需特别注意的行不再逐行勾选，命中危急指标也不再单独勾选“已知悉”、不再弹出额外提示；一键确认本身视为已知悉，`critical_acknowledged` 照常记为 true。危急指标照常写入正式指标表，照常进入健管师的客户上下文（解读草稿和审核栏的危急指标提示），不推送给客户。以下情况仍然拒绝，并且一行都不改：没有确认姓名、数值缺失（目录指标读不出数字或单位不认识）、同一指标两行、没有任何指标、同一天已有报告但没选“作为新报告保存”、版本号过期。拒绝时界面列出原因，并点名需要修改或删除的行（这些行醒目标出）。仍然只有服务该客户的健管师能操作，接口和权限与“确认核对”相同（同一个 `verify` 接口带 `confirmAll: true`）。
+- **确认所有数据**（产品负责人 2026-10 验收后决定：“完全一键”）：点一次就把这份识别结果里所有未删除的行记为当前健管师已核对（`checked_by` 为本人，每行记一条 `value_checked`，已勾过的行不重复记），并完成确认核对。需特别注意的行不再逐行勾选，命中危急指标也不再单独勾选“已知悉”、不再弹出额外提示；一键确认本身视为已知悉，`critical_acknowledged` 照常记为 true，审计记录里一键记下的 `value_checked` 和 `verified` 带 `via = 'confirm_all'`，能和逐行勾选区分。危急指标不会被跳过：确认接口的响应带上命中的危急指标，**确认后核对页醒目列出这些危急指标，并显示“本报告有危急指标，请先电话联系客户。”**（不阻挡操作、不需要再勾选）；危急指标照常写入正式指标表，**照常进入健管师的客户上下文，`/体检解读` 草稿的专业版和审核栏照常显示危急指标**；档案的报告列表和 `/体检解读` 的报告选择里，当前指标命中危急阈值的报告标“含危急指标”。危急指标只给健管师，不推送给客户。以下情况仍然拒绝，并且一行都不改：没有确认姓名、数值缺失（目录指标读不出数字或单位不认识）、同一指标两行、没有任何指标、同一天已有报告但没选“作为新报告保存”、版本号过期。拒绝时界面列出原因，并点名需要修改或删除的行（这些行醒目标出）。仍然只有服务该客户的健管师能操作，接口和权限与“确认核对”相同（同一个 `verify` 接口带 `confirmAll: true`）。
 - 确认后识别记录变为只读。发现错误时，在档案的报告详情里“更正”（生成一条更正记录，旧值保留可追溯），不能直接改已确认的识别记录。更正后，基于旧数值生成、还没审核的解读草稿顶部提示“报告数值已更正，建议重新生成”。
 
 ### 2.5 `/体检解读`：专业版和通俗版
@@ -198,7 +198,7 @@ M1 跑通了“任务 → 对话 → 产物 → 审核”，但客户数据只�
 | 文件 | 契约 |
 |---|---|
 | `api/client-record.ts` | `clientRecordResponseSchema`（基本信息、当前分层、健康史、报告摘要列表、产物摘要）、`createClientRequestSchema`、`updateClientRequestSchema`（Q13）、`healthHistoryItemSchema`、`createHealthHistoryItemRequestSchema`、`updateHealthHistoryItemRequestSchema` |
-| `api/reports.ts` | `reportUploadSchema`、`reportUploadStatusSchema`、`extractionFailureCategorySchema`、`extractedValueSchema`、`extractedValueFlagSchema`、`updateExtractedValueRequestSchema`、`addExtractedValueRequestSchema`、`verifyUploadRequestSchema`（version、checkedValueIds、reportDate、acknowledgedCritical）、`verifyRejectionSchema`、`reportSchema`、`reportIndicatorSchema`、`reportListResponseSchema`、`correctIndicatorRequestSchema`、`indicatorTrendResponseSchema` |
+| `api/reports.ts` | `reportUploadSchema`、`reportUploadStatusSchema`、`extractionFailureCategorySchema`、`extractedValueSchema`、`extractedValueFlagSchema`、`updateExtractedValueRequestSchema`、`addExtractedValueRequestSchema`、`verifyUploadRequestSchema`（version、checkedValueIds、reportDate、acknowledgedCritical、saveAsNew、identityConfirmed、confirmAll）、`verifyUploadResponseSchema`（upload，加命中时的 critical 危急指标列表）、`verifyRejectionSchema`（含 identity_unconfirmed）、`reportSchema`、`reportIndicatorSchema`、`reportListResponseSchema`（每项带 hasCritical）、`correctIndicatorRequestSchema`、`indicatorTrendResponseSchema` |
 | `api/risk-tiers.ts` | `riskTierSchema`（high / medium / low）、`riskTierRecordSchema`、`setRiskTierRequestSchema`（tier、reason） |
 | `api/artifacts.ts`（扩展） | `approveArtifactRequestSchema` 增加 `adoptRiskTier?: boolean`；`artifactSchema` 增加 `sourceReportId` |
 | `api/tasks.ts`（扩展） | 发消息请求增加 `reportRefs: uuid[]`（最多 1 个） |
@@ -317,7 +317,7 @@ M1 跑通了“任务 → 对话 → 产物 → 审核”，但客户数据只�
 4. 未核对的识别结果不出现在档案、趋势、`@` 列表和解读输入里；直接调用接口用未核对报告做解读返回 404。
 5. 核对时：没有勾选“报告上的姓名是本客户”不能确认（两个按钮都不能点，后端也拒绝）；需特别注意的行未逐行勾选不能“确认核对”（后端也拒绝），“确认所有数据”一键记为全部已核对并确认，数值缺失等仍被拒绝；版本号过期被拒绝；已核对的识别记录不能再改；更正已核对指标时旧值保留，可在更正历史中看到。
 6. mg/dL 的血糖经后端换算成 mmol/L，原值和原单位保留；超出合理范围的数值被标出。
-7. 已核对数值命中危急指标阈值时，“确认核对”前必须勾选“已知悉”（“确认所有数据”不需要，危急指标照常流转）；解读草稿的专业版和审核栏显示危急指标，通俗版、复制文本和导出文件里没有危急指标数值。
+7. 已核对数值命中危急指标阈值时，“确认核对”前必须勾选“已知悉”（“确认所有数据”不需要；一键确认后核对页列出命中的危急指标并提示“本报告有危急指标，请先电话联系客户。”，报告列表标“含危急指标”，危急指标照常进入客户上下文，解读草稿的专业版和审核栏照常显示）；解读草稿的专业版和审核栏显示危急指标，通俗版、复制文本和导出文件里没有危急指标数值。
 8. 上传不支持的类型（如把 .exe 改名为 .pdf）、超过大小或页数上限时被拒绝，不保存文件。
 9. 非报告图片识别为“不是体检报告”，不产生任何数值。
 

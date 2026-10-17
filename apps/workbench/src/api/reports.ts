@@ -8,6 +8,8 @@ import {
   reportUploadResponseSchema,
   reportUploadStreamEventSchema,
   verifyRejectionSchema,
+  verifyUploadResponseSchema,
+  type CriticalFlag,
   type AddExtractedValueRequest,
   type DuplicateUpload,
   type CorrectIndicatorRequest,
@@ -168,7 +170,11 @@ export class VerifyRejectedError extends Error {
   }
 }
 
-export async function verifyUpload(id: string, body: VerifyUploadRequest): Promise<ReportUpload> {
+/** 确认核对；成功时带上命中的危急指标（没有命中为空数组） */
+export async function verifyUpload(
+  id: string,
+  body: VerifyUploadRequest,
+): Promise<{ upload: ReportUpload; critical: CriticalFlag[] }> {
   const res = await apiFetch(`/report-uploads/${id}/verify`, { method: 'POST', body });
   const json: unknown = await res.json().catch(() => null);
   if (res.status === 409) {
@@ -176,7 +182,8 @@ export async function verifyUpload(id: string, body: VerifyUploadRequest): Promi
     if (rejection.success) throw new VerifyRejectedError(rejection.data);
   }
   if (!res.ok) throw await toApiError(res, json);
-  return reportUploadResponseSchema.parse(json).upload;
+  const parsed = verifyUploadResponseSchema.parse(json);
+  return { upload: parsed.upload, critical: parsed.critical ?? [] };
 }
 
 /** 原件某一页的地址（后端转发，不缓存） */

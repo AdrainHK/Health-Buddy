@@ -319,7 +319,19 @@ describe('核对界面', () => {
           criticalAcknowledged: true,
           values: current.values.map((v) => ({ ...v, checked: true })),
         };
-        return json(200, { upload: current });
+        return json(200, {
+          upload: current,
+          critical: [
+            {
+              metric: 'fpg',
+              value: 2.5,
+              unit: 'mmol/L',
+              observedOn: '2026-09-01',
+              source: 'report',
+              rule: { comparator: 'lt', value: 3, level: 'urgent' },
+            },
+          ],
+        });
       },
     });
     const onChanged = vi.fn();
@@ -349,6 +361,10 @@ describe('核对界面', () => {
       confirmAll: true,
     });
     expect(await screen.findByText('已核对，已写入档案')).toBeVisible();
+    // 确认后醒目列出危急指标并提示先电话联系客户；不需要勾选“已知悉”
+    const notice = screen.getByRole('group', { name: '危急指标' });
+    expect(within(notice).getByText('空腹血糖 2.5 mmol/L')).toBeVisible();
+    expect(within(notice).getByText('本报告有危急指标，请先电话联系客户。')).toBeVisible();
     expect(
       screen.queryByRole('checkbox', { name: '已知悉以上危急指标，会及时联系客户' }),
     ).toBeNull();

@@ -78,6 +78,8 @@ export function ReviewView({ uploadId, onChanged, onBack }: ReviewViewProps) {
   const [saveAsNew, setSaveAsNew] = useState(false);
   const [ackCritical, setAckCritical] = useState(false);
   const [identityConfirmed, setIdentityConfirmed] = useState(false);
+  /** 刚确认的这份报告命中的危急指标：确认后醒目列出，提示先电话联系客户（不阻挡操作） */
+  const [verifiedCritical, setVerifiedCritical] = useState<CriticalFlag[]>([]);
   const [rejection, setRejection] = useState<VerifyRejection | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -202,7 +204,8 @@ export function ReviewView({ uploadId, onChanged, onBack }: ReviewViewProps) {
           identityConfirmed,
           confirmAll,
         });
-        setUpload(next);
+        setUpload(next.upload);
+        setVerifiedCritical(next.critical);
         setRejection(null);
         onChanged?.();
       } catch (err) {
@@ -452,6 +455,7 @@ export function ReviewView({ uploadId, onChanged, onBack }: ReviewViewProps) {
           <p className={styles.note}>{t('reports.review.note')}</p>
         </section>
       )}
+      {!editable && verifiedCritical.length > 0 && <CriticalList flags={verifiedCritical} />}
       {!editable && error && (
         <p className={styles.error} role="alert">
           {error}
@@ -674,14 +678,18 @@ function RowForm({
   );
 }
 
+/**
+ * 危急指标列表。核对前带“已知悉”勾选；确认后（没有 onAcknowledge）只列出，
+ * 并提示先电话联系客户（“确认所有数据”不勾选“已知悉”，确认后在这里醒目显示）。
+ */
 function CriticalList({
   flags,
-  acknowledged,
+  acknowledged = false,
   onAcknowledge,
 }: {
   flags: CriticalFlag[];
-  acknowledged: boolean;
-  onAcknowledge: (v: boolean) => void;
+  acknowledged?: boolean;
+  onAcknowledge?: (v: boolean) => void;
 }) {
   const { t } = useTranslation();
   const dt = useDynamicT();
@@ -706,14 +714,20 @@ function CriticalList({
           </li>
         ))}
       </ul>
-      <label className={styles.check}>
-        <input
-          type="checkbox"
-          checked={acknowledged}
-          onChange={(e) => onAcknowledge(e.target.checked)}
-        />
-        {t('results.artifacts.critical.acknowledge')}
-      </label>
+      {onAcknowledge ? (
+        <label className={styles.check}>
+          <input
+            type="checkbox"
+            checked={acknowledged}
+            onChange={(e) => onAcknowledge(e.target.checked)}
+          />
+          {t('results.artifacts.critical.acknowledge')}
+        </label>
+      ) : (
+        <p className={styles.criticalTitle} role="status">
+          {t('results.artifacts.critical.callFirst')}
+        </p>
+      )}
     </div>
   );
 }

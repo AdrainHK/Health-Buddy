@@ -375,6 +375,8 @@ export interface ReportEventsTable extends ClientScoped {
   indicator_id: Nullable<string>;
   file_id: Nullable<string>;
   created_at: Timestamp;
+  /** 'confirm_all'：由“确认所有数据”一键记下 */
+  via: Nullable<'confirm_all'>;
 }
 
 export interface ReportExtractionQuotaTable {
