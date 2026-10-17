@@ -60,6 +60,10 @@ function draftOf(v?: ExtractedValue): RowDraft {
  * 核对界面（规格 2.4）：上面是原件（逐页），下面是识别结果。
  * 需特别注意的行必须逐行勾选“已核对”（Q18）；同一日期已有报告时选择是否作为新报告保存（Q17）；
  * 命中危急指标时勾选“已知悉”。所有校验后端也做，前端只是提前提示。
+ *
+ * 产品负责人的两项决定（验收反馈）：
+ * - 原件上方固定提醒“请确认报告上的姓名是本客户”，勾选后才能确认（人工看，系统不读取姓名）；
+ * - “确认所有数据”一键把所有行记为已核对并确认，需特别注意的行和危急指标不再单独勾选。
  */
 export function ReviewView({ uploadId, onChanged, onBack }: ReviewViewProps) {
   const { t } = useTranslation();
@@ -73,6 +77,9 @@ export function ReviewView({ uploadId, onChanged, onBack }: ReviewViewProps) {
   const [reportDate, setReportDate] = useState('');
   const [saveAsNew, setSaveAsNew] = useState(false);
   const [ackCritical, setAckCritical] = useState(false);
+  const [identityConfirmed, setIdentityConfirmed] = useState(false);
+  /** 刚确认的这份报告命中的危急指标：确认后醒目列出，提示先电话联系客户（不阻挡操作） */
+  const [verifiedCritical, setVerifiedCritical] = useState<CriticalFlag[]>([]);
   const [rejection, setRejection] = useState<VerifyRejection | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -185,7 +192,7 @@ export function ReviewView({ uploadId, onChanged, onBack }: ReviewViewProps) {
       setAdding(false);
     });
 
-  const verify = () =>
+  const verify = (confirmAll: boolean) =>
     run(async () => {
       try {
         const next = await verifyUpload(upload.id, {
@@ -194,8 +201,11 @@ export function ReviewView({ uploadId, onChanged, onBack }: ReviewViewProps) {
           reportDate,
           acknowledgedCritical: ackCritical,
           saveAsNew,
+          identityConfirmed,
+          confirmAll,
         });
-        setUpload(next);
+        setUpload(next.upload);
+        setVerifiedCritical(next.critical);
         setRejection(null);
         onChanged?.();
       } catch (err) {
@@ -215,8 +225,10 @@ export function ReviewView({ uploadId, onChanged, onBack }: ReviewViewProps) {
 
   const critical = rejection?.critical ?? [];
   const needsSameDate = upload.sameDateReportIds.length > 0;
-  const canConfirm =
-    editable && !busy && pendingAttention.length === 0 && rows.length > 0 && !!reportDate;
+  const canConfirmAll = editable && !busy && identityConfirmed && rows.length > 0 && !!reportDate;
+  const canConfirm = canConfirmAll && pendingAttention.length === 0;
+  // 被拒绝时点名需要处理的行（数值缺失、重复指标等）
+  const blockedNames = rows.filter((v) => highlighted.has(v.id)).map((v) => v.rawName);
 
   return (
     <div className={styles.review}>
@@ -230,6 +242,27 @@ export function ReviewView({ uploadId, onChanged, onBack }: ReviewViewProps) {
           {statusText(t, upload)}
         </p>
       </div>
+
+      {editable && (
+        <div
+          className={styles.identity}
+          role="group"
+          aria-label={t('reports.review.identityTitle')}
+        >
+          <p className={styles.identityNotice}>{t('reports.review.identityNotice')}</p>
+          <label className={styles.check}>
+            <input
+              type="checkbox"
+              checked={identityConfirmed}
+              onChange={(e) => {
+                setIdentityConfirmed(e.target.checked);
+                setRejection(null);
+              }}
+            />
+            {t('reports.review.identityConfirm')}
+          </label>
+        </div>
+      )}
 
       {file && (
         <section className={styles.preview} aria-label={t('reports.review.originalFile')}>
@@ -385,16 +418,23 @@ export function ReviewView({ uploadId, onChanged, onBack }: ReviewViewProps) {
               {rejection.reasons.map((r) => (
                 <li key={r}>{t(`reports.verify.${r}`)}</li>
               ))}
+              {blockedNames.length > 0 && (
+                <li>{t('reports.review.blockedRows', { names: blockedNames.join('、') })}</li>
+              )}
             </ul>
           )}
+          {!identityConfirmed && <p className={styles.note}>{t('reports.review.identityHint')}</p>}
           {error && (
             <p className={styles.error} role="alert">
               {error}
             </p>
           )}
           <div className={styles.actions}>
-            <Button variant="primary" onClick={() => void verify()} disabled={!canConfirm}>
+            <Button variant="primary" onClick={() => void verify(false)} disabled={!canConfirm}>
               {t('reports.review.confirm')}
+            </Button>
+            <Button variant="secondary" onClick={() => void verify(true)} disabled={!canConfirmAll}>
+              {t('reports.review.confirmAll')}
             </Button>
             {confirmDiscard ? (
               <>
@@ -411,9 +451,11 @@ export function ReviewView({ uploadId, onChanged, onBack }: ReviewViewProps) {
               </Button>
             )}
           </div>
+          <p className={styles.note}>{t('reports.review.confirmAllNote')}</p>
           <p className={styles.note}>{t('reports.review.note')}</p>
         </section>
       )}
+      {!editable && verifiedCritical.length > 0 && <CriticalList flags={verifiedCritical} />}
       {!editable && error && (
         <p className={styles.error} role="alert">
           {error}
@@ -636,14 +678,18 @@ function RowForm({
   );
 }
 
+/**
+ * 危急指标列表。核对前带“已知悉”勾选；确认后（没有 onAcknowledge）只列出，
+ * 并提示先电话联系客户（“确认所有数据”不勾选“已知悉”，确认后在这里醒目显示）。
+ */
 function CriticalList({
   flags,
-  acknowledged,
+  acknowledged = false,
   onAcknowledge,
 }: {
   flags: CriticalFlag[];
-  acknowledged: boolean;
-  onAcknowledge: (v: boolean) => void;
+  acknowledged?: boolean;
+  onAcknowledge?: (v: boolean) => void;
 }) {
   const { t } = useTranslation();
   const dt = useDynamicT();
@@ -668,14 +714,20 @@ function CriticalList({
           </li>
         ))}
       </ul>
-      <label className={styles.check}>
-        <input
-          type="checkbox"
-          checked={acknowledged}
-          onChange={(e) => onAcknowledge(e.target.checked)}
-        />
-        {t('results.artifacts.critical.acknowledge')}
-      </label>
+      {onAcknowledge ? (
+        <label className={styles.check}>
+          <input
+            type="checkbox"
+            checked={acknowledged}
+            onChange={(e) => onAcknowledge(e.target.checked)}
+          />
+          {t('results.artifacts.critical.acknowledge')}
+        </label>
+      ) : (
+        <p className={styles.criticalTitle} role="status">
+          {t('results.artifacts.critical.callFirst')}
+        </p>
+      )}
     </div>
   );
 }

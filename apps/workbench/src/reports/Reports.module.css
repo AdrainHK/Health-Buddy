@@ -429,3 +429,29 @@
   padding: 0;
   list-style: none;
 }
+
+/* 固定提醒：报告上的姓名是本客户（人工看，系统不读取姓名） */
+.identity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-2);
+  padding: var(--hb-space-3);
+  border: 1px solid var(--hb-warning);
+  border-radius: var(--hb-radius-md);
+  background: color-mix(in oklab, var(--hb-warning) 8%, var(--hb-surface));
+}
+
+.identityNotice {
+  margin: 0;
+  font-weight: 600;
+}
+
+/* 已核对报告列表里的“含危急指标”标记 */
+.criticalMark {
+  padding: 0 var(--hb-space-2);
+  border-radius: var(--hb-radius-sm);
+  background: color-mix(in oklab, var(--hb-danger) 12%, var(--hb-surface));
+  color: var(--hb-danger);
+  font-size: var(--hb-text-xs);
+  white-space: nowrap;
+}

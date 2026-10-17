@@ -287,6 +287,9 @@ export interface ReportUploadsTable extends ClientScoped {
   verified_by: Nullable<string>;
   verified_at: Nullable<Date>;
   critical_acknowledged: Generated<boolean>;
+  /** 健管师确认报告上的姓名是本客户（姓名本身不读取、不保存） */
+  identity_confirmed_by: Nullable<string>;
+  identity_confirmed_at: Nullable<Date>;
 }
 
 export interface ReportFilesTable extends ClientScoped {
@@ -372,6 +375,8 @@ export interface ReportEventsTable extends ClientScoped {
   indicator_id: Nullable<string>;
   file_id: Nullable<string>;
   created_at: Timestamp;
+  /** 'confirm_all'：由“确认所有数据”一键记下 */
+  via: Nullable<'confirm_all'>;
 }
 
 export interface ReportExtractionQuotaTable {

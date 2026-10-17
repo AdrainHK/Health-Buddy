@@ -689,8 +689,12 @@ export class ReportsRepository {
   }
 
   /**
-   * 确认核对（规格 2.4）：同一个事务里校验版本号、逐行勾选、同日报告和危急指标，
+   * 确认核对（规格 2.4）：同一个事务里校验版本号、身份确认、逐行勾选、同日报告和危急指标，
    * 写入正式的报告和指标表（来源 upload），识别记录变为只读。
+   *
+   * confirmAll（“确认所有数据”，产品负责人决定完全一键）：不再要求逐行勾选和危急指标“已知悉”，
+   * 校验通过后把所有未删除、未勾选的行记为当前健管师已核对（每行一条 value_checked）。
+   * 数值缺失、重复指标、没有指标、同日报告未选择、未确认身份仍然拒绝，并且一行都不改。
    */
   verify(
     ctx: TenantContext,
@@ -715,10 +719,12 @@ export class ReportsRepository {
 
       const reasons = new Set<VerifyRejection['reasons'][number]>();
       const valueIds = new Set<string>();
+      // 报告上的姓名由健管师人工确认；系统不读取姓名
+      if (!input.identityConfirmed) reasons.add('identity_unconfirmed');
       if (!rows.length) reasons.add('no_values');
       const checked = new Set(input.checkedValueIds);
       for (const r of rows) {
-        if (needsAttention(r.flags) && !checked.has(r.id)) {
+        if (!input.confirmAll && needsAttention(r.flags) && !checked.has(r.id)) {
           reasons.add('unchecked_attention');
           valueIds.add(r.id);
         }
@@ -769,7 +775,10 @@ export class ReportsRepository {
         })),
         observations,
       );
-      if (critical.length && !input.acknowledgedCritical) reasons.add('critical_unacknowledged');
+      // 确认所有数据时不再单独“已知悉”；危急指标照常进入随访和提醒（来自正式指标表）
+      if (critical.length && !input.acknowledgedCritical && !input.confirmAll) {
+        reasons.add('critical_unacknowledged');
+      }
 
       if (reasons.size) {
         throw verifyRejected({
@@ -778,6 +787,33 @@ export class ReportsRepository {
           ...(critical.length ? { critical } : {}),
           ...(sameDate.length ? { sameDateReportIds: sameDate.map((r) => r.id) } : {}),
         });
+      }
+
+      if (input.confirmAll) {
+        const marked = await trx
+          .updateTable('extracted_values')
+          .set((eb) => ({
+            checked_by: ctx.userId,
+            review_status: eb
+              .case()
+              .when('review_status', '=', 'pending')
+              .then('checked' as const)
+              .else(eb.ref('review_status'))
+              .end(),
+          }))
+          .where('upload_id', '=', uploadId)
+          .where('review_status', '<>', 'deleted')
+          .where('checked_by', 'is', null)
+          .returning('id')
+          .execute();
+        for (const m of marked) {
+          await addEvent(trx, ctx, upload.client_id, {
+            upload_id: uploadId,
+            action: 'value_checked',
+            extracted_value_id: m.id,
+            via: 'confirm_all',
+          });
+        }
       }
 
       const report = await trx
@@ -822,7 +858,9 @@ export class ReportsRepository {
           report_id: report.id,
           verified_by: ctx.userId,
           report_date: input.reportDate,
+          // 逐行确认时是勾选了“已知悉”；确认所有数据时一键确认即视为知悉（产品负责人决定）
           critical_acknowledged: critical.length > 0,
+          identity_confirmed_by: ctx.userId,
           version: upload.version + 1,
         })
         .where('id', '=', uploadId)
@@ -831,6 +869,8 @@ export class ReportsRepository {
         upload_id: uploadId,
         report_id: report.id,
         action: 'verified',
+        // 一键确认时危急指标的“知悉”也是这样记下的
+        ...(input.confirmAll ? { via: 'confirm_all' as const } : {}),
       });
       const detail = await loadUpload(trx, uploadId);
       if (!detail) throw notFound();
@@ -875,6 +915,10 @@ export class ReportsRepository {
     return withTenant(this.db, ctx, async (trx) => {
       if (!(await clientVisible(trx, clientId))) return undefined;
       const rows = await selectReportList(trx, clientId).limit(REPORT_LIST_LIMIT).execute();
+      const critical = await criticalReportIds(
+        trx,
+        rows.map((r) => r.id),
+      );
       return rows.map((r) => ({
         id: r.id,
         reportDate: r.report_date,
@@ -882,6 +926,7 @@ export class ReportsRepository {
         source: r.source,
         indicatorCount: Number(r.indicator_count),
         abnormalCount: Number(r.abnormal_count),
+        hasCritical: critical.has(r.id),
       }));
     });
   }
@@ -1052,6 +1097,7 @@ async function addEvent(
     extracted_value_id?: string;
     indicator_id?: string;
     file_id?: string;
+    via?: 'confirm_all';
   },
 ): Promise<void> {
   await trx
@@ -1253,6 +1299,50 @@ async function loadUpload(
     values: values.map(toExtractedValue),
     sameDateReportIds: sameDate.map((r) => r.id),
   };
+}
+
+/**
+ * 哪些已核对报告的当前指标值命中危急指标阈值（M1 第五节之二，平台阈值）。
+ * 只用于列表里的“含危急指标”标记；更正后的值按当前值算。
+ */
+export async function criticalReportIds(
+  trx: TenantTransaction,
+  reportIds: readonly string[],
+): Promise<Set<string>> {
+  if (!reportIds.length) return new Set();
+  const rules = (
+    await trx
+      .selectFrom('critical_thresholds')
+      .select(['metric', 'comparator', 'value', 'level', 'enabled'])
+      .execute()
+  ).map((r) => ({
+    metric: r.metric as IndicatorCode,
+    comparator: r.comparator,
+    value: Number(r.value),
+    level: r.level,
+    enabled: r.enabled,
+  }));
+  const indicators = await trx
+    .selectFrom('report_indicators')
+    .select(['report_id', 'code', 'value', 'unit'])
+    .where('report_id', 'in', [...reportIds])
+    .where('superseded_by', 'is', null)
+    .where('code', 'is not', null)
+    .where('value', 'is not', null)
+    .execute();
+  const byReport = new Map<string, Observation[]>();
+  for (const i of indicators) {
+    if (i.code === null || i.value === null) continue;
+    byReport.set(i.report_id, [
+      ...(byReport.get(i.report_id) ?? []),
+      { metric: i.code, value: Number(i.value), unit: i.unit, observedOn: '', source: 'report' },
+    ]);
+  }
+  const ids = new Set<string>();
+  for (const [reportId, observations] of byReport) {
+    if (detectCriticalFlags(rules, observations).length) ids.add(reportId);
+  }
+  return ids;
 }
 
 /** 已核对报告的摘要：当前指标数和高低异常数（按报告上印的参考范围，Q10） */

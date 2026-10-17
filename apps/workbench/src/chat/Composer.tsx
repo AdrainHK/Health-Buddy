@@ -63,6 +63,8 @@ export interface ReportOption {
   id: string;
   date: string;
   pending: boolean;
+  /** 已核对报告的当前指标命中危急指标阈值 */
+  critical?: boolean;
 }
 
 export interface ComposerProps {
@@ -161,6 +163,7 @@ export function Composer({
               id: r.id,
               label,
               ...(r.pending ? { description: t('chat.reportPending'), disabled: true } : {}),
+              ...(!r.pending && r.critical ? { description: t('record.reports.critical') } : {}),
               select: r.pending ? () => {} : pick(() => onReportChange?.(r)),
             })),
         ];

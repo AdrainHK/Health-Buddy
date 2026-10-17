@@ -27,6 +27,7 @@ import {
   type ReportUploadResponse,
   type ReportUploadStreamEvent,
   type ReportUploadSummary,
+  type VerifyUploadResponse,
 } from '@health-buddy/shared';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
@@ -303,14 +304,17 @@ export class ReportUploadsController {
     return this.repo.addValue(session, uploadId, parsed.data);
   }
 
-  /** 确认核对，写入正式报告（规格 2.4）。版本号过期、未逐行勾选、未知悉危急指标等返回 409 */
+  /**
+   * 确认核对，写入正式报告（规格 2.4）。未确认姓名、版本号过期、未逐行勾选、未知悉危急指标等返回 409。
+   * confirmAll 为“确认所有数据”：所有行记为本人已核对，不要求逐行勾选和“已知悉”。
+   */
   @Post('report-uploads/:id/verify')
   @HttpCode(200)
   async verify(
     @CurrentSession() session: ResolvedSession,
     @Param('id') id: string,
     @Body() body: unknown,
-  ): Promise<ReportUploadResponse> {
+  ): Promise<VerifyUploadResponse> {
     requireManager(session);
     const uploadId = parseId(id);
     const parsed = verifyUploadRequestSchema.safeParse(body);
@@ -321,9 +325,10 @@ export class ReportUploadsController {
         uploadId,
         values: upload.values.filter((v) => v.reviewStatus !== 'deleted').length,
         criticalFlags: critical.length,
+        confirmAll: parsed.data.confirmAll,
       })}`,
     );
-    return { upload };
+    return critical.length ? { upload, critical } : { upload };
   }
 
   /**

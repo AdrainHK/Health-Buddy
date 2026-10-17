@@ -15,7 +15,7 @@ import { DB } from '../db/db.provider.js';
 import { withTenant, type Db, type TenantContext, type TenantTransaction } from '../db/database.js';
 import type { Database } from '../db/types.js';
 import { selectArtifactSummary, toArtifactSummary } from '../tasks/tasks.repository.js';
-import { selectReportList } from '../reports/reports.repository.js';
+import { criticalReportIds, selectReportList } from '../reports/reports.repository.js';
 import { selectClientSummary, toClientSummary } from './clients.repository.js';
 
 /** 档案里列出的上限，防止一位客户的数据把响应撑得太大 */
@@ -46,6 +46,10 @@ export class ClientRecordRepository {
 
       // 只有已核对的报告（待核对的识别结果不在 health_reports 里，规格 4.3 第 2 条）
       const reports = await selectReportList(trx, clientId).limit(REPORT_LIMIT).execute();
+      const criticalReports = await criticalReportIds(
+        trx,
+        reports.map((r) => r.id),
+      );
 
       const indicatorRows = await trx
         .selectFrom('report_indicators as i')
@@ -142,6 +146,7 @@ export class ClientRecordRepository {
           institution: r.institution,
           indicatorCount: Number(r.indicator_count),
           abnormalCount: Number(r.abnormal_count),
+          hasCritical: criticalReports.has(r.id),
         })),
         indicators: [...indicators.values()],
         monitoring: [...monitoring.values()].sort((a, b) => a.metric.localeCompare(b.metric)),

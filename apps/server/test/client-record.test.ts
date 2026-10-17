@@ -181,6 +181,7 @@ describe('客户档案接口', () => {
           institution: null,
           indicatorCount: 1,
           abnormalCount: 0,
+          hasCritical: false,
         },
       ]);
       expect(record.indicators).toEqual([

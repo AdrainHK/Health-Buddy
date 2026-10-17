@@ -7,6 +7,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InlineExtractionQueue } from '../src/reports/extraction-queue.js';
 import { ReportsRepository } from '../src/reports/reports.repository.js';
+import { WorkbenchRepository } from '../src/workbench/workbench.repository.js';
 import { InMemoryObjectStorage } from '../src/reports/storage.js';
 import { ownerDb, seedFixtures, type Account, type Fixtures } from './fixtures.js';
 import { createTestApp, loginAs } from './http.js';
@@ -121,6 +122,7 @@ describe('报告上传、识别和核对接口', () => {
       version: u.version,
       checkedValueIds: u.values.filter((v) => v.attention).map((v) => v.id),
       reportDate: '2026-05-01',
+      identityConfirmed: true,
       ...body,
     });
 
@@ -621,8 +623,185 @@ describe('报告上传、识别和核对接口', () => {
       ]);
       const ok = await verify(agent, u, { acknowledgedCritical: true }).expect(200);
       expect(ok.body.upload.criticalAcknowledged).toBe(true);
+      expect(ok.body.critical).toEqual([expect.objectContaining({ metric: 'fpg', value: 2.5 })]);
+      // 逐行确认：记录里没有 confirm_all
+      const events = await owner
+        .selectFrom('report_events')
+        .select('via')
+        .where('upload_id', '=', u.id)
+        .execute();
+      expect(events.every((e) => e.via === null)).toBe(true);
       const report = (await agent.get(`/api/reports/${ok.body.upload.reportId}`)).body.report;
       expect(report.indicators[0]).toMatchObject({ value: 2.5, abnormal: 'low' });
+    });
+
+    it('验收反馈 4：没有确认“报告上的姓名是本客户”时拒绝，确认后记下谁、什么时候', async () => {
+      const agent = await loginAs(app, f.users.managerA1.email);
+      const u = await extracted(agent, f.clients.a1[0], [
+        { indicator: '总胆固醇', value: '4.1', unit: 'mmol/L', referenceRange: '<5.2' },
+      ]);
+      for (const body of [{ identityConfirmed: false }, { identityConfirmed: undefined }]) {
+        const res = await verify(agent, u, body).expect(409);
+        expect(res.body.reasons).toEqual(['identity_unconfirmed']);
+      }
+      // 一键确认也一样要确认身份
+      const all = await verify(agent, u, { identityConfirmed: false, confirmAll: true }).expect(
+        409,
+      );
+      expect(all.body.reasons).toEqual(['identity_unconfirmed']);
+      const still = (await agent.get(`/api/report-uploads/${u.id}`)).body.upload as ReportUpload;
+      expect(still).toMatchObject({ status: 'needs_review', version: u.version });
+      expect(still.values.every((v) => !v.checked)).toBe(true);
+
+      await verify(agent, u).expect(200);
+      const row = await owner
+        .selectFrom('report_uploads')
+        .select(['identity_confirmed_by', 'identity_confirmed_at', 'verified_at'])
+        .where('id', '=', u.id)
+        .executeTakeFirstOrThrow();
+      expect(row.identity_confirmed_by).toBe(f.users.managerA1.id);
+      expect(row.identity_confirmed_at).toEqual(row.verified_at);
+    });
+
+    it('验收反馈 2：确认所有数据一键勾选全部行并确认，不用逐行勾选和“已知悉”，危急指标照常流转', async () => {
+      const agent = await loginAs(app, f.users.managerA1.email);
+      const u = await extracted(agent, f.clients.a1[0], [
+        // 危急指标
+        { indicator: '空腹血糖', value: '2.5', unit: 'mmol/L', referenceRange: '3.9-6.1' },
+        { indicator: '总胆固醇', value: '4.1', unit: 'mmol/L', referenceRange: '<5.2' },
+        // 需特别注意：超出合理范围、未收录指标
+        { indicator: '体重', value: '650', unit: 'kg' },
+        { indicator: '同型半胱氨酸', value: '12', unit: 'μmol/L', referenceRange: '0-15' },
+      ]);
+      expect(u.values.filter((v) => v.attention)).toHaveLength(2);
+      // 先手动勾选一行：一键确认不重复记录这一行
+      const weight = u.values.find((v) => v.code === 'weight')!;
+      const ticked = await agent
+        .patch(`/api/report-uploads/${u.id}/values/${weight.id}`)
+        .send({ checked: true })
+        .expect(200);
+
+      const ok = await verify(
+        agent,
+        { ...u, version: ticked.body.version as number },
+        { checkedValueIds: [], confirmAll: true },
+      ).expect(200);
+      const done = ok.body.upload as ReportUpload;
+      expect(done).toMatchObject({ status: 'verified', criticalAcknowledged: true });
+      // 不用勾选“已知悉”，但响应带上危急指标，界面确认后醒目列出
+      expect(ok.body.critical).toEqual([
+        expect.objectContaining({ metric: 'fpg', value: 2.5, source: 'report' }),
+      ]);
+      expect(done.values.every((v) => v.checked)).toBe(true);
+      expect(done.values.find((v) => v.code === 'tc')?.reviewStatus).toBe('checked');
+
+      // 每一行都记为当前健管师核对；先勾过的那一行只有一条记录
+      const checked = await owner
+        .selectFrom('extracted_values')
+        .select(['checked_by'])
+        .where('upload_id', '=', u.id)
+        .execute();
+      expect(checked.map((r) => r.checked_by)).toEqual(
+        Array(4).fill(f.users.managerA1.id) as string[],
+      );
+      const events = await owner
+        .selectFrom('report_events')
+        .select(['action', 'actor_id', 'extracted_value_id', 'via'])
+        .where('upload_id', '=', u.id)
+        .where('action', '=', 'value_checked')
+        .execute();
+      expect(events).toHaveLength(4);
+      expect(events.filter((e) => e.extracted_value_id === weight.id)).toEqual([
+        expect.objectContaining({ via: null }),
+      ]);
+      // 审计：一键记下的勾选和确认都标明来自“确认所有数据”（含危急指标的知悉方式）
+      expect(events.filter((e) => e.via === 'confirm_all')).toHaveLength(3);
+      expect(new Set(events.map((e) => e.actor_id))).toEqual(new Set([f.users.managerA1.id]));
+      const verifiedEvent = await owner
+        .selectFrom('report_events')
+        .select(['via', 'actor_id'])
+        .where('upload_id', '=', u.id)
+        .where('action', '=', 'verified')
+        .executeTakeFirstOrThrow();
+      expect(verifiedEvent).toEqual({ via: 'confirm_all', actor_id: f.users.managerA1.id });
+
+      // 报告列表和档案里标出“含危急指标”
+      const list = (await agent.get(`/api/clients/${f.clients.a1[0]}/reports`).expect(200)).body;
+      // 夹具里那份没有危急指标的报告不标
+      expect(
+        (list.reports as { id: string; hasCritical: boolean }[]).map((r) => [r.id, r.hasCritical]),
+      ).toEqual(
+        expect.arrayContaining([
+          [done.reportId, true],
+          [expect.any(String), false],
+        ]),
+      );
+      const record = (await agent.get(`/api/clients/${f.clients.a1[0]}/record`).expect(200)).body
+        .record;
+      // 夹具里那份没有危急指标的报告不标
+      expect(
+        (record.reports as { id: string; hasCritical: boolean }[]).map((r) => [
+          r.id,
+          r.hasCritical,
+        ]),
+      ).toEqual(
+        expect.arrayContaining([
+          [done.reportId, true],
+          [expect.any(String), false],
+        ]),
+      );
+
+      // 危急指标进入正式报告，并照常出现在健管师的客户上下文里（解读草稿和审核栏的危急指标来自这里）
+      const report = (await agent.get(`/api/reports/${done.reportId}`)).body.report;
+      expect(report.indicators).toEqual(
+        expect.arrayContaining([expect.objectContaining({ code: 'fpg', value: 2.5 })]),
+      );
+      const ctx = {
+        userId: f.users.managerA1.id,
+        role: 'manager' as const,
+        operatorId: f.operatorA,
+        orgId: f.orgA,
+      };
+      const context = await app.get(WorkbenchRepository).clientContext(ctx, f.clients.a1[0]);
+      expect(context?.snapshot.criticalFlags).toEqual([
+        expect.objectContaining({ metric: 'fpg', value: 2.5, source: 'report' }),
+      ]);
+    });
+
+    it('确认所有数据：数值缺失、重复指标、同日报告仍然拒绝，并且一行都不改', async () => {
+      const agent = await loginAs(app, f.users.managerA1.email);
+      const u = await extracted(agent, f.clients.a1[0], [
+        { indicator: '空腹血糖', value: '5.5', unit: 'mmol/L' },
+        // 单位不认识：目录指标没有数值
+        { indicator: '总胆固醇', value: '4.1', unit: 'furlong' },
+      ]);
+      const missing = u.values.find((v) => v.code === 'tc')!;
+      expect(missing.value).toBeNull();
+      const res = await verify(agent, u, { checkedValueIds: [], confirmAll: true }).expect(409);
+      expect(res.body.reasons).toEqual(['missing_value']);
+      expect(res.body.valueIds).toEqual([missing.id]);
+      const after = (await agent.get(`/api/report-uploads/${u.id}`)).body.upload as ReportUpload;
+      expect(after).toMatchObject({ status: 'needs_review', version: u.version });
+      expect(after.values.every((v) => !v.checked)).toBe(true);
+      expect(
+        await owner
+          .selectFrom('report_events')
+          .select('id')
+          .where('upload_id', '=', u.id)
+          .where('action', '=', 'value_checked')
+          .execute(),
+      ).toHaveLength(0);
+
+      // 删除那一行后可以一键确认
+      const del = await agent
+        .patch(`/api/report-uploads/${u.id}/values/${missing.id}`)
+        .send({ deleted: true })
+        .expect(200);
+      await verify(
+        agent,
+        { ...u, version: del.body.version as number },
+        { checkedValueIds: [], confirmAll: true },
+      ).expect(200);
     });
 
     it('放弃后识别结果保留但不能再改、不能确认', async () => {
@@ -916,6 +1095,10 @@ describe('报告上传、识别和核对接口', () => {
               .send({ rawName: '收缩压', rawValue: '120', rawUnit: 'mmHg' }),
         ],
         ['verify', () => verify(other, pending)],
+        [
+          'verify confirm-all',
+          () => verify(other, pending, { checkedValueIds: [], confirmAll: true }),
+        ],
         ['file content', () => other.get(`/api/report-files/${fileId}/content`)],
         [
           'correct',
@@ -960,6 +1143,10 @@ describe('报告上传、识别和核对接口', () => {
       ).body.upload;
       expect(pending.version).toBe(ids.pending.version);
       expect(pending.status).toBe('needs_review');
+      // 一键确认被拒绝：没有任何一行被记为已核对
+      expect(pending.values.filter((v: { checked: boolean }) => v.checked)).toEqual(
+        ids.pending.values.filter((v) => v.checked),
+      );
       expect(await countRows('report_uploads')).toBe(2);
     });
 

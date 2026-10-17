@@ -108,6 +108,8 @@ export const reportSummarySchema = z.object({
   institution: z.string().nullable(),
   /** 高于或低于报告参考范围的指标数 */
   abnormalCount: z.number().int().nonnegative(),
+  /** 当前指标值命中危急指标阈值（档案里标“含危急指标”） */
+  hasCritical: z.boolean().optional(),
 });
 export type ReportSummary = z.infer<typeof reportSummarySchema>;
 

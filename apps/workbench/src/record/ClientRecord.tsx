@@ -1,6 +1,5 @@
 import type { ClientRecord as RecordData, ClientSummary, ReportUpload } from '@health-buddy/shared';
 import { Button } from '@health-buddy/ui';
-import { Plus } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getClientRecord } from '../api/clients';
@@ -21,7 +20,6 @@ export interface ClientRecordProps {
   /** 改变时重新加载（比如对话里生成了新产物） */
   refreshKey?: string;
   onClientSaved: (client: ClientSummary) => void;
-  onNewClient: () => void;
   /** 在档案里上传了报告：结果区切到核对标签 */
   onReportUploaded?: (upload: ReportUpload) => void;
 }
@@ -30,12 +28,12 @@ export interface ClientRecordProps {
  * 结果区“档案”标签：统一客户档案（M2 规格 2.2）。
  * 从上到下：基本信息、风险分层、健康史、体检报告、指标趋势、日常监测、产物。
  * 每个数值旁注明来源和日期。
+ * 已选中客户时档案右上角不放“新建客户”（产品负责人验收反馈）；新建入口在客户列表和空状态里。
  */
 export function ClientRecord({
   client,
   refreshKey,
   onClientSaved,
-  onNewClient,
   onReportUploaded,
 }: ClientRecordProps) {
   const { t } = useTranslation();
@@ -73,9 +71,6 @@ export function ClientRecord({
           {basic.displayName}
           {basic.isSynthetic && <span className={styles.tag}>{t('record.synthetic')}</span>}
         </h3>
-        <Button variant="primary" icon={<Plus size={16} />} onClick={onNewClient}>
-          {t('record.newClient')}
-        </Button>
       </div>
 
       {editing ? (

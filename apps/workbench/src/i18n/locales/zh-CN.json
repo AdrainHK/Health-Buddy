@@ -446,6 +446,7 @@
         "upload": "上传后核对",
         "manual": "手动录入"
       },
+      "critical": "含危急指标",
       "abnormalCount": "{{count}} 项超出参考范围"
     },
     "indicators": {
@@ -550,6 +551,13 @@
       "reportDate": "报告日期",
       "saveAsNew": "这一天已有报告，作为新报告保存",
       "confirm": "确认核对",
+      "confirmAll": "确认所有数据",
+      "confirmAllNote": "“确认所有数据”一次确认全部行（包括需特别注意的行）；如有危急指标，确认后会在这里列出。",
+      "blockedRows": "需要先修改或删除的行：{{names}}",
+      "identityTitle": "核对客户身份",
+      "identityNotice": "请确认报告上的姓名是本客户",
+      "identityConfirm": "我已对照原件确认，报告上的姓名是本客户",
+      "identityHint": "请先在原件上方勾选“报告上的姓名是本客户”",
       "discard": "放弃这份识别",
       "confirmDiscard": "确定放弃",
       "cancel": "取消",
@@ -590,7 +598,8 @@
       "same_date_report": "这一天已有报告，请选择“作为新报告保存”",
       "missing_value": "有指标没有数值（看不清或单位未识别），请修改或删除",
       "duplicate_code": "同一个指标出现了两行，请删除多余的一行",
-      "no_values": "没有任何指标，无法确认"
+      "no_values": "没有任何指标，无法确认",
+      "identity_unconfirmed": "请先确认报告上的姓名是本客户"
     },
     "detail": {
       "loading": "正在加载报告…",
