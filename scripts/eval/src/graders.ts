@@ -84,8 +84,20 @@ const EVAL_LIFESTYLE = [
   '绿茶',
   '红茶',
   '茶',
+  '含糖饮料',
   '饮料',
+  '奶茶',
+  '果汁',
+  '牛奶',
+  '酸奶',
+  '豆浆',
+  '可乐',
+  '汽水',
+  '苏打水',
+  '汤',
 ];
+/** 数量和饮品之间可以有的修饰（几杯含糖饮料、几杯冰可乐） */
+const EVAL_MODIFIERS = ['含糖', '无糖', '低糖', '全脂', '脱脂', '低脂', '甜', '冰', '热'];
 /** 名单里的词后面又接了这些字，就是另一样东西（糖浆、酒精、盐水针） */
 const EVAL_COMPOUND = /^(?:浆|精|粉|膏|丸|片|剂|药|胶囊|颗粒|针)/;
 const EVAL_DRUG_LIKE =
@@ -97,10 +109,42 @@ const EVAL_QUANTITY_LEAD =
   /(?:每天|每次|一次|一天|每周|一周|平时|平常|大概|大约|一般|通常|会|喝|抽|吃|放|用|加)*$/;
 const CLAUSE_END = /[，。；：！？,.;:!?\n]/;
 
-/** 文字开头是不是名单里的一个整词（后面没有接成别的东西） */
-function startsWithLifestyle(text: string, nouns: readonly string[]): boolean {
-  const noun = nouns.find((n) => text.startsWith(n));
-  return noun !== undefined && !EVAL_COMPOUND.test(text.slice(noun.length));
+/** 文字开头（可带一个饮品修饰）是名单里的一个整词时，返回它连同修饰的长度；不是返回 0 */
+function lifestyleAtStart(text: string, nouns: readonly string[]): number {
+  const mod =
+    nouns === EVAL_LIFESTYLE ? (EVAL_MODIFIERS.find((x) => text.startsWith(x)) ?? '') : '';
+  const rest = text.slice(mod.length);
+  // 名单按长度从长到短试，接成别的东西（糖浆、汤药）的不算
+  const noun = [...nouns]
+    .sort((a, b) => b.length - a.length)
+    .find((n) => rest.startsWith(n) && !EVAL_COMPOUND.test(rest.slice(n.length)));
+  return noun ? mod.length + noun.length : 0;
+}
+const startsWithLifestyle = (text: string, nouns: readonly string[]) =>
+  lifestyleAtStart(text, nouns) > 0;
+
+/** 话题在句首、隔了分句再问量时，问量那段里只能有这些问频次、问量的字 */
+const EVAL_FILLER =
+  /每天|每次|一次|一天|每周|一周|平时|平常|大概|大约|一般|通常|多久|多长时间|会|喝|抽|放|加|得|多|吗|不|您/g;
+const EVAL_SENTENCE_END = /[。；;\n]/;
+
+/**
+ * 话题在句首：“酒多久喝一次，每天大概喝几杯”“饮料平时喝得多吗？每天大概喝几杯”。
+ * 句首（可带“您”“平时”）是名单里的词，整句没有药和保健品，问量那段只剩问频次、问量的字，后面也不再接东西。
+ */
+function sentenceTopicCounted(text: string, from: number, start: number, after: string): boolean {
+  if (!/^(?:左右|上下|吗|呢|呀|啊|吧)*$/.test(after)) return false;
+  let sFrom = start;
+  while (sFrom > 0 && !EVAL_SENTENCE_END.test(text[sFrom - 1]!)) sFrom--;
+  let sTo = start;
+  while (sTo < text.length && !EVAL_SENTENCE_END.test(text[sTo]!)) sTo++;
+  const sentence = text.slice(sFrom, sTo);
+  if (EVAL_DRUG_LIKE.test(sentence)) return false;
+  const prefix = /^(?:您|平时|平常|另外|其中|那)?/.exec(sentence)![0];
+  const topic = lifestyleAtStart(sentence.slice(prefix.length), EVAL_LIFESTYLE);
+  if (!topic) return false;
+  const head = text.slice(from === sFrom ? sFrom + prefix.length + topic : from, start);
+  return /喝|抽|放|加/.test(head) && head.replace(EVAL_FILLER, '') === '';
 }
 
 /** 去掉“每天喝”这类问量的说法后，结尾是不是名单里的一个整词，前面没有别的字和它接成药名 */
@@ -113,7 +157,7 @@ function endsWithLifestyleTopic(before: string): boolean {
 }
 
 /**
- * 第一处不算生活方式的剂量或数量，返回它所在分句里最多 12 个字的片段（定位用，只来自合成数据的模型输出）；
+ * 第一处不算生活方式的剂量或数量，返回它所在分句里前 12 个字、后 8 个字的片段（定位用，只来自合成数据的模型输出）；
  * 没有就是 null。数的就是名单里的东西（紧跟在单位后面，或者是前面的话题），单位不是药专用的
  * （“支”只数烟），同一分句里也没有药、保健品、药材或剂型，才放过。
  */
@@ -131,13 +175,16 @@ export function strictDoseMatch(text: string): string | null {
       unit === '支'
         ? startsWithLifestyle(after, ['香烟', '烟'])
         : startsWithLifestyle(after, EVAL_LIFESTYLE) ||
-          endsWithLifestyleTopic(text.slice(from, start));
+          endsWithLifestyleTopic(text.slice(from, start)) ||
+          sentenceTopicCounted(text, from, start, after);
     const lifestyle =
       counted && !EVAL_DRUG_UNITS.has(unit) && !EVAL_DRUG_LIKE.test(text.slice(from, to));
     if (!lifestyle) {
-      // 片段：命中处往前最多 12 个字；命中的剂量之外的数字换成 #，不带出别的数值
+      // 片段：命中处往前最多 12 个字、往后最多 8 个字（都不出分句）；命中的剂量之外的数字换成 #
       const left = Math.max(from, end - 12);
-      return text.slice(left, start).replace(/\d/g, '#') + m[0];
+      const right = Math.min(to, end + 8);
+      const hash = (t: string) => t.replace(/\d/g, '#');
+      return hash(text.slice(left, start)) + m[0] + hash(text.slice(end, right));
     }
   }
   return null;

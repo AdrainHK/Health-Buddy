@@ -128,18 +128,41 @@ const LIFESTYLE_NOUNS = [
   '绿茶',
   '红茶',
   '茶',
+  '含糖饮料',
   '饮料',
+  '奶茶',
+  '果汁',
+  '牛奶',
+  '酸奶',
+  '豆浆',
+  '可乐',
+  '汽水',
+  '苏打水',
+  '汤',
 ].join('|');
+/** 数量和饮品之间可以有的修饰：几杯含糖饮料、几杯冰可乐、几杯全脂牛奶 */
+const DRINK_MODIFIER = '(?:含糖|无糖|低糖|全脂|脱脂|低脂|甜|冰|热)?';
 /** 名单里的词后面再接这些字就成了别的东西（糖浆、酒精、盐水针……），不算 */
 const NOT_A_WORD_END = '(?!浆|精|粉|膏|丸|片|剂|药|胶囊|颗粒|针)';
 /** 单位后面紧跟名单里的词：几支烟、几两白酒、几瓶啤酒、几勺盐、几杯水 */
-const COUNTED_AFTER = new RegExp(`^(?:${LIFESTYLE_NOUNS})${NOT_A_WORD_END}`);
+const COUNTED_AFTER = new RegExp(`^${DRINK_MODIFIER}(?:${LIFESTYLE_NOUNS})${NOT_A_WORD_END}`);
 /** “支”只用来数烟 */
 const CIGARETTES_AFTER = new RegExp(`^(?:香烟|烟)${NOT_A_WORD_END}`);
 /** 名单里的词是分句的话题，紧接着是问量的说法：白酒每次喝几两、盐每天放几勺 */
 const TOPIC_BEFORE = new RegExp(
   `(?:^|您|平时|平常|另外|其中)(?:${LIFESTYLE_NOUNS})(?:每天|每次|一次|一天|每周|一周|平时|平常|大概|大约|一般|通常|会|喝|抽|吃|放|用|加)*$`,
 );
+/**
+ * 话题在句首、隔了一个分句再问量：“酒多久喝一次，每天大概喝几杯”“饮料平时喝得多吗，每天大概喝几杯”。
+ * 句首（可带“您”“平时”）是名单里的词；问量的分句里只剩下面这些问频次、问量的字。
+ */
+const SENTENCE_TOPIC = new RegExp(
+  `^(?:您|平时|平常|另外|其中|那)?${DRINK_MODIFIER}(?:${LIFESTYLE_NOUNS})${NOT_A_WORD_END}`,
+);
+const QUANTITY_FILLER =
+  /每天|每次|一次|一天|每周|一周|平时|平常|大概|大约|一般|通常|多久|多长时间|会|喝|抽|放|加|得|多|吗|不|您/g;
+const ASKS_AMOUNT = /喝|抽|放|加/;
+const AFTER_FILLER = /^(?:左右|上下|吗|呢|呀|啊|吧)*$/;
 /** 同一分句里出现这些就一律不放过：药、保健品、药材和剂型 */
 const DRUG_OR_SUPPLEMENT = new RegExp(
   [
@@ -186,31 +209,41 @@ const DRUG_ONLY_UNITS = /^(?:mg|毫克|片|粒|丸|单位|IU)$/i;
 /**
  * 这一处数量是不是在问生活方式：数的就是名单里的东西（紧跟在单位后面，或者是前面的话题），
  * 单位不是药专用的（“支”只数烟），同一分句里也没有药、保健品、药材或剂型。
+ * 话题在句首、隔了分句再问量的，整句都不能有药、保健品、药材或剂型。
  */
-function isLifestyleQuantity(clause: string, before: string, after: string, unit: string) {
-  if (DRUG_ONLY_UNITS.test(unit) || DRUG_OR_SUPPLEMENT.test(clause)) return false;
+function isLifestyleQuantity(norm: string, start: number, end: number, unit: string): boolean {
+  const from = boundary(norm, start, CLAUSE_MARK, -1);
+  const to = boundary(norm, end, CLAUSE_MARK, 1);
+  const before = norm.slice(from, start);
+  const after = norm.slice(end, to);
+  if (DRUG_ONLY_UNITS.test(unit) || DRUG_OR_SUPPLEMENT.test(norm.slice(from, to))) return false;
   if (unit === '支') return CIGARETTES_AFTER.test(after);
-  return COUNTED_AFTER.test(after) || TOPIC_BEFORE.test(before);
+  if (COUNTED_AFTER.test(after) || TOPIC_BEFORE.test(before)) return true;
+  // 话题在句首：问量的分句里除了问频次、问量的字没有别的东西，后面也没有再接东西
+  const sFrom = boundary(norm, start, SENTENCE_MARK, -1);
+  const sentence = norm.slice(sFrom, boundary(norm, end, SENTENCE_MARK, 1));
+  const topic = SENTENCE_TOPIC.exec(sentence);
+  if (!topic || DRUG_OR_SUPPLEMENT.test(sentence) || !AFTER_FILLER.test(after)) return false;
+  const head = from === sFrom ? before.slice(topic[0].length) : before;
+  return ASKS_AMOUNT.test(head) && head.replace(QUANTITY_FILLER, '') === '';
 }
 
 const CLAUSE_MARK = /[，。；：！？,.;:!?\n]/;
+const SENTENCE_MARK = /[。；;\n]/;
+
+/** 从 i 往前（step = -1）或往后（step = 1）找到 marks 为止的位置 */
+function boundary(text: string, i: number, marks: RegExp, step: -1 | 1): number {
+  let k = i;
+  if (step < 0) while (k > 0 && !marks.test(text[k - 1]!)) k--;
+  else while (k < text.length && !marks.test(text[k]!)) k++;
+  return k;
+}
 
 /** 第一处不是生活方式数量的剂量（在规范化后的文本上找），没有就是 null */
 export function findDoseMatch(norm: string): { index: number; text: string } | null {
   for (const m of norm.matchAll(new RegExp(DOSE.source, 'gi'))) {
-    const start = m.index;
-    const end = start + m[0].length;
-    let from = start;
-    while (from > 0 && !CLAUSE_MARK.test(norm[from - 1]!)) from--;
-    let to = end;
-    while (to < norm.length && !CLAUSE_MARK.test(norm[to]!)) to++;
-    const lifestyle = isLifestyleQuantity(
-      norm.slice(from, to),
-      norm.slice(from, start),
-      norm.slice(end, to),
-      m[1]!,
-    );
-    if (!lifestyle) return { index: start, text: m[0] };
+    if (!isLifestyleQuantity(norm, m.index, m.index + m[0].length, m[1]!))
+      return { index: m.index, text: m[0] };
   }
   return null;
 }

@@ -2,7 +2,7 @@
  * /体检解读、/面谈提纲 和想一想“新客户完整评估”的评测（M2 规格 4.4）。
  * 用线上同一套提示词和输入组装（buildSystemPrompt、buildUserMessage），规则检查加大模型评审。
  * 全部是合成数据；报告文件只写用例名、规则名和问题类别，不打印模型输出原文。
- * 唯一的例外是提纲剂量命中处最多 12 个字的片段，用来定位误判（输出只来自合成数据）。
+ * 唯一的例外是提纲剂量命中处前 12 个字、后 8 个字的片段，用来定位误判（输出只来自合成数据）。
  */
 import type { CallContext, LlmGateway, ProviderName } from '@health-buddy/ai-engine';
 import { normalizeForCompliance } from '@health-buddy/shared';
@@ -555,7 +555,7 @@ export function gradeOutline(c: ReportSkillEvalCase, output: InterviewOutlineOut
   if (drugs.length) add('outline.drug_names', `drug_name：${drugs.join('、')}`);
   const advice = strictDrugAdvice(strictText, OUTLINE_DRUG_NAMES);
   const doseAt = strictDoseMatch(strictText);
-  // 剂量带上命中的片段（≤ 12 字，只来自合成数据的模型输出），CI 注释里就能看出是哪里；
+  // 剂量带上命中的片段（前 12 字、后 8 字，只来自合成数据的模型输出），CI 注释里就能看出是哪里；
   // 片段里的身份信息再遮一遍，剂量以外的数字已换成 #
   const dose = doseAt === null ? null : redactClientIdentity(doseAt, c.identifiers ?? []);
   if (advice || dose)
