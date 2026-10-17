@@ -6,6 +6,7 @@ requiresClient: true
 modes: plan,craft
 clientFacing: false
 involvesHealthJudgment: true
+defaultRequest: 请根据档案和报告生成面谈提纲
 ---
 
 # 技能：面谈提纲

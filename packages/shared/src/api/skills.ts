@@ -11,6 +11,11 @@ export const skillSummarySchema = z.object({
   /** 需要客户有已核对的报告（/体检解读、/面谈提纲，M2 规格 2.6） */
   requiresReport: z.boolean().default(false),
   /**
+   * 不需要再写要求：选了技能和客户（要报告的技能还要引用报告）就能直接发送，
+   * 输入框为空时后端用默认的要求文字。
+   */
+  allowsEmptyRequest: z.boolean().default(false),
+  /**
    * 多步计划（Q22）：不为空时这是一份只能在想一想模式下用的计划，
    * 确认后按顺序调用这些技能，每个技能各出一份草稿。
    */

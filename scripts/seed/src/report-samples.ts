@@ -52,9 +52,24 @@ function headerLines(sample: ReportSample): string[] {
 }
 
 const COLUMNS = ['项目', '结果', '单位', '参考范围'];
+/** 检验科常见的带“代号”的表格；“提示”列留空（没有印 ↑↓） */
+const CODED_COLUMNS = ['代号', '项目名称', '结果', '提示', '单位', '参考范围'];
 
-function cells(row: ReportSampleRow): string[] {
+function columnsOf(sample: ReportSample): string[] {
+  return sample.layout === 'coded' ? CODED_COLUMNS : COLUMNS;
+}
+
+/** 一行的各个格子；layout 为 coded 时多出代号和空的提示列 */
+function cells(row: ReportSampleRow, sample?: ReportSample): string[] {
+  if (sample?.layout === 'coded') {
+    return [row.code ?? '', row.name, row.value, '', row.unit ?? '', row.ref ?? ''];
+  }
   return [row.name, row.value, row.unit ?? '', row.ref ?? ''];
+}
+
+/** 结果在第几列（看不清时打码这一格） */
+function valueColumn(sample: ReportSample): number {
+  return sample.layout === 'coded' ? 2 : 1;
 }
 
 /** 渲染成一个多页 PDF（清晰的电子版） */
@@ -78,21 +93,28 @@ export function renderSamplePdf(sample: ReportSample): Promise<Buffer> {
       if (sample.kind === 'not_a_report') {
         pdf.fontSize(12).text(sample.freeText ?? '');
       } else {
-        const widths = [180, 90, 80, 120];
+        // coded：项目名称列较窄，长名称折成两行（和常见的检验单一样）
+        const widths = sample.layout === 'coded' ? [60, 120, 60, 40, 60, 110] : [180, 90, 80, 120];
         const drawRow = (values: string[], bold = false) => {
           const y = pdf.y;
           let x = 48;
+          let height = 0;
           values.forEach((v, i) => {
-            pdf.fontSize(bold ? 11 : 10).text(v, x, y, { width: widths[i] ?? 80 });
-            x += widths[i] ?? 80;
+            const width = widths[i] ?? 80;
+            pdf.fontSize(bold ? 11 : 10).text(v, x, y, { width });
+            height = Math.max(height, pdf.heightOfString(v || ' ', { width }));
+            x += width;
           });
           pdf.x = 48;
+          pdf.y = y + height;
           pdf.moveDown(0.6);
         };
         // 表格跨页时第 2 页没有表头
-        if (index === 0) drawRow(COLUMNS, true);
+        if (index === 0) drawRow(columnsOf(sample), true);
         for (const row of rows) {
-          drawRow(row.blurred ? [row.name, '', row.unit ?? '', row.ref ?? ''] : cells(row));
+          const values = cells(row, sample);
+          if (row.blurred) values[valueColumn(sample)] = '';
+          drawRow(values);
         }
         if (sample.injection && index === 0) {
           pdf.moveDown().fontSize(8).text(sample.injection);
@@ -168,22 +190,31 @@ function drawPage(
     }
     return;
   }
-  const xs = [130, 520, 700, 860];
+  const coded = sample.layout === 'coded';
+  const xs = coded ? [130, 240, 560, 680, 760, 860] : [130, 520, 700, 860];
+  const valueCol = valueColumn(sample);
   ctx.font = `bold 26px ${FAMILY}`;
-  COLUMNS.forEach((c, i) => ctx.fillText(c, xs[i] ?? 130, y));
+  columnsOf(sample).forEach((c, i) => ctx.fillText(c, xs[i] ?? 130, y));
   y += 50;
   ctx.font = `26px ${FAMILY}`;
   for (const row of rows) {
+    let lines = 1;
     // 看不清的格子不画数值，只留一块污渍
-    cells(row).forEach((c, i) => {
-      if (!(row.blurred && i === 1)) ctx.fillText(c, xs[i] ?? 130, y);
+    cells(row, sample).forEach((c, i) => {
+      if (row.blurred && i === valueCol) return;
+      const x = xs[i] ?? 130;
+      const width = (xs[i + 1] ?? 1100) - x - 12;
+      // 名称太长时折成两行
+      const parts = wrapText(ctx, c, width);
+      parts.forEach((part, k) => ctx.fillText(part, x, y + k * 34));
+      lines = Math.max(lines, parts.length);
     });
     if (row.blurred) {
       ctx.fillStyle = 'rgba(90,80,70,0.85)';
-      ctx.fillRect((xs[1] ?? 520) - 10, y - 30, 150, 42);
+      ctx.fillRect((xs[valueCol] ?? 520) - 10, y - 30, 150, 42);
       ctx.fillStyle = '#1d1d1d';
     }
-    y += 48;
+    y += 48 + (lines - 1) * 34;
   }
   if (sample.injection && index === 0) {
     ctx.font = `18px ${FAMILY}`;
@@ -192,6 +223,22 @@ function drawPage(
   }
   ctx.font = `20px ${FAMILY}`;
   ctx.fillText(`第 ${index + 1} 页 / 共 ${sample.pages.length} 页`, 520, 1460);
+}
+
+/** 按宽度把一格文字折成几行（逐字折，中文没有空格） */
+function wrapText(ctx: SKRSContext2D, text: string, width: number): string[] {
+  const lines: string[] = [];
+  let line = '';
+  for (const ch of text) {
+    if (line && ctx.measureText(line + ch).width > width) {
+      lines.push(line);
+      line = ch;
+    } else {
+      line += ch;
+    }
+  }
+  if (line || !lines.length) lines.push(line);
+  return lines;
 }
 
 /** 按用例的渲染方式输出：pdf 是一个文件，photo 是每页一张 PNG */

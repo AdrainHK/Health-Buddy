@@ -73,7 +73,7 @@ export function ClientRecord({
           {basic.displayName}
           {basic.isSynthetic && <span className={styles.tag}>{t('record.synthetic')}</span>}
         </h3>
-        <Button variant="ghost" icon={<Plus size={16} />} onClick={onNewClient}>
+        <Button variant="primary" icon={<Plus size={16} />} onClick={onNewClient}>
           {t('record.newClient')}
         </Button>
       </div>

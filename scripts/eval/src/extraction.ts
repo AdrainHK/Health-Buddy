@@ -83,8 +83,13 @@ export function gradeExtraction(c: ExtractionEvalCase, pages: ReportExtractionOu
   const used = new Set<number>();
   sample.pages.forEach((rows, pageIndex) => {
     for (const row of rows) {
+      // 带“代号”列的表格：名称前面带上代号（“CD14 单核细胞表面抗原CD14”）也算对上
+      const names = new Set([
+        normName(row.name),
+        ...(row.code ? [normName(row.code + row.name)] : []),
+      ]);
       const index = items.findIndex(
-        (item, i) => !used.has(i) && normName(item.indicator) === normName(row.name),
+        (item, i) => !used.has(i) && names.has(normName(item.indicator)),
       );
       const item = index >= 0 ? items[index] : undefined;
       if (index >= 0) used.add(index);

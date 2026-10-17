@@ -76,6 +76,12 @@ export class WorkbenchController {
       // 问一问带技能已被契约拦截；技能还必须支持当前模式
       if (!plan && (!skill || !(skill.modes as string[]).includes(input.mode))) throw badRequest();
     }
+    // 输入框为空：只有不需要再写要求的技能可以，用技能的默认要求（验收反馈 8）
+    if (!input.content) {
+      const fallback = (plan ?? skill)?.defaultRequest ?? null;
+      if (fallback === null) throw badRequest();
+      input.content = fallback;
+    }
     this.acquire(session);
 
     const turn = await this.claim(session, (claim) =>

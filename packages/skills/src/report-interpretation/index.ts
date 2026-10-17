@@ -14,7 +14,7 @@ import {
   appendRequest,
   describeReportClient,
   referenceText,
-  reportIndicatorLabel,
+  reportIndicatorTableLabel,
   reportValueText,
 } from '../report-input.js';
 
@@ -95,11 +95,11 @@ function deterministicSections(input: SkillInput | undefined): {
         ? `；上次 ${last.date} ${last.value}${i.unit ? ` ${i.unit}` : ''}`
         : '；没有可比较的历次数据';
       abnormal.push(
-        `- **${reportIndicatorLabel(i)}**：${reportValueText(i)}，${ABNORMAL_ZH[i.abnormal]}（报告参考范围：${referenceText(i)}）${prev}`,
+        `- **${reportIndicatorTableLabel(i)}**：${reportValueText(i)}，${ABNORMAL_ZH[i.abnormal]}（报告参考范围：${referenceText(i)}）${prev}`,
       );
     } else if (i.abnormal === 'no_reference') {
       noReference.push(
-        `- ${reportIndicatorLabel(i)}：${reportValueText(i)}（${ABNORMAL_ZH.no_reference}）`,
+        `- ${reportIndicatorTableLabel(i)}：${reportValueText(i)}（${ABNORMAL_ZH.no_reference}）`,
       );
     }
   }

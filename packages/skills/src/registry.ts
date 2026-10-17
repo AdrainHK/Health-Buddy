@@ -22,6 +22,7 @@ export const PLAN_TEMPLATES: readonly PlanTemplate[] = [
     skills: [reportInterpretation.id, interviewOutline.id],
     requiresClient: true,
     requiresReport: true,
+    defaultRequest: '请为这位客户做一次新客户完整评估',
   },
 ];
 
@@ -43,6 +44,7 @@ export function skillSummaries(): SkillSummary[] {
       clientFacing: s.clientFacing,
       involvesHealthJudgment: s.involvesHealthJudgment,
       requiresReport: s.requiresReport ?? false,
+      allowsEmptyRequest: s.defaultRequest !== null,
       planSkills: [],
     })),
     ...PLAN_TEMPLATES.map((p) => {
@@ -54,6 +56,7 @@ export function skillSummaries(): SkillSummary[] {
         clientFacing: skills.some((s) => s.clientFacing),
         involvesHealthJudgment: skills.some((s) => s.involvesHealthJudgment),
         requiresReport: p.requiresReport,
+        allowsEmptyRequest: p.defaultRequest !== null,
         planSkills: [...p.skills],
       };
     }),

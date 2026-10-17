@@ -128,6 +128,11 @@ export const extractedValueSchema = z.object({
   sourceSnippet: z.string().nullable(),
   flags: z.array(extractedValueFlagSchema),
   reviewStatus: reviewStatusSchema,
+  /**
+   * 是否已勾选“已核对”。和 reviewStatus 分开：修改过（edited）或补录（added）的行
+   * 也可以勾选，reviewStatus 只记录这一行是怎么来的。
+   */
+  checked: z.boolean(),
   /** 需特别注意，确认前必须逐行勾选 */
   attention: z.boolean(),
   /** 按参考范围算的高低标记，仅供核对时参考 */
@@ -359,3 +364,23 @@ export const UPLOAD_REJECTION_REASONS = [
   'daily_page_limit',
   'retry_limit',
 ] as const;
+
+/**
+ * 重复上传（409 duplicate_file）时附带的已有识别记录：同一位客户、同一个文件指纹、没有放弃的那一份。
+ * 一次上传里放了两个相同文件时为 null。只有 id、状态和报告日期，没有文件名和内容。
+ */
+export const duplicateUploadSchema = z.object({
+  uploadId: z.uuid(),
+  status: reportUploadStatusSchema,
+  /** 已核对时的正式报告 */
+  reportId: z.uuid().nullable(),
+  reportDate: z.iso.date().nullable(),
+});
+export type DuplicateUpload = z.infer<typeof duplicateUploadSchema>;
+
+export const duplicateFileRejectionSchema = z.object({
+  error: z.literal('conflict'),
+  reasons: z.array(z.string()).refine((r) => r.includes('duplicate_file')),
+  existing: duplicateUploadSchema.nullable(),
+});
+export type DuplicateFileRejection = z.infer<typeof duplicateFileRejectionSchema>;

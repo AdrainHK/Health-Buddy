@@ -6,6 +6,7 @@ requiresClient: true
 modes: plan,craft
 clientFacing: true
 involvesHealthJudgment: true
+defaultRequest: 请写一份这位客户的近况小结
 ---
 
 # 技能：客户近况小结

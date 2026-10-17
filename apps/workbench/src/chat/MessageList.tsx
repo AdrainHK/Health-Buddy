@@ -102,7 +102,8 @@ function ManagerMessage({
             )}
           </div>
         )}
-        <p className={styles.text}>{message.content}</p>
+        {/* 不需要再写要求的技能可以空着发送（验收反馈 8），这时只显示技能和客户 */}
+        {message.content && <p className={styles.text}>{message.content}</p>}
       </div>
     </li>
   );

@@ -45,6 +45,7 @@ export {
 } from './report-extraction/index.js';
 export {
   reportExtractionEvalCases,
+  CODED_PANEL,
   type ExtractionEvalCase,
   type ExtractionEvalCategory,
   type ReportSample,

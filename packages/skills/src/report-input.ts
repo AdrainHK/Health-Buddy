@@ -37,6 +37,20 @@ export function reportIndicatorLabel(i: Pick<ReportIndicatorDetail, 'code' | 'ra
   return i.code ? indicatorName(i.code) : `${i.rawName ?? '未命名指标'}（未收录指标）`;
 }
 
+/**
+ * 写进解读专业版的指标名（后端确定性写出的数值表用）。未收录指标只表示不在指标目录里，
+ * 高低仍按报告上印的参考范围算，写明这一点，免得被当成“没有参考范围”（验收反馈 7）。
+ */
+export function reportIndicatorTableLabel(
+  i: Pick<ReportIndicatorDetail, 'code' | 'rawName' | 'abnormal'>,
+): string {
+  if (i.code) return indicatorName(i.code);
+  const name = i.rawName ?? '未命名指标';
+  return i.abnormal === 'no_reference'
+    ? `${name}（未收录指标）`
+    : `${name}（未收录指标，已按报告参考范围标注高低）`;
+}
+
 /** 数值和单位，如“6.5 mmol/L”；文字结果原样写 */
 export function reportValueText(i: Pick<ReportIndicatorDetail, 'value' | 'textValue' | 'unit'>) {
   const v = i.value !== null ? String(i.value) : (i.textValue ?? '没有数值');

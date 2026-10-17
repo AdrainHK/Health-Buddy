@@ -105,8 +105,11 @@ describe('M2 技能登记', () => {
       clientFacing: true,
       involvesHealthJudgment: true,
       requiresReport: true,
+      allowsEmptyRequest: true,
       planSkills: ['report-interpretation', 'interview-outline'],
     });
+    // 验收反馈 8：三个技能都不需要再写要求，后端有默认要求
+    for (const skill of SKILLS) expect(skill.defaultRequest).toBeTruthy();
     expect(skillSummaries().map((s) => s.id)).toEqual([...SKILLS.map((s) => s.id), summary?.id]);
   });
 
@@ -181,6 +184,36 @@ describe('/体检解读 的输入', () => {
     expect(msg).toContain('没有健康史记录。');
   });
 
+  it('验收反馈 7：未收录指标的输入带报告参考范围和后端算好的高低', () => {
+    const snapshot = REPORT_SNAPSHOTS.singleAbnormal;
+    const msg = reportInterpretation.buildUserMessage({
+      client: {
+        ...snapshot,
+        reportDetail: {
+          ...snapshot.reportDetail!,
+          indicators: [
+            {
+              code: null,
+              rawName: '造血干细胞抗原CD34',
+              value: 3.85,
+              textValue: null,
+              unit: '%',
+              refText: '0.1%-1.0%',
+              refLow: 0.1,
+              refHigh: 1,
+              abnormal: 'high',
+              previous: [],
+            },
+          ],
+        },
+      },
+      managerRequest: '解读',
+    });
+    expect(msg).toContain(
+      '造血干细胞抗原CD34（未收录指标）：3.85 %；参考范围（报告原文）：0.1%-1.0%；高于参考范围',
+    );
+  });
+
   it('给了分层标准时原样附上', () => {
     const msg = reportInterpretation.buildUserMessage({
       client: REPORT_SNAPSHOTS.singleAbnormal,
@@ -192,6 +225,52 @@ describe('/体检解读 的输入', () => {
 });
 
 describe('/体检解读 的产物', () => {
+  it('验收反馈 7：未收录指标有参考范围时照样标高低，并写明“已按报告参考范围标注高低”', () => {
+    const snapshot = REPORT_SNAPSHOTS.singleAbnormal;
+    const report = snapshot.reportDetail!;
+    const client = {
+      ...snapshot,
+      reportDetail: {
+        ...report,
+        indicators: [
+          ...report.indicators,
+          {
+            code: null,
+            rawName: '同型半胱氨酸',
+            value: 16,
+            textValue: null,
+            unit: 'μmol/L',
+            refText: '0-15',
+            refLow: 0,
+            refHigh: 15,
+            abnormal: 'high' as const,
+            previous: [],
+          },
+          {
+            code: null,
+            rawName: '尿蛋白',
+            value: null,
+            textValue: '阴性',
+            unit: null,
+            refText: null,
+            refLow: null,
+            refHigh: null,
+            abnormal: 'no_reference' as const,
+            previous: [],
+          },
+        ],
+      },
+    };
+    const artifact = reportInterpretation.render(interpretation(), {
+      client,
+      managerRequest: '解读',
+    });
+    expect(artifact.professional).toContain(
+      '- **同型半胱氨酸（未收录指标，已按报告参考范围标注高低）**：16 μmol/L，高于参考范围（报告参考范围：0-15）',
+    );
+    expect(artifact.professional).toContain('- 尿蛋白（未收录指标）：阴性（报告未提供参考范围）');
+  });
+
   it('异常项表由后端按输入写出：数值、报告参考范围、上次的数值', () => {
     const input = { client: REPORT_SNAPSHOTS.singleAbnormal, managerRequest: '解读' };
     const artifact = reportInterpretation.render(interpretation(), input);

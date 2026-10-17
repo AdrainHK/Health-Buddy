@@ -117,7 +117,15 @@
     "removeReport": "移除报告 {{date}}",
     "uploads": "本任务上传的报告",
     "reportRef": "已引用报告",
-    "interpretRequest": "帮我解读这份体检报告"
+    "interpretRequest": "帮我解读这份体检报告",
+    "reportPicker": "选择要用的报告",
+    "reportPickerHint": "不选时用最近一份已核对的报告",
+    "duplicateVerified": "这份文件已经上传并核对过（报告 · {{date}}），已为你引用这份报告",
+    "duplicatePending": "这份文件已经上传过，还没核对完，请先在核对标签里核对",
+    "duplicateFailed": "这份文件已经上传过，识别没有成功，请在核对标签里重新识别或放弃后再上传",
+    "openReview": "去核对",
+    "autoInterpret": "核对完成后会自动开始体检解读",
+    "interpretKeyword": "解读"
   },
   "steps": {
     "readClient": "读取客户档案",
@@ -499,7 +507,9 @@
       "review": "去核对",
       "view": "查看",
       "retry": "重新识别",
-      "interpret": "生成解读"
+      "interpret": "生成解读",
+      "verifiedDone": "已完成核对",
+      "verifiedNotice": "报告已加入客户档案，您可以继续提问。"
     },
     "tab": {
       "badge": "{{count}} 份待核对",
@@ -550,7 +560,7 @@
       "out_of_bounds": "数值超出合理范围，请重点核对",
       "unit_converted": "已换算单位",
       "unit_unknown": "单位未识别",
-      "unmapped": "未收录指标",
+      "unmapped": "未收录指标（不在指标目录中）",
       "conflict": "与已有数据冲突",
       "duplicate": "可能重复"
     },
@@ -563,6 +573,7 @@
     "form": {
       "name": "报告上的名称",
       "code": "对应指标",
+      "auto": "按名称自动对应",
       "unmapped": "未收录指标（照原样保存）",
       "value": "数值",
       "unit": "单位",

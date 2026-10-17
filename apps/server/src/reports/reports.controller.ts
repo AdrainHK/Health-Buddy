@@ -139,7 +139,7 @@ export class ReportUploadsController {
     const pages = inspected.reduce((n, f) => n + f.inspected.pageCount, 0);
     if (pages > REPORT_UPLOAD_LIMITS.maxPages) throw payloadTooLarge('too_many_pages');
     if (new Set(inspected.map((f) => f.inspected.sha256)).size !== inspected.length) {
-      throw conflict({ reasons: ['duplicate_file'] });
+      throw conflict({ reasons: ['duplicate_file'], existing: null });
     }
 
     const upload = await this.repo.createUpload(

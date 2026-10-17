@@ -52,6 +52,7 @@ export const SKILL: SkillSummary = {
   clientFacing: true,
   involvesHealthJudgment: true,
   requiresReport: false,
+  allowsEmptyRequest: false,
   planSkills: [],
 };
 

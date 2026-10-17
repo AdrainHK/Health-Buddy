@@ -1,4 +1,5 @@
 import {
+  duplicateFileRejectionSchema,
   extractedValueResponseSchema,
   indicatorTrendResponseSchema,
   reportListResponseSchema,
@@ -8,6 +9,7 @@ import {
   reportUploadStreamEventSchema,
   verifyRejectionSchema,
   type AddExtractedValueRequest,
+  type DuplicateUpload,
   type CorrectIndicatorRequest,
   type ExtractedValueResponse,
   type IndicatorTrendResponse,
@@ -37,12 +39,28 @@ export async function uploadReport(
   const form = new FormData();
   if (taskId) form.append('taskId', taskId);
   for (const file of files) form.append('files', file, file.name || 'file');
-  const { upload } = await apiRequest(
-    `/clients/${clientId}/report-uploads`,
-    reportUploadResponseSchema,
-    { method: 'POST', body: form },
-  );
-  return upload;
+  const res = await apiFetch(`/clients/${clientId}/report-uploads`, {
+    method: 'POST',
+    body: form,
+  });
+  const json: unknown = await res.json().catch(() => null);
+  if (res.status === 409) {
+    const duplicate = duplicateFileRejectionSchema.safeParse(json);
+    if (duplicate.success) throw new DuplicateFileError(duplicate.data.existing);
+  }
+  if (!res.ok) throw await toApiError(res, json);
+  return reportUploadResponseSchema.parse(json).upload;
+}
+
+/**
+ * 同一个文件已经上传过（409 duplicate_file）。existing 是已有的那一份识别记录
+ * （一次上传里放了两个相同文件时为 null），对话里据此引用报告或去核对（验收反馈 6）。
+ */
+export class DuplicateFileError extends ApiError {
+  constructor(readonly existing: DuplicateUpload | null) {
+    super('conflict', 409, ['duplicate_file']);
+    this.name = 'DuplicateFileError';
+  }
 }
 
 export async function listUploads(

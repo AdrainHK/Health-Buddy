@@ -6,6 +6,7 @@ requiresClient: true
 modes: plan,craft
 clientFacing: true
 involvesHealthJudgment: true
+defaultRequest: 请解读这份体检报告
 ---
 
 # 技能：体检解读

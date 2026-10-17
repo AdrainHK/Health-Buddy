@@ -231,6 +231,7 @@ export function AppShell({ account }: AppShellProps = {}) {
         onNewTask={() => selectTask(null)}
         onReviewUpload={onReviewUpload}
         onUploadsChanged={onUploadsChanged}
+        uploadsVersion={uploadsVersion}
       />
       <ResultsPanel
         mode={narrow ? 'sheet' : 'docked'}
@@ -245,6 +246,8 @@ export function AppShell({ account }: AppShellProps = {}) {
         refreshKey={`${activeTask?.id ?? 'none'}:${artifactsVersion}`}
         reviewRequest={reviewRequest}
         uploadsVersion={uploadsVersion}
+        // 结果区里确认核对、放弃、重新识别后，对话区的识别卡片也要刷新（验收反馈 3）
+        onUploadsChanged={onUploadsChanged}
       />
       {overlayOpen && (
         <button

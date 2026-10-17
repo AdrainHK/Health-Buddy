@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { REPORT_EXTRACTION_PROMPT } from '@health-buddy/skills';
+import { CODED_PANEL, REPORT_EXTRACTION_PROMPT } from '@health-buddy/skills';
 import type { ReportUpload, ReportUploadStreamEvent } from '@health-buddy/shared';
 import { Logger, type INestApplication } from '@nestjs/common';
 import { sql } from 'kysely';
@@ -322,11 +322,21 @@ describe('报告上传、识别和核对接口', () => {
       await queue.idle();
       const again = await upload(agent, f.clients.a1[0], [{ body: file }]).expect(409);
       expect(again.body.reasons).toEqual(['duplicate_file']);
+      // 附带已有那一份（验收反馈 6）：只有 id、状态和报告日期，没有文件名
+      expect(again.body.existing).toEqual({
+        uploadId: first.body.upload.id,
+        // 这里没有给模拟厂商排识别结果，识别以失败结束；失败的也算已上传
+        status: 'failed',
+        reportId: null,
+        reportDate: null,
+      });
+      expect(JSON.stringify(again.body)).not.toContain(FILE_NAME);
       const twice = await upload(agent, f.clients.a1[0], [
         { body: syntheticPng('x') },
         { body: syntheticPng('x') },
       ]).expect(409);
       expect(twice.body.reasons).toEqual(['duplicate_file']);
+      expect(twice.body.existing).toBeNull();
       expect(storage.objects.size).toBe(1);
 
       // 别的客户可以传同一个文件（指纹按客户比对）
@@ -334,6 +344,28 @@ describe('报告上传、识别和核对接口', () => {
 
       await agent.post(`/api/report-uploads/${first.body.upload.id}/discard`).expect(200);
       await upload(agent, f.clients.a1[0], [{ body: file }]).expect(201);
+    });
+
+    it('验收反馈 6：已核对的文件再上传，返回那份报告的 id 和日期；别的健管师传同一个文件不受影响', async () => {
+      const agent = await loginAs(app, f.users.managerA1.email);
+      const file = syntheticPng();
+      provider.push(pageJson(STANDARD_ITEMS));
+      const first = await upload(agent, f.clients.a1[0], [{ body: file }]).expect(201);
+      await queue.idle();
+      const u = (await agent.get(`/api/report-uploads/${first.body.upload.id}`).expect(200)).body
+        .upload as ReportUpload;
+      const ok = await verify(agent, u).expect(200);
+      const again = await upload(agent, f.clients.a1[0], [{ body: file }]).expect(409);
+      expect(again.body.existing).toEqual({
+        uploadId: u.id,
+        status: 'verified',
+        reportId: ok.body.upload.reportId,
+        reportDate: '2026-05-01',
+      });
+      // 别的健管师的客户：指纹按客户比对，不会看到别人的记录
+      const other = await loginAs(app, f.users.managerA2.email);
+      const res = await upload(other, f.clients.a2, [{ body: file }]).expect(201);
+      expect(res.body.upload.id).not.toBe(u.id);
     });
 
     it('对象存储写入失败时不留记录，已写的对象删掉', async () => {
@@ -616,7 +648,97 @@ describe('报告上传、识别和核对接口', () => {
         .patch(`/api/report-uploads/${u.id}/values/${fpg.id}`)
         .send({ rawValue: '100' })
         .expect(200);
-      expect(edited.body.value).toMatchObject({ reviewStatus: 'edited', value: 5.55 });
+      expect(edited.body.value).toMatchObject({
+        reviewStatus: 'edited',
+        value: 5.55,
+        checked: false,
+      });
+      // 验收反馈 5：修改过的行再勾选能勾上（reviewStatus 仍是 edited，checked 为 true）
+      const rechecked = await agent
+        .patch(`/api/report-uploads/${u.id}/values/${fpg.id}`)
+        .send({ checked: true })
+        .expect(200);
+      expect(rechecked.body.value).toMatchObject({ reviewStatus: 'edited', checked: true });
+      const current = (await agent.get(`/api/report-uploads/${u.id}`)).body.upload as ReportUpload;
+      expect(current.values.find((v) => v.id === fpg.id)?.checked).toBe(true);
+      await verify(agent, current, {
+        checkedValueIds: current.values.filter((v) => v.checked).map((v) => v.id),
+      }).expect(409); // 体重、未收录指标两行还没勾
+      const rest = current.values.filter((v) => v.attention && !v.checked);
+      for (const v of rest) {
+        await agent
+          .patch(`/api/report-uploads/${u.id}/values/${v.id}`)
+          .send({ checked: true })
+          .expect(200);
+      }
+      const latest = (await agent.get(`/api/report-uploads/${u.id}`)).body.upload as ReportUpload;
+      await verify(agent, latest, {
+        checkedValueIds: latest.values.filter((v) => v.checked).map((v) => v.id),
+      }).expect(200);
+    });
+
+    it('验收反馈 7：带代号的检验表格（合成样本）：未收录指标保留参考范围，核对后按报告参考范围标高低', async () => {
+      const agent = await loginAs(app, f.users.managerA1.email);
+      const u = await extracted(
+        agent,
+        f.clients.a1[0],
+        CODED_PANEL.map((r) => ({
+          indicator: r.name,
+          value: r.value,
+          unit: r.unit,
+          referenceRange: r.ref,
+        })),
+      );
+      expect(u.values.map((v) => [v.rawName, v.code, v.refText, v.abnormal])).toEqual(
+        CODED_PANEL.map((r, i) => [
+          r.name,
+          null,
+          r.ref,
+          ['normal', 'low', 'low', 'low', 'high', 'low'][i],
+        ]),
+      );
+      const ok = await verify(agent, u).expect(200);
+      const rows = await owner
+        .selectFrom('report_indicators')
+        .select(['raw_name', 'code', 'ref_text', 'ref_low', 'ref_high', 'abnormal'])
+        .where('report_id', '=', ok.body.upload.reportId)
+        .orderBy('raw_name')
+        .execute();
+      expect(rows).toHaveLength(CODED_PANEL.length);
+      const byName = Object.fromEntries(rows.map((r) => [r.raw_name, r]));
+      expect(byName['造血干细胞抗原CD34']).toMatchObject({
+        code: null,
+        ref_text: '0.1%-1.0%',
+        abnormal: 'high',
+      });
+      expect(byName['单核细胞表面抗原CD14']).toMatchObject({ abnormal: 'normal' });
+      expect(byName['Fcγ受体III（CD16）']).toMatchObject({ abnormal: 'low' });
+    });
+
+    it('验收反馈 7：未收录的行改成目录里的名称时按名称重新对应；明确选未收录时照原样保存', async () => {
+      const agent = await loginAs(app, f.users.managerA1.email);
+      const u = await extracted(agent, f.clients.a1[0], [
+        { indicator: '尿酸值', value: '400', unit: 'μmol/L', referenceRange: '150-420 μmol/L' },
+        { indicator: '同型半胱氨酸', value: '16', unit: 'μmol/L', referenceRange: '(0-15)' },
+        { indicator: '空腹血糖 GLU', value: '5.0', unit: 'mmol/L', referenceRange: '3.9-6.1' },
+      ]);
+      const [ua, hcy, fpg] = u.values;
+      expect(ua).toMatchObject({ code: null, flags: ['unmapped'], abnormal: 'normal' });
+      // 带括号的参考范围也能算出高低
+      expect(hcy).toMatchObject({ code: null, refHigh: 15, abnormal: 'high' });
+      expect(fpg).toMatchObject({ code: 'fpg', flags: [] });
+
+      const renamed = await agent
+        .patch(`/api/report-uploads/${u.id}/values/${ua!.id}`)
+        .send({ rawName: '尿酸', rawValue: '400', rawUnit: 'μmol/L' })
+        .expect(200);
+      expect(renamed.body.value).toMatchObject({ code: 'uric_acid', flags: [] });
+
+      const kept = await agent
+        .patch(`/api/report-uploads/${u.id}/values/${hcy!.id}`)
+        .send({ rawName: '同型半胱氨酸', code: null, rawValue: '16' })
+        .expect(200);
+      expect(kept.body.value).toMatchObject({ code: null, flags: ['unmapped'], abnormal: 'high' });
     });
   });
 
