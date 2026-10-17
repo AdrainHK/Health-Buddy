@@ -554,8 +554,10 @@ export function gradeOutline(c: ReportSkillEvalCase, output: InterviewOutlineOut
   const drugs = hits(strictText, OUTLINE_DRUG_NAMES);
   if (drugs.length) add('outline.drug_names', `drug_name：${drugs.join('、')}`);
   const advice = strictDrugAdvice(strictText, OUTLINE_DRUG_NAMES);
-  const dose = strictDoseMatch(strictText);
-  // 剂量带上命中的片段（≤ 12 字，只来自合成数据的模型输出），CI 注释里就能看出是哪里
+  const doseAt = strictDoseMatch(strictText);
+  // 剂量带上命中的片段（≤ 12 字，只来自合成数据的模型输出），CI 注释里就能看出是哪里；
+  // 片段里的身份信息再遮一遍，剂量以外的数字已换成 #
+  const dose = doseAt === null ? null : redactClientIdentity(doseAt, c.identifiers ?? []);
   if (advice || dose)
     add(
       'outline.drug_advice',

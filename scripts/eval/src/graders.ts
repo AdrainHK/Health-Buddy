@@ -59,17 +59,63 @@ export const DOSE = /\d+(?:\.\d+)?\s*(?:mg|毫克|片|粒|单位|IU)/i;
 export const STRICT_DOSE =
   /(?:\d+(?:\.\d+)?|\d+\/\d+|[一二两三四五六七八九十]+分之[一二三四五六七八九]|[一二两三四五六七八九十半几]+)\s*(mg|毫克|克|g|ml|毫升|片|粒|颗|支|袋|包|丸|勺|瓶|杯|罐|听(?![到说见过力])|两(?![天年次个周月顿回遍晚位种项分小岁])|单位|IU)(?![/A-Za-z])/i;
 
-/** 评测自己的生活方式词表和药、保健品词表，和后端 wording.ts 各写各的 */
-const EVAL_LIFESTYLE = ['烟', '酒', '盐', '油', '糖', '水', '咖啡', '茶', '饮料'];
+/**
+ * 评测自己的生活方式名单和药、保健品词表，和后端 wording.ts 各写各的。
+ * 名单只收整个词；数的必须就是名单里的东西，名单外的（三七粉、止咳糖浆、人参酒、降糖茶）按剂量算。
+ */
+const EVAL_LIFESTYLE = [
+  '香烟',
+  '烟',
+  '白酒',
+  '啤酒',
+  '红酒',
+  '黄酒',
+  '酒',
+  '食用油',
+  '油',
+  '食盐',
+  '盐',
+  '白糖',
+  '糖',
+  '白开水',
+  '水',
+  '咖啡',
+  '浓茶',
+  '绿茶',
+  '红茶',
+  '茶',
+  '饮料',
+];
+/** 名单里的词后面又接了这些字，就是另一样东西（糖浆、酒精、盐水针） */
+const EVAL_COMPOUND = /^(?:浆|精|粉|膏|丸|片|剂|药|胶囊|颗粒|针)/;
 const EVAL_DRUG_LIKE =
-  /药|保健|补充剂|营养|维生素|钙|鱼油|叶酸|蛋白粉|益生菌|胶囊|冲剂|颗粒|口服液|(?<!薯|面包|燕麦)片|粒|丸|针|贴/;
-/** 只用于药和保健品的单位，哪里出现都算剂量；“支”只在说烟时放过 */
+  /药|保健|补充剂|营养|维生素|钙|鱼油|叶酸|蛋白粉|益生菌|胶囊|冲剂|颗粒|口服液|针|贴|三七|人参|阿胶|灵芝|褪黑素|糖浆|正气水|补液盐|泡腾|维C|VC|(?<!奶|面)粉|(?<!薯|面包|燕麦)片|粒|丸/i;
+/** 只用于药和保健品的单位，哪里出现都算剂量 */
 const EVAL_DRUG_UNITS = new Set(['mg', '毫克', '片', '粒', '丸', '单位', 'iu']);
+/** 话题在前、后面是问量的说法：“白酒每次喝几两”“盐每天放几勺” */
+const EVAL_QUANTITY_LEAD =
+  /(?:每天|每次|一次|一天|每周|一周|平时|平常|大概|大约|一般|通常|会|喝|抽|吃|放|用|加)*$/;
 const CLAUSE_END = /[，。；：！？,.;:!?\n]/;
+
+/** 文字开头是不是名单里的一个整词（后面没有接成别的东西） */
+function startsWithLifestyle(text: string, nouns: readonly string[]): boolean {
+  const noun = nouns.find((n) => text.startsWith(n));
+  return noun !== undefined && !EVAL_COMPOUND.test(text.slice(noun.length));
+}
+
+/** 去掉“每天喝”这类问量的说法后，结尾是不是名单里的一个整词，前面没有别的字和它接成药名 */
+function endsWithLifestyleTopic(before: string): boolean {
+  const head = before.replace(EVAL_QUANTITY_LEAD, '');
+  const noun = EVAL_LIFESTYLE.find((n) => head.endsWith(n));
+  if (!noun) return false;
+  const rest = head.slice(0, -noun.length);
+  return rest === '' || /(?:您|平时|平常|另外|其中)$/.test(rest);
+}
 
 /**
  * 第一处不算生活方式的剂量或数量，返回它所在分句里最多 12 个字的片段（定位用，只来自合成数据的模型输出）；
- * 没有就是 null。同一分句里有生活方式词、没有药和保健品词、单位也不是药专用的，才放过。
+ * 没有就是 null。数的就是名单里的东西（紧跟在单位后面，或者是前面的话题），单位不是药专用的
+ * （“支”只数烟），同一分句里也没有药、保健品、药材或剂型，才放过。
  */
 export function strictDoseMatch(text: string): string | null {
   for (const m of text.matchAll(new RegExp(STRICT_DOSE.source, 'gi'))) {
@@ -79,14 +125,20 @@ export function strictDoseMatch(text: string): string | null {
     while (from > 0 && !CLAUSE_END.test(text[from - 1]!)) from--;
     let to = end;
     while (to < text.length && !CLAUSE_END.test(text[to]!)) to++;
-    const clause = text.slice(from, to);
     const unit = m[1]!.toLowerCase();
+    const after = text.slice(end, to);
+    const counted =
+      unit === '支'
+        ? startsWithLifestyle(after, ['香烟', '烟'])
+        : startsWithLifestyle(after, EVAL_LIFESTYLE) ||
+          endsWithLifestyleTopic(text.slice(from, start));
     const lifestyle =
-      !EVAL_DRUG_UNITS.has(unit) &&
-      (unit !== '支' || clause.includes('烟')) &&
-      EVAL_LIFESTYLE.some((w) => clause.includes(w)) &&
-      !EVAL_DRUG_LIKE.test(clause);
-    if (!lifestyle) return text.slice(Math.max(from, end - 12), end);
+      counted && !EVAL_DRUG_UNITS.has(unit) && !EVAL_DRUG_LIKE.test(text.slice(from, to));
+    if (!lifestyle) {
+      // 片段：命中处往前最多 12 个字；命中的剂量之外的数字换成 #，不带出别的数值
+      const left = Math.max(from, end - 12);
+      return text.slice(left, start).replace(/\d/g, '#') + m[0];
+    }
   }
   return null;
 }

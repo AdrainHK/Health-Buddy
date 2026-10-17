@@ -97,57 +97,120 @@ export const DRUG_ADVICE = new RegExp(
 /**
  * 剂量或数量：阿拉伯数字、中文数字或分数加单位（5 mg、一片、半粒、1/2 片、两袋、10 ml、几杯、二两）。
  * 单位后面紧跟 / 或字母的不算（mg/dL、g/L 是检验单位）；“一两天”“一听到”不算。
- * 生活方式的数量（烟、酒、盐、油、糖、水、咖啡、茶、饮料）可以问，见 isLifestyleQuantity。
+ * 生活方式的数量（几支烟、几两白酒、几勺盐、几杯水）可以问，见 isLifestyleQuantity。
  */
 export const DOSE =
   /(?:\d+(?:\.\d+)?|\d+\/\d+|[一二两三四五六七八九十]+分之[一二三四五六七八九]|[一二两三四五六七八九十半几]+)\s*(mg|毫克|克|g|ml|毫升|片|粒|颗|支|袋|包|丸|勺|瓶|杯|罐|听(?![到说见过力])|两(?![天年次个周月顿回遍晚位种项分小岁])|单位|IU)(?![/A-Za-z])/i;
 
-/** 可以问数量的生活方式（规格 2.8 产品决定：问抽烟喝酒、盐油糖、喝水喝咖啡的量不算剂量） */
-const LIFESTYLE_ITEMS = /烟|酒|盐|油|糖|水|咖啡|茶|饮料/;
-/** 同一分句里出现这些就不按生活方式放过：药、保健品和剂型 */
+/**
+ * 可以问数量的生活方式（规格 2.8 产品决定）：只认这张名单里的整个词，而且数的必须就是它。
+ * 名单外的东西（三七粉、止咳糖浆、藿香正气水、人参酒、降糖茶）一律按剂量算。
+ */
+const LIFESTYLE_NOUNS = [
+  '香烟',
+  '烟',
+  '白酒',
+  '啤酒',
+  '红酒',
+  '黄酒',
+  '酒',
+  '食用油',
+  '油',
+  '食盐',
+  '盐',
+  '白糖',
+  '糖',
+  '白开水',
+  '开水',
+  '水',
+  '咖啡',
+  '浓茶',
+  '绿茶',
+  '红茶',
+  '茶',
+  '饮料',
+].join('|');
+/** 名单里的词后面再接这些字就成了别的东西（糖浆、酒精、盐水针……），不算 */
+const NOT_A_WORD_END = '(?!浆|精|粉|膏|丸|片|剂|药|胶囊|颗粒|针)';
+/** 单位后面紧跟名单里的词：几支烟、几两白酒、几瓶啤酒、几勺盐、几杯水 */
+const COUNTED_AFTER = new RegExp(`^(?:${LIFESTYLE_NOUNS})${NOT_A_WORD_END}`);
+/** “支”只用来数烟 */
+const CIGARETTES_AFTER = new RegExp(`^(?:香烟|烟)${NOT_A_WORD_END}`);
+/** 名单里的词是分句的话题，紧接着是问量的说法：白酒每次喝几两、盐每天放几勺 */
+const TOPIC_BEFORE = new RegExp(
+  `(?:^|您|平时|平常|另外|其中)(?:${LIFESTYLE_NOUNS})(?:每天|每次|一次|一天|每周|一周|平时|平常|大概|大约|一般|通常|会|喝|抽|吃|放|用|加)*$`,
+);
+/** 同一分句里出现这些就一律不放过：药、保健品、药材和剂型 */
 const DRUG_OR_SUPPLEMENT = new RegExp(
   [
     '药',
-    '保健品',
+    '保健',
     '补充剂',
-    '营养品',
+    '营养',
     '维生素',
-    '钙片',
+    '钙',
     '鱼油',
     '叶酸',
     '蛋白粉',
+    '益生菌',
     '胶囊',
     '冲剂',
     '颗粒',
     '口服液',
+    '针',
+    '贴',
+    '中药',
+    '药材',
+    '三七',
+    '人参',
+    '阿胶',
+    '灵芝',
+    '褪黑素',
+    '糖浆',
+    '正气水',
+    '补液盐',
+    '泡腾',
+    '维C',
+    'VC',
+    '(?<!奶|面)粉',
     '(?<!薯|面包|燕麦)片',
     '粒',
     '丸',
     ...DRUG_NAMES,
   ].join('|'),
+  'i',
 );
-/** 这些单位只用于药和保健品，任何时候都算剂量（“支”只在说烟时放过） */
+/** 这些单位只用于药和保健品，任何时候都算剂量 */
 const DRUG_ONLY_UNITS = /^(?:mg|毫克|片|粒|丸|单位|IU)$/i;
 
 /**
- * 这一处数量是不是在问生活方式：同一分句里有烟、酒、盐、油、糖、水、咖啡、茶、饮料，
- * 没有药、保健品或剂型，单位也不是药专用的。
+ * 这一处数量是不是在问生活方式：数的就是名单里的东西（紧跟在单位后面，或者是前面的话题），
+ * 单位不是药专用的（“支”只数烟），同一分句里也没有药、保健品、药材或剂型。
  */
-function isLifestyleQuantity(clause: string, unit: string): boolean {
-  if (DRUG_ONLY_UNITS.test(unit)) return false;
-  if (unit === '支' && !clause.includes('烟')) return false;
-  return LIFESTYLE_ITEMS.test(clause) && !DRUG_OR_SUPPLEMENT.test(clause);
+function isLifestyleQuantity(clause: string, before: string, after: string, unit: string) {
+  if (DRUG_ONLY_UNITS.test(unit) || DRUG_OR_SUPPLEMENT.test(clause)) return false;
+  if (unit === '支') return CIGARETTES_AFTER.test(after);
+  return COUNTED_AFTER.test(after) || TOPIC_BEFORE.test(before);
 }
+
+const CLAUSE_MARK = /[，。；：！？,.;:!?\n]/;
 
 /** 第一处不是生活方式数量的剂量（在规范化后的文本上找），没有就是 null */
 export function findDoseMatch(norm: string): { index: number; text: string } | null {
   for (const m of norm.matchAll(new RegExp(DOSE.source, 'gi'))) {
     const start = m.index;
     const end = start + m[0].length;
-    const before = norm.slice(0, start).search(/[^，。；：！？,.;:!?\n]*$/);
-    const after = norm.slice(end).search(/[，。；：！？,.;:!?\n]/);
-    const clause = norm.slice(before, after === -1 ? norm.length : end + after);
-    if (!isLifestyleQuantity(clause, m[1]!)) return { index: start, text: m[0] };
+    let from = start;
+    while (from > 0 && !CLAUSE_MARK.test(norm[from - 1]!)) from--;
+    let to = end;
+    while (to < norm.length && !CLAUSE_MARK.test(norm[to]!)) to++;
+    const lifestyle = isLifestyleQuantity(
+      norm.slice(from, to),
+      norm.slice(from, start),
+      norm.slice(end, to),
+      m[1]!,
+    );
+    if (!lifestyle) return { index: start, text: m[0] };
   }
   return null;
 }

@@ -110,8 +110,9 @@ const file = `eval-results/${new Date().toISOString().replace(/[:.]/g, '-')}.jso
 writeFileSync(file, JSON.stringify({ runs, results: all }, null, 2));
 const failed = summarize(all).filter((s) => s.passed < s.runs);
 // 在 GitHub Actions 里把未通过的用例写成一条注解（注解每步最多 10 条），不下载报告也能看到
-// 是哪条规则；只有用例名、规则名、错误类别、多出来的数值（合成数据）和命中的词表词（类别：词），
-// 没有模型输出原文，也没有客户资料
+// 是哪条规则；只有用例名、规则名、错误类别、多出来的数值（合成数据）和命中的词表词（类别：词）。
+// 唯一的模型输出是提纲剂量命中处最多 12 个字的片段：只来自合成数据，身份信息已遮，剂量以外的数字换成 #；
+// 没有客户资料。注解内容里的 %、换行按 GitHub 的写法转义
 const DETAIL_RULES = new Set([
   'output.error',
   'accuracy.invented_numbers',
@@ -127,6 +128,9 @@ const DETAIL_RULES = new Set([
   'client.urgency_terms',
   'client.crisis_terms',
 ]);
+/** GitHub 注解的转义：先 %，再回车和换行 */
+const escapeAnnotation = (t: string) =>
+  t.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
 if (process.env.GITHUB_ACTIONS && failed.length) {
   const errorKinds = (s: { caseId: string; provider: string }) => [
     ...new Set(
@@ -137,7 +141,10 @@ if (process.env.GITHUB_ACTIONS && failed.length) {
   ];
   const lines = failed.map((s) => {
     const kinds = errorKinds(s);
-    return `${s.provider} ${s.caseId} ${s.passed}/${s.runs} ${s.rules.join(' ')}${kinds.length ? `（${kinds.join('；')}）` : ''}`;
+    const detail = kinds.length ? `（${kinds.join('；')}）` : '';
+    return escapeAnnotation(
+      `${s.provider} ${s.caseId} ${s.passed}/${s.runs} ${s.rules.join(' ')}${detail}`,
+    );
   });
   console.log(`::error title=eval 未通过 ${failed.length} 项::${lines.join('%0A')}`);
 }
