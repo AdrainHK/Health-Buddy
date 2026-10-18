@@ -37,7 +37,7 @@ import {
   type RoutingDecision,
   type Synthesis,
 } from '@health-buddy/shared';
-import { JUDGEMENT_HINT } from '@health-buddy/skills';
+import { DISEASE_TERMS, JUDGEMENT_HINT } from '@health-buddy/skills';
 import { describeError, hits, type Finding } from './graders.js';
 import type { RunResult } from './run.js';
 
@@ -69,7 +69,8 @@ export function opinionText(opinion: ExpertOpinion): string {
 }
 
 /** 专家意见里不该出现的疾病判断提示词（和通俗版检查共用 guardrails 的 JUDGEMENT_HINT） */
-const JUDGEMENT = new RegExp(JUDGEMENT_HINT.source);
+const JUDGEMENT_ALL = new RegExp(JUDGEMENT_HINT.source, 'g');
+const DISEASE_IN_RISK = new RegExp(`病|症|癌|${DISEASE_TERMS.join('|')}`);
 /** 规则 10：意见只给健管师看，不对客户说话，不自己写免责声明 */
 const SELF_DISCLAIMER = /非医疗诊断|仅供参考|请勿直接转发/;
 
@@ -125,10 +126,14 @@ export function gradeExpertOpinion(
   if (diagnostic.length)
     findings.push({ rule: 'opinion.diagnostic', detail: diagnostic.join('、') });
   // “疑似急症”是急症信号的规定说法，“焦虑情绪”“抑郁心情”是心理状态描述，都不算疾病判断
-  const judgement = JUDGEMENT.exec(
-    text
+  const judgement = [
+    ...text
       .replace(/疑似急症/g, '')
-      .replace(/(?<!轻度|中度|重度|中重度|广泛性)(焦虑|抑郁)(情绪|感|心情|不安)/g, ''),
+      .replace(/(?<!轻度|中度|重度|中重度|广泛性)(焦虑|抑郁)(情绪|感|心情|不安)/g, '')
+      .matchAll(JUDGEMENT_ALL),
+  ].find(
+    // “有……风险”只在中间提到疾病时才算（“有使用需要及相关风险”不算）
+    (m) => !/^有.{0,8}风险$/.test(m[0]) || DISEASE_IN_RISK.test(m[0]),
   );
   if (judgement) findings.push({ rule: 'opinion.judgment_hint', detail: judgement[0] });
   const invented = unknownNumbers(text, [...allowedNumbers, ...cardNumbers]);

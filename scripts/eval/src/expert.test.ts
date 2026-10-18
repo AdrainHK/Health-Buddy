@@ -189,6 +189,12 @@ describe('gradeExpertOpinion', () => {
   it('疑似急症、焦虑情绪不算疾病判断；带程度的抑郁状态仍然算', () => {
     const ok = opinion({ summary: '疑似急症，请尽快就医评估。客户焦虑情绪明显，先倾听。' });
     expect(gradeExpertOpinion(baseCase, call(ok))).toEqual([]);
+    const supplement = opinion({ summary: '补充剂是否有使用需要及相关风险，请咨询医生。' });
+    expect(gradeExpertOpinion(baseCase, call(supplement))).toEqual([]);
+    const risk = opinion({ summary: '该客户有糖尿病风险。' });
+    expect(gradeExpertOpinion(baseCase, call(risk)).map((f) => f.rule)).toContain(
+      'opinion.judgment_hint',
+    );
     const bad = opinion({ summary: '该客户为中度抑郁状态。' });
     expect(gradeExpertOpinion(baseCase, call(bad)).map((f) => f.rule)).toContain(
       'opinion.judgment_hint',
