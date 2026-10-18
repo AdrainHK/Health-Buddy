@@ -8,6 +8,7 @@
  * 结果只有问题类别和数量，不带原文，日志和纠正说明都只用类别（规格 3.4 第 5 条）。
  */
 import {
+  DRUG_NAMES,
   findBannedTerms,
   normalizeForCompliance,
   type Citation,
@@ -21,6 +22,7 @@ export const OPINION_ISSUES = [
   'banned_wording',
   'unsupported_claim',
   'scope_inconsistent',
+  'drug_advice',
 ] as const;
 export type OpinionIssue = (typeof OPINION_ISSUES)[number];
 
@@ -31,23 +33,135 @@ export type OpinionIssue = (typeof OPINION_ISSUES)[number];
 // 不收“得了”：“还得了解”会误报
 export const DIAGNOSTIC_PHRASES = ['确诊', '患有', '患上', '治好', '可以逆转', '能逆转'] as const;
 
+/** 诊断性句式（合规审查补充）：“属于糖尿病前期”“考虑为”“诊为”“已经是高血压病”“提示脂肪肝” */
+export const DIAGNOSTIC_PATTERNS: readonly RegExp[] = [
+  /属于[^，。；,;]{0,8}(?:病|前期|症)/,
+  /考虑为/,
+  /诊为/,
+  /已经是[^，。；,;]{0,8}(?:病|症)/,
+  /提示[^，。；,;]{0,8}(?:病|肝|症)/,
+];
+
+/** 文本里的诊断性表述（先规范化），返回命中的词或句式片段 */
+export function diagnosticHits(text: string): string[] {
+  const norm = normalizeForCompliance(text).text;
+  return [
+    ...DIAGNOSTIC_PHRASES.filter((p) => norm.includes(p)),
+    ...DIAGNOSTIC_PATTERNS.flatMap((re) => re.exec(norm)?.[0] ?? []),
+  ];
+}
+
+/**
+ * 药物剂量（合规审查补充）：数字加药物剂量单位（5 mg、10 单位、2 片），中文数字加毫克、微克、粒、胶囊，
+ * 或“每次两片”。检验单位（mg/dL、µmol/L、U/L）后面紧跟 / 或字母，不算剂量；饮水的毫升数不算。
+ */
+const DRUG_DOSE =
+  /\d+(?:\.\d+)?\s*(?:mg|毫克|µg|μg|ug|mcg|微克|片|粒|胶囊|单位|IU)(?![/A-Za-z])|[一二两三四五六七八九十半]+(?:毫克|微克|粒|胶囊)|每次[一二两三半]+片/i;
+
+/** 具体药名（不含“降压药”这类类别词：了解客户在用哪类药是健管师的正常工作） */
+const SPECIFIC_DRUGS = DRUG_NAMES.filter((d) => !d.endsWith('药'));
+
+/** 点名具体药物或写了剂量、服用频次 */
+export function hasDrugAdvice(text: string): boolean {
+  const norm = normalizeForCompliance(text).text;
+  return DRUG_DOSE.test(norm) || SPECIFIC_DRUGS.some((d) => norm.includes(d));
+}
 /** 没有卡片支撑的要点不能写“根据指南”之类的话（规格 5.2 第 3 条） */
 const GUIDELINE_CLAIM = /指南|共识|根据来源|按照来源|根据文献|研究表明/;
 
 const DATE = /\d{4}\s*[-/年.]\s*\d{1,2}\s*[-/月.]\s*\d{1,2}\s*日?/g;
-const NUMBER = /\d+(?:\.\d+)?/g;
+
+/** 检验和测量单位：数字后面跟这些单位时，不论大小都要核对 */
+const UNIT =
+  '(?:mmol\\/L|μmol\\/L|µmol\\/L|umol\\/L|mg\\/dL|mg\\/L|g\\/L|U\\/L|IU\\/L|mmHg|kg\\/m²|kg\\/m2|次\\/分|bpm|kcal|千卡|kg|公斤|cm|厘米|%|％)';
+/** 阈值、目标的说法：紧挨着这些词的数字不论大小都要核对 */
+const THRESHOLD_BEFORE = '(?:超过|低于|高于|大于|小于|不超过|不低于|控制在|目标|达到|≥|≤|>|<)';
+const THRESHOLD_AFTER = '(?:以上|以下|以内)';
+const NUMBER_WITH_CONTEXT = new RegExp(
+  `(${THRESHOLD_BEFORE})?\\s*(百分之)?(\\d+(?:\\.\\d+)?)\\s*(${UNIT}|${THRESHOLD_AFTER})?`,
+  'g',
+);
+
+const CN_DIGIT: Record<string, number> = {
+  零: 0,
+  〇: 0,
+  一: 1,
+  二: 2,
+  两: 2,
+  三: 3,
+  四: 4,
+  五: 5,
+  六: 6,
+  七: 7,
+  八: 8,
+  九: 9,
+};
+
+/** 中文数字转阿拉伯数字：“六点五”→6.5，“一百四十”→140，“一百四”→140，“十二”→12；不认识时返回 null */
+export function parseChineseNumber(raw: string): number | null {
+  const [intPart = '', fracPart] = raw.split('点');
+  let total = 0;
+  let current = 0;
+  let lastUnit = 1;
+  for (const ch of intPart) {
+    if (ch in CN_DIGIT) current = CN_DIGIT[ch]!;
+    else if (ch === '十' || ch === '百' || ch === '千') {
+      const unit = ch === '十' ? 10 : ch === '百' ? 100 : 1000;
+      total += (current || 1) * unit;
+      current = 0;
+      lastUnit = unit;
+    } else return null;
+  }
+  // “一百四”：最后一位省略了单位，按上一位单位的十分之一
+  if (current && lastUnit >= 100 && !intPart.endsWith('零')) total += current * (lastUnit / 10);
+  else total += current;
+  if (fracPart === undefined) return total;
+  let frac = '';
+  for (const ch of fracPart) {
+    if (!(ch in CN_DIGIT)) return null;
+    frac += String(CN_DIGIT[ch]);
+  }
+  return frac ? Number(`${total}.${frac}`) : null;
+}
+
+const CN_NUMBER = /[零〇一二两三四五六七八九十百千]+(?:点[零〇一二三四五六七八九]+)?/g;
 
 /**
- * 文本里需要核对的数值：带小数的数字和 40 到 1900 之间的整数（血压、尿酸、步数、分钟数等）。
- * 日期、序号、天数这类小整数不核对，和评测的 inventedNumbers 规则一致（scripts/eval）。
+ * 把会被当成数值的中文数字换成阿拉伯数字：带“点”的小数、“百分之…”，以及后面跟单位或前后有阈值说法的。
+ * “一起”“每一项”这类不换。
+ */
+function normalizeChineseNumbers(text: string): string {
+  return text.replace(CN_NUMBER, (raw, offset: number, whole: string) => {
+    const before = whole.slice(Math.max(0, offset - 4), offset);
+    const after = whole.slice(offset + raw.length, offset + raw.length + 8);
+    const decimal = raw.includes('点');
+    const percent = before.endsWith('百分之');
+    const unit = new RegExp(`^\\s*(?:${UNIT}|${THRESHOLD_AFTER})`).test(after);
+    const threshold = new RegExp(`${THRESHOLD_BEFORE}\\s*$`).test(before);
+    if (!decimal && !percent && !unit && !threshold) return raw;
+    const n = parseChineseNumber(raw);
+    return n === null ? raw : String(n);
+  });
+}
+
+/**
+ * 文本里需要核对的数值：
+ * - 带小数的数字和 40 到 1900 之间的整数（血压、尿酸、步数、分钟数等）；
+ * - 后面跟检验或测量单位、百分号的数字，不论大小（“5%”“7 mmol/L”）；
+ * - 紧挨着“超过”“低于”“控制在”“目标”“以上”“以下”这类阈值说法的数字，不论大小。
+ * 中文数字先换成阿拉伯数字。日期、序号、天数这类小整数不核对；评测的规则检查用同一个函数（scripts/eval）。
  */
 export function checkedNumbers(text: string): number[] {
-  const withoutDates = text.replace(DATE, ' ');
-  // 按原文判断是不是小数：“8.0”也要核对
-  return (withoutDates.match(NUMBER) ?? [])
-    .filter((raw) => raw.includes('.') || Number(raw) >= 40)
-    .map(Number)
-    .filter((n) => n < 1900);
+  const prepared = normalizeChineseNumbers(text.replace(DATE, ' '));
+  const out: number[] = [];
+  for (const m of prepared.matchAll(NUMBER_WITH_CONTEXT)) {
+    const [, threshold, percent, raw = '', suffix] = m;
+    const n = Number(raw);
+    const contextual = Boolean(threshold || percent || suffix);
+    // 按原文判断是不是小数：“8.0”也要核对
+    if (contextual || raw.includes('.') || (n >= 40 && n < 1900)) out.push(n);
+  }
+  return out;
 }
 
 /** 不在允许范围里的数值 */
@@ -58,9 +172,7 @@ export function unknownNumbers(text: string, allowed: Iterable<number>): number[
 
 /** 禁用词和诊断性表述（先规范化：去空格、零宽字符，统一全角半角和繁简） */
 export function hasBannedWording(text: string): boolean {
-  if (findBannedTerms(text).length) return true;
-  const norm = normalizeForCompliance(text).text;
-  return DIAGNOSTIC_PHRASES.some((p) => norm.includes(p));
+  return findBannedTerms(text).length > 0 || diagnosticHits(text).length > 0;
 }
 
 export interface OpinionCheck {
@@ -110,6 +222,10 @@ export function validateOpinion(
     }
     if (hasBannedWording(text)) {
       issues.add('banned_wording');
+      ok = false;
+    }
+    if (hasDrugAdvice(text)) {
+      issues.add('drug_advice');
       ok = false;
     }
     if (item.dataOnly && GUIDELINE_CLAIM.test(normalizeForCompliance(text).text)) {
@@ -165,9 +281,15 @@ export function validateOpinion(
   const questionsToAsk = keep(opinion.questionsToAsk, (q) => ({ texts: [q], citations: [] }));
   const dataGaps = keep(opinion.dataGaps, (d) => ({ texts: [d], citations: [] }));
 
-  // 结论可以复述被保留的要点里引用的卡片数值
+  // 结论可以复述被保留的要点里引用的卡片数值；保留的要点里没有一条有效引用时，
+  // 结论和转介原因同样不能写“根据指南”
   const keptCitations = [...findings, ...suggestions].flatMap((i) => i.citations);
-  const summaryOk = itemOk({ texts: [opinion.summary], citations: keptCitations });
+  const noCitation = !keptCitations.length;
+  const summaryOk = itemOk({
+    texts: [opinion.summary],
+    citations: keptCitations,
+    dataOnly: noCitation,
+  });
   if (!summaryOk || !opinion.summary.trim()) {
     return { opinion: null, issues: [...issues], removed, fatal: true };
   }
@@ -175,7 +297,10 @@ export function validateOpinion(
   // 转介的方向和原因不合格时只去掉文字，needed 和 urgency 一定保留（转介一条都不能丢）
   const referral = normalizeReferral(opinion.referral);
   if (referral.to && !itemOk({ texts: [referral.to], citations: [] })) referral.to = null;
-  if (referral.reason && !itemOk({ texts: [referral.reason], citations: keptCitations }))
+  if (
+    referral.reason &&
+    !itemOk({ texts: [referral.reason], citations: keptCitations, dataOnly: noCitation })
+  )
     referral.reason = null;
 
   return {
@@ -212,7 +337,10 @@ const ISSUE_NOTES: Record<OpinionIssue, string> = {
     '有数值既不在客户资料里，也不在被引用卡片的“可引用数值”里。删掉这些数值，不要凭常识写阈值、界值或目标值。',
   banned_wording:
     '出现了禁用词或诊断性表述（如“确诊”“患有”“治好”）。改成描述数据，需要医生评估的写进 referral。',
-  unsupported_claim: '标为 data_only 的要点写了“根据指南”之类的话。没有卡片支撑时只描述数据。',
+  unsupported_claim:
+    '没有卡片支撑的内容（data_only 的要点，或没有任何有效引用时的结论和转介原因）写了“根据指南”之类的话。没有卡片支撑时只描述数据。',
+  drug_advice:
+    '点名了具体药物，或写了剂量、服用频次。不推荐、不评价药物和剂量，需要调整用药的写进 referral。',
   scope_inconsistent:
     'inScope 为 false 时必须在 outOfScopeNote 里写明建议改问哪位专家或转介哪类医生。',
 };

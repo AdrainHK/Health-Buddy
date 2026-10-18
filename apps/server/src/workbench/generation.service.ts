@@ -1,7 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { GatewayError } from '@health-buddy/ai-engine';
 import {
+  EMERGENCY_NOTICE,
+  EXPERTS,
+  EXPERT_MENTION_NOTE,
   consultationDigest,
+  detectEmergencyKeywords,
+  expertMentions,
   expertName,
   renderConsultationSections,
   renderOpinion,
@@ -34,7 +39,7 @@ import {
 import { LLM_GATEWAY, type AppGateway } from '../ai/gateway.provider.js';
 import type { TenantContext } from '../db/database.js';
 import { ConsultationService, type ExpertSteps } from '../experts/consultation.service.js';
-import { ExpertsRepository } from '../experts/experts.repository.js';
+import { ExpertQuotaExceeded, ExpertsRepository } from '../experts/experts.repository.js';
 import { RISK_TIER_CRITERIA } from './risk-tier-criteria.js';
 import {
   WorkbenchRepository,
@@ -81,6 +86,25 @@ interface UsedConsultation {
   opinions: { expertId: string; opinion: ExpertOpinion }[];
   synthesis: Synthesis | null;
   synthesisFailed: boolean;
+  /** 关键词、任何一位专家或汇总标出的心理危机信号 */
+  crisis: boolean;
+  /** 关键词、任何一位专家或汇总标出的疑似急症信号 */
+  emergency: boolean;
+}
+
+/** 疑似急症提示（写在最前面，和心理危机提示一样不依赖模型） */
+const EMERGENCY_HEADER = `**疑似急症提示**：${EMERGENCY_NOTICE}\n\n`;
+
+/** 专家意见、汇总里的危机和急症信号 */
+function expertSignals(
+  opinions: readonly { opinion: ExpertOpinion }[],
+  synthesis: Synthesis | null,
+): { crisis: boolean; emergency: boolean } {
+  return {
+    crisis: Boolean(synthesis?.crisisSignal) || opinions.some((o) => o.opinion.crisisSignal),
+    emergency:
+      Boolean(synthesis?.emergencySignal) || opinions.some((o) => o.opinion.emergencySignal),
+  };
 }
 
 /**
@@ -157,13 +181,23 @@ export class GenerationService {
           : [],
       );
       if (!outcome || !answered.length) {
-        return await this.finish(ctx, messageId, EXPERTS_UNAVAILABLE, 'complete', io);
+        // 专家都没回复也要把危机和急症提示留给健管师（关键词识别不依赖模型）
+        const headers =
+          (outcome?.crisisDetected ? CRISIS_HEADER : '') +
+          (outcome?.emergencyDetected ? EMERGENCY_HEADER : '');
+        const text = `${headers}${EXPERTS_UNAVAILABLE}`;
+        io.emit({ type: 'text', messageId, delta: text });
+        return await this.finish(ctx, messageId, text, 'complete', io);
       }
       const notices = { crisis: outcome.crisisDetected, emergency: outcome.emergencyDetected };
       let text: string;
       if (answered.length === 1 && outcome.result.calls.length === 1) {
         const only = answered[0]!;
-        text = renderOpinion(only.opinion, { ...notices, removedFindings: only.removed });
+        text = renderOpinion(only.opinion, {
+          ...notices,
+          expertId: only.expertId,
+          removedFindings: only.removed,
+        });
       } else {
         const sections = renderConsultationSections(
           outcome.result.synthesis,
@@ -173,7 +207,7 @@ export class GenerationService {
         );
         const each = answered.map(
           (a) =>
-            `### ${expertName(a.expertId)}\n\n${renderOpinion(a.opinion, { ...notices, removedFindings: a.removed })}`,
+            `### ${expertName(a.expertId)}\n\n${renderOpinion(a.opinion, { ...notices, expertId: a.expertId, removedFindings: a.removed })}`,
         );
         text = [sections, ...each].join('\n\n');
       }
@@ -378,38 +412,66 @@ export class GenerationService {
           );
         let result = await call(userMessage);
         // 保存前的确定性措辞检查（/面谈提纲，规格 2.8）：没通过就带着纠正说明重新生成一次，
-        // 仍没通过就不保存草稿。日志只记类别和次数，不记输出内容
-        let issues = result.status === 'ok' ? (skill.checkOutput?.(result.data) ?? []) : [];
-        if (issues.length) {
+        // 仍没通过就不保存草稿。日志只记类别和次数，不记输出内容。
+        // M3：用了专家意见时，通俗版里不能出现“专家”和专家名称（合规审查第 4 条），同样重试一次
+        const check = (data: unknown) => {
+          const wording = skill.checkOutput?.(data as never) ?? [];
+          const clientFacing = (data as { clientFacing?: unknown }).clientFacing;
+          const mentions =
+            used && skill.clientFacing && typeof clientFacing === 'string'
+              ? expertMentions(
+                  clientFacing,
+                  EXPERTS.map((e) => e.meta.name),
+                )
+              : [];
+          const categories: string[] = [
+            ...wordingCategories(wording),
+            ...(mentions.length ? ['expert_mention'] : []),
+          ];
+          return { wording, mentions, categories };
+        };
+        let issues = result.status === 'ok' ? check(result.data) : undefined;
+        if (issues?.categories.length) {
           this.logger.warn(
-            `output check failed ${JSON.stringify({ skill: skill.id, attempt: 1, categories: wordingCategories(issues) })}`,
+            `output check failed ${JSON.stringify({ skill: skill.id, attempt: 1, categories: issues.categories })}`,
           );
-          const note = skill.correctionNote?.(issues) ?? '';
+          const note = [
+            issues.wording.length ? (skill.correctionNote?.(issues.wording) ?? '') : '',
+            issues.mentions.length ? EXPERT_MENTION_NOTE : '',
+          ]
+            .filter(Boolean)
+            .join('\n\n');
           result = await call(note ? `${userMessage}\n\n${note}` : userMessage);
-          issues = result.status === 'ok' ? (skill.checkOutput?.(result.data) ?? []) : [];
-          if (issues.length) {
+          issues = result.status === 'ok' ? check(result.data) : undefined;
+          if (issues?.categories.length) {
             this.logger.warn(
-              `output check failed ${JSON.stringify({ skill: skill.id, attempt: 2, categories: wordingCategories(issues) })}`,
+              `output check failed ${JSON.stringify({ skill: skill.id, attempt: 2, categories: issues.categories })}`,
             );
             await steps.finish(step, 'failed');
             const notices =
-              (crisis ? CRISIS_HEADER : '') + criticalNotice(client.snapshot.criticalFlags);
+              (crisis || used?.crisis ? CRISIS_HEADER : '') +
+              (used?.emergency ? EMERGENCY_HEADER : '') +
+              criticalNotice(client.snapshot.criticalFlags);
             return await this.finish(ctx, messageId, notices, 'error', io, 'wording_check_failed');
           }
         }
         if (result.status === 'refused') {
-          // 没有产物，但危机和危急指标提醒要留给健管师
+          // 没有产物，但危机、急症和危急指标提醒要留给健管师
           await steps.finish(step, 'failed');
           const notices =
-            (crisis ? CRISIS_HEADER : '') + criticalNotice(client.snapshot.criticalFlags);
+            (crisis || used?.crisis ? CRISIS_HEADER : '') +
+            (used?.emergency ? EMERGENCY_HEADER : '') +
+            criticalNotice(client.snapshot.criticalFlags);
           return await this.finish(ctx, messageId, withAskNotice(notices), 'refused', io);
         }
         const output = result.data as Record<string, unknown>;
-        if (crisis) output.crisisSignal = true;
+        // 心理危机：关键词，或专家、汇总标出的信号（合规审查第 2 条）
+        if (crisis || used?.crisis) output.crisisSignal = true;
         const rendered = skill.render(output, skillInput);
-        // 专家意见汇总和分歧由后端确定性写进专业版，绝不进通俗版（M3 规格 2.7）
+        // 专家意见汇总和分歧由后端确定性写进专业版，绝不进通俗版（M3 规格 2.7）；
+        // 疑似急症提示放在专业版最前面
         const professional = used
-          ? `${rendered.professional}\n\n${renderConsultationSections(used.synthesis, used.opinions, expertName, { synthesisFailed: used.synthesisFailed })}`
+          ? `${used.emergency ? EMERGENCY_HEADER : ''}${rendered.professional}\n\n${renderConsultationSections(used.synthesis, used.opinions, expertName, { synthesisFailed: used.synthesisFailed })}`
           : rendered.professional;
 
         // 保存前重新确认：会话仍然有效、任务没有断开、客户仍归当前健管师
@@ -431,6 +493,7 @@ export class GenerationService {
           sourceReportId: skillUsesReport(skill) ? (client.report?.id ?? null) : null,
           riskTierSuggestion: rendered.riskTierSuggestion ?? null,
           consultationId: used?.consultationId ?? null,
+          emergencySignal: used?.emergency ?? false,
         });
         if (!artifact) {
           await steps.finish(step, 'failed');
@@ -485,11 +548,19 @@ export class GenerationService {
           opinions.map((o) => o.expertId),
         );
         await steps.finish(reuse, 'done');
+        const signals = expertSignals(opinions, previous.synthesis);
         return {
           consultationId: previous.id,
           opinions,
           synthesis: previous.synthesis,
           synthesisFailed: previous.synthesisStatus === 'failed',
+          crisis: signals.crisis,
+          emergency:
+            signals.emergency ||
+            detectEmergencyKeywords([
+              run.managerRequest,
+              ...(await this.repo.managerTexts(ctx, run.taskId)),
+            ]),
         };
       }
     }
@@ -499,36 +570,49 @@ export class GenerationService {
       return undefined;
     }
     const options = run.experts ?? { trigger: 'skill_auto' as const, forced: [], excluded: [] };
-    const outcome = await this.consultation.consult(
-      ctx,
-      {
-        taskId: run.taskId,
-        messageId: run.assistantMessageId,
-        clientId: run.clientId,
-        reportId: client.report?.id ?? null,
-        trigger: options.trigger,
-        mode: 'route',
-        forced: options.forced,
-        excluded: options.excluded,
-        source: {
-          client: client.snapshot,
-          question: run.managerRequest,
-          identifiers: client.identifiers,
-          earlierTexts: await this.repo.managerTexts(ctx, run.taskId),
+    const outcome = await this.consultation
+      .consult(
+        ctx,
+        {
+          taskId: run.taskId,
+          messageId: run.assistantMessageId,
+          clientId: run.clientId,
+          reportId: client.report?.id ?? null,
+          trigger: options.trigger,
+          mode: 'route',
+          forced: options.forced,
+          excluded: options.excluded,
+          source: {
+            client: client.snapshot,
+            question: run.managerRequest,
+            identifiers: client.identifiers,
+            earlierTexts: await this.repo.managerTexts(ctx, run.taskId),
+          },
+          maxExperts: Math.min(remaining, 3),
         },
-        maxExperts: Math.min(remaining, 3),
-      },
-      { emit: io.emit, signal: io.signal, steps: steps.forExperts() },
-    );
+        { emit: io.emit, signal: io.signal, steps: steps.forExperts() },
+      )
+      .catch((err: unknown) => {
+        // 并发请求刚好用完了今天的专家调用次数：这次不请专家，技能照常生成（Q12）
+        if (err instanceof ExpertQuotaExceeded) {
+          this.logger.warn('expert daily limit reached, skill runs without experts');
+          return undefined;
+        }
+        throw err;
+      });
     if (!outcome) return undefined;
     if (outcome.result.status === 'stopped') throw new GatewayError('aborted');
+    const opinions = outcome.result.calls.flatMap((c) =>
+      c.status === 'done' && c.opinion ? [{ expertId: c.expertId, opinion: c.opinion }] : [],
+    );
+    const signals = expertSignals(opinions, outcome.result.synthesis);
     return {
       consultationId: outcome.consultationId,
-      opinions: outcome.result.calls.flatMap((c) =>
-        c.status === 'done' && c.opinion ? [{ expertId: c.expertId, opinion: c.opinion }] : [],
-      ),
+      opinions,
       synthesis: outcome.result.synthesis,
       synthesisFailed: outcome.result.synthesisStatus === 'failed',
+      crisis: signals.crisis || outcome.crisisDetected,
+      emergency: signals.emergency || outcome.emergencyDetected,
     };
   }
 
@@ -633,6 +717,8 @@ export class GenerationService {
 }
 
 function errorKind(err: unknown): ErrorKind {
+  // 每日专家调用次数在并发时用完：和限流一样提示稍后再试
+  if (err instanceof ExpertQuotaExceeded) return 'rate_limited';
   if (err instanceof GatewayError) {
     switch (err.kind) {
       case 'not_configured':

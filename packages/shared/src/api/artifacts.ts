@@ -71,6 +71,8 @@ export const artifactSchema = artifactSummarySchema.extend({
   clientFacing: z.boolean().default(true),
   /** 产物用到的专家调用（M3 规格 6.2）；没有调用专家时为空 */
   consultationId: z.uuid().nullable().default(null),
+  /** 专家意见里有疑似急症信号：审核栏醒目提示（M3 合规审查） */
+  emergencySignal: z.boolean().default(false),
 });
 export type Artifact = z.infer<typeof artifactSchema>;
 

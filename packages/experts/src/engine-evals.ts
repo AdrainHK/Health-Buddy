@@ -85,7 +85,13 @@ export const synthesisEvalCases: SynthesisEvalCase[] = [
           ...base,
           summary: '空腹血糖 6.5 mmol/L 高于报告参考范围，建议先从饮食结构入手并复测。',
           findings: [dataPoint('空腹血糖高于报告参考范围。', '空腹血糖', '6.5 mmol/L')],
-          suggestions: [{ text: '了解主食和甜饮料的情况，先调整饮食结构后复测。', citations: [] }],
+          suggestions: [
+            {
+              text: '了解主食和甜饮料的情况，先调整饮食结构后复测。',
+              category: 'lifestyle',
+              citations: [],
+            },
+          ],
         },
       },
     ],

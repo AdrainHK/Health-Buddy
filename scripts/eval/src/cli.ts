@@ -15,7 +15,12 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createGateway, loadGatewayConfig, type ProviderName } from '@health-buddy/ai-engine';
-import { EXPERT_EVAL_CASES, routingEvalCases, synthesisEvalCases } from '@health-buddy/experts';
+import {
+  EXPERT_EVAL_CASES,
+  interpretationExpertEvalCases,
+  routingEvalCases,
+  synthesisEvalCases,
+} from '@health-buddy/experts';
 import { sampleFontAvailable } from '@health-buddy/seed';
 import {
   askEvalCases,
@@ -67,7 +72,11 @@ if (extractionCases.length && !sampleFontAvailable()) {
   console.error(process.env.GITHUB_ACTIONS ? `::error title=eval 缺少字体::${msg}` : msg);
   process.exit(1);
 }
-const interpretationCases = pick('interpretation', reportInterpretationEvalCases);
+// M3：/体检解读 带专家意见摘要的用例也在 interpretation 里跑
+const interpretationCases = pick('interpretation', [
+  ...reportInterpretationEvalCases,
+  ...interpretationExpertEvalCases,
+]);
 const outlineCases = pick('outline', interviewOutlineEvalCases);
 const planCases = pick('plan', assessmentPlanEvalCases);
 const onlyExpert = arg('expert');
@@ -144,6 +153,8 @@ const DETAIL_RULES = new Set([
   'outline.invented_report',
   'outline.judgment',
   'client.banned_terms',
+  'client.expert_name',
+  'client.expert_content',
   'client.disease_terms',
   'client.drug_terms',
   'client.judgment_terms',

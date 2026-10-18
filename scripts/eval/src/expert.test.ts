@@ -35,7 +35,7 @@ const opinion = (overrides: Partial<ExpertOpinion> = {}): ExpertOpinion => ({
       citations: [],
     },
   ],
-  suggestions: [{ text: '了解饮酒频率。', citations: [] }],
+  suggestions: [{ text: '了解饮酒频率。', category: 'communication', citations: [] }],
   referral: { needed: false, urgency: null, to: null, reason: null },
   questionsToAsk: [],
   dataGaps: [],
@@ -139,6 +139,25 @@ describe('gradeExpertOpinion', () => {
     ]);
   });
 
+  it('复核数值、诊断句式、判断提示词、对客户说话、自写免责声明和无引用的“依据指南”', () => {
+    const bad = opinion({
+      summary: '根据指南，您的空腹血糖属于糖尿病前期，目标 7 mmol/L 以下。仅供参考。',
+    });
+    expect(gradeExpertOpinion(baseCase, call(bad), [6.5]).map((f) => f.rule)).toEqual([
+      'opinion.diagnostic',
+      'opinion.judgment_hint',
+      'accuracy.invented_numbers',
+      'opinion.addresses_client',
+      'opinion.self_disclaimer',
+      'opinion.guideline_claim',
+    ]);
+    // 资料里有的数值、可引用卡片里的数值不算编造
+    const ok = opinion({ summary: '空腹血糖 6.5 mmol/L，高于报告参考范围。' });
+    expect(gradeExpertOpinion(baseCase, call(ok), [6.5])).toEqual([]);
+    const card = opinion({ summary: '来源中的说法是控制在 7 以下。' });
+    expect(gradeExpertOpinion(baseCase, call(card), [], [7])).toEqual([]);
+  });
+
   it('没有参考范围的指标：同一句里提到它并下高低判断才算', () => {
     const c: ExpertEvalCase = {
       ...baseCase,
@@ -156,7 +175,13 @@ describe('gradeExpertOpinion', () => {
     const c: ExpertEvalCase = { ...baseCase, expect: { citedCards: ['S1-01'] } };
     expect(gradeExpertOpinion(c, call(opinion())).map((f) => f.rule)).toEqual(['citation.missing']);
     const cited = opinion({
-      suggestions: [{ text: '了解饮酒频率。', citations: [{ sourceId: 'S1', cardId: 'S1-01' }] }],
+      suggestions: [
+        {
+          text: '了解饮酒频率。',
+          category: 'communication',
+          citations: [{ sourceId: 'S1', cardId: 'S1-01' }],
+        },
+      ],
     });
     expect(gradeExpertOpinion(c, call(cited))).toEqual([]);
   });

@@ -39,7 +39,7 @@ maxOutputTokens: 1500
 
 - summary：两三句话的结论，写给健管师；有危机信号时第一句就是危机提醒。
 - findings：健管师描述里值得关注的情况；有卡片支撑的标 cited，没有的标 data_only。
-- suggestions：沟通方式和支持性建议。
+- suggestions：沟通方式和支持性建议（category 都写 communication）。
 - questionsToAsk：建议健管师进一步了解的情况。
 
 转介规则：

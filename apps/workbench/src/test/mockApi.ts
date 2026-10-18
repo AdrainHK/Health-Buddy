@@ -228,6 +228,7 @@ export function makeArtifactDetail(
     },
     contentHash: 'hash-1',
     consultationId: null,
+    emergencySignal: false,
     criticalFlags: [],
     sourceReportId: null,
     riskTierSuggestion: null,

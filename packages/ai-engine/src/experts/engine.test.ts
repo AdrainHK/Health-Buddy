@@ -13,7 +13,14 @@ import type {
 import { runConsultation } from './engine.js';
 import { MEDICAL_REVIEW_TOPIC } from './synthesis.js';
 import type { ConsultationInput, ConsultationRequest, ExpertProfile } from './types.js';
-import { correctionNote, validateOpinion } from './validate.js';
+import {
+  checkedNumbers,
+  correctionNote,
+  diagnosticHits,
+  hasDrugAdvice,
+  parseChineseNumber,
+  validateOpinion,
+} from './validate.js';
 
 /** 一次模型调用的脚本：返回的 JSON、拒答、出错或延迟 */
 type Reply =
@@ -122,7 +129,7 @@ function opinion(overrides: Partial<ExpertOpinion> = {}): ExpertOpinion {
         citations: [],
       },
     ],
-    suggestions: [{ text: '建议复测空腹血糖。', citations: [] }],
+    suggestions: [{ text: '建议复测空腹血糖。', category: 'follow_up', citations: [] }],
     referral: { needed: false, urgency: null, to: null, reason: null },
     questionsToAsk: ['近期饮食情况'],
     dataGaps: [],
@@ -693,6 +700,70 @@ describe('validateOpinion', () => {
       INPUT.allowedNumbers,
     );
     expect(ok.opinion?.findings).toEqual([]);
+  });
+
+  it('checks unit-bearing and threshold numbers of any size, and Chinese numerals', () => {
+    expect(checkedNumbers('近 30 天监测 3 次，每周 5 天')).toEqual([]);
+    expect(checkedNumbers('糖化血红蛋白 7 % 以下')).toEqual([7]);
+    expect(checkedNumbers('空腹血糖 7 mmol/L，BMI 24 kg/m²，心率 60 次/分')).toEqual([7, 24, 60]);
+    expect(checkedNumbers('控制在 6 以内，超过 9 要注意，体重减 5kg')).toEqual([6, 9, 5]);
+    expect(checkedNumbers('空腹血糖六点五，目标七，百分之五，血压一百四十 mmHg 以上')).toEqual([
+      6.5, 7, 5, 140,
+    ]);
+    expect(checkedNumbers('一起了解每一项情况，2026-09-12 复查')).toEqual([]);
+    expect(parseChineseNumber('一百四')).toBe(140);
+    expect(parseChineseNumber('十二')).toBe(12);
+    expect(parseChineseNumber('两点零五')).toBe(2.05);
+  });
+
+  it('finds diagnostic sentence patterns and drug names or doses', () => {
+    expect(diagnosticHits('属于糖尿病前期')).toEqual(['属于糖尿病前期']);
+    expect(diagnosticHits('考虑为代谢问题；提示脂肪肝')).toHaveLength(2);
+    expect(diagnosticHits('已经是高血压病了')).toHaveLength(1);
+    expect(diagnosticHits('提示健管师关注血糖变化')).toEqual([]);
+    expect(hasDrugAdvice('可以加用二甲双胍')).toBe(true);
+    expect(hasDrugAdvice('每天 500 mg')).toBe(true);
+    expect(hasDrugAdvice('每次两片')).toBe(true);
+    expect(hasDrugAdvice('了解目前在用哪些降压药')).toBe(false);
+    expect(hasDrugAdvice('甘油三酯 2.3 mg/dL')).toBe(false);
+    expect(hasDrugAdvice('早餐一片全麦面包，每天饮水 1500 毫升')).toBe(false);
+  });
+
+  it('drops drug advice and unsupported guideline claims in the summary and referral reason', () => {
+    const drug = validateOpinion(
+      opinion({
+        suggestions: [
+          { text: '可以考虑二甲双胍。', category: 'follow_up', citations: [] },
+          { text: '晚餐少吃甜食。', category: 'lifestyle', citations: [] },
+        ],
+      }),
+      profileCards,
+      INPUT.allowedNumbers,
+    );
+    expect(drug.issues).toEqual(['drug_advice']);
+    expect(drug.opinion?.suggestions.map((x) => x.text)).toEqual(['晚餐少吃甜食。']);
+
+    const summary = validateOpinion(
+      opinion({ summary: '根据指南，空腹血糖高于参考范围需要关注。' }),
+      profileCards,
+      INPUT.allowedNumbers,
+    );
+    expect(summary.fatal).toBe(true);
+    expect(summary.issues).toEqual(['unsupported_claim']);
+
+    const reason = validateOpinion(
+      opinion({
+        referral: {
+          needed: true,
+          urgency: 'attention',
+          to: '内分泌科',
+          reason: '指南建议就医评估',
+        },
+      }),
+      profileCards,
+      INPUT.allowedNumbers,
+    );
+    expect(reason.opinion?.referral.reason).toBeNull();
   });
 
   it('writes correction notes by category only', () => {

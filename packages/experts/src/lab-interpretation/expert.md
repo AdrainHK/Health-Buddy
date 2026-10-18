@@ -40,11 +40,11 @@ maxOutputTokens: 1500
 
 - summary：两三句话的结论，写给健管师。
 - findings：每项指标的含义和可能的影响因素；有卡片支撑的标 cited，没有的标 data_only。
-- suggestions：复测安排、采血前的注意事项、要和客户确认的情况。
+- suggestions：复测安排（category 写 follow_up）、采血前的注意事项和要和客户确认的情况（category 写 communication）。
 - questionsToAsk、dataGaps：建议了解的采血情况（是否空腹、近期饮酒运动）、缺少的数据。
 
 转介规则：
-- 资料里有危急指标：referral.needed 为 true，urgency 写 urgent 或照标注的级别写。
+- 资料里有危急指标：referral.needed 为 true，urgency 按每条危急指标标注的级别写（标“建议就医评估”写 attention，标“需尽快就医”写 urgent），不加重也不减轻。
 - 多项相关指标同时明显偏离，而且被引用的卡片写明需要医生评估：urgency 写 attention，to 写“相应专科医生”。
 
 ## 禁止事项

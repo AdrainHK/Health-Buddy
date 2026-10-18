@@ -1,4 +1,4 @@
-import { findBannedTerms, normalizeForCompliance } from '@health-buddy/shared';
+import { DRUG_NAMES, findBannedTerms, normalizeForCompliance } from '@health-buddy/shared';
 
 /**
  * 面向客户说出口的话（面谈提纲的问题）的确定性措辞检查（M2 规格 2.8）。
@@ -35,26 +35,10 @@ export const DISEASE_TERMS = [
 ] as const;
 
 /**
- * 具体药名和药物类别（和 interview-outline/skill.md 列出的一致）。
+ * 具体药名和药物类别：词表在 packages/shared（专家引擎共用）。
  * 提纲任何地方都不能点名；问题里只能问“在用哪些药”
  */
-export const DRUG_NAMES = [
-  '降压药',
-  '降糖药',
-  '降脂药',
-  '止痛药',
-  '感冒药',
-  '安眠药',
-  '布洛芬',
-  '对乙酰氨基酚',
-  '他汀',
-  '二甲双胍',
-  '胰岛素',
-  '阿司匹林',
-  '氨氯地平',
-  '非布司他',
-  '别嘌醇',
-] as const;
+export { DRUG_NAMES };
 
 /** 同一个分句里的字（规范化后全角标点已变成半角，两种都排除） */
 const SAME_CLAUSE = '[^，。；：！？,.;:!?\\n]';

@@ -278,6 +278,16 @@ export function loadExpert(dir: URL, evalCardRefs: readonly string[] = []): Expe
     outOfScope: sectionItems(expert.body, '不负责的问题和转介去向'),
     sources,
   };
+  // 专家库卡片和详情页会显示擅长、不负责的问题和来源名称，同样不能含禁用词（合规审查第 13 条）
+  const shown = [
+    ...def.strengths.map((t) => ['擅长的问题', t]),
+    ...def.outOfScope.map((t) => ['不负责的问题', t]),
+    ...sources.sources.map((src) => [`来源 ${src.sourceId} 的名称`, src.name]),
+  ];
+  for (const [field, text] of shown) {
+    if (findBannedTerms(text ?? '').length)
+      throw new Error(`专家 ${expert.meta.id} 的${field}含禁用词`);
+  }
   assertPublishable(def, evalCardRefs);
   return def;
 }

@@ -2,6 +2,7 @@
  * 评测的规则检查（M1 规格 7.5）。确定性的、能用规则判断的都放在这里；
  * “有没有隐含的疾病判断”这类语义问题交给 judge.ts 的大模型评审。
  */
+import { checkedNumbers } from '@health-buddy/ai-engine';
 import {
   DISEASE_TERMS as SHARED_DISEASE_TERMS,
   checkClientText,
@@ -145,12 +146,8 @@ export function round1(n: number): number {
  */
 export function inventedNumbers(text: string, client: ClientSnapshot): number[] {
   const known = knownNumbers(client);
-  const withoutDates = text.replace(/\d{4}[-/年.]\d{1,2}[-/月.]\d{1,2}日?/g, ' ');
-  const found = withoutDates.match(/\d+(?:\.\d+)?/g) ?? [];
-  return found
-    .map(Number)
-    .filter((n) => (!Number.isInteger(n) || n >= 40) && n < 1900)
-    .filter((n) => ![...known].some((k) => Math.abs(k - n) < 1e-9));
+  // 和专家意见的后端校验同一套规则：带单位、百分号、阈值说法的数字不论大小都核对，中文数字也核对
+  return checkedNumbers(text).filter((n) => ![...known].some((k) => Math.abs(k - n) < 1e-9));
 }
 
 /** 对一次技能输出做全部规则检查 */

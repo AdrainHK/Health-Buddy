@@ -3,11 +3,23 @@ import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { withTenant, type Db, type TenantContext } from '../src/db/database.js';
 import type { Database } from '../src/db/types.js';
+import { ExpertQuotaExceeded, ExpertsRepository } from '../src/experts/experts.repository.js';
 import { TEST_APP_URL } from './env.js';
 import { ownerDb, seedFixtures, type Fixtures } from './fixtures.js';
 
 const ROUTING = JSON.stringify({ selected: [], excluded: [], overCap: [], ruleOnly: false });
-const OPINION = JSON.stringify({ inScope: true, summary: '合成意见' });
+const OPINION = JSON.stringify({
+  inScope: true,
+  outOfScopeNote: null,
+  summary: '合成意见',
+  findings: [],
+  suggestions: [],
+  referral: { needed: false, urgency: null, to: null, reason: null },
+  questionsToAsk: [],
+  dataGaps: [],
+  crisisSignal: false,
+  emergencySignal: false,
+});
 
 /**
  * M3 专家数据表的数据库层隔离和约束测试（规格 6.1、6.2）。以应用角色 hb_app 直接连接，绕过仓储层。
@@ -365,5 +377,148 @@ describe('专家数据表的行级安全和约束', () => {
     await expect(
       withTenant(app, platform(), (trx) => trx.deleteFrom('expert_availability_events').execute()),
     ).rejects.toThrow(/permission denied/);
+  });
+  /** 用所有者身份给健管师 A2 建一次专家调用（A2 自己的任务） */
+  async function seedForA2() {
+    const scope = { operator_id: f.operatorA, org_id: f.orgA, manager_id: f.users.managerA2.id };
+    const task = await owner
+      .insertInto('tasks')
+      .values({ ...scope, title: '测试任务' })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    const message = await owner
+      .insertInto('task_messages')
+      .values({
+        ...scope,
+        task_id: task.id,
+        role: 'assistant',
+        mode: 'ask',
+        content: '',
+        status: 'streaming',
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    const c = await owner
+      .insertInto('expert_consultations')
+      .values({
+        ...scope,
+        task_id: task.id,
+        message_id: message.id,
+        trigger: 'mention',
+        routing: ROUTING,
+        status: 'running',
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    return c.id as string;
+  }
+
+  it('跨租户访问被拒绝：退回重写不能复用别人的专家调用', async () => {
+    const mine = await seedConsultation();
+    const theirs = await seedForA2();
+    // 产物只能引用同一任务的调用：A1 的产物引用 A2 的调用被外键拒绝
+    await expect(
+      withTenant(app, managerA1(), async (trx) => {
+        const id = crypto.randomUUID();
+        await trx
+          .insertInto('artifacts')
+          .values({
+            ...scopeA1(),
+            id,
+            task_id: mine.taskId,
+            client_id: null,
+            skill_id: 'report-interpretation',
+            kind: 'report_interpretation',
+            lineage_id: id,
+            version: 1,
+            status: 'draft',
+            content: JSON.stringify({ professional: 'x', clientFacing: 'x' }),
+            consultation_id: theirs,
+          })
+          .execute();
+      }),
+    ).rejects.toThrow();
+    // 复用时按 id 读调用：别人的读不到
+    const repo = new ExpertsRepository(app);
+    expect(await repo.get(managerA1(), theirs)).toBeUndefined();
+    expect(await repo.get(managerA1(), mine.consultationId)).toBeDefined();
+  });
+
+  it('每日上限：并发请求在配额锁下重新计数，不会一起越过上限', async () => {
+    const { taskId, messageId } = await seedConsultation();
+    const repo = new ExpertsRepository(app);
+    const call = {
+      expertId: 'cardiovascular',
+      version: '0.1.0',
+      sourcesVersion: '0123456789ab',
+      selectedReason: 'manager' as const,
+    };
+    const create = () =>
+      repo.createConsultation(
+        managerA1(),
+        {
+          taskId,
+          messageId,
+          clientId: null,
+          reportId: null,
+          trigger: 'mention',
+          routing: { selected: [], excluded: [], overCap: [], ruleOnly: false },
+        },
+        [call],
+        // seedConsultation 已经有 1 次，上限 2 时只能再成功 1 次
+        2,
+      );
+    const results = await Promise.allSettled([create(), create()]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.find((r) => r.status === 'rejected');
+    expect((rejected as PromiseRejectedResult).reason).toBeInstanceOf(ExpertQuotaExceeded);
+    // 别的健管师的调用不占本人的配额
+    const a2 = await seedForA2();
+    expect(a2).toBeTruthy();
+    expect(await repo.callsToday(managerA1())).toBe(2);
+    expect(await repo.callsToday(managerA2())).toBe(0);
+  });
+
+  it('运营商读不到带专家 id 的计量行；平台管理员和本人照旧', async () => {
+    const row = (expertId: string | null) => ({
+      operator_id: f.operatorA,
+      user_id: f.users.managerA1.id,
+      route: expertId ? 'expert' : 'chat',
+      provider: 'openai',
+      model: 'm',
+      input_tokens: 1,
+      output_tokens: 1,
+      duration_ms: 1,
+      outcome: 'complete',
+      expert_id: expertId,
+    });
+    await owner
+      .insertInto('llm_usage')
+      .values([row('nutrition'), row(null)])
+      .execute();
+    const read = (c: TenantContext) =>
+      withTenant(app, c, (trx) => trx.selectFrom('llm_usage').select('route').execute());
+    expect(await read(ctx(f.users.operatorAdminA.id, 'operator_admin', f.operatorA, null))).toEqual(
+      [{ route: 'chat' }],
+    );
+    expect(await read(platform())).toHaveLength(2);
+    expect(await read(managerA1())).toHaveLength(2);
+    expect(await read(managerA2())).toEqual([]);
+  });
+
+  it('暂停状态谁都能读，但读不到是谁暂停的', async () => {
+    await withTenant(app, platform(), (trx) =>
+      trx
+        .insertInto('expert_availability')
+        .values({ expert_id: 'nutrition', enabled: false, updated_by: f.users.platform.id })
+        .execute(),
+    );
+    for (const c of [managerA1(), platform()]) {
+      await expect(
+        withTenant(app, c, (trx) =>
+          trx.selectFrom('expert_availability').select('updated_by').execute(),
+        ),
+      ).rejects.toThrow(/permission denied/);
+    }
   });
 });

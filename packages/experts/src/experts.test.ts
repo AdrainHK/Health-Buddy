@@ -1,4 +1,7 @@
-import { readFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { expertOpinionSchema, findBannedTerms } from '@health-buddy/shared';
 import { describe, expect, it } from 'vitest';
 import { EXPERT_EVAL_TARGET } from './eval-types.js';
@@ -7,13 +10,19 @@ import { routingEvalCases, synthesisEvalCases } from './engine-evals.js';
 import {
   CARDS_MAX_CHARS,
   assertPublishable,
+  loadExpert,
   parseExpertMd,
   parseSourcesMd,
   statusAllowed,
   type ExpertDefinition,
 } from './framework.js';
 import { buildConsultationInput, knownNumbers } from './input.js';
-import { consultationDigest, renderConsultationSections, renderOpinion } from './opinion.js';
+import {
+  consultationDigest,
+  expertMentions,
+  renderConsultationSections,
+  renderOpinion,
+} from './opinion.js';
 import {
   EXPERTS,
   EXPERT_EVAL_CASES,
@@ -238,6 +247,33 @@ describe('expert.md and sources.md parsing', () => {
     expect(preview.systemPrompt).toContain('S1-01（来源待确认）');
   });
 
+  it('rejects banned terms in strengths, out-of-scope items and source names shown on the expert page', () => {
+    const root = mkdtempSync(join(tmpdir(), 'hb-expert-'));
+    try {
+      const dir = join(root, 'nutrition');
+      cpSync(new URL('./nutrition/', import.meta.url), dir, { recursive: true });
+      const file = join(dir, 'expert.md');
+      const md = readFileSync(file, 'utf8');
+      writeFileSync(file, md.replace('## 擅长的问题\n\n', '## 擅长的问题\n\n- 代谢疾病筛查\n'));
+      expect(() => loadExpert(pathToFileURL(`${dir}/`))).toThrow(/擅长的问题含禁用词/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('never lets anyone cite cards of a retired source, even in preview', () => {
+    const md = parseExpertMd(EXPERT_MD('review'));
+    const def: ExpertDefinition = {
+      meta: md.meta,
+      prompt: md.body,
+      strengths: [],
+      outOfScope: [],
+      sources: parseSourcesMd(SOURCES_MD('未签字', '已停用', '待确认')),
+    };
+    expect(toProfile(def, { preview: true }).cards).toEqual([]);
+    expect(expertDetail(def, { preview: true, paused: new Set() }, 0).cards).toEqual([]);
+  });
+
   it('ships sources.md files that parse and mark every candidate as unverified', () => {
     for (const id of IDS) {
       const text = readFileSync(new URL(`./${id}/sources.md`, import.meta.url), 'utf8');
@@ -312,13 +348,67 @@ describe('rendering for managers only', () => {
         citations: [],
       },
     ],
-    suggestions: [{ text: '建议复测。', citations: [] }],
+    suggestions: [{ text: '建议复测。', category: 'follow_up' as const, citations: [] }],
     referral: { needed: true, urgency: 'attention' as const, to: '内分泌科医生', reason: null },
     questionsToAsk: [],
     dataGaps: [],
     crisisSignal: true,
     emergencySignal: false,
   };
+
+  it('marks citations of cards the adviser has not confirmed', () => {
+    const cited = {
+      ...opinion,
+      crisisSignal: false,
+      suggestions: [
+        {
+          text: '来源中的说法。',
+          category: 'follow_up' as const,
+          citations: [{ sourceId: 'S1', cardId: 'S1-01' }],
+        },
+      ],
+    };
+    expect(renderOpinion(cited, { expertId: 'nutrition' })).toContain(
+      '（来源：S1-01（来源待确认））',
+    );
+  });
+
+  it('splits the digest: only lifestyle advice without crisis or emergency signals is rewritable', () => {
+    const calm = {
+      ...opinion,
+      crisisSignal: false,
+      suggestions: [
+        { text: '晚餐少吃甜食。', category: 'lifestyle' as const, citations: [] },
+        { text: '三个月后复查。', category: 'follow_up' as const, citations: [] },
+      ],
+    };
+    const urgent = {
+      ...calm,
+      emergencySignal: true,
+      suggestions: [{ text: '每天快走。', category: 'lifestyle' as const, citations: [] }],
+    };
+    const digest = consultationDigest(
+      [
+        { expertId: 'nutrition', opinion: calm },
+        { expertId: 'cardiovascular', opinion: urgent },
+      ],
+      (id) => id,
+    );
+    const [professional = '', rewritable = ''] = digest.split('第二部分');
+    expect(professional).toContain('三个月后复查');
+    expect(professional).toContain('转介：建议就医评估，内分泌科医生');
+    expect(professional).not.toContain('晚餐少吃甜食');
+    expect(rewritable).toContain('- 晚餐少吃甜食。');
+    expect(rewritable).not.toMatch(/复查|快走|内分泌科|nutrition/);
+    // 有信号的意见都没有可改写的建议时写“没有”
+    const none = consultationDigest([{ expertId: 'nutrition', opinion }], (id) => id);
+    expect(none.split('第二部分')[1]).toContain('（没有）');
+  });
+
+  it('finds the word expert and expert names in client text', () => {
+    expect(expertMentions('建议少喝甜饮料。', ['营养专家'])).toEqual([]);
+    expect(expertMentions('AI 专家说营养专家建议…', ['营养专家'])).toEqual(['专家', '营养专家']);
+  });
 
   it('puts the crisis notice first and the expert disclaimer last', () => {
     const text = renderOpinion(opinion, { removedFindings: 1 });

@@ -44,6 +44,16 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     alter table llm_usage
       add column expert_id text check (expert_id ~ '^[a-z][a-z0-9-]{1,63}$');
 
+    -- 运营商原来能读本协会的全部计量行（含 user_id）。专家调用的计量行带 expert_id，
+    -- 能看出哪位健管师在什么时间请了哪位专家；运营商不直接读这些行，专家统计以后走不带健管师的汇总
+    -- （租户隔离审查）。平台管理员和本人照旧
+    drop policy llm_usage_select on llm_usage;
+    create policy llm_usage_select on llm_usage for select using (
+      app_role() = 'platform_admin'
+      or (app_role() = 'operator_admin' and operator_id = app_operator_id() and expert_id is null)
+      or user_id = app_user_id()
+    );
+
     create table expert_consultations (
       id uuid primary key default gen_random_uuid(),
       operator_id uuid not null references operators (id),
@@ -131,6 +141,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     -- 产物用到的专家调用：必须属于同一任务
     alter table artifacts
       add column consultation_id uuid,
+      -- 专家意见里有疑似急症信号（合规审查第 2 条）：审核栏醒目提示，专业版最前面有提示
+      add column emergency_signal boolean not null default false,
       add foreign key (consultation_id, task_id) references expert_consultations (id, task_id);
 
     create table expert_availability (
@@ -288,7 +300,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     -- 产物引用的专家调用不能改（草稿也不行）
     create function artifacts_consultation_guard() returns trigger language plpgsql as $$
     begin
-      if new.consultation_id is distinct from old.consultation_id then
+      if new.consultation_id is distinct from old.consultation_id
+        or new.emergency_signal is distinct from old.emergency_signal then
         raise exception 'artifact consultation is immutable' using errcode = 'check_violation';
       end if;
       return new;
@@ -368,7 +381,9 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     ) on expert_calls to ${app};
     grant select, insert on expert_feedback to ${app};
     grant update (rating, reason, updated_at) on expert_feedback to ${app};
-    grant select, insert on expert_availability to ${app};
+    -- 谁暂停的（updated_by）不对任何账号开放读取：暂停记录表里有操作人，只有平台管理员能看
+    grant select (expert_id, enabled, updated_at) on expert_availability to ${app};
+    grant insert on expert_availability to ${app};
     grant update (enabled, updated_by, updated_at) on expert_availability to ${app};
     grant select on expert_availability_events to ${app};
   `.execute(db);

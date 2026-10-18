@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ASK_DISCLAIMER,
   DISCLAIMER,
+  EXPERT_DISCLAIMER,
   buildClientDeliverable,
   countDisclaimers,
   endsWithDisclaimer,
@@ -23,6 +25,12 @@ describe('findBannedTerms', () => {
 
   it('allows the standard disclaimer', () => {
     expect(findBannedTerms(`血压偏高，建议复测。${DISCLAIMER}`)).toEqual([]);
+  });
+
+  it('allows the fixed ask and expert notices appended by the backend', () => {
+    expect(findBannedTerms(`意见正文。\n\n${EXPERT_DISCLAIMER}`)).toEqual([]);
+    expect(findBannedTerms(`回答正文。\n\n${ASK_DISCLAIMER}`)).toEqual([]);
+    expect(findBannedTerms(`需要诊断。${EXPERT_DISCLAIMER}`)).toHaveLength(1);
   });
 
   it('still flags 诊断 outside the disclaimer', () => {

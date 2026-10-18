@@ -91,6 +91,8 @@ export interface NewArtifact {
   riskTierSuggestion?: { tier: 'high' | 'medium' | 'low'; reason: string } | null;
   /** 产物用到的专家调用（M3 规格 6.2） */
   consultationId?: string | null;
+  /** 专家意见里有疑似急症信号（M3） */
+  emergencySignal?: boolean;
 }
 
 /**
@@ -762,6 +764,7 @@ export class WorkbenchRepository {
             ? JSON.stringify(data.riskTierSuggestion)
             : null,
           consultation_id: data.consultationId ?? null,
+          emergency_signal: data.emergencySignal ?? false,
         })
         .execute();
       await trx

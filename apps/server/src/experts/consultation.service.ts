@@ -167,14 +167,36 @@ export class ConsultationService {
           hooks: {
             onRouted: async (routing) => {
               if (routeStep) await io.steps.finish(routeStep, 'done');
-              consultationId = await this.repo.createConsultation(ctx, {
-                taskId: run.taskId,
-                messageId: run.messageId,
-                clientId: run.clientId,
-                reportId: run.reportId,
-                trigger: run.trigger,
-                routing,
+              // 调用记录和配额在同一个事务里占好（并发请求不会一起越过每日上限）
+              const planned = routing.selected.flatMap((s) => {
+                const profile = available.find((p) => p.id === s.expertId);
+                return profile
+                  ? [
+                      {
+                        expertId: profile.id,
+                        version: profile.version,
+                        sourcesVersion: profile.sourcesVersion,
+                        selectedReason: s.selectedReason,
+                      },
+                    ]
+                  : [];
               });
+              // 超过每日上限时抛 ExpertQuotaExceeded：技能照常生成，@专家 提示稍后再试
+              const created = await this.repo.createConsultation(
+                ctx,
+                {
+                  taskId: run.taskId,
+                  messageId: run.messageId,
+                  clientId: run.clientId,
+                  reportId: run.reportId,
+                  trigger: run.trigger,
+                  routing,
+                },
+                planned,
+                DAILY_EXPERT_CALLS,
+              );
+              consultationId = created.consultationId;
+              for (const [id, callId] of created.callIds) callIds.set(id, callId);
               const ids = routing.selected.map((s) => s.expertId);
               if (ids.length) {
                 consultStep = await io.steps.start(
@@ -184,13 +206,8 @@ export class ConsultationService {
                 );
               }
             },
-            onCallStarted: async (expertId, selectedReason) => {
-              const profile = available.find((p) => p.id === expertId);
-              if (!consultationId || !profile) return;
-              callIds.set(
-                expertId,
-                await this.repo.startCall(ctx, consultationId, profile, selectedReason),
-              );
+            onCallStarted: (expertId) => {
+              if (!consultationId || !callIds.has(expertId)) return;
               io.emit({
                 type: 'expert_call',
                 consultationId,

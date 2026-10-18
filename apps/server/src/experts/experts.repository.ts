@@ -16,6 +16,23 @@ import {
 } from '@health-buddy/shared';
 import { DB } from '../db/db.provider.js';
 import { withTenant, type Db, type TenantContext, type TenantTransaction } from '../db/database.js';
+import { lockExpertQuota } from '../db/locks.js';
+
+/** 今天的专家调用次数已经用完（并发请求在事务里重新数时发现），这次一位专家都不请 */
+export class ExpertQuotaExceeded extends Error {
+  constructor() {
+    super('expert daily quota exceeded');
+    this.name = 'ExpertQuotaExceeded';
+  }
+}
+
+/** 一次调用里要请的一位专家 */
+export interface PlannedCall {
+  expertId: string;
+  version: string;
+  sourcesVersion: string;
+  selectedReason: SelectedReason;
+}
 
 function tenantScope(ctx: TenantContext) {
   return { operator_id: ctx.operatorId ?? '', org_id: ctx.orgId, manager_id: ctx.userId };
@@ -72,16 +89,14 @@ export class ExpertsRepository {
 
   /** 本人今天的专家调用次数（Q12，路由和汇总不计） */
   callsToday(ctx: TenantContext): Promise<number> {
-    return withTenant(this.db, ctx, async (trx) => {
-      const row = await trx
-        .selectFrom('expert_calls')
-        .select((eb) => eb.fn.countAll<string>().as('n'))
-        .where('started_at', '>=', startOfDay())
-        .executeTakeFirst();
-      return Number(row?.n ?? 0);
-    });
+    return withTenant(this.db, ctx, (trx) => countToday(trx));
   }
 
+  /**
+   * 新建一次专家调用，并在同一个事务里为选中的每位专家占好调用记录（状态“进行中”）。
+   * 先拿这位健管师的配额锁、重新数今天的调用次数，超过每日上限就整体回滚并抛 ExpertQuotaExceeded，
+   * 两个并发请求不会一起越过上限（租户隔离审查）。返回调用 id 和每位专家的调用记录 id。
+   */
   createConsultation(
     ctx: TenantContext,
     input: {
@@ -92,8 +107,14 @@ export class ExpertsRepository {
       trigger: ConsultationTrigger;
       routing: RoutingDecision;
     },
-  ): Promise<string> {
+    calls: readonly PlannedCall[],
+    dailyLimit: number,
+  ): Promise<{ consultationId: string; callIds: Map<string, string> }> {
     return withTenant(this.db, ctx, async (trx) => {
+      if (calls.length) {
+        await lockExpertQuota(trx, ctx.userId);
+        if ((await countToday(trx)) + calls.length > dailyLimit) throw new ExpertQuotaExceeded();
+      }
       const row = await trx
         .insertInto('expert_consultations')
         .values({
@@ -108,31 +129,24 @@ export class ExpertsRepository {
         })
         .returning('id')
         .executeTakeFirstOrThrow();
-      return row.id;
-    });
-  }
-
-  startCall(
-    ctx: TenantContext,
-    consultationId: string,
-    expert: { id: string; version: string; sourcesVersion: string },
-    selectedReason: SelectedReason,
-  ): Promise<string> {
-    return withTenant(this.db, ctx, async (trx) => {
-      const row = await trx
-        .insertInto('expert_calls')
-        .values({
-          ...tenantScope(ctx),
-          consultation_id: consultationId,
-          expert_id: expert.id,
-          expert_version: expert.version,
-          sources_version: expert.sourcesVersion,
-          selected_reason: selectedReason,
-          status: 'running',
-        })
-        .returning('id')
-        .executeTakeFirstOrThrow();
-      return row.id;
+      const callIds = new Map<string, string>();
+      for (const call of calls) {
+        const inserted = await trx
+          .insertInto('expert_calls')
+          .values({
+            ...tenantScope(ctx),
+            consultation_id: row.id,
+            expert_id: call.expertId,
+            expert_version: call.version,
+            sources_version: call.sourcesVersion,
+            selected_reason: call.selectedReason,
+            status: 'running',
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        callIds.set(call.expertId, inserted.id);
+      }
+      return { consultationId: row.id, callIds };
     });
   }
 
@@ -273,6 +287,16 @@ export class ExpertsRepository {
       return 'ok';
     });
   }
+}
+
+/** 今天（UTC）本人的专家调用次数；行级安全保证只数自己的 */
+async function countToday(trx: TenantTransaction): Promise<number> {
+  const row = await trx
+    .selectFrom('expert_calls')
+    .select((eb) => eb.fn.countAll<string>().as('n'))
+    .where('started_at', '>=', startOfDay())
+    .executeTakeFirst();
+  return Number(row?.n ?? 0);
 }
 
 function selectConsultation(trx: TenantTransaction) {

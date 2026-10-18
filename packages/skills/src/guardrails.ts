@@ -134,7 +134,7 @@ function greetingLength(text: string): number {
 }
 
 /** 规格 3.6：通俗版出现疾病名称或判断句式时只提示、不拦截 */
-const JUDGEMENT_HINT =
+export const JUDGEMENT_HINT =
   /患有|患上|有.{0,8}风险|疑似|高血压|低血压|糖尿病|高血脂|血脂异常|痛风|脂肪肝|冠心病|中风|抑郁|焦虑/g;
 
 export interface ClientTextCheck {

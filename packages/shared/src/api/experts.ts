@@ -56,8 +56,17 @@ export const opinionFindingSchema = z.object({
 });
 export type OpinionFinding = z.infer<typeof opinionFindingSchema>;
 
+/**
+ * 建议的类别（M3 合规审查）：只有 lifestyle（饮食、运动、作息等生活方式）可以被改写进 /体检解读 的通俗版；
+ * follow_up（复查、就医、转介、跟进）和 communication（健管师怎么沟通、了解什么）只进专业版。
+ */
+export const SUGGESTION_CATEGORIES = ['lifestyle', 'follow_up', 'communication'] as const;
+export const suggestionCategorySchema = z.enum(SUGGESTION_CATEGORIES);
+export type SuggestionCategory = z.infer<typeof suggestionCategorySchema>;
+
 export const opinionSuggestionSchema = z.object({
   text: z.string(),
+  category: suggestionCategorySchema,
   citations: z.array(citationSchema),
 });
 export type OpinionSuggestion = z.infer<typeof opinionSuggestionSchema>;

@@ -72,7 +72,7 @@ export function toProfile(
   def: ExpertDefinition,
   env: Pick<Availability, 'preview'>,
 ): ExpertProfile {
-  const cards = def.sources.cards.filter((c) => c.confirmed || env.preview);
+  const cards = usableCards(def, env.preview);
   return {
     id: def.meta.id,
     name: def.meta.name,
@@ -85,6 +85,22 @@ export function toProfile(
     catalog: { tagline: def.meta.tagline, strengths: def.strengths, outOfScope: def.outOfScope },
     cards: cards.map((c) => ({ cardId: c.cardId, sourceId: c.sourceId, numbers: c.numbers })),
   };
+}
+
+/**
+ * 可以引用的卡片：正式环境只有已确认的；预览环境也放行待确认的。
+ * 来源已停用的卡片在任何环境都不能引用（合规审查第 11 条）。
+ */
+function usableCards(def: ExpertDefinition, preview: boolean) {
+  const retired = new Set(
+    def.sources.sources.filter((s) => s.status === 'retired').map((s) => s.sourceId),
+  );
+  return def.sources.cards.filter((c) => !retired.has(c.sourceId) && (c.confirmed || preview));
+}
+
+/** 这位专家的这张卡片是否已由医学顾问确认（专家意见里引用待确认卡片时要标出来） */
+export function cardConfirmed(expertId: string, cardId: string): boolean {
+  return Boolean(getExpert(expertId)?.sources.cards.find((c) => c.cardId === cardId)?.confirmed);
 }
 
 export function expertSummary(def: ExpertDefinition, env: Availability): ExpertSummary {
@@ -105,7 +121,7 @@ export function expertDetail(
   env: Availability,
   myUsageCount: number,
 ): ExpertDetail {
-  const visibleCards = def.sources.cards.filter((c) => c.confirmed || env.preview);
+  const visibleCards = usableCards(def, env.preview);
   return {
     ...expertSummary(def, env),
     strengths: def.strengths,

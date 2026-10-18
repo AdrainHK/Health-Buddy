@@ -31,6 +31,54 @@ export const ASK_DISCLAIMER = '仅供健管师参考，非医疗诊断，请勿�
 /** 专家意见（专家中心的回答、专家标签）末尾固定加这段提示，由后端拼接（M3 规格 2.3、4.2） */
 export const EXPERT_DISCLAIMER = '仅供健管师专业参考，非医疗诊断，请勿直接转发给客户';
 
+/**
+ * 常见慢病用药的药名和药物类别。面向客户的文字、面谈提纲（M2 规格 2.8）和专家意见（M3 规格 7.1）
+ * 都不能点名药物；工作台技能和专家引擎共用这一份（packages/skills 的 wording.ts 重新导出）。
+ */
+export const DRUG_NAMES = [
+  '降压药',
+  '降糖药',
+  '降脂药',
+  '止痛药',
+  '感冒药',
+  '安眠药',
+  '布洛芬',
+  '对乙酰氨基酚',
+  '他汀',
+  '二甲双胍',
+  '胰岛素',
+  '阿司匹林',
+  '氨氯地平',
+  '硝苯地平',
+  '缬沙坦',
+  '厄贝沙坦',
+  '氯沙坦',
+  '美托洛尔',
+  '格列美脲',
+  '格列齐特',
+  '阿卡波糖',
+  '达格列净',
+  '恩格列净',
+  '西格列汀',
+  '司美格鲁肽',
+  '利拉鲁肽',
+  '非诺贝特',
+  '依折麦布',
+  '氯吡格雷',
+  '华法林',
+  '左甲状腺素',
+  '非布司他',
+  '别嘌醇',
+  '苯溴马隆',
+  '秋水仙碱',
+  '舍曲林',
+  '帕罗西汀',
+  '艾司唑仑',
+] as const;
+
+/** 不算违规的固定提示语：标准免责声明、问一问和专家意见末尾由后端拼接的提示（都含“非医疗诊断”） */
+const ALLOWED_PHRASES = [ASK_DISCLAIMER, EXPERT_DISCLAIMER, DISCLAIMER] as const;
+
 export interface ComplianceIssue {
   term: string;
   reason: string;
@@ -90,12 +138,16 @@ export function normalizeForCompliance(text: string): Normalized {
  * 找出文案中的禁用词。
  * 匹配前去掉空格、零宽字符和词中间的分隔符号，统一全角半角和繁简，
  * “筛 查”“根\u200B治”“诊·断”“確診”这类写法同样会被找出。
- * 标准免责声明“非医疗诊断”里的“诊断”是允许的，不算违规。
+ * 标准免责声明和后端固定拼接的提示语（ASK_DISCLAIMER、EXPERT_DISCLAIMER）里的“诊断”是允许的，不算违规。
  */
 export function findBannedTerms(text: string): ComplianceIssue[] {
   const { text: norm, origin } = normalizeForCompliance(text);
-  const disclaimer = normalizeForCompliance(DISCLAIMER).text;
-  const masked = norm.split(disclaimer).join(' '.repeat(disclaimer.length));
+  // 长的在前：专家和问一问的提示语里含标准免责声明
+  let masked = norm;
+  for (const phrase of ALLOWED_PHRASES) {
+    const p = normalizeForCompliance(phrase).text;
+    masked = masked.split(p).join(' '.repeat(p.length));
+  }
   const issues: ComplianceIssue[] = [];
   for (const { term, reason } of BANNED_TERMS) {
     let from = 0;

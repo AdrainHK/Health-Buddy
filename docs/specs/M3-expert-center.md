@@ -271,7 +271,7 @@ packages/experts/
 | `inScope` | 问题是否在本专家范围内。为 false 时只填 `outOfScopeNote`（建议改问哪位专家或转介哪类医生），其余为空 |
 | `summary` | 结论，两三句话，写给健管师 |
 | `findings[]` | 每条要点：`point`（观点）、`dataRefs`（引用的输入数据：指标名、数值、日期、来源）、`citations`（`sourceId` + 条目编号）。没有知识来源支撑的要点必须标 `basis: "data_only"`，只能描述数据，不能下专业判断 |
-| `suggestions[]` | 给健管师的建议（生活方式干预重点、复测安排、要和客户沟通的点），每条可带引用 |
+| `suggestions[]` | 给健管师的建议（生活方式干预重点、复测安排、要和客户沟通的点），每条可带引用，并标类别 `category`：lifestyle（生活方式，唯一可以改写进通俗版的一类）/ follow_up（复查、就医、跟进）/ communication（沟通和要了解的情况） |
 | `referral` | `needed`（true / false）、`urgency`（`attention` 建议就医评估 / `urgent` 需尽快就医，沿用 M1 危急指标的两档）、`to`（转介的科室或专业人员类别，如“内分泌科医生”“注册营养师”“心理咨询师或精神科医生”）、`reason` |
 | `questionsToAsk[]` | 建议健管师进一步了解的情况 |
 | `dataGaps[]` | 缺少但有帮助的数据 |
@@ -484,7 +484,7 @@ packages/experts/
 |---|---|---|
 | `GET /api/experts` | 当前账号可用的专家列表（正式环境只有 published 且未暂停的） | 客户角色（M6 起）→ 404；暂停的专家不在列表里 |
 | `GET /api/experts/:id` | 专家详情和来源清单 | 不存在或已暂停 → 404 |
-| `POST /api/tasks`（扩展） | 增加 expertId，从专家中心新建绑定专家的任务 | expertId 不可用 → 404；非健管师 → 403 |
+| `POST /api/tasks`（扩展） | 增加 expertId，从专家中心新建绑定专家的任务 | expertId 不可用 → 404；非健管师 → 404（沿用 M1：工作台接口对其他角色按“不存在”处理） |
 | `POST /api/tasks/:id/messages`（扩展） | 增加 expertRefs、excludedExperts；SSE 推送专家步骤和事件 | 别人的任务 → 404，不调用任何模型；expertRefs 含不可用专家 → 404；带 clientRefs 指向别人的客户 → 404 |
 | `POST /api/tasks/:id/stop`（扩展） | 同时中止所有进行中的专家调用 | 别人的任务 → 404，且不影响别人进行中的调用 |
 | `GET /api/tasks/:id/expert-consultations` | 任务里的专家调用列表（专家标签） | 别人的任务 → 404；机构管理员、运营商、平台 → 404 |
@@ -703,7 +703,13 @@ packages/experts/
 7. **每日上限**：按 UTC 自然日统计；`@专家` 时剩余次数少于这条消息要请的专家数就返回 429；技能自动调用时最多只请剩余次数那么多位，用完时不请专家、技能照常生成。
 8. **SSE 事件**：新增 `expert_call`（`consultationId`、`expertId`、`status`、`failureCategory`）和 `consultation`（`consultationId`、`status`）。执行步骤新增 `route_experts`、`consult_expert`、`consult_experts`、`synthesize_experts` 四种，步骤带 `expertIds`。
 9. **平台暂停记录**由数据库触发器写入（after 触发器，状态没变不记），应用不能直接写或删改记录。
-10. **还没做**（后续 PR）：工作台界面（专家库、专家标签、专家选择条、审核栏提示）、`GET /api/expert-stats`、`POST /api/expert-consultations/:id/reconsult`、`add-expert`、10 分钟内重复发起时复用意见、报告更正后把旧意见标为“基于更正前的数值”、主对话问一问的“请 @专家 看看”建议按钮。评测集每位专家还差到 15 条（规格 8.1），补齐并经医学顾问签字前专家不能 published。
+10. **合规审查后的补充（2026-10-18）**：
+    - 意见结构的 suggestions 每条加 `category`（lifestyle / follow_up / communication）。给 /体检解读 的摘要拆成两部分：第一部分（结论、要点、转介、非生活方式建议）只能用于专业版；第二部分只有 lifestyle 建议、不带专家名称，有危机或急症信号的意见和心理专家的意见不进第二部分。用了专家意见时，通俗版出现“专家”或专家名称按措辞检查处理：带纠正说明重新生成一次，仍有就不保存草稿。
+    - 危机和急症：问一问里专家都没回复时，固定提示前面仍加关键词识别出的危机、急症提示；/体检解读 的危机信号取关键词、任何一位专家和汇总的“或”，急症信号同样取“或”，专业版最前面写疑似急症提示，产物带 `emergencySignal`（审核栏醒目提示用）。
+    - 意见校验加强：带单位、百分号、阈值说法（以上、以下、超过、低于、控制在、目标）的数字不论大小都核对，中文数字先换算；结论和转介原因在没有任何有效引用时同样不能写“根据指南”；点名具体药物或写剂量的要点移除（类别 `drug_advice`，药名词表和面谈提纲共用，放在 packages/shared）；诊断性句式补充“属于……病/前期”“考虑为”“诊为”“已经是……病”“提示……病/肝”。
+    - 来源已停用的卡片在任何环境都不能引用；引用待确认卡片时专家意见里标“来源待确认”。
+11. **租户隔离审查后的补充（2026-10-18）**：运营商不再直接读带 `expert_id` 的计量行（`llm_usage_select` 的运营商分支加 `expert_id is null`）；每日上限在新建调用的事务里先拿健管师的咨询锁、重新计数，再一次性占好所有调用记录，并发请求不会一起越过上限（并发时超出：技能不请专家照常生成，@专家 返回 SSE 错误 `rate_limited`）；`expert_availability.updated_by` 不开放读取。
+12. **还没做**（后续 PR）：工作台界面（专家库、专家标签、专家选择条、审核栏提示）、`GET /api/expert-stats`、`POST /api/expert-consultations/:id/reconsult`、`add-expert`、10 分钟内重复发起时复用意见、报告更正后把旧意见标为“基于更正前的数值”、主对话问一问的“请 @专家 看看”建议按钮。评测集每位专家还差到 15 条（规格 8.1），补齐并经医学顾问签字前专家不能 published。
 
 ---
 

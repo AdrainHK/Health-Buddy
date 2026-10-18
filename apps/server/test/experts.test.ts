@@ -11,7 +11,7 @@ import { createTestApp, loginAs } from './http.js';
 import { ownerDb, seedFixtures, type Fixtures } from './fixtures.js';
 
 type Agent = Awaited<ReturnType<typeof loginAs>>;
-type Reply = { json: unknown } | { text: string } | { fail: true };
+type Reply = { json: unknown } | { text: string } | { fail: true } | { refused: true };
 
 /**
  * 按用途和专家 id 回答的模拟厂商（全部是合成数据）：专家并行调用，不能按调用次序排脚本。
@@ -20,14 +20,33 @@ type Reply = { json: unknown } | { text: string } | { fail: true };
 class ExpertProvider implements Provider {
   readonly name = 'openai' as const;
   readonly calls: GatewayRequest[] = [];
-  scripts: Record<string, Reply> = {};
+  /** 一个键可以给一串脚本：按次序用（模拟重试），用完后重复最后一条 */
+  scripts: Record<string, Reply | Reply[]> = {};
+  private readonly used = new Map<string, number>();
+
+  reset(): void {
+    this.calls.length = 0;
+    this.scripts = {};
+    this.used.clear();
+  }
 
   async *stream(req: GatewayRequest, route: ResolvedRoute): AsyncIterable<GatewayEvent> {
     this.calls.push(req);
     const key = req.expertId ? `expert:${req.expertId}` : req.route;
-    const reply = this.scripts[key] ?? DEFAULTS[req.route] ?? { text: '{}' };
+    const script = this.scripts[key];
+    const n = this.used.get(key) ?? 0;
+    this.used.set(key, n + 1);
+    const reply =
+      (Array.isArray(script) ? script[Math.min(n, script.length - 1)] : script) ??
+      DEFAULTS[req.route] ??
+      ({ text: '{}' } as Reply);
     await Promise.resolve();
     if ('fail' in reply) throw Object.assign(new Error('boom'), { status: 500 });
+    const usage = { inputTokens: 10, outputTokens: 10 };
+    if ('refused' in reply) {
+      yield { type: 'done', finishReason: 'refused', usage, model: route.model };
+      return;
+    }
     yield { type: 'text', delta: 'json' in reply ? JSON.stringify(reply.json) : reply.text };
     yield {
       type: 'done',
@@ -56,7 +75,7 @@ function opinion(summary = '该客户空腹血糖高于报告参考范围，建�
         citations: [],
       },
     ],
-    suggestions: [{ text: '建议了解近期饮食和运动情况。', citations: [] }],
+    suggestions: [{ text: '晚餐少吃甜食，每周快走几次。', category: 'lifestyle', citations: [] }],
     referral: { needed: false, urgency: null, to: null, reason: null },
     questionsToAsk: ['近期晚餐情况'],
     dataGaps: [],
@@ -184,10 +203,7 @@ describe('专家中心接口和专家调用', () => {
   beforeEach(async () => {
     f = await seedFixtures(owner);
     reportA1 = await insertReport(f.clients.a1[0]);
-    for (const p of [provider, prodProvider]) {
-      p.calls.length = 0;
-      p.scripts = {};
-    }
+    for (const p of [provider, prodProvider]) p.reset();
   });
 
   afterAll(async () => {
@@ -701,6 +717,187 @@ describe('专家中心接口和专家调用', () => {
       await a1.put(`/api/expert-calls/${call.id}/feedback`).send({ rating: 'useful' }).expect(409);
       const a2 = await as(f.users.managerA2.email);
       await a2.get(`/api/expert-consultations/${consultation.id}`).expect(404);
+    });
+  });
+  describe('合规审查和租户隔离审查的补充', () => {
+    const interpret = (agent: Agent, taskId: string, extra: Record<string, unknown> = {}) =>
+      send(agent, taskId, {
+        mode: 'craft',
+        content: '帮我解读一下这份报告',
+        skillId: 'report-interpretation',
+        reportRefs: [reportA1],
+        ...extra,
+      }).expect(200);
+    const answerOf = async (taskId: string) =>
+      (
+        await owner
+          .selectFrom('task_messages')
+          .select('content')
+          .where('task_id', '=', taskId)
+          .where('role', '=', 'assistant')
+          .executeTakeFirstOrThrow()
+      ).content as string;
+    const scopeOf = (manager: { id: string }) => ({
+      operator_id: f.operatorA,
+      org_id: f.orgA,
+      manager_id: manager.id,
+    });
+
+    /** 用所有者身份给某位健管师补 n 次今天的专家调用（每次调用一位专家） */
+    async function fillCalls(manager: { id: string }, n: number, clientId: string | null = null) {
+      const scope = scopeOf(manager);
+      const task = await owner
+        .insertInto('tasks')
+        .values({ ...scope, client_id: clientId, title: '合成任务' })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      const message = await owner
+        .insertInto('task_messages')
+        .values({
+          ...scope,
+          task_id: task.id,
+          role: 'assistant',
+          mode: 'ask',
+          content: '',
+          status: 'streaming',
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      const consultations: string[] = [];
+      for (let i = 0; i < n; i++) {
+        const c = await owner
+          .insertInto('expert_consultations')
+          .values({
+            ...scope,
+            task_id: task.id,
+            message_id: message.id,
+            client_id: clientId,
+            trigger: 'mention',
+            routing: JSON.stringify({ selected: [], excluded: [], overCap: [], ruleOnly: false }),
+            status: 'running',
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        await owner
+          .insertInto('expert_calls')
+          .values({
+            ...scope,
+            consultation_id: c.id,
+            expert_id: 'nutrition',
+            expert_version: '0.1.0',
+            sources_version: '0123456789ab',
+            selected_reason: 'manager',
+            status: 'running',
+          })
+          .execute();
+        consultations.push(c.id as string);
+      }
+      return { taskId: task.id as string, consultations };
+    }
+
+    it('专家都拒答时，回答仍以心理危机提示开头，再给固定提示', async () => {
+      provider.scripts['expert:endocrine-metabolism'] = { refused: true };
+      const agent = await as(f.users.managerA1.email);
+      const taskId = await newTask(agent, { expertId: 'endocrine-metabolism' });
+      await send(agent, taskId, {
+        mode: 'ask',
+        content: '客户说最近不想活了，血糖怎么办？',
+      }).expect(200);
+      const answer = await answerOf(taskId);
+      expect(answer.startsWith('**心理危机提示**')).toBe(true);
+      expect(answer.endsWith('专家暂时无法回复，请稍后再试。')).toBe(true);
+    });
+
+    it('专家标出的危机和急症信号进入解读：专业版最前面有提示，产物带急症标记', async () => {
+      provider.scripts['expert:endocrine-metabolism'] = {
+        json: { ...opinion(), crisisSignal: true },
+      };
+      provider.scripts['expert:nutrition'] = { json: { ...opinion(), emergencySignal: true } };
+      const agent = await as(f.users.managerA1.email);
+      const taskId = await newTask(agent, { clientId: f.clients.a1[0] });
+      await interpret(agent, taskId, { excludedExperts: ['lab-interpretation'] });
+      const [artifact] = await artifactsOf(taskId);
+      const content = artifact!.content as { professional: string; clientFacing: string };
+      expect(content.professional.startsWith('**疑似急症提示**')).toBe(true);
+      expect(content.professional).toContain('## 心理危机提示');
+      expect(artifact?.emergency_signal).toBe(true);
+      const detail = (await agent.get(`/api/artifacts/${artifact!.id}`).expect(200)).body;
+      expect(detail.artifact.emergencySignal).toBe(true);
+      // 有信号的意见不提供可改写进通俗版的建议
+      const skillCall = provider.calls.find((c) => c.route === 'report_interpretation')!;
+      const prompt = JSON.stringify(skillCall.messages);
+      expect(prompt).toContain('第二部分');
+      expect(prompt.split('第二部分')[1]).toContain('（没有）');
+    });
+
+    it('通俗版出现“专家”或专家名称时带纠正说明重新生成，第二次仍有就不保存草稿', async () => {
+      const leaky = {
+        json: { ...interpretationJson, clientFacing: '营养专家建议您晚餐少吃甜食。' },
+      };
+      provider.scripts['report_interpretation'] = [leaky, { json: interpretationJson }];
+      const agent = await as(f.users.managerA1.email);
+      const taskId = await newTask(agent, { clientId: f.clients.a1[0] });
+      await interpret(agent, taskId);
+      const skillCalls = provider.calls.filter((c) => c.route === 'report_interpretation');
+      expect(skillCalls).toHaveLength(2);
+      expect(JSON.stringify(skillCalls[1]?.messages)).toContain('通俗版里出现了“专家”');
+      expect(await artifactsOf(taskId)).toHaveLength(1);
+
+      provider.reset();
+      provider.scripts['report_interpretation'] = leaky;
+      const second = await newTask(agent, { clientId: f.clients.a1[0] });
+      const res = await interpret(agent, second);
+      expect(res.text).toContain('wording_check_failed');
+      expect(await artifactsOf(second)).toEqual([]);
+    });
+
+    it('别的健管师的专家调用不影响本人的每日次数和使用次数', async () => {
+      await fillCalls(f.users.managerA2, 200);
+      const agent = await as(f.users.managerA1.email);
+      const taskId = await newTask(agent);
+      await send(agent, taskId, {
+        mode: 'ask',
+        content: '饮食问题',
+        expertRefs: ['nutrition'],
+      }).expect(200);
+      expect((await agent.get('/api/experts/nutrition').expect(200)).body.expert.myUsageCount).toBe(
+        1,
+      );
+    });
+
+    it('跨租户访问被拒绝：停止别人的任务 404，别人进行中的专家调用不受影响', async () => {
+      const { taskId, consultations } = await fillCalls(f.users.managerA1, 1);
+      for (const u of [f.users.managerA2, f.users.managerB1]) {
+        const other = await as(u.email);
+        await other.post(`/api/tasks/${taskId}/stop`).expect(404);
+      }
+      const row = await owner
+        .selectFrom('expert_consultations')
+        .select('status')
+        .where('id', '=', consultations[0]!)
+        .executeTakeFirstOrThrow();
+      expect(row.status).toBe('running');
+      const calls = await owner
+        .selectFrom('expert_calls')
+        .select('status')
+        .where('consultation_id', '=', consultations[0]!)
+        .execute();
+      expect(calls).toEqual([{ status: 'running' }]);
+    });
+
+    it('跨租户访问被拒绝：@专家 时 @ 别人的客户 404，不调用任何模型', async () => {
+      const agent = await as(f.users.managerA1.email);
+      const taskId = await newTask(agent);
+      for (const clientId of [f.clients.a2, f.clients.b1, f.clients.a3]) {
+        await send(agent, taskId, {
+          mode: 'ask',
+          content: '这位客户饮食怎么调整？',
+          clientRefs: [clientId],
+          expertRefs: ['nutrition'],
+        }).expect(404);
+      }
+      expect(provider.calls).toEqual([]);
+      expect(await consultationsOf(taskId)).toEqual([]);
     });
   });
 });
