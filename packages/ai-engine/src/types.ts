@@ -13,7 +13,9 @@ export const ROUTES = [
   'skill', // 工作台技能执行（M1）
   'report_interpretation', // 体检报告解读（M2）
   'report_extraction', // 体检报告识别：从报告图片或 PDF 转录指标（M2）
-  'expert', // 专家智能体（M3）
+  'expert', // 专家智能体：每位专家的意见（M3）
+  'expert_routing', // 专家路由：补充规则没覆盖的专家（M3 规格 3.2）
+  'expert_synthesis', // 专家意见汇总和分歧标注（M3 规格 3.5）
   'companion', // AI 健康伴侣（M6）
 ] as const;
 export type Route = (typeof ROUTES)[number];
@@ -50,6 +52,8 @@ export interface GatewayRequest {
   messages: ChatMessage[];
   maxOutputTokens?: number;
   responseFormat?: ResponseFormat;
+  /** 专家调用时的专家 id（M3 规格 3.7），只用于计量和日志；平台级的 id，不是个人信息 */
+  expertId?: string;
 }
 
 /** 谁发起的调用，用于计量和成本归属。只放 id，不放任何个人信息。 */
@@ -104,6 +108,8 @@ export interface UsageRecord {
   durationMs: number;
   outcome: FinishReason | 'error';
   errorType?: string;
+  /** 专家、路由、汇总以外的调用没有 */
+  expertId?: string;
 }
 
 export interface GatewayLogger {

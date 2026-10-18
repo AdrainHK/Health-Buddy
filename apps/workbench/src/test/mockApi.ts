@@ -39,6 +39,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     clientId: null,
     archived: false,
     detachedReason: null,
+    expertId: null,
     createdAt: NOW,
     updatedAt: NOW,
     ...overrides,
@@ -55,6 +56,7 @@ export const SKILL: SkillSummary = {
   usesReport: false,
   allowsEmptyRequest: false,
   planSkills: [],
+  experts: 'none',
 };
 
 export const CLIENTS: ClientSummary[] = [
@@ -225,6 +227,7 @@ export function makeArtifactDetail(
       clientFacing: `合成通俗版：最近状态平稳，继续保持。\n\n${SYNTHETIC_DISCLAIMER}`,
     },
     contentHash: 'hash-1',
+    consultationId: null,
     criticalFlags: [],
     sourceReportId: null,
     riskTierSuggestion: null,

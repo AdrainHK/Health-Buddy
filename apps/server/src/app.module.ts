@@ -15,6 +15,7 @@ import { CriticalThresholdsModule } from './critical-thresholds/critical-thresho
 import { ApiExceptionFilter } from './common/exception.filter.js';
 import { APP_CONFIG, type AppConfig } from './config.js';
 import { DbModule } from './db/db.provider.js';
+import { ExpertsModule } from './experts/experts.module.js';
 import { HealthController } from './health/health.controller.js';
 import { SkillsController } from './skills/skills.controller.js';
 import { TasksModule } from './tasks/tasks.module.js';
@@ -46,6 +47,7 @@ export class AppModule {
         WorkbenchModule,
         ReportsModule,
         AiModule,
+        ExpertsModule,
       ],
       controllers: [HealthController, SkillsController],
       providers: [

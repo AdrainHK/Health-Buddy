@@ -47,6 +47,8 @@ export interface PreparedTurn {
   reportId: string | null;
   managerMessageId: string;
   assistantMessageId: string;
+  /** 专家中心发起的任务绑定的专家（M3 规格 2.3） */
+  expertId: string | null;
 }
 
 export interface ClientContext {
@@ -69,6 +71,11 @@ export interface RegenerationContext {
   parent: { id: string; lineageId: string; version: number } | undefined;
   /** 用报告的技能依据的已核对报告 */
   reportId: string | null;
+  /** 退回重写时，上一版用到的专家调用：默认复用，不重新请专家（M3 Q21） */
+  reuseConsultationId?: string | null;
+  /** 确认计划时沿用提出计划那条消息里的“一定要请”“不要请”（M3 规格 2.8） */
+  expertRefs?: string[];
+  excludedExperts?: string[];
 }
 
 export interface NewArtifact {
@@ -82,6 +89,8 @@ export interface NewArtifact {
   sourceReportId?: string | null;
   /** AI 的建议分层（只有 /体检解读，规格 2.7） */
   riskTierSuggestion?: { tier: 'high' | 'medium' | 'low'; reason: string } | null;
+  /** 产物用到的专家调用（M3 规格 6.2） */
+  consultationId?: string | null;
 }
 
 /**
@@ -113,6 +122,9 @@ export class WorkbenchRepository {
        * 报告可选时一份都没有也照常生成
        */
       usesReport?: boolean;
+      /** @ 的专家和“不要请”的专家（M3 规格 2.4、2.5），已由接口校验可用 */
+      expertRefs?: string[];
+      excludedExperts?: string[];
     },
     claim: (taskId: string) => boolean,
   ): Promise<PreparedTurn> {
@@ -181,6 +193,8 @@ export class WorkbenchRepository {
           skill_id: input.skillId ?? null,
           client_refs: clientId && ref ? [clientId] : [],
           report_refs: reportId ? [reportId] : [],
+          expert_refs: input.expertRefs ?? [],
+          excluded_experts: input.excludedExperts ?? [],
           status: 'complete',
           created_at: new Date(now),
         })
@@ -205,6 +219,7 @@ export class WorkbenchRepository {
         reportId: usedReportId,
         managerMessageId: manager.id,
         assistantMessageId: assistant,
+        expertId: task.expert_id,
       };
     });
   }
@@ -242,7 +257,7 @@ export class WorkbenchRepository {
       if (!skillIds.length) throw conflict();
       const request = await trx
         .selectFrom('task_messages')
-        .select(['content', 'report_refs'])
+        .select(['content', 'report_refs', 'expert_refs', 'excluded_experts'])
         .where('task_id', '=', task.id)
         .where('role', '=', 'manager')
         .where('created_at', '<', plan.created_at)
@@ -289,6 +304,8 @@ export class WorkbenchRepository {
         assistantMessageId: assistant,
         parent: undefined,
         reportId,
+        expertRefs: request.expert_refs,
+        excludedExperts: request.excluded_experts,
       };
     });
   }
@@ -322,6 +339,7 @@ export class WorkbenchRepository {
           'status',
           'created_at',
           'source_report_id',
+          'consultation_id',
         ])
         .where('id', '=', artifactId)
         .forUpdate()
@@ -384,7 +402,20 @@ export class WorkbenchRepository {
         parent: { id: artifact.id, lineageId: artifact.lineage_id, version: artifact.version },
         // 重写沿用原来依据的报告
         reportId: artifact.source_report_id,
+        reuseConsultationId: artifact.consultation_id,
       };
+    });
+  }
+
+  /** 任务绑定的专家：任务不存在或不属于当前健管师时 undefined */
+  taskExpert(ctx: TenantContext, taskId: string): Promise<string | null | undefined> {
+    return withTenant(this.db, ctx, async (trx) => {
+      const row = await trx
+        .selectFrom('tasks')
+        .select('expert_id')
+        .where('id', '=', taskId)
+        .executeTakeFirst();
+      return row ? row.expert_id : undefined;
     });
   }
 
@@ -585,6 +616,7 @@ export class WorkbenchRepository {
     kind: TaskStep['kind'],
     labelKey: string,
     labelDate: string | null = null,
+    expertIds: string[] = [],
   ): Promise<TaskStep> {
     return withTenant(this.db, ctx, async (trx) => {
       const row = await trx
@@ -596,6 +628,7 @@ export class WorkbenchRepository {
           kind,
           label_key: labelKey,
           label_date: labelDate,
+          expert_ids: expertIds,
           status: 'running',
         })
         .returning([
@@ -605,6 +638,7 @@ export class WorkbenchRepository {
           'kind',
           'label_key',
           'label_date',
+          'expert_ids',
           'status',
           'started_at',
           'finished_at',
@@ -637,6 +671,7 @@ export class WorkbenchRepository {
           'kind',
           'label_key',
           'label_date',
+          'expert_ids',
           'status',
           'started_at',
           'finished_at',
@@ -726,6 +761,7 @@ export class WorkbenchRepository {
           risk_tier_suggestion: data.riskTierSuggestion
             ? JSON.stringify(data.riskTierSuggestion)
             : null,
+          consultation_id: data.consultationId ?? null,
         })
         .execute();
       await trx
@@ -758,7 +794,7 @@ function tenantScope(ctx: TenantContext) {
 async function lockTask(trx: TenantTransaction, taskId: string) {
   const task = await trx
     .selectFrom('tasks')
-    .select(['id', 'client_id', 'detached_reason'])
+    .select(['id', 'client_id', 'detached_reason', 'expert_id'])
     .where('id', '=', taskId)
     .forUpdate()
     .executeTakeFirst();
@@ -808,6 +844,7 @@ function toStep(row: {
   kind: TaskStep['kind'];
   label_key: string;
   label_date: string | null;
+  expert_ids: string[];
   status: TaskStep['status'];
   started_at: Date;
   finished_at: Date | null;
@@ -819,6 +856,7 @@ function toStep(row: {
     kind: row.kind,
     labelKey: row.label_key,
     labelDate: row.label_date,
+    expertIds: row.expert_ids,
     status: row.status,
     startedAt: row.started_at.toISOString(),
     finishedAt: row.finished_at?.toISOString() ?? null,

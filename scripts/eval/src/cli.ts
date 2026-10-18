@@ -6,12 +6,16 @@
  *   pnpm eval --runs 5 --case crisis-signal --no-judge
  *   pnpm eval --suite ask          只跑问一问（summary 只跑近况小结，extraction 只跑报告识别，
  *                                  interpretation 只跑体检解读，outline 只跑面谈提纲，plan 只跑多步计划；默认都跑）
+ *   pnpm eval --suite expert --expert nutrition
+ *                                  M3：只跑专家评测（expert-routing 只跑路由，expert-synthesis 只跑汇总；
+ *                                  --expert 限定一位专家）。改专家的 expert.md、sources.md、共用规则后必须跑
  *
  * 密钥从环境变量读取（OPENAI_API_KEY、ANTHROPIC_API_KEY），不会打印。
  * 结果写到 eval-results/，全部是合成数据。有用例没通过时退出码为 1。
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createGateway, loadGatewayConfig, type ProviderName } from '@health-buddy/ai-engine';
+import { EXPERT_EVAL_CASES, routingEvalCases, synthesisEvalCases } from '@health-buddy/experts';
 import { sampleFontAvailable } from '@health-buddy/seed';
 import {
   askEvalCases,
@@ -24,9 +28,12 @@ import {
 import {
   runAskEval,
   runEval,
+  runExpertEval,
   runExtractionEval,
   runPlanEval,
   runReportSkillEval,
+  runRoutingEval,
+  runSynthesisEval,
   summarize,
   type RunResult,
 } from './run.js';
@@ -63,6 +70,15 @@ if (extractionCases.length && !sampleFontAvailable()) {
 const interpretationCases = pick('interpretation', reportInterpretationEvalCases);
 const outlineCases = pick('outline', interviewOutlineEvalCases);
 const planCases = pick('plan', assessmentPlanEvalCases);
+const onlyExpert = arg('expert');
+const expertCases = pick(
+  'expert',
+  Object.values(EXPERT_EVAL_CASES)
+    .flat()
+    .filter((c) => !onlyExpert || c.expertId === onlyExpert),
+);
+const expertRoutingCases = pick('expert-routing', routingEvalCases);
+const expertSynthesisCases = pick('expert-synthesis', synthesisEvalCases);
 const useJudge = !process.argv.includes('--no-judge');
 // 越界类问一问主要靠大模型评审判断，不开评审时不跑，免得“全部通过”有误导
 const askCases = pick('ask', askEvalCases).filter(
@@ -74,7 +90,7 @@ const all: RunResult[] = [];
 for (const provider of providers) {
   const gateway = createGateway({ ...config, defaultProvider: provider, routes: {} });
   console.log(
-    `\n${provider}（${config.defaultModels[provider]}）：${cases.length + askCases.length + extractionCases.length + interpretationCases.length + outlineCases.length + planCases.length} 个用例 × ${runs} 次`,
+    `\n${provider}（${config.defaultModels[provider]}）：${cases.length + askCases.length + extractionCases.length + interpretationCases.length + outlineCases.length + planCases.length + expertCases.length + expertRoutingCases.length + expertSynthesisCases.length} 个用例 × ${runs} 次`,
   );
   const results = [
     ...(await runEval({ gateway, provider, cases, runs, useJudge })),
@@ -97,6 +113,9 @@ for (const provider of providers) {
       useJudge,
     })),
     ...(await runPlanEval({ gateway, provider, cases: planCases, runs, useJudge })),
+    ...(await runExpertEval({ gateway, provider, cases: expertCases, runs })),
+    ...(await runRoutingEval({ gateway, provider, cases: expertRoutingCases, runs })),
+    ...(await runSynthesisEval({ gateway, provider, cases: expertSynthesisCases, runs })),
   ];
   all.push(...results);
   for (const s of summarize(results)) {

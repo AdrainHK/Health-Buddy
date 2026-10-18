@@ -137,6 +137,11 @@
     "generateInterpretation": "生成体检解读",
     "generateOutline": "生成面谈提纲",
     "answer": "生成回答",
+    "routeExperts": "选择专家",
+    "consultExpert": "请专家分析",
+    "consultExperts": "调用专家",
+    "reuseExperts": "沿用上一版的专家意见",
+    "synthesizeExperts": "汇总专家意见",
     "unknown": "处理中"
   },
   "skills": {

@@ -28,6 +28,11 @@ const envSchema = z.object({
   S3_FORCE_PATH_STYLE: z.preprocess(emptyAsUnset, z.enum(['true', 'false']).default('false')),
   /** 报告识别队列（BullMQ）用的 Redis。没设置时上传和重新识别返回“未配置” */
   REDIS_URL: z.preprocess(emptyAsUnset, z.url().optional()),
+  /**
+   * 专家预览开关（M3 规格 Q1、Q2）：知识来源和医学顾问签字确认前，专家只在预览环境试用。
+   * 默认关闭：正式环境不开放专家中心和自动调用，/体检解读 保持 M2 的行为。
+   */
+  EXPERTS_PREVIEW: z.preprocess(emptyAsUnset, z.enum(['true', 'false']).default('false')),
 });
 
 /** 空字符串按“没有配置”处理：部署平台里留空的变量会以空字符串传进来 */
@@ -64,6 +69,8 @@ export interface AppConfig {
   redisUrl: string | undefined;
   /** 只配了一部分的对象存储变量名（不含值），启动时提示 */
   incompleteStorageVars: string[];
+  /** 专家预览开关：打开时 review 状态的专家可用（来源待确认） */
+  expertsPreview: boolean;
 }
 
 export const APP_DB_ROLE = 'hb_app';
@@ -100,6 +107,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     llm: loadGatewayConfig(source),
     ...storageConfig(env),
     redisUrl: env.REDIS_URL,
+    expertsPreview: env.EXPERTS_PREVIEW === 'true',
   };
 }
 

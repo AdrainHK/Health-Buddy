@@ -25,6 +25,11 @@ export const skillSummarySchema = z.object({
    * 确认后按顺序调用这些技能，每个技能各出一份草稿。
    */
   planSkills: z.array(z.string()).default([]),
+  /**
+   * 是否接入专家（M3 规格 2.4、Q7）：none 不调用专家（带 @专家 时后端返回 400）；
+   * auto 执行时自动选择专家。M3 只有 /体检解读 是 auto，且只在专家预览开启时生效。
+   */
+  experts: z.enum(['none', 'auto']).default('none'),
 });
 export type SkillSummary = z.infer<typeof skillSummarySchema>;
 

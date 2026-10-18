@@ -69,6 +69,8 @@ export const artifactSchema = artifactSummarySchema.extend({
    * 不能复制、导出，界面上不显示通俗版。
    */
   clientFacing: z.boolean().default(true),
+  /** 产物用到的专家调用（M3 规格 6.2）；没有调用专家时为空 */
+  consultationId: z.uuid().nullable().default(null),
 });
 export type Artifact = z.infer<typeof artifactSchema>;
 

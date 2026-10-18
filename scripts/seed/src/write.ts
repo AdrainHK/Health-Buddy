@@ -162,6 +162,10 @@ async function removeDemoData(trx: Trx): Promise<void> {
   for (const table of [
     'artifact_events',
     'artifacts',
+    // M3 专家调用（跟着任务走）
+    'expert_feedback',
+    'expert_calls',
+    'expert_consultations',
     'task_plans',
     'task_steps',
     'task_messages',

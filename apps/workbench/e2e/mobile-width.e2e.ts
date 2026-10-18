@@ -57,6 +57,7 @@ const task: Task = {
   clientId: ids.client,
   archived: false,
   detachedReason: null,
+  expertId: null,
   createdAt: NOW,
   updatedAt: NOW,
 };
@@ -71,6 +72,7 @@ const skills: SkillSummary[] = [
     usesReport: true,
     allowsEmptyRequest: false,
     planSkills: [],
+    experts: 'auto',
   },
 ];
 

@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.131.0",
+    "@health-buddy/shared": "workspace:*",
     "openai": "7.25.0",
     "zod": "4.6.7"
   },

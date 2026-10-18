@@ -28,6 +28,9 @@ export const DISCLAIMER = '仅供参考，非医疗诊断';
 /** 问一问的回答不经过审核，固定加这段提示（M1 规格 7.3） */
 export const ASK_DISCLAIMER = '仅供健管师参考，非医疗诊断，请勿直接转发给客户';
 
+/** 专家意见（专家中心的回答、专家标签）末尾固定加这段提示，由后端拼接（M3 规格 2.3、4.2） */
+export const EXPERT_DISCLAIMER = '仅供健管师专业参考，非医疗诊断，请勿直接转发给客户';
+
 export interface ComplianceIssue {
   term: string;
   reason: string;

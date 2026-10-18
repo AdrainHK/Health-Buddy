@@ -59,6 +59,8 @@ export interface LlmUsageTable {
   duration_ms: number;
   outcome: 'complete' | 'truncated' | 'refused' | 'error';
   error_type: string | null;
+  /** 专家、路由、汇总调用的专家 id（M3 规格 3.7） */
+  expert_id: ColumnType<string | null, string | null | undefined, never>;
   created_at: Timestamp;
 }
 
@@ -141,6 +143,8 @@ export interface TasksTable extends ManagerScoped {
   title: string;
   archived_at: Date | null;
   detached_reason: 'client_transferred' | 'client_deleted' | null;
+  /** 专家中心发起的任务绑定的专家（M3） */
+  expert_id: ColumnType<string | null, string | null | undefined, never>;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -154,6 +158,8 @@ export interface TaskMessagesTable extends ManagerScoped {
   skill_id: string | null;
   client_refs: ColumnType<string[], string[] | undefined, string[]>;
   report_refs: ColumnType<string[], string[] | undefined, string[]>;
+  expert_refs: ColumnType<string[], string[] | undefined, never>;
+  excluded_experts: ColumnType<string[], string[] | undefined, never>;
   status: 'streaming' | 'complete' | 'stopped' | 'refused' | 'error';
   created_at: Timestamp;
 }
@@ -163,8 +169,18 @@ export interface TaskStepsTable extends ManagerScoped {
   message_id: string;
   seq: number;
   kind:
-    'read_client' | 'read_report' | 'compare_reports' | 'detect_critical' | 'run_skill' | 'answer';
+    | 'read_client'
+    | 'read_report'
+    | 'compare_reports'
+    | 'detect_critical'
+    | 'run_skill'
+    | 'answer'
+    | 'route_experts'
+    | 'consult_experts'
+    | 'consult_expert'
+    | 'synthesize_experts';
   label_key: string;
+  expert_ids: ColumnType<string[], string[] | undefined, never>;
   label_date: ColumnType<string | null, string | null | undefined, string | null>;
   status: 'running' | 'done' | 'failed';
   started_at: Timestamp;
@@ -192,6 +208,7 @@ export interface ArtifactsTable extends ManagerScoped {
   content: Json<{ professional: string; clientFacing: string }>;
   critical_flags: ColumnType<unknown[], string | undefined, string>;
   source_report_id: ColumnType<string | null, string | null | undefined, string | null>;
+  consultation_id: ColumnType<string | null, string | null | undefined, never>;
   risk_tier_suggestion: ColumnType<
     { tier: 'high' | 'medium' | 'low'; reason: string } | null,
     string | null | undefined,
@@ -386,6 +403,71 @@ export interface ReportExtractionQuotaTable {
   pages: number;
 }
 
+type JsonColumn<T> = ColumnType<T, string | undefined, string>;
+type NullableJson<T> = ColumnType<T | null, string | null | undefined, string | null>;
+
+/** 一次“请专家”（M3 规格 6.2）。终态之后不能修改（触发器） */
+export interface ExpertConsultationsTable extends ManagerScoped {
+  id: Generated<string>;
+  task_id: string;
+  message_id: string;
+  client_id: ColumnType<string | null, string | null | undefined, never>;
+  report_id: ColumnType<string | null, string | null | undefined, never>;
+  trigger: 'expert_center' | 'mention' | 'skill_auto' | 'plan';
+  routing: JsonColumn<unknown>;
+  status: 'running' | 'done' | 'partial' | 'failed' | 'stopped';
+  synthesis: NullableJson<unknown>;
+  synthesis_status: Nullable<'skipped' | 'done' | 'failed'>;
+  reused_from: ColumnType<string | null, string | null | undefined, never>;
+  created_at: Timestamp;
+  finished_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+}
+
+/** 每位专家的一次调用。opinion 含健康信息，只存数据库，不进日志 */
+export interface ExpertCallsTable extends ManagerScoped {
+  id: Generated<string>;
+  consultation_id: string;
+  expert_id: string;
+  expert_version: string;
+  sources_version: string;
+  selected_reason: 'manager' | 'rule' | 'model';
+  status: 'running' | 'done' | 'failed' | 'timeout' | 'refused' | 'stopped';
+  failure_category: Nullable<'timeout' | 'refused' | 'invalid_output' | 'provider_error'>;
+  opinion: NullableJson<unknown>;
+  removed_findings: ColumnType<number, number | undefined, number>;
+  provider: Nullable<'openai' | 'anthropic'>;
+  model: Nullable<string>;
+  input_tokens: ColumnType<number, number | undefined, number>;
+  output_tokens: ColumnType<number, number | undefined, number>;
+  started_at: Timestamp;
+  finished_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+}
+
+export interface ExpertFeedbackTable extends ManagerScoped {
+  id: Generated<string>;
+  expert_call_id: string;
+  rating: 'useful' | 'not_useful';
+  reason: Nullable<'inaccurate' | 'too_general' | 'out_of_scope' | 'bad_citation' | 'other'>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+/** 平台级上下架开关（Q11） */
+export interface ExpertAvailabilityTable {
+  expert_id: string;
+  enabled: boolean;
+  updated_by: string;
+  updated_at: Timestamp;
+}
+
+export interface ExpertAvailabilityEventsTable {
+  id: Generated<string>;
+  expert_id: string;
+  actor_id: string | null;
+  action: 'paused' | 'resumed';
+  created_at: Timestamp;
+}
+
 export interface Database {
   operators: OperatorsTable;
   organizations: OrganizationsTable;
@@ -410,4 +492,9 @@ export interface Database {
   artifact_events: ArtifactEventsTable;
   critical_thresholds: CriticalThresholdsTable;
   critical_threshold_events: CriticalThresholdEventsTable;
+  expert_consultations: ExpertConsultationsTable;
+  expert_calls: ExpertCallsTable;
+  expert_feedback: ExpertFeedbackTable;
+  expert_availability: ExpertAvailabilityTable;
+  expert_availability_events: ExpertAvailabilityEventsTable;
 }

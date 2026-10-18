@@ -151,6 +151,10 @@ function applyEvent(state: Conversation, event: TaskStreamEvent): Conversation {
             : { ...m, status: event.reason },
         ),
       };
+    case 'expert_call':
+    case 'consultation':
+      // M3 的专家标签在后续 PR 里实现；执行步骤已经通过 step 事件显示
+      return s;
   }
 }
 
