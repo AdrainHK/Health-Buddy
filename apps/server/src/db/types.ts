@@ -210,6 +210,7 @@ export interface ArtifactsTable extends ManagerScoped {
   source_report_id: ColumnType<string | null, string | null | undefined, string | null>;
   consultation_id: ColumnType<string | null, string | null | undefined, never>;
   emergency_signal: ColumnType<boolean, boolean | undefined, never>;
+  crisis_signal: ColumnType<boolean, boolean | undefined, never>;
   risk_tier_suggestion: ColumnType<
     { tier: 'high' | 'medium' | 'low'; reason: string } | null,
     string | null | undefined,

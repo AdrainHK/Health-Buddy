@@ -33,13 +33,18 @@ export type OpinionIssue = (typeof OPINION_ISSUES)[number];
 // 不收“得了”：“还得了解”会误报
 export const DIAGNOSTIC_PHRASES = ['确诊', '患有', '患上', '治好', '可以逆转', '能逆转'] as const;
 
-/** 诊断性句式（合规审查补充）：“属于糖尿病前期”“考虑为”“诊为”“已经是高血压病”“提示脂肪肝” */
+/**
+ * 诊断性句式（合规审查补充）：“属于糖尿病前期”“考虑为”“诊为”“已经是高血压病”“提示脂肪肝”
+ * “可能是糖尿病”“疑似冠心病”“符合高血压病”“处于糖尿病前期”“已是痛风病”。
+ * “提示健管师”“提示该客户”这类提醒不算。
+ */
 export const DIAGNOSTIC_PATTERNS: readonly RegExp[] = [
   /属于[^，。；,;]{0,8}(?:病|前期|症)/,
   /考虑为/,
   /诊为/,
   /已经是[^，。；,;]{0,8}(?:病|症)/,
-  /提示[^，。；,;]{0,8}(?:病|肝|症)/,
+  /提示(?!健管师|该客户|客户|您|医生|及时|尽快)[^，。；,;]{0,8}(?:病|肝|症)/,
+  /(?:可能是|疑似|符合|处于|已是)[^，。；,;]{0,8}(?:病|前期)/,
 ];
 
 /** 文本里的诊断性表述（先规范化），返回命中的词或句式片段 */
@@ -55,8 +60,13 @@ export function diagnosticHits(text: string): string[] {
  * 药物剂量（合规审查补充）：数字加药物剂量单位（5 mg、10 单位、2 片），中文数字加毫克、微克、粒、胶囊，
  * 或“每次两片”。检验单位（mg/dL、µmol/L、U/L）后面紧跟 / 或字母，不算剂量；饮水的毫升数不算。
  */
-const DRUG_DOSE =
-  /\d+(?:\.\d+)?\s*(?:mg|毫克|µg|μg|ug|mcg|微克|片|粒|胶囊|单位|IU)(?![/A-Za-z])|[一二两三四五六七八九十半]+(?:毫克|微克|粒|胶囊)|每次[一二两三半]+片/i;
+/** “片”“粒”后面是常见食物时不算剂量（2 片面包、10 粒坚果、一片柠檬），和 wording.ts 的食物例外一致 */
+const FOOD =
+  '(?!面包|吐司|全麦|饼干|坚果|水果|苹果|梨|橙|西瓜|柠檬|生姜|姜|肉|菜|叶|海苔|核桃|杏仁|花生|葡萄|枣|蓝莓|草莓|巧克力|燕麦)';
+const DRUG_DOSE = new RegExp(
+  `\\d+(?:\\.\\d+)?\\s*(?:mg|毫克|µg|μg|ug|mcg|微克|(?:片|粒)${FOOD}|胶囊|单位|IU)(?![/A-Za-z])|[一二两三四五六七八九十半]+(?:毫克|微克|粒${FOOD}|胶囊)|每次[一二两三半]+片${FOOD}`,
+  'i',
+);
 
 /** 具体药名（不含“降压药”这类类别词：了解客户在用哪类药是健管师的正常工作） */
 const SPECIFIC_DRUGS = DRUG_NAMES.filter((d) => !d.endsWith('药'));
@@ -66,17 +76,21 @@ export function hasDrugAdvice(text: string): boolean {
   const norm = normalizeForCompliance(text).text;
   return DRUG_DOSE.test(norm) || SPECIFIC_DRUGS.some((d) => norm.includes(d));
 }
-/** 没有卡片支撑的要点不能写“根据指南”之类的话（规格 5.2 第 3 条） */
-const GUIDELINE_CLAIM = /指南|共识|根据来源|按照来源|根据文献|研究表明/;
+/** 没有卡片支撑的要点不能写“根据指南”之类的话（规格 5.2 第 3 条）；评测的规则检查用同一个 */
+export const GUIDELINE_CLAIM = /指南|共识|根据来源|按照来源|根据文献|研究表明/;
 
 const DATE = /\d{4}\s*[-/年.]\s*\d{1,2}\s*[-/月.]\s*\d{1,2}\s*日?/g;
 
 /** 检验和测量单位：数字后面跟这些单位时，不论大小都要核对 */
 const UNIT =
-  '(?:mmol\\/L|μmol\\/L|µmol\\/L|umol\\/L|mg\\/dL|mg\\/L|g\\/L|U\\/L|IU\\/L|mmHg|kg\\/m²|kg\\/m2|次\\/分|bpm|kcal|千卡|kg|公斤|cm|厘米|%|％)';
+  '(?:mmol\\/L|μmol\\/L|µmol\\/L|umol\\/L|mg\\/dL|mg\\/L|g\\/L|U\\/L|IU\\/L|mmHg|kg\\/m²|kg\\/m2|次\\/分|bpm|kcal|千卡|kg|公斤|cm|厘米|%|％|分钟|小时|步|毫升|ml|mL|克|g(?![A-Za-z/]))';
 /** 阈值、目标的说法：紧挨着这些词的数字不论大小都要核对 */
 const THRESHOLD_BEFORE = '(?:超过|低于|高于|大于|小于|不超过|不低于|控制在|目标|达到|≥|≤|>|<)';
 const THRESHOLD_AFTER = '(?:以上|以下|以内)';
+const RANGE = new RegExp(
+  `(${THRESHOLD_BEFORE})?\\s*(\\d+(?:\\.\\d+)?)\\s*(?:~|-|—|–|至|到)\\s*(\\d+(?:\\.\\d+)?)\\s*(${UNIT}|${THRESHOLD_AFTER})?`,
+  'g',
+);
 const NUMBER_WITH_CONTEXT = new RegExp(
   `(${THRESHOLD_BEFORE})?\\s*(百分之)?(\\d+(?:\\.\\d+)?)\\s*(${UNIT}|${THRESHOLD_AFTER})?`,
   'g',
@@ -97,8 +111,18 @@ const CN_DIGIT: Record<string, number> = {
   九: 9,
 };
 
-/** 中文数字转阿拉伯数字：“六点五”→6.5，“一百四十”→140，“一百四”→140，“十二”→12；不认识时返回 null */
+/** 中文数字转阿拉伯数字：“六点五”→6.5，“一百四十”→140，“一百四”→140，“十二”→12，“一万二千”→12000；不认识时返回 null */
 export function parseChineseNumber(raw: string): number | null {
+  const wan = raw.indexOf('万');
+  if (wan !== -1) {
+    const high = wan === 0 ? 1 : parseChineseNumber(raw.slice(0, wan));
+    const rest = raw.slice(wan + 1);
+    const low = rest ? parseChineseNumber(rest) : 0;
+    if (high === null || low === null) return null;
+    // “一万二”：省略了千
+    const lowValue = rest && /^[一二两三四五六七八九]$/.test(rest) ? low * 1000 : low;
+    return high * 10000 + lowValue;
+  }
   const [intPart = '', fracPart] = raw.split('点');
   let total = 0;
   let current = 0;
@@ -124,7 +148,7 @@ export function parseChineseNumber(raw: string): number | null {
   return frac ? Number(`${total}.${frac}`) : null;
 }
 
-const CN_NUMBER = /[零〇一二两三四五六七八九十百千]+(?:点[零〇一二三四五六七八九]+)?/g;
+const CN_NUMBER = /[零〇一二两三四五六七八九十百千万]+(?:点[零〇一二三四五六七八九]+)?/g;
 
 /**
  * 把会被当成数值的中文数字换成阿拉伯数字：带“点”的小数、“百分之…”，以及后面跟单位或前后有阈值说法的。
@@ -138,7 +162,10 @@ function normalizeChineseNumbers(text: string): string {
     const percent = before.endsWith('百分之');
     const unit = new RegExp(`^\\s*(?:${UNIT}|${THRESHOLD_AFTER})`).test(after);
     const threshold = new RegExp(`${THRESHOLD_BEFORE}\\s*$`).test(before);
-    if (!decimal && !percent && !unit && !threshold) return raw;
+    // 带十、百、千、万的中文数字（“一百四十”“一万步”“十二”）一律换算；
+    // 以百、千、万开头的不换（“百分之”“千卡”“万一”不是数字）
+    const magnitude = /[十百千万]/.test(raw) && /^[零〇一二两三四五六七八九十]/.test(raw);
+    if (!decimal && !percent && !unit && !threshold && !magnitude) return raw;
     const n = parseChineseNumber(raw);
     return n === null ? raw : String(n);
   });
@@ -152,8 +179,17 @@ function normalizeChineseNumbers(text: string): string {
  * 中文数字先换成阿拉伯数字。日期、序号、天数这类小整数不核对；评测的规则检查用同一个函数（scripts/eval）。
  */
 export function checkedNumbers(text: string): number[] {
-  const prepared = normalizeChineseNumbers(text.replace(DATE, ' '));
+  // 先 NFKC：全角数字、全角波浪号（～）、全角百分号统一成半角
+  const prepared = normalizeChineseNumbers(text.normalize('NFKC').replace(DATE, ' '));
   const out: number[] = [];
+  // 范围（5~7、5-7 mmol/L、140 至 160）：一端需要核对时两端都核对
+  for (const m of prepared.matchAll(RANGE)) {
+    const [, threshold, a = '', b = '', suffix] = m;
+    const contextual = Boolean(threshold || suffix);
+    const needs = (raw: string) =>
+      contextual || raw.includes('.') || (Number(raw) >= 40 && Number(raw) < 1900);
+    if (needs(a) || needs(b)) out.push(Number(a), Number(b));
+  }
   for (const m of prepared.matchAll(NUMBER_WITH_CONTEXT)) {
     const [, threshold, percent, raw = '', suffix] = m;
     const n = Number(raw);

@@ -73,6 +73,8 @@ export const artifactSchema = artifactSummarySchema.extend({
   consultationId: z.uuid().nullable().default(null),
   /** 专家意见里有疑似急症信号：审核栏醒目提示（M3 合规审查） */
   emergencySignal: z.boolean().default(false),
+  /** 有心理危机信号（关键词，或专家、汇总标出）：审核栏醒目提示 */
+  crisisSignal: z.boolean().default(false),
 });
 export type Artifact = z.infer<typeof artifactSchema>;
 

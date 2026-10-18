@@ -15,6 +15,7 @@ import { MEDICAL_REVIEW_TOPIC } from './synthesis.js';
 import type { ConsultationInput, ConsultationRequest, ExpertProfile } from './types.js';
 import {
   checkedNumbers,
+  unknownNumbers,
   correctionNote,
   diagnosticHits,
   hasDrugAdvice,
@@ -790,6 +791,54 @@ describe('validateOpinion', () => {
     expect(hasDrugAdvice('了解目前在用哪些降压药')).toBe(false);
     expect(hasDrugAdvice('甘油三酯 2.3 mg/dL')).toBe(false);
     expect(hasDrugAdvice('早餐一片全麦面包，每天饮水 1500 毫升')).toBe(false);
+    // 合规复审第 2 条：“提示该客户”不算；“可能是”“疑似”“符合”“处于”“已是”算
+    expect(diagnosticHits('提示该客户注意饮食，提示健管师跟进肝功能')).toEqual([]);
+    for (const t of ['可能是糖尿病', '疑似冠心病', '符合高血压病', '处于糖尿病前期', '已是痛风病'])
+      expect(diagnosticHits(t), t).toHaveLength(1);
+    // 合规复审第 12 条：食物不算剂量
+    for (const t of ['每天 2 片面包', '10 粒坚果', '加 1 片柠檬', '每次两片吐司'])
+      expect(hasDrugAdvice(t), t).toBe(false);
+    expect(hasDrugAdvice('每天 2 片')).toBe(true);
+  });
+
+  it('checks durations, steps, grams and ranges, with full-width and Chinese numerals', () => {
+    // 合规复审第 3 条：时长、步数、克数、毫升、千卡带单位就核对，不论大小
+    expect(checkedNumbers('每天快走 30 分钟，睡够 7 小时')).toEqual([30, 7]);
+    expect(checkedNumbers('每天 10000 步，盐 5 克，油 25 g，饮水 1500 ml，摄入 1800 千卡')).toEqual(
+      [10000, 5, 25, 1500, 1800],
+    );
+    expect(checkedNumbers('一万步、一万二千步、三十分钟')).toEqual([10000, 12000, 30]);
+    expect(parseChineseNumber('一万二')).toBe(12000);
+    // 带十、百、千的中文数字一律换算；“千卡”“百分之”“万一”不是数字
+    expect(checkedNumbers('血压一百四十')).toEqual([140]);
+    expect(checkedNumbers('万一不舒服，记录千卡')).toEqual([]);
+    // 全角数字和全角波浪号先 NFKC
+    expect(checkedNumbers('控制在１４０以下')).toEqual([140]);
+    // 范围两端都核对
+    expect(checkedNumbers('目标 5～7 mmol/L')).toEqual(expect.arrayContaining([5, 7]));
+    expect(checkedNumbers('每天 1-2 小时')).toEqual(expect.arrayContaining([1, 2]));
+    expect(unknownNumbers('控制在 5～7 mmol/L', [7])).toContain(5);
+  });
+
+  it('keeps crisis and emergency signals of an opinion that fails validation', async () => {
+    const bad = opinion({
+      summary: '该客户患有糖尿病。',
+      crisisSignal: true,
+      emergencySignal: true,
+    });
+    const { gateway } = setup({ 'expert:endocrine-metabolism': [{ json: bad }, { json: bad }] });
+    const result = await runConsultation(
+      gateway,
+      ctx,
+      request({ mode: 'direct', forced: ['endocrine-metabolism'] }),
+    );
+    expect(result.status).toBe('failed');
+    expect(result.calls[0]).toMatchObject({
+      status: 'failed',
+      failureCategory: 'invalid_output',
+      crisisSignal: true,
+      emergencySignal: true,
+    });
   });
 
   it('drops drug advice and unsupported guideline claims in the summary and referral reason', () => {

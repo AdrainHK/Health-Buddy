@@ -472,18 +472,35 @@ describe('专家数据表的行级安全和约束', () => {
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     const rejected = results.find((r) => r.status === 'rejected');
     expect((rejected as PromiseRejectedResult).reason).toBeInstanceOf(ExpertQuotaExceeded);
-    // 别的健管师的调用不占本人的配额
+    // 别的健管师的调用不占本人的配额：A2 今天有 3 次调用，A1 仍然只数到自己的 2 次
     const a2 = await seedForA2();
-    expect(a2).toBeTruthy();
+    await owner
+      .insertInto('expert_calls')
+      .values(
+        ['nutrition', 'cardiovascular', 'mental-health'].map((expertId) => ({
+          operator_id: f.operatorA,
+          org_id: f.orgA,
+          manager_id: f.users.managerA2.id,
+          consultation_id: a2,
+          expert_id: expertId,
+          expert_version: '0.1.0',
+          sources_version: '0123456789ab',
+          selected_reason: 'manager' as const,
+          status: 'running' as const,
+        })),
+      )
+      .execute();
     expect(await repo.callsToday(managerA1())).toBe(2);
-    expect(await repo.callsToday(managerA2())).toBe(0);
+    expect(await repo.callsToday(managerA2())).toBe(3);
+    // A2 的 3 次不算进 A1：上限 2 时 A1 已经用完，再建仍然被拒绝
+    await expect(create()).rejects.toBeInstanceOf(ExpertQuotaExceeded);
   });
 
-  it('运营商读不到带专家 id 的计量行；平台管理员和本人照旧', async () => {
-    const row = (expertId: string | null) => ({
+  it('运营商读不到专家相关的计量行（带专家 id 的、路由和汇总的）；平台管理员和本人照旧', async () => {
+    const row = (expertId: string | null, route = expertId ? 'expert' : 'chat') => ({
       operator_id: f.operatorA,
       user_id: f.users.managerA1.id,
-      route: expertId ? 'expert' : 'chat',
+      route,
       provider: 'openai',
       model: 'm',
       input_tokens: 1,
@@ -494,15 +511,20 @@ describe('专家数据表的行级安全和约束', () => {
     });
     await owner
       .insertInto('llm_usage')
-      .values([row('nutrition'), row(null)])
+      .values([
+        row('nutrition'),
+        row(null),
+        row(null, 'expert_routing'),
+        row(null, 'expert_synthesis'),
+      ])
       .execute();
     const read = (c: TenantContext) =>
       withTenant(app, c, (trx) => trx.selectFrom('llm_usage').select('route').execute());
     expect(await read(ctx(f.users.operatorAdminA.id, 'operator_admin', f.operatorA, null))).toEqual(
       [{ route: 'chat' }],
     );
-    expect(await read(platform())).toHaveLength(2);
-    expect(await read(managerA1())).toHaveLength(2);
+    expect(await read(platform())).toHaveLength(4);
+    expect(await read(managerA1())).toHaveLength(4);
     expect(await read(managerA2())).toEqual([]);
   });
 

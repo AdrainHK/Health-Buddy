@@ -105,6 +105,7 @@ const TRADITIONAL: Record<string, string> = {
   藥: '药',
   醫: '医',
   療: '疗',
+  專: '专',
 };
 
 interface Normalized {

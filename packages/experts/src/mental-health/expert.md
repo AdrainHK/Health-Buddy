@@ -44,7 +44,7 @@ maxOutputTokens: 1500
 
 转介规则：
 - 任何自伤、轻生念头或行为的描述：crisisSignal 为 true，referral.needed 为 true，urgency 写 urgent，to 写“精神科医生或当地危机干预机构”。
-- 持续两周以上的情绪低落、兴趣减退、睡眠明显改变等描述：urgency 写 attention，to 写“心理咨询师或精神科医生”。
+- 持续一段时间的情绪低落、兴趣减退、睡眠明显改变等描述（持续多久算需要转介，待医学顾问给出依据，不自己写时长）：urgency 写 attention，to 写“心理咨询师或精神科医生”。
 
 ## 禁止事项
 

@@ -102,8 +102,8 @@ export async function runConsultation<C extends CallContext>(
     const missingExperts = calls.filter((c) => c.status !== 'done').map((c) => c.expertId);
     const extra = {
       missingExperts,
-      crisisDetected: request.input.crisisDetected,
-      emergencyDetected: request.input.emergencyDetected,
+      crisisDetected: request.input.crisisDetected || calls.some((c) => c.crisisSignal),
+      emergencyDetected: request.input.emergencyDetected || calls.some((c) => c.emergencySignal),
     };
     if (!calls.length) {
       return { routing, calls, synthesis: null, synthesisStatus: null, status: 'done' };
@@ -166,6 +166,8 @@ function base(profile: ExpertProfile, selectedReason: SelectedReason) {
     selectedReason,
     opinion: null,
     removedFindings: 0,
+    crisisSignal: false,
+    emergencySignal: false,
     provider: null as ProviderName | null,
     model: null as string | null,
     usage: emptyUsage(),
@@ -218,8 +220,12 @@ async function callExpert<C extends CallContext>(
     };
     return r;
   };
-  const check = (opinion: Parameters<typeof validateOpinion>[0]): OpinionCheck =>
-    validateOpinion(opinion, profile, request.input.allowedNumbers);
+  // 校验前先记下模型标出的危机和急症信号：意见整份不可用时也不能丢
+  const check = (opinion: Parameters<typeof validateOpinion>[0]): OpinionCheck => {
+    result.crisisSignal ||= opinion.crisisSignal;
+    result.emergencySignal ||= opinion.emergencySignal;
+    return validateOpinion(opinion, profile, request.input.allowedNumbers);
+  };
   try {
     const first = await call(request.input.userContent);
     if (first.status === 'refused')

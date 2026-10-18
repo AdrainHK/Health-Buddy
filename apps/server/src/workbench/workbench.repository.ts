@@ -93,6 +93,8 @@ export interface NewArtifact {
   consultationId?: string | null;
   /** 专家意见里有疑似急症信号（M3） */
   emergencySignal?: boolean;
+  /** 有心理危机信号 */
+  crisisSignal?: boolean;
 }
 
 /**
@@ -765,6 +767,7 @@ export class WorkbenchRepository {
             : null,
           consultation_id: data.consultationId ?? null,
           emergency_signal: data.emergencySignal ?? false,
+          crisis_signal: data.crisisSignal ?? false,
         })
         .execute();
       await trx

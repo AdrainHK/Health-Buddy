@@ -191,6 +191,26 @@ export const SOURCE_COLUMNS = [
   '确认日期',
 ] as const;
 
+/**
+ * 详情页显示的分组名称不能有的说法：禁用词之外，还有“决策”（如“AI 急救决策必备”）——
+ * 专家只做参考，不做决策（规格 5.1）。
+ */
+const SECTION_WORDING = /决策/;
+
+/**
+ * 分组标题的显示名称：去掉括号里的说明（“九、心血管急症（AI 急救决策必备，不可缺失）”→“九、心血管急症”）。
+ * 标题下一行写“显示名称：……”时用这一行（原文去掉括号后仍有禁用词时用）。
+ */
+function sectionDisplay(heading: string): string {
+  return heading.replace(/\s*[（(][^）)]*[）)]/g, '').trim();
+}
+
+function checkShownText(where: string, text: string): void {
+  if (findBannedTerms(text).length) throw new Error(`sources.md ${where}含禁用词`);
+  if (SECTION_WORDING.test(text.replace(/\s+/g, '')))
+    throw new Error(`sources.md ${where}含“决策”`);
+}
+
 /** “1级”“1 级”“1” → 1；其余为空 */
 function parsePriority(v: string | undefined): SourcePriority | null {
   const m = /^([1-4])\s*级?$/.exec((v ?? '').trim());
@@ -214,7 +234,9 @@ export function parseSourcesMd(raw: string): SourcesDoc {
   for (const line of text.split('\n')) {
     if (/^## /.test(line)) section = null;
     const heading = /^### (.+)$/.exec(line)?.[1]?.trim();
-    if (heading && !CARD_ID_PATTERN.test(heading)) section = heading;
+    if (heading && !CARD_ID_PATTERN.test(heading)) section = sectionDisplay(heading);
+    const display = /^显示名称[：:]\s*(.+)$/.exec(line.trim())?.[1]?.trim();
+    if (display && section !== null) section = sectionDisplay(display);
     if (!/^\|\s*S\d/.test(line)) continue;
     const cells = line
       .split('|')
@@ -233,6 +255,12 @@ export function parseSourcesMd(raw: string): SourcesDoc {
       ? (scopeCell as SourceScope)
       : null;
     if (!scope) throw new Error(`sources.md 来源 ${id} 的使用范围只能是 advice 或 referral_only`);
+    // 3级国际学会指南只作对标参考，不作为建议依据（各清单的版本质控说明）
+    if (priority === 3 && scope !== 'referral_only') {
+      throw new Error(`sources.md 来源 ${id} 是 3级国际学会指南，使用范围只能是 referral_only`);
+    }
+    // 详情页显示分组名称：文件名照原样可以含禁用词，分组名称不行（合规复审 C）
+    if (section) checkShownText(`来源 ${id} 的分组名称`, section);
     const mapped = STATUS_ZH[status ?? ''];
     if (!mapped) {
       throw new Error(
@@ -282,6 +310,18 @@ export function parseSourcesMd(raw: string): SourcesDoc {
     }
     const point = field('要点');
     if (!point) throw new Error(`sources.md 卡片 ${cardId} 缺少要点`);
+    // 卡片的要点和章节会进提示词、显示在引用里，不能含禁用词（文件名的例外不适用于卡片）
+    checkShownText(`卡片 ${cardId} 的要点`, point);
+    checkShownText(`卡片 ${cardId} 的章节`, sourceRef);
+    // 卡片可以单独标使用范围，只能比来源更窄：advice 来源里的某张卡片可以标 referral_only，反过来不行
+    const cardScopeRaw = orNull(field('使用范围'));
+    if (cardScopeRaw && !(SOURCE_SCOPES as readonly string[]).includes(cardScopeRaw)) {
+      throw new Error(`sources.md 卡片 ${cardId} 的使用范围只能是 advice 或 referral_only`);
+    }
+    if (cardScopeRaw === 'advice' && source.scope === 'referral_only') {
+      throw new Error(`sources.md 卡片 ${cardId} 的使用范围不能比来源宽（来源是 referral_only）`);
+    }
+    const cardScope = (cardScopeRaw as SourceScope | null) ?? source.scope;
     const citableValues = orNull(field('可引用数值'));
     const confirmation = orNull(field('确认'));
     const confirmed = Boolean(
@@ -296,7 +336,7 @@ export function parseSourcesMd(raw: string): SourcesDoc {
       numbers: (citableValues?.match(/\d+(?:\.\d+)?/g) ?? []).map(Number),
       population: orNull(field('适用人群')),
       priority: source.priority,
-      scope: source.scope,
+      scope: cardScope,
       confirmed,
     });
   }

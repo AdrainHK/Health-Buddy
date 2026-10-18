@@ -14,7 +14,7 @@ import { z } from 'zod';
 import type { ResolvedSession } from '../auth/auth.repository.js';
 import { CurrentSession } from '../auth/decorators.js';
 import { badRequest, conflict, forbidden, notFound } from '../common/api-error.js';
-import { requireManager } from '../common/manager-only.js';
+import { requireExpertViewer, requireManager } from '../common/manager-only.js';
 import { ConsultationService } from './consultation.service.js';
 import { ExpertsRepository } from './experts.repository.js';
 
@@ -45,6 +45,7 @@ export class ExpertsController {
   /** 当前账号可用的专家：正式环境只有 published 且未暂停的；预览环境含 review（Q2） */
   @Get('experts')
   async list(@CurrentSession() session: ResolvedSession): Promise<ExpertListResponse> {
+    requireExpertViewer(session);
     const env = {
       preview: this.consultations.preview,
       paused: await this.repo.pausedExperts(session),
@@ -58,6 +59,7 @@ export class ExpertsController {
     @CurrentSession() session: ResolvedSession,
     @Param('id') id: string,
   ): Promise<{ expert: ExpertDetail }> {
+    requireExpertViewer(session);
     const def = getExpert(parseExpertId(id));
     const env = {
       preview: this.consultations.preview,
@@ -117,6 +119,7 @@ export class ExpertsController {
     @Param('id') id: string,
     @Body() body: unknown,
   ): Promise<void> {
+    requireExpertViewer(session);
     if (session.role !== 'platform_admin') throw forbidden();
     const def = getExpert(parseExpertId(id));
     if (!def) throw notFound();

@@ -143,6 +143,12 @@ export class ConsultationService {
     let routeStep: TaskStep | undefined;
     let consultStep: TaskStep | undefined;
     let synthStep: TaskStep | undefined;
+    // 已经结束的步骤：出错时只把还在进行的步骤标为失败，已完成的不改回失败
+    const finished = new Set<TaskStep>();
+    const finishStep = async (step: TaskStep, status: 'done' | 'failed') => {
+      finished.add(step);
+      await io.steps.finish(step, status);
+    };
     if (run.mode === 'route')
       routeStep = await io.steps.start('route_experts', 'steps.routeExperts');
     try {
@@ -166,7 +172,7 @@ export class ConsultationService {
           },
           hooks: {
             onRouted: async (routing) => {
-              if (routeStep) await io.steps.finish(routeStep, 'done');
+              if (routeStep) await finishStep(routeStep, 'done');
               // 调用记录和配额在同一个事务里占好（并发请求不会一起越过每日上限）
               const planned = routing.selected.flatMap((s) => {
                 const profile = available.find((p) => p.id === s.expertId);
@@ -236,9 +242,9 @@ export class ConsultationService {
       );
       if (!consultationId) return undefined;
       const anyAnswered = result.calls.some((c) => c.status === 'done');
-      if (consultStep) await io.steps.finish(consultStep, anyAnswered ? 'done' : 'failed');
+      if (consultStep) await finishStep(consultStep, anyAnswered ? 'done' : 'failed');
       if (synthStep)
-        await io.steps.finish(synthStep, result.synthesisStatus === 'done' ? 'done' : 'failed');
+        await finishStep(synthStep, result.synthesisStatus === 'done' ? 'done' : 'failed');
       const final = result.status;
       await this.repo.finishConsultation(
         ctx,
@@ -262,12 +268,13 @@ export class ConsultationService {
       return {
         consultationId,
         result,
-        crisisDetected: input.crisisDetected,
-        emergencyDetected: input.emergencyDetected,
+        // 关键词，或任何一位专家标出的信号（意见没通过校验时也算，合规审查第 2 条）
+        crisisDetected: input.crisisDetected || result.calls.some((c) => c.crisisSignal),
+        emergencyDetected: input.emergencyDetected || result.calls.some((c) => c.emergencySignal),
       };
     } catch (err) {
       for (const step of [routeStep, consultStep, synthStep]) {
-        if (step) await io.steps.finish(step, 'failed').catch(() => undefined);
+        if (step && !finished.has(step)) await finishStep(step, 'failed').catch(() => undefined);
       }
       if (consultationId) {
         await this.repo.stopRunning(ctx, consultationId);

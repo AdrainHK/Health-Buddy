@@ -2,6 +2,9 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import {
   ABNORMAL_FLAGS,
+  SOURCE_PRIORITIES,
+  SOURCE_SCOPES,
+  SOURCE_STATUSES,
   EXTRACTED_VALUE_FLAGS,
   EXTRACTION_FAILURE_CATEGORIES,
   HEALTH_HISTORY_CATEGORIES,
@@ -61,6 +64,16 @@ describe('界面文字走 i18n（验收标准 25）', () => {
         .flatMap((line, i) => (HAN.test(line) ? [`${relative(SRC, file)}:${i + 1}`] : [])),
     );
     expect(offenders).toEqual([]);
+  });
+
+  it('专家详情的来源清单：文件名一列叫“来源文件原名”，优先级、使用范围、确认状态都有词条（M3 合规复审 C）', () => {
+    expect(lookup('experts.sources.columns.name')).toBe('来源文件原名');
+    for (const p of SOURCE_PRIORITIES)
+      expect(typeof lookup(`experts.sources.priority.${p}`), `priority ${p}`).toBe('string');
+    for (const v of SOURCE_SCOPES)
+      expect(typeof lookup(`experts.sources.scope.${v}`), v).toBe('string');
+    for (const v of SOURCE_STATUSES)
+      expect(typeof lookup(`experts.sources.status.${v}`), v).toBe('string');
   });
 
   it('服务端下发的步骤和技能名都有词条', () => {

@@ -96,6 +96,12 @@ export interface ExpertCallResult {
   opinion: ExpertOpinion | null;
   /** 因依据无法核实被移除的要点数量 */
   removedFindings: number;
+  /**
+   * 模型输出里标出的心理危机、疑似急症信号（任何一次输出标了就算），意见没通过校验、整份不可用时也保留，
+   * 汇总和渲染时和关键词、其他专家的信号取“或”（合规审查第 2 条）
+   */
+  crisisSignal: boolean;
+  emergencySignal: boolean;
   provider: ProviderName | null;
   model: string | null;
   usage: Usage;

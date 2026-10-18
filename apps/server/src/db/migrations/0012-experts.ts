@@ -50,7 +50,13 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     drop policy llm_usage_select on llm_usage;
     create policy llm_usage_select on llm_usage for select using (
       app_role() = 'platform_admin'
-      or (app_role() = 'operator_admin' and operator_id = app_operator_id() and expert_id is null)
+      -- 路由和汇总（expert_routing、expert_synthesis）的计量行没有 expert_id，同样能看出谁在什么时候请了专家，一并排除
+      or (
+        app_role() = 'operator_admin'
+        and operator_id = app_operator_id()
+        and expert_id is null
+        and route not like 'expert%'
+      )
       or user_id = app_user_id()
     );
 
@@ -143,6 +149,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       add column consultation_id uuid,
       -- 专家意见里有疑似急症信号（合规审查第 2 条）：审核栏醒目提示，专业版最前面有提示
       add column emergency_signal boolean not null default false,
+      -- 心理危机信号（关键词、专家或汇总标出）：审核栏醒目提示，和 emergency_signal 一样是结构化字段
+      add column crisis_signal boolean not null default false,
       add foreign key (consultation_id, task_id) references expert_consultations (id, task_id);
 
     create table expert_availability (
@@ -301,7 +309,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     create function artifacts_consultation_guard() returns trigger language plpgsql as $$
     begin
       if new.consultation_id is distinct from old.consultation_id
-        or new.emergency_signal is distinct from old.emergency_signal then
+        or new.emergency_signal is distinct from old.emergency_signal
+        or new.crisis_signal is distinct from old.crisis_signal then
         raise exception 'artifact consultation is immutable' using errcode = 'check_violation';
       end if;
       return new;

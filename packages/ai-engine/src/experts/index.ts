@@ -16,6 +16,7 @@ export {
   hasBannedWording,
   hasDrugAdvice,
   diagnosticHits,
+  GUIDELINE_CLAIM,
   parseChineseNumber,
   DIAGNOSTIC_PHRASES,
   DIAGNOSTIC_PATTERNS,

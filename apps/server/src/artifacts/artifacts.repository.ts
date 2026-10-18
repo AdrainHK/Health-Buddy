@@ -182,6 +182,7 @@ export class ArtifactsRepository {
           source_report_id: row.source_report_id,
           consultation_id: row.consultation_id,
           emergency_signal: row.emergency_signal,
+          crisis_signal: row.crisis_signal,
           risk_tier_suggestion: row.risk_tier_suggestion
             ? JSON.stringify(row.risk_tier_suggestion)
             : null,
@@ -284,6 +285,7 @@ interface ArtifactRow {
   risk_tier_suggestion: RiskTierSuggestion | null;
   consultation_id: string | null;
   emergency_signal: boolean;
+  crisis_signal: boolean;
   created_at: Date;
   detached: boolean;
 }
@@ -327,6 +329,7 @@ async function loadArtifact(
       'artifacts.risk_tier_suggestion',
       'artifacts.consultation_id',
       'artifacts.emergency_signal',
+      'artifacts.crisis_signal',
       'artifacts.created_at',
       'tasks.detached_reason',
     ])
@@ -418,6 +421,7 @@ async function buildDetail(
       riskTierSuggestion: row.risk_tier_suggestion,
       consultationId: row.consultation_id,
       emergencySignal: row.emergency_signal,
+      crisisSignal: row.crisis_signal,
       clientFacing: isClientFacing(row),
     },
     sourceReport: await sourceReport(trx, row),

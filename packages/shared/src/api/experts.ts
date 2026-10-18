@@ -39,7 +39,7 @@ export type SourceScope = z.infer<typeof sourceScopeSchema>;
 
 /**
  * 来源优先级（规格 5.1）：1 国内官方指南 > 2 国内专家共识 > 3 国际学会指南 > 4 兜底细则。
- * 数字越小优先级越高；两张卡片说法冲突时采用优先级高的，同级时国内优先于国际。
+ * 数字越小优先级越高；两张卡片说法冲突时采用优先级高的。3级国际学会指南只作对标参考，使用范围一律是 referral_only。
  */
 export const SOURCE_PRIORITIES = [1, 2, 3, 4] as const;
 export const sourcePrioritySchema = z.union([

@@ -20,6 +20,7 @@ import { buildConsultationInput, knownNumbers } from './input.js';
 import {
   consultationDigest,
   expertMentions,
+  withoutQuantities,
   renderConsultationSections,
   renderOpinion,
 } from './opinion.js';
@@ -28,6 +29,7 @@ import {
   EXPERT_EVAL_CASES,
   availableExperts,
   expertDetail,
+  expertName,
   expertSummary,
   toProfile,
 } from './registry.js';
@@ -278,7 +280,7 @@ describe('expert.md and sources.md parsing', () => {
     );
     // 共用规则写明优先级和冲突处理顺序
     expect(prompt).toContain('1级 国内官方指南＞2级 国内专家共识＞3级 国际学会指南＞4级 兜底细则');
-    expect(prompt).toContain('同级冲突时国内来源优先于国际来源');
+    expect(prompt).toContain('3级国际学会指南只作对标参考');
     const detail = expertDetail(def, { preview: false, paused: new Set() }, 0);
     expect(detail.sources[0]).toMatchObject({ priority: 1, scope: 'referral_only', section: null });
     expect(detail.cards[0]).toMatchObject({ cardId: 'S1-01', scope: 'referral_only' });
@@ -338,7 +340,7 @@ describe('expert.md and sources.md parsing', () => {
     );
     expect(endocrine.sources).toHaveLength(67);
     expect(endocrine.sources.find((s) => s.name === '中国高尿酸血症与痛风诊疗指南')).toMatchObject({
-      section: '三、高尿酸血症与痛风（CSE）',
+      section: '三、高尿酸血症与痛风',
       publisher: 'CSE',
       version: '2019主指南+2024合并症补充版',
       priority: 1,
@@ -397,8 +399,8 @@ describe('expert.md and sources.md parsing', () => {
     const doc = parseSourcesMd(md);
     expect(doc.provenance).toBe('产品负责人提供 2026-10-18');
     expect(doc.sources.map((s) => [s.sourceId, s.priority, s.scope, s.status, s.section])).toEqual([
-      ['S1', 1, 'advice', 'candidate', '一、糖尿病及并发症（CDS，核心模块）'],
-      ['S2', 2, 'referral_only', 'candidate', '一、糖尿病及并发症（CDS，核心模块）'],
+      ['S1', 1, 'advice', 'candidate', '一、糖尿病及并发症'],
+      ['S2', 2, 'referral_only', 'candidate', '一、糖尿病及并发症'],
       ['S3', 4, 'referral_only', 'retired', '二、急症'],
     ]);
     expect(doc.sources[1]?.version).toBe('2019主指南+2024补充版');
@@ -420,6 +422,131 @@ describe('expert.md and sources.md parsing', () => {
       scope: 'referral_only',
       section: '第 1 章',
     });
+  });
+
+  const ROW = (priority: string, scope: string) =>
+    `| S1 | 示例 | 示例学会 | 2024版 | ${priority} | ${scope} | 候选 | — | — |`;
+  const DOC = (heading: string, row: string, extra = '') => `# 示例
+
+## 来源清单
+
+### ${heading}
+${extra}
+| sourceId | 文件名 | 颁布机构 | 版本 | 优先级 | 使用范围 | 确认状态 | 确认人 | 确认日期 |
+|---|---|---|---|---|---|---|---|---|
+${row}
+`;
+
+  it('keeps 3级 international guidelines referral_only and lets a card only narrow its scope', () => {
+    expect(() => parseSourcesMd(DOC('一、示例', ROW('3级', 'advice')))).toThrow('3级国际学会指南');
+    expect(parseSourcesMd(DOC('一、示例', ROW('3级', 'referral_only'))).sources[0]?.scope).toBe(
+      'referral_only',
+    );
+    const card = (scope: string) =>
+      `\n## 条目卡片\n\n### S1-01\n- 来源：S1，第 2 章\n- 要点：示例。\n- 可引用数值：无\n- 使用范围：${scope}\n- 确认：待确认\n`;
+    // advice 来源里的一张卡片可以收窄成 referral_only
+    expect(
+      parseSourcesMd(DOC('一、示例', ROW('1级', 'advice')) + card('referral_only')).cards[0]?.scope,
+    ).toBe('referral_only');
+    // referral_only 来源里的卡片不能放宽成 advice
+    expect(() =>
+      parseSourcesMd(DOC('一、示例', ROW('1级', 'referral_only')) + card('advice')),
+    ).toThrow('不能比来源宽');
+  });
+
+  it('shows section names without notes, and rejects banned or 决策 wording in shown text (only file names are exempt)', () => {
+    const shown = parseSourcesMd(
+      DOC('九、心血管急症（AI 急救决策必备，不可缺失）', ROW('1级', 'referral_only')),
+    );
+    expect(shown.sources[0]?.section).toBe('九、心血管急症');
+    expect(() => parseSourcesMd(DOC('九、AI 急救决策', ROW('1级', 'referral_only')))).toThrow(
+      '决策',
+    );
+    expect(() =>
+      parseSourcesMd(DOC('六、肿瘤标志物筛查与结果解读', ROW('1级', 'referral_only'))),
+    ).toThrow('禁用词');
+    // 原标题去掉括号后仍有禁用词时，写“显示名称”
+    expect(
+      parseSourcesMd(
+        DOC(
+          '六、肿瘤标志物筛查与结果解读（体检异常重点模块）',
+          ROW('1级', 'referral_only'),
+          '\n显示名称：六、肿瘤标志物结果解读（说明）\n',
+        ),
+      ).sources[0]?.section,
+    ).toBe('六、肿瘤标志物结果解读');
+    // 文件名照原样，可以含禁用词
+    expect(
+      parseSourcesMd(
+        DOC('一、示例', ROW('1级', 'referral_only').replace('| 示例 |', '| 示例诊断标准 |')),
+      ).sources[0]?.name,
+    ).toBe('示例诊断标准');
+    // 卡片的要点和章节不在例外里
+    const card = (point: string, ref = '第 2 章') =>
+      `\n## 条目卡片\n\n### S1-01\n- 来源：S1，${ref}\n- 要点：${point}\n- 可引用数值：无\n- 确认：待确认\n`;
+    const base = DOC('一、示例', ROW('1级', 'advice'));
+    expect(() => parseSourcesMd(base + card('定期筛查。'))).toThrow('要点含禁用词');
+    expect(() => parseSourcesMd(base + card('示例。', '诊断标准一节'))).toThrow('章节含禁用词');
+  });
+
+  it('never puts source file names or section names into prompts or rendered opinions (spec 5.1)', () => {
+    const outputs: string[] = [];
+    for (const def of EXPERTS) {
+      for (const preview of [true, false]) outputs.push(toProfile(def, { preview }).systemPrompt);
+      const cited = {
+        inScope: true,
+        outOfScopeNote: null,
+        summary: '示例结论。',
+        findings: [
+          {
+            point: '示例要点。',
+            basis: 'cited' as const,
+            dataRefs: [],
+            citations: [{ sourceId: 'S1', cardId: 'S1-01' }],
+          },
+        ],
+        suggestions: [],
+        referral: { needed: false, urgency: null, to: null, reason: null },
+        questionsToAsk: [],
+        dataGaps: [],
+        crisisSignal: false,
+        emergencySignal: false,
+      };
+      outputs.push(renderOpinion(cited, { expertId: def.meta.id }));
+      outputs.push(
+        renderConsultationSections(
+          {
+            consensus: [
+              {
+                point: '示例共识。',
+                experts: [def.meta.id],
+                citations: cited.findings[0]!.citations,
+              },
+            ],
+            disagreements: [],
+            referrals: [],
+            followUpPoints: [],
+            crisisSignal: false,
+            emergencySignal: false,
+            missingExperts: [],
+          },
+          [
+            { expertId: def.meta.id, opinion: cited },
+            { expertId: 'nutrition', opinion: cited },
+          ],
+          expertName,
+          { synthesisFailed: false },
+        ),
+      );
+    }
+    const shown = EXPERTS.flatMap((def) =>
+      def.sources.sources.flatMap((s) => [s.name, ...(s.section ? [s.section] : [])]),
+    );
+    expect(shown.length).toBeGreaterThan(300);
+    for (const text of outputs) {
+      const leaked = shown.filter((t) => text.includes(t));
+      expect(leaked).toEqual([]);
+    }
   });
 });
 
@@ -545,9 +672,83 @@ describe('rendering for managers only', () => {
     expect(none.split('第二部分')[1]).toContain('（没有）');
   });
 
-  it('finds the word expert and expert names in client text', () => {
+  it('finds the word expert and expert names in client text, also when spaced or traditional', () => {
     expect(expertMentions('建议少喝甜饮料。', ['营养专家'])).toEqual([]);
     expect(expertMentions('AI 专家说营养专家建议…', ['营养专家'])).toEqual(['专家', '营养专家']);
+    expect(expertMentions('營養 專 家建議', ['营养专家'])).toContain('专家');
+    expect(expertMentions('营养\u200b专家', ['营养专家'])).toEqual(['专家', '营养专家']);
+  });
+
+  it('keeps numbers of lifestyle advice out of the rewritable part of the digest', () => {
+    expect(withoutQuantities('每周 150 分钟中等强度身体活动，每天盐不超过 5 克。')).toBe(
+      '每周适量中等强度身体活动，每天盐适量。',
+    );
+    expect(withoutQuantities('每天走六千步，主食换一部分杂粮。')).toBe(
+      '每天走适量，主食换一部分杂粮。',
+    );
+    expect(withoutQuantities('晚餐少吃甜食。')).toBe('晚餐少吃甜食。');
+    const digest = consultationDigest(
+      [
+        {
+          expertId: 'nutrition',
+          opinion: {
+            ...opinion,
+            crisisSignal: false,
+            suggestions: [
+              {
+                text: '来源中的说法是每周 150 分钟中等强度身体活动。',
+                category: 'lifestyle' as const,
+                citations: [],
+              },
+            ],
+          },
+        },
+      ],
+      (id) => id,
+    );
+    const [professional = '', rewritable = ''] = digest.split('第二部分');
+    expect(professional).toContain('150 分钟');
+    expect(rewritable).not.toContain('150');
+    expect(rewritable).toContain('每周适量中等强度身体活动');
+  });
+
+  it('checks confirmation per expert: the same card number of another expert does not count', () => {
+    // 两位专家都没有确认过的卡片；共识只列出其中一位真正引用了它
+    const cited = {
+      ...opinion,
+      crisisSignal: false,
+      suggestions: [
+        {
+          text: '来源中的说法。',
+          category: 'follow_up' as const,
+          citations: [{ sourceId: 'S1', cardId: 'S1-01' }],
+        },
+      ],
+    };
+    const text = renderConsultationSections(
+      {
+        consensus: [
+          {
+            point: '共识。',
+            experts: ['nutrition', 'cardiovascular'],
+            citations: [{ sourceId: 'S1', cardId: 'S1-01' }],
+          },
+        ],
+        disagreements: [],
+        referrals: [],
+        followUpPoints: [],
+        crisisSignal: false,
+        emergencySignal: false,
+        missingExperts: [],
+      },
+      [
+        { expertId: 'nutrition', opinion: cited },
+        { expertId: 'cardiovascular', opinion: { ...cited, suggestions: [] } },
+      ],
+      (id) => id,
+      { synthesisFailed: false },
+    );
+    expect(text).toContain('S1-01（来源待确认）');
   });
 
   it('puts the crisis notice first and the expert disclaimer last', () => {

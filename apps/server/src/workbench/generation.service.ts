@@ -143,12 +143,25 @@ export class GenerationService {
   ): Promise<void> {
     const messageId = turn.assistantMessageId;
     const steps = new StepRunner(this.repo, ctx, messageId, io.emit);
+    // 危机和急症关键词在最前面自己识别，不依赖专家调用：调用没发起、全部失败或出错时也要提示健管师
+    let signals = { crisis: false, emergency: false };
+    const signalHeaders = () =>
+      (signals.crisis ? CRISIS_HEADER : '') + (signals.emergency ? EMERGENCY_HEADER : '');
     try {
+      const earlierTexts = await this.repo.managerTexts(ctx, turn.taskId);
+      const signalTexts = [request.content, ...earlierTexts];
+      signals = {
+        crisis: detectCrisisKeywords(signalTexts),
+        emergency: detectEmergencyKeywords(signalTexts),
+      };
       const client = turn.clientId
         ? await this.readClient(ctx, turn.clientId, steps, turn.reportId ?? null, true)
         : undefined;
-      if (turn.clientId && !client)
-        return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
+      if (turn.clientId && !client) {
+        const headers = signalHeaders();
+        if (headers) io.emit({ type: 'text', messageId, delta: headers });
+        return await this.finish(ctx, messageId, headers, 'error', io, 'internal_error');
+      }
       const forced = [
         ...new Set([...(turn.expertId ? [turn.expertId] : []), ...request.expertRefs]),
       ];
@@ -168,11 +181,15 @@ export class GenerationService {
             client: client?.snapshot ?? null,
             question: request.content,
             identifiers: client?.identifiers ?? [],
-            earlierTexts: await this.repo.managerTexts(ctx, turn.taskId),
+            earlierTexts,
           },
         },
         { emit: io.emit, signal: io.signal, steps: steps.forExperts() },
       );
+      signals = {
+        crisis: signals.crisis || Boolean(outcome?.crisisDetected),
+        emergency: signals.emergency || Boolean(outcome?.emergencyDetected),
+      };
       if (io.signal.aborted || outcome?.result.status === 'stopped')
         throw new GatewayError('aborted');
       const answered = (outcome?.result.calls ?? []).flatMap((c) =>
@@ -181,15 +198,12 @@ export class GenerationService {
           : [],
       );
       if (!outcome || !answered.length) {
-        // 专家都没回复也要把危机和急症提示留给健管师（关键词识别不依赖模型）
-        const headers =
-          (outcome?.crisisDetected ? CRISIS_HEADER : '') +
-          (outcome?.emergencyDetected ? EMERGENCY_HEADER : '');
-        const text = `${headers}${EXPERTS_UNAVAILABLE}`;
+        // 专家都没回复（或调用没有发起）也要把危机和急症提示留给健管师（关键词识别不依赖模型）
+        const text = `${signalHeaders()}${EXPERTS_UNAVAILABLE}`;
         io.emit({ type: 'text', messageId, delta: text });
         return await this.finish(ctx, messageId, text, 'complete', io);
       }
-      const notices = { crisis: outcome.crisisDetected, emergency: outcome.emergencyDetected };
+      const notices = signals;
       let text: string;
       if (answered.length === 1 && outcome.result.calls.length === 1) {
         const only = answered[0]!;
@@ -217,7 +231,10 @@ export class GenerationService {
       await this.finish(ctx, messageId, text, 'complete', io);
     } catch (err) {
       await steps.failRunning();
-      await this.fail(ctx, messageId, '', err, io);
+      // 出错时同样保留危机和急症提示
+      const headers = signalHeaders();
+      if (headers && !io.signal.aborted) io.emit({ type: 'text', messageId, delta: headers });
+      await this.fail(ctx, messageId, headers, err, io);
     }
   }
 
@@ -359,12 +376,14 @@ export class GenerationService {
         : await this.readClient(ctx, run.clientId, steps, run.reportId ?? null);
       if (!client) return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
 
-      // 心理危机信号不只依赖模型判断：健管师的原话、退回原因、本任务之前的消息里有关键词也算
-      const crisis = detectCrisisKeywords([
+      // 心理危机和疑似急症信号不只依赖模型判断：健管师的原话、退回原因、本任务之前的消息里有关键词也算
+      const signalTexts = [
         run.managerRequest,
         run.returnReason ?? '',
         ...(await this.repo.managerTexts(ctx, run.taskId)),
-      ]);
+      ];
+      const crisis = detectCrisisKeywords(signalTexts);
+      const emergencyKeywords = detectEmergencyKeywords(signalTexts);
       const redact = (t: string) => redactClientIdentity(t, client.identifiers);
       const snapshot = {
         ...client.snapshot,
@@ -395,6 +414,9 @@ export class GenerationService {
         const skillInput = used
           ? { ...input, expertDigest: consultationDigest(used.opinions, expertName) }
           : input;
+        // 疑似急症：关键词，或专家、汇总标出的信号（和危机信号一样各自识别，再取“或”）
+        const emergency = emergencyKeywords || Boolean(used?.emergency);
+        const crisisSignal = crisis || Boolean(used?.crisis);
         const step = await steps.start('run_skill', skill.runStepLabel ?? 'steps.runSkill');
         const userMessage = skill.buildUserMessage(skillInput);
         const call = (content: string) =>
@@ -449,8 +471,8 @@ export class GenerationService {
             );
             await steps.finish(step, 'failed');
             const notices =
-              (crisis || used?.crisis ? CRISIS_HEADER : '') +
-              (used?.emergency ? EMERGENCY_HEADER : '') +
+              (crisisSignal ? CRISIS_HEADER : '') +
+              (emergency ? EMERGENCY_HEADER : '') +
               criticalNotice(client.snapshot.criticalFlags);
             return await this.finish(ctx, messageId, notices, 'error', io, 'wording_check_failed');
           }
@@ -459,20 +481,22 @@ export class GenerationService {
           // 没有产物，但危机、急症和危急指标提醒要留给健管师
           await steps.finish(step, 'failed');
           const notices =
-            (crisis || used?.crisis ? CRISIS_HEADER : '') +
-            (used?.emergency ? EMERGENCY_HEADER : '') +
+            (crisisSignal ? CRISIS_HEADER : '') +
+            (emergency ? EMERGENCY_HEADER : '') +
             criticalNotice(client.snapshot.criticalFlags);
           return await this.finish(ctx, messageId, withAskNotice(notices), 'refused', io);
         }
         const output = result.data as Record<string, unknown>;
         // 心理危机：关键词，或专家、汇总标出的信号（合规审查第 2 条）
-        if (crisis || used?.crisis) output.crisisSignal = true;
+        if (crisisSignal) output.crisisSignal = true;
         const rendered = skill.render(output, skillInput);
         // 专家意见汇总和分歧由后端确定性写进专业版，绝不进通俗版（M3 规格 2.7）；
         // 疑似急症提示放在专业版最前面
-        const professional = used
-          ? `${used.emergency ? EMERGENCY_HEADER : ''}${rendered.professional}\n\n${renderConsultationSections(used.synthesis, used.opinions, expertName, { synthesisFailed: used.synthesisFailed })}`
-          : rendered.professional;
+        const professional =
+          (emergency ? EMERGENCY_HEADER : '') +
+          (used
+            ? `${rendered.professional}\n\n${renderConsultationSections(used.synthesis, used.opinions, expertName, { synthesisFailed: used.synthesisFailed })}`
+            : rendered.professional);
 
         // 保存前重新确认：会话仍然有效、任务没有断开、客户仍归当前健管师
         if (io.signal.aborted) throw new GatewayError('aborted');
@@ -493,7 +517,8 @@ export class GenerationService {
           sourceReportId: skillUsesReport(skill) ? (client.report?.id ?? null) : null,
           riskTierSuggestion: rendered.riskTierSuggestion ?? null,
           consultationId: used?.consultationId ?? null,
-          emergencySignal: used?.emergency ?? false,
+          emergencySignal: emergency,
+          crisisSignal,
         });
         if (!artifact) {
           await steps.finish(step, 'failed');

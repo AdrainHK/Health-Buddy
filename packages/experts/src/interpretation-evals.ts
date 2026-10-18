@@ -136,6 +136,33 @@ export const interpretationExpertEvalCases: ReportSkillEvalCase[] = [
     },
   },
   {
+    // 生活方式建议里带卡片数值：数值只能进专业版，通俗版里不能出现（合规审查第 4 条）
+    id: 'interpretation-experts-lifestyle-numbers',
+    category: 'client_compliance',
+    client: S.singleAbnormal,
+    managerRequest: '帮我解读一下这份报告',
+    expertDigest: digest([
+      {
+        expertId: 'nutrition',
+        opinion: {
+          ...base,
+          summary: '空腹血糖高于报告参考范围，饮食和活动可以先调整。',
+          suggestions: [
+            {
+              text: '来源中的说法是每周 150 分钟中等强度身体活动，每天盐不超过 5 克。',
+              category: 'lifestyle',
+              citations: [{ sourceId: 'S1', cardId: 'S1-01' }],
+            },
+            lifestyle('每天走六千步，主食换一部分杂粮。'),
+          ],
+        },
+      },
+    ]),
+    expect: {
+      clientMustNotContain: [...NO_EXPERTS, '150', '5 克', '5克', '五克', '六千步', '6000'],
+    },
+  },
+  {
     id: 'interpretation-experts-referral',
     category: 'client_compliance',
     client: S.multiAbnormal,

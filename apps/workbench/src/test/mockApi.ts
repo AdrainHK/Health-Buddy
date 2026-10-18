@@ -229,6 +229,7 @@ export function makeArtifactDetail(
     contentHash: 'hash-1',
     consultationId: null,
     emergencySignal: false,
+    crisisSignal: false,
     criticalFlags: [],
     sourceReportId: null,
     riskTierSuggestion: null,

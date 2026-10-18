@@ -317,8 +317,17 @@ describe('专家中心接口和专家调用', () => {
       await agent.post('/api/tasks').send({ expertId: 'no-such-expert' }).expect(404);
       const prodAgent = await as(f.users.managerA1.email, prod);
       await prodAgent.post('/api/tasks').send({ expertId: 'cardiovascular' }).expect(404);
-      const orgAdmin = await as(f.users.orgAdminA.email);
-      await orgAdmin.post('/api/tasks').send({ expertId: 'cardiovascular' }).expect(404);
+      for (const u of [f.users.orgAdminA, f.users.operatorAdminA, f.users.platform]) {
+        const nonManager = await as(u.email);
+        await nonManager.post('/api/tasks').send({ expertId: 'cardiovascular' }).expect(404);
+      }
+      expect(
+        await owner
+          .selectFrom('tasks')
+          .select('id')
+          .where('expert_id', '=', 'cardiovascular')
+          .execute(),
+      ).toHaveLength(1);
     });
 
     it('专家直接回答：不经过路由，步骤和每位专家状态推给前端，末尾固定提示，发给模型的内容不含客户姓名', async () => {
@@ -808,6 +817,43 @@ describe('专家中心接口和专家调用', () => {
       expect(answer.endsWith('专家暂时无法回复，请稍后再试。')).toBe(true);
     });
 
+    it('专家意见整份不合格时，模型标出的危机信号仍然提示健管师', async () => {
+      provider.scripts['expert:endocrine-metabolism'] = {
+        json: { ...opinion(), summary: '该客户患有糖尿病。', crisisSignal: true },
+      };
+      const agent = await as(f.users.managerA1.email);
+      const taskId = await newTask(agent, { expertId: 'endocrine-metabolism' });
+      await send(agent, taskId, { mode: 'ask', content: '血糖怎么看？' }).expect(200);
+      const answer = await answerOf(taskId);
+      expect(answer.startsWith('**心理危机提示**')).toBe(true);
+      expect(answer.endsWith('专家暂时无法回复，请稍后再试。')).toBe(true);
+    });
+
+    it('急症关键词由后端自己识别：专家调用出错时回答仍以疑似急症提示开头', async () => {
+      provider.scripts['expert:endocrine-metabolism'] = { fail: true };
+      const agent = await as(f.users.managerA1.email);
+      const taskId = await newTask(agent, { expertId: 'endocrine-metabolism' });
+      await send(agent, taskId, {
+        mode: 'ask',
+        content: '客户刚才说说话不清楚、一侧肢体无力，血糖怎么办？',
+      }).expect(200);
+      const answer = await answerOf(taskId);
+      expect(answer.startsWith('**疑似急症提示**')).toBe(true);
+      expect(answer.endsWith('专家暂时无法回复，请稍后再试。')).toBe(true);
+    });
+
+    it('正式环境不请专家时，急症关键词同样进入解读：专业版最前面有提示，产物带急症标记', async () => {
+      const agent = await as(f.users.managerA1.email, prod);
+      const taskId = await newTask(agent, { clientId: f.clients.a1[0] });
+      await interpret(agent, taskId, { content: '帮我解读一下这份报告，客户说今天胸痛' });
+      expect(prodProvider.routes()).toEqual(['report_interpretation']);
+      const [artifact] = await artifactsOf(taskId);
+      const content = artifact!.content as { professional: string };
+      expect(content.professional.startsWith('**疑似急症提示**')).toBe(true);
+      expect(artifact?.emergency_signal).toBe(true);
+      expect(artifact?.crisis_signal).toBe(false);
+    });
+
     it('专家标出的危机和急症信号进入解读：专业版最前面有提示，产物带急症标记', async () => {
       provider.scripts['expert:endocrine-metabolism'] = {
         json: { ...opinion(), crisisSignal: true },
@@ -821,8 +867,10 @@ describe('专家中心接口和专家调用', () => {
       expect(content.professional.startsWith('**疑似急症提示**')).toBe(true);
       expect(content.professional).toContain('## 心理危机提示');
       expect(artifact?.emergency_signal).toBe(true);
+      expect(artifact?.crisis_signal).toBe(true);
       const detail = (await agent.get(`/api/artifacts/${artifact!.id}`).expect(200)).body;
       expect(detail.artifact.emergencySignal).toBe(true);
+      expect(detail.artifact.crisisSignal).toBe(true);
       // 有信号的意见不提供可改写进通俗版的建议
       const skillCall = provider.calls.find((c) => c.route === 'report_interpretation')!;
       const prompt = JSON.stringify(skillCall.messages);

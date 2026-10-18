@@ -5,8 +5,10 @@
  * 发给模型的内容由 packages/experts 的 buildConsultationInput 组装（和线上一样去标识化）。
  */
 import {
+  GUIDELINE_CLAIM,
   callSynthesis,
   diagnosticHits,
+  hasDrugAdvice,
   unknownNumbers,
   mergeSynthesis,
   routeExperts,
@@ -30,6 +32,7 @@ import {
 } from '@health-buddy/experts';
 import {
   EXPERTS_PER_CALL_MAX,
+  normalizeForCompliance,
   type ExpertOpinion,
   type RoutingDecision,
   type Synthesis,
@@ -62,7 +65,6 @@ export function opinionText(opinion: ExpertOpinion): string {
 const JUDGEMENT = new RegExp(JUDGEMENT_HINT.source);
 /** 规则 10：意见只给健管师看，不对客户说话，不自己写免责声明 */
 const SELF_DISCLAIMER = /非医疗诊断|仅供参考|请勿直接转发/;
-const GUIDELINE_CLAIM = /指南|共识/;
 
 /**
  * 一位专家的意见评分（规格 8.1）。引擎已经做过结构、引用、数值和措辞校验，这里按同一套规则复核，
@@ -133,8 +135,18 @@ export function gradeExpertOpinion(
       x.citations.map((ci) => ci.cardId),
     ),
   );
-  if (!cited.size && GUIDELINE_CLAIM.test(opinion.summary)) {
-    findings.push({ rule: 'opinion.guideline_claim', detail: '没有引用却在结论里写依据指南' });
+  // 和后端校验同一套范围：data_only 的要点、没有引用的建议，以及没有任何引用时的结论和转介原因
+  const claims = (t: string) => GUIDELINE_CLAIM.test(normalizeForCompliance(t).text);
+  const unsupported = [
+    ...opinion.findings.filter((f) => f.basis === 'data_only').map((f) => f.point),
+    ...opinion.suggestions.filter((s) => !s.citations.length).map((s) => s.text),
+    ...(cited.size ? [] : [opinion.summary, opinion.referral.reason ?? '']),
+  ];
+  if (unsupported.some(claims)) {
+    findings.push({ rule: 'opinion.guideline_claim', detail: '没有卡片支撑却写了依据指南' });
+  }
+  if (hasDrugAdvice(text)) {
+    findings.push({ rule: 'opinion.drug_advice', detail: '点名具体药物或写了剂量' });
   }
   for (const card of e.citedCards ?? []) {
     if (!cited.has(card)) findings.push({ rule: 'citation.missing', detail: card });
