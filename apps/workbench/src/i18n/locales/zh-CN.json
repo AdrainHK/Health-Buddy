@@ -149,7 +149,8 @@
         "rowLabel": "{{name}} 的选择",
         "note": "选择只对这一条消息生效"
       },
-      "answeredBy": "专家意见：{{names}}"
+      "answeredBy": "专家意见：{{names}}",
+      "suggestion": "请 @{{name}} 看看"
     }
   },
   "steps": {
@@ -166,7 +167,8 @@
     "consultExperts": "调用专家",
     "reuseExperts": "沿用上一版的专家意见",
     "synthesizeExperts": "汇总专家意见",
-    "unknown": "处理中"
+    "unknown": "处理中",
+    "reuseRecentExperts": "沿用之前的专家意见"
   },
   "skills": {
     "client-recent-summary": {
@@ -328,7 +330,10 @@
         "cancel": "取消",
         "progress": "正在根据退回原因重写…",
         "done": "已生成新版本",
-        "noArtifact": "本次重写没有生成新版本"
+        "noArtifact": "本次重写没有生成新版本",
+        "reconsult": "重新请专家",
+        "reconsultNote": "默认沿用这份草稿生成时的专家意见；勾选后重新请专家，计入今天的专家调用次数。",
+        "reportCorrected": "报告数值已更正，重写时会按更正后的数值重新请专家。"
       },
       "errors": {
         "busy": "当前任务正在生成，请稍候再试",
@@ -861,7 +866,8 @@
       "synthesized": "已汇总专家意见",
       "synthesizedWith": "已汇总，有 {{count}} 处分歧",
       "synthesisFailed": "未能自动汇总，请逐条查看",
-      "viewOpinions": "查看专家意见"
+      "viewOpinions": "查看专家意见",
+      "reusedAt": "沿用 {{time}} 的专家意见"
     },
     "trigger": {
       "expert_center": "专家中心提问",
@@ -923,7 +929,13 @@
       "citationLabel": "查看引用 {{cardId}}",
       "cardSource": "来源 {{sourceId}} · {{section}}",
       "cardUnknown": "这张卡片暂时无法显示，请在专家详情里查看来源 {{sourceId}}",
-      "note": "仅供健管师专业参考，非医疗诊断，请勿直接转发给客户"
+      "note": "仅供健管师专业参考，非医疗诊断，请勿直接转发给客户",
+      "origin": {
+        "reconsult": "重新请专家",
+        "add_expert": "补请专家"
+      },
+      "correctedBadge": "基于更正前的数值",
+      "reportCorrected": "基于更正前的数值：报告数值在这次请专家之后被更正过，这些意见依据的是更正前的数值。可以点“重新请专家”按更正后的数值再请一次。"
     },
     "feedback": {
       "label": "这条意见有用吗？",
@@ -944,6 +956,30 @@
       "currentUseful": "你选了“有用”",
       "currentNotUseful": "你选了“没用”（{{reason}}）",
       "note": "反馈只用于平台评估专家质量，其他健管师看不到。"
+    },
+    "followUp": {
+      "overCap": "因数量上限没请的专家：",
+      "add": "也请{{name}}",
+      "reconsult": "重新请专家",
+      "reconsultTitle": "重新请专家",
+      "chooseExperts": "选择要请的专家（最多 {{max}} 位）",
+      "usageNote": "会按原来的问题再请一次，生成新的调用记录，计入今天的专家调用次数。回答显示在对话里。",
+      "draftNote": "草稿不会因此改变；要用新的意见重写草稿，请在草稿上退回重写并勾选“重新请专家”。",
+      "submit": "重新请专家",
+      "cancel": "取消",
+      "running": "正在请专家…",
+      "done": "已重新请专家，新的意见在这里和对话里。",
+      "errors": {
+        "tooMany": "今天的专家调用次数已用完，明天再试",
+        "notFound": "这位专家暂时不可用，或这次调用已看不到",
+        "badRequest": "请求不正确，请调整要请的专家",
+        "readOnly": "任务只读，不能再请专家",
+        "busy": "这个任务正在生成，请稍后再试",
+        "reportUnavailable": "原来依据的报告已看不到，不能重新请专家",
+        "conflict": "暂时不能重新请专家，请刷新后再试",
+        "network": "网络连接中断，请重试",
+        "unknown": "出错了，请重试"
+      }
     }
   },
   "signals": {

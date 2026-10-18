@@ -176,6 +176,8 @@ export function consultation(overrides: Partial<ExpertConsultation> = {}): Exper
     messageId: ids.assistantMsg,
     trigger: 'mention',
     status: 'done',
+    origin: null,
+    reportCorrectedSince: false,
     routing: {
       selected: [
         { expertId: ENDO.id, selectedReason: 'manager', reasons: [{ kind: 'manager' }] },

@@ -495,6 +495,13 @@ export function ResultsPanel({
             state={consultations}
             focusId={focusConsultation}
             onRetry={() => setConsultationsReload((v) => v + 1)}
+            readOnly={readOnly}
+            onFollowUpDone={() => {
+              // 重新请、补请生成了新的调用记录和对话里的新回答
+              setFocusConsultation(null);
+              setConsultationsReload((v) => v + 1);
+              onConversationChanged?.();
+            }}
           />
         )}
         {tab === 'client' && creatingClient && (

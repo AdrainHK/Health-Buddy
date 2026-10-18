@@ -166,6 +166,11 @@ export type ApproveArtifactRequest = z.input<typeof approveArtifactRequestSchema
 
 export const returnArtifactRequestSchema = z.object({
   reason: z.string().trim().min(1).max(RETURN_REASON_MAX),
+  /**
+   * M3（Q21）：退回重写默认复用这份草稿生成时的专家意见；为 true 时重新请专家（新的调用记录，计入每日用量）。
+   * 依据的报告数值被更正过时，不论这里怎么传都会重新请专家。
+   */
+  reconsult: z.boolean().optional(),
 });
 export type ReturnArtifactRequest = z.infer<typeof returnArtifactRequestSchema>;
 

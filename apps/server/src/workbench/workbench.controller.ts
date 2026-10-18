@@ -1,8 +1,12 @@
 import { Body, Controller, HttpCode, Inject, Param, Post, Req, Res } from '@nestjs/common';
 import { getExpert } from '@health-buddy/experts';
 import {
+  EXPERTS_PER_CALL_MAX,
+  addExpertRequestSchema,
+  reconsultRequestSchema,
   returnArtifactRequestSchema,
   sendMessageRequestSchema,
+  type ExpertConsultation,
   type TaskStreamEvent,
 } from '@health-buddy/shared';
 import {
@@ -21,6 +25,7 @@ import { SESSION_COOKIE, SessionService } from '../auth/session.service.js';
 import { badRequest, notFound, tooManyRequests } from '../common/api-error.js';
 import { requireManager } from '../common/manager-only.js';
 import { ConsultationService } from '../experts/consultation.service.js';
+import { ExpertsRepository } from '../experts/experts.repository.js';
 import { GenerationService, type SkillExpertOptions, type TurnIo } from './generation.service.js';
 import { GenerationRegistry } from './generation-registry.js';
 import { LLM_RATE_LIMITER, type LlmRateLimiter } from './llm-rate-limiter.js';
@@ -31,6 +36,13 @@ const idSchema = z.uuid();
 function parseId(id: string): string {
   if (!idSchema.safeParse(id).success) throw notFound();
   return id;
+}
+
+/** 直接请专家的调用（@专家、专家中心、补请）：重新请时同样直接请，不经过自动选择 */
+function isDirect(c: ExpertConsultation): boolean {
+  return (
+    c.origin?.kind === 'add_expert' || c.trigger === 'mention' || c.trigger === 'expert_center'
+  );
 }
 
 interface Claimed<T> {
@@ -54,6 +66,7 @@ export class WorkbenchController {
     private readonly sessions: SessionService,
     @Inject(LLM_RATE_LIMITER) private readonly limiter: LlmRateLimiter,
     private readonly consultation: ConsultationService,
+    private readonly experts: ExpertsRepository,
   ) {}
 
   @Post('tasks/:id/messages')
@@ -126,6 +139,7 @@ export class WorkbenchController {
           ...turn.value,
           skills: [skill],
           managerRequest: input.content,
+          requestMessageId: turn.value.managerMessageId,
           parent: undefined,
           experts: {
             trigger: 'skill_auto',
@@ -217,6 +231,12 @@ export class WorkbenchController {
     const artifactId = parseId(id);
     const parsed = returnArtifactRequestSchema.safeParse(body);
     if (!parsed.success) throw badRequest();
+    const reconsult = parsed.data.reconsult === true;
+    if (reconsult) {
+      // 重新请专家（Q21）：专家预览关闭时没有专家可请；当天的专家调用次数用完时返回 429（规格 6.4）
+      if (!this.consultation.preview) throw badRequest();
+      if ((await this.consultation.remainingToday(session)) <= 0) throw tooManyRequests();
+    }
     this.acquire(session);
     const run = await this.claim(session, (claim) =>
       this.repo.returnArtifact(session, artifactId, parsed.data.reason, claim, (skillId) => [
@@ -224,7 +244,121 @@ export class WorkbenchController {
         ...PLAN_TEMPLATES.filter((p) => p.skills.includes(skillId)).map((p) => p.id),
       ]),
     );
-    await this.regenerate(run, req, res, session, parsed.data.reason);
+    await this.regenerate(run, req, res, session, parsed.data.reason, undefined, reconsult);
+  }
+
+  /**
+   * 重新请专家（M3 规格 6.4、Q21）：按原调用的问题和报告再请一次，可以调整“一定要请”和“不要请”，
+   * 生成新的调用记录，计入每日用量。直接请专家（@专家、专家中心、补请）的调用重新直接请；
+   * /体检解读 自动调用的重新自动选择。回答写在对话里的一条新回答，产物不变（重写产物用退回重写）。
+   * 别人的调用 404；只读任务 409；当天次数不够 429。
+   */
+  @Post('expert-consultations/:id/reconsult')
+  @HttpCode(200)
+  async reconsult(
+    @CurrentSession() session: ResolvedSession,
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    requireManager(session);
+    const original = await this.followUpTarget(session, id);
+    const parsed = reconsultRequestSchema.safeParse(body ?? {});
+    if (!parsed.success) throw badRequest();
+    const direct = isDirect(original);
+    const routing = original.routing;
+    const bound = direct ? await this.repo.taskExpert(session, original.taskId) : null;
+    if (bound === undefined) throw notFound();
+    // 不传时沿用原来的选择：直接请的是原来请的专家，自动选择的是健管师当时指定的专家和排除的专家
+    const previousForced = routing.selected
+      .filter((s) => (direct ? true : s.reasons.some((r) => r.kind === 'manager')))
+      .map((s) => s.expertId)
+      .filter((id) => id !== bound);
+    const forced = [
+      ...new Set([...(bound ? [bound] : []), ...(parsed.data.forced ?? previousForced)]),
+    ];
+    const excluded = parsed.data.excluded ?? (direct ? [] : routing.excluded);
+    if (direct && (excluded.length > 0 || forced.length === 0)) throw badRequest();
+    if (forced.length > EXPERTS_PER_CALL_MAX) throw badRequest();
+    if (forced.some((e) => excluded.includes(e))) throw badRequest();
+    if (!(await this.consultation.allAvailable(session, forced))) throw notFound();
+    if (excluded.some((e) => !getExpert(e))) throw notFound();
+    const remaining = await this.consultation.remainingToday(session);
+    if (direct ? remaining < forced.length : remaining <= 0) throw tooManyRequests();
+    this.acquire(session);
+    const turn = await this.claim(session, (claim) =>
+      this.repo.prepareFollowUp(session, original.id, claim, { requiresReport: !direct }),
+    );
+    await this.stream(turn, req, res, session, (io) =>
+      this.generation.followUpAnswer(
+        session,
+        turn.value,
+        {
+          trigger: original.trigger,
+          mode: direct ? 'direct' : 'route',
+          forced,
+          excluded,
+          bound,
+          origin: { kind: 'reconsult', consultationId: original.id },
+          ...(direct ? {} : { maxExperts: Math.min(remaining, EXPERTS_PER_CALL_MAX) }),
+        },
+        io,
+      ),
+    );
+  }
+
+  /**
+   * 补请因数量上限没请的专家（M3 规格 2.6、3.2 第 4 条）：只能补请原调用里“因数量上限未调用”的专家，
+   * 生成只有这一位专家的新调用记录，不受每次 3 位的上限约束，但计入每日用量。
+   * 别人的调用 404；只读任务 409；当天次数用完 429。
+   */
+  @Post('expert-consultations/:id/add-expert')
+  @HttpCode(200)
+  async addExpert(
+    @CurrentSession() session: ResolvedSession,
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    requireManager(session);
+    const original = await this.followUpTarget(session, id);
+    const parsed = addExpertRequestSchema.safeParse(body);
+    if (!parsed.success) throw badRequest();
+    const { expertId } = parsed.data;
+    if (!original.routing.overCap.includes(expertId)) throw badRequest();
+    if (!(await this.consultation.allAvailable(session, [expertId]))) throw notFound();
+    if ((await this.consultation.remainingToday(session)) < 1) throw tooManyRequests();
+    this.acquire(session);
+    const turn = await this.claim(session, (claim) =>
+      this.repo.prepareFollowUp(session, original.id, claim, { requiresReport: false }),
+    );
+    await this.stream(turn, req, res, session, (io) =>
+      this.generation.followUpAnswer(
+        session,
+        turn.value,
+        {
+          trigger: original.trigger,
+          mode: 'direct',
+          forced: [expertId],
+          excluded: [],
+          bound: null,
+          origin: { kind: 'add_expert', consultationId: original.id },
+          maxExperts: 1,
+        },
+        io,
+      ),
+    );
+  }
+
+  /** 重新请、补请的那次调用：必须属于当前健管师（行级安全），专家预览关闭时按不存在处理 */
+  private async followUpTarget(session: ResolvedSession, id: string): Promise<ExpertConsultation> {
+    const consultationId = parseId(id);
+    if (!this.consultation.preview) throw notFound();
+    const original = await this.experts.get(session, consultationId);
+    if (!original) throw notFound();
+    return original;
   }
 
   /** 停止当前生成。任务不属于当前健管师时 404，也不会影响别人的生成。 */
@@ -247,6 +381,7 @@ export class WorkbenchController {
     session: ResolvedSession,
     returnReason?: string,
     experts?: SkillExpertOptions,
+    reconsult = false,
   ): Promise<void> {
     const skills = run.value.skillIds.map((id) => getSkill(id));
     await this.stream(run, req, res, session, async (io) => {
@@ -262,6 +397,7 @@ export class WorkbenchController {
           skills: skills as SkillDefinition[],
           ...(returnReason !== undefined ? { returnReason } : {}),
           ...(experts ? { experts } : {}),
+          ...(reconsult ? { reconsult } : {}),
         },
         io,
       );

@@ -7,6 +7,7 @@ import { ArtifactView, type ArtifactViewProps } from '../artifacts/ArtifactView'
 import { AppShell } from '../shell/AppShell';
 import { ChatPane, type ChatPaneProps } from '../shell/ChatPane';
 import {
+  CARDIO,
   ENDO,
   ENDO_DETAIL,
   EXPERTS,
@@ -30,6 +31,7 @@ import {
   makeTask,
   mockApi,
   setWideViewport,
+  sseResponse,
 } from '../test/mockApi';
 import { ExpertsContext } from './ExpertsContext';
 import { ExpertsTab } from './ExpertsTab';
@@ -50,6 +52,8 @@ function step(overrides: Partial<TaskStep>): TaskStep {
     labelKey: 'steps.consultExperts',
     expertIds: [],
     labelDate: null,
+    labelTime: null,
+    consultationId: null,
     status: 'running',
     startedAt: NOW,
     finishedAt: null,
@@ -837,4 +841,401 @@ describe('审核栏的专家提示（规格 2.7、Q20、M3 合规审查）', () 
     );
     expect(hasReferralSection('没有这一节', '就医或转介建议')).toBe(false);
   });
+});
+
+describe('重新请专家、补请专家、报告更正（规格 2.5、2.6、6.4）', () => {
+  const C_PATH = `/expert-consultations/${expertIds.consultation}`;
+  const finished = () =>
+    sseResponse([{ type: 'done', messageId: ids.assistantMsg, reason: 'complete' }]);
+
+  it('自动选择的调用：补请因上限没请的专家；重新请时沿用原来的“一定要请”“不要请”，次数用完提示', async () => {
+    const api = mockApi({
+      [`POST ${C_PATH}/add-expert`]: () => finished(),
+      [`POST ${C_PATH}/reconsult`]: () => json(429, { error: 'too_many_requests' }),
+    });
+    const onFollowUpDone = vi.fn();
+    const user = userEvent.setup();
+    render(
+      withExperts(
+        <ExpertsTab
+          state={{
+            status: 'ready',
+            consultations: [
+              consultation({
+                trigger: 'skill_auto',
+                routing: {
+                  selected: [
+                    {
+                      expertId: ENDO.id,
+                      selectedReason: 'manager',
+                      reasons: [{ kind: 'manager' }],
+                    },
+                    {
+                      expertId: NUTRI.id,
+                      selectedReason: 'rule',
+                      reasons: [{ kind: 'indicator', code: 'fpg', direction: 'high' }],
+                    },
+                  ],
+                  excluded: [CARDIO.id],
+                  overCap: [MENTAL.id],
+                  ruleOnly: false,
+                },
+              }),
+            ],
+          }}
+          onRetry={() => {}}
+          onFollowUpDone={onFollowUpDone}
+        />,
+      ),
+    );
+    const followUp = screen.getByTestId('consultation-follow-up');
+    await user.click(within(followUp).getByRole('button', { name: '也请心理专家' }));
+    await waitFor(() => expect(onFollowUpDone).toHaveBeenCalledTimes(1));
+    expect(api.callsTo('POST', `${C_PATH}/add-expert`)[0]?.body).toEqual({ expertId: MENTAL.id });
+    expect(within(followUp).getByRole('status')).toHaveTextContent('已重新请专家');
+
+    await user.click(within(followUp).getByRole('button', { name: '重新请专家' }));
+    const panel = within(followUp).getByRole('group', { name: '重新请专家' });
+    // 只沿用健管师自己的选择（规则选中的营养专家不算“一定要请”）
+    expect(within(panel).getByTestId('expert-selector-summary')).toHaveTextContent(
+      '一定要请：内分泌与代谢专家；不要请：心血管专家',
+    );
+    expect(within(panel).getByText(/计入今天的专家调用次数/)).toBeInTheDocument();
+    expect(within(panel).getByText(/草稿不会因此改变/)).toBeInTheDocument();
+    await user.click(within(panel).getByRole('button', { name: '重新请专家' }));
+    expect(await within(followUp).findByRole('alert')).toHaveTextContent(
+      '今天的专家调用次数已用完，明天再试',
+    );
+    expect(api.callsTo('POST', `${C_PATH}/reconsult`)[0]?.body).toEqual({
+      forced: [ENDO.id],
+      excluded: [CARDIO.id],
+    });
+    // 打开流之前就被拒绝：不刷新
+    expect(onFollowUpDone).toHaveBeenCalledTimes(1);
+  });
+
+  it('@专家 的调用重新请时直接选专家（不经过自动选择），不带“不要请”', async () => {
+    const api = mockApi({ [`POST ${C_PATH}/reconsult`]: () => finished() });
+    const onFollowUpDone = vi.fn();
+    const user = userEvent.setup();
+    render(
+      withExperts(
+        <ExpertsTab
+          state={{ status: 'ready', consultations: [consultation({ trigger: 'mention' })] }}
+          onRetry={() => {}}
+          onFollowUpDone={onFollowUpDone}
+        />,
+      ),
+    );
+    const followUp = screen.getByTestId('consultation-follow-up');
+    // 没有因上限没请的专家：没有“也请”按钮
+    expect(within(followUp).queryByRole('button', { name: /^也请/ })).not.toBeInTheDocument();
+    await user.click(within(followUp).getByRole('button', { name: '重新请专家' }));
+    const panel = within(followUp).getByRole('group', { name: '重新请专家' });
+    expect(within(panel).getByRole('checkbox', { name: '内分泌与代谢专家' })).toBeChecked();
+    expect(within(panel).getByRole('checkbox', { name: '营养专家' })).toBeChecked();
+    await user.click(within(panel).getByRole('checkbox', { name: '营养专家' }));
+    await user.click(within(panel).getByRole('checkbox', { name: '心理专家' }));
+    await user.click(within(panel).getByRole('button', { name: '重新请专家' }));
+    await waitFor(() => expect(onFollowUpDone).toHaveBeenCalledTimes(1));
+    expect(api.callsTo('POST', `${C_PATH}/reconsult`)[0]?.body).toEqual({
+      forced: [ENDO.id, MENTAL.id],
+    });
+  });
+
+  it('只读任务可以看意见，但不能重新请或补请；没传回调时不显示操作', () => {
+    mockApi({});
+    const c = consultation({
+      routing: { selected: [], excluded: [], overCap: [MENTAL.id], ruleOnly: false },
+    });
+    const view = render(
+      withExperts(
+        <ExpertsTab
+          state={{ status: 'ready', consultations: [c] }}
+          onRetry={() => {}}
+          readOnly
+          onFollowUpDone={() => {}}
+        />,
+      ),
+    );
+    expect(screen.getByRole('button', { name: '重新请专家' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '也请心理专家' })).toBeDisabled();
+    view.rerender(
+      withExperts(
+        <ExpertsTab state={{ status: 'ready', consultations: [c] }} onRetry={() => {}} />,
+      ),
+    );
+    expect(screen.queryByTestId('consultation-follow-up')).not.toBeInTheDocument();
+  });
+
+  it('报告数值更正后，旧意见标“基于更正前的数值”；重新请的调用标出来源', () => {
+    mockApi({});
+    render(
+      withExperts(
+        <ExpertsTab
+          state={{
+            status: 'ready',
+            consultations: [
+              consultation({
+                id: expertIds.consultation2,
+                origin: { kind: 'reconsult', consultationId: expertIds.consultation },
+              }),
+              consultation({ reportCorrectedSince: true }),
+            ],
+          }}
+          onRetry={() => {}}
+          focusId={expertIds.consultation}
+        />,
+      ),
+    );
+    const items = screen.getAllByRole('listitem').filter((li) => li.querySelector('details'));
+    expect(items[0]).toHaveTextContent('重新请专家');
+    expect(items[0]).not.toHaveTextContent('基于更正前的数值');
+    expect(items[1]).toHaveTextContent('基于更正前的数值');
+    expect(within(items[1]!).getByTestId('report-corrected')).toHaveTextContent(
+      '报告数值在这次请专家之后被更正过',
+    );
+  });
+});
+
+describe('主对话的专家建议和 10 分钟内沿用（规格 2.5、3.7、Q6）', () => {
+  async function ask(user: ReturnType<typeof userEvent.setup>, question: string) {
+    await screen.findByRole('textbox');
+    await user.click(screen.getByRole('radio', { name: '问一问' }));
+    await user.type(screen.getByRole('textbox'), question);
+    await user.click(screen.getByRole('button', { name: '发送' }));
+  }
+
+  it('问题属于某位专家时回答下方有“请 @专家 看看”，点了才用原来的问题直接请这位专家', async () => {
+    const streams: ReturnType<typeof controlledSse>[] = [];
+    const api = mockApi({
+      [`GET /tasks/${ids.task}`]: () => json(200, emptyDetail(makeTask())),
+      [`POST ${MSG_PATH}`]: (_c, init) => {
+        const sse = controlledSse(init?.signal);
+        streams.push(sse);
+        return sse.response;
+      },
+      [`GET /tasks/${ids.task}/expert-consultations`]: () => json(200, { consultations: [] }),
+    });
+    const user = userEvent.setup();
+    renderPane({ onOpenExperts: vi.fn() });
+    await ask(user, '合成问题：空腹血糖偏高要注意什么');
+    await waitFor(() => expect(streams).toHaveLength(1));
+    act(() => {
+      streams[0]!.send({ type: 'text', messageId: ids.assistantMsg, delta: '合成回答' });
+      streams[0]!.send({ type: 'expert_suggestion', expertId: ENDO.id });
+      streams[0]!.send({ type: 'done', messageId: ids.assistantMsg, reason: 'complete' });
+      streams[0]!.close();
+    });
+    const button = await screen.findByRole('button', { name: /请 @内分泌与代谢专家 看看/ });
+    // 只建议，不自动调用
+    expect(api.callsTo('POST', MSG_PATH)).toHaveLength(1);
+    await user.click(button);
+    await waitFor(() => expect(api.callsTo('POST', MSG_PATH)).toHaveLength(2));
+    expect(api.callsTo('POST', MSG_PATH)[1]?.body).toMatchObject({
+      mode: 'ask',
+      content: '合成问题：空腹血糖偏高要注意什么',
+      expertRefs: [ENDO.id],
+    });
+    // 生成中不再显示建议按钮
+    expect(
+      screen.queryByRole('button', { name: /请 @内分泌与代谢专家 看看/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('10 分钟内同样的请求沿用上次的意见：步骤写明沿用哪个时间的意见，回答写明专家', async () => {
+    let sse!: ReturnType<typeof controlledSse>;
+    mockApi({
+      [`GET /tasks/${ids.task}`]: () => json(200, emptyDetail(makeTask())),
+      [`POST ${MSG_PATH}`]: (_c, init) => {
+        sse = controlledSse(init?.signal);
+        return sse.response;
+      },
+      [`GET /tasks/${ids.task}/expert-consultations`]: () => json(200, { consultations: [] }),
+    });
+    const user = userEvent.setup();
+    renderPane({ onOpenExperts: vi.fn() });
+    await screen.findByRole('textbox');
+    await mention(user, '内分泌', /内分泌与代谢专家/);
+    await ask(user, '合成问题');
+    await waitFor(() => expect(sse).toBeDefined());
+    const labelTime = '2026-10-18T02:32:00.000Z';
+    act(() => {
+      sse.send({
+        type: 'step',
+        step: step({
+          labelKey: 'steps.reuseRecentExperts',
+          expertIds: [ENDO.id],
+          labelTime,
+          status: 'done',
+          finishedAt: NOW,
+        }),
+      });
+      sse.send({ type: 'text', messageId: ids.assistantMsg, delta: '合成沿用的回答' });
+      sse.send({ type: 'done', messageId: ids.assistantMsg, reason: 'complete' });
+      sse.close();
+    });
+    const time = new Date(labelTime).toLocaleTimeString('zh-CN', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    expect((await screen.findAllByText(`沿用 ${time} 的专家意见`)).length).toBeGreaterThan(0);
+    expect(await screen.findByTestId('answered-by')).toHaveTextContent(
+      '专家意见：内分泌与代谢专家AI',
+    );
+  });
+});
+
+describe('沿用意见的回答也置顶危机提示（规格 7.2 第 5 条）', () => {
+  const answer = (id: string, content: string) => ({
+    id,
+    role: 'assistant' as const,
+    mode: 'ask' as const,
+    content,
+    skillId: null,
+    clientRefs: [],
+    reportRefs: [],
+    expertRefs: [],
+    excludedExperts: [],
+    status: 'complete' as const,
+    createdAt: NOW,
+  });
+
+  it('刷新后：沿用步骤指向的那次调用有危机信号，沿用的回答最前面仍有危机提示', async () => {
+    mockApi({
+      [`GET /tasks/${ids.task}`]: () =>
+        json(200, {
+          ...emptyDetail(),
+          messages: [
+            answer(ids.assistantMsg, '合成回答'),
+            answer(ids.assistantMsg2, '合成沿用的回答'),
+          ],
+          steps: [
+            step({
+              id: ids.step2,
+              messageId: ids.assistantMsg2,
+              kind: 'consult_expert',
+              labelKey: 'steps.reuseRecentExperts',
+              expertIds: [MENTAL.id],
+              labelTime: NOW,
+              consultationId: expertIds.consultation,
+              status: 'done',
+              finishedAt: NOW,
+            }),
+          ],
+        }),
+      [`GET /tasks/${ids.task}/expert-consultations`]: () =>
+        json(200, {
+          consultations: [
+            consultation({
+              messageId: ids.assistantMsg,
+              crisisSignal: true,
+              calls: [call({ expertId: MENTAL.id })],
+            }),
+          ],
+        }),
+    });
+    renderPane({ task: makeTask() });
+    await screen.findByText('合成沿用的回答');
+    const reusedAnswer = screen.getByText('合成沿用的回答').closest('li')!;
+    expect(await within(reusedAnswer).findByRole('alert')).toHaveTextContent('心理危机提示');
+    expect(within(reusedAnswer).getByTestId('answered-by')).toHaveTextContent('心理专家');
+  });
+
+  it('SSE：有危机提示的回答不显示“请 @专家 看看”', async () => {
+    let sse!: ReturnType<typeof controlledSse>;
+    mockApi({
+      [`GET /tasks/${ids.task}`]: () => json(200, emptyDetail(makeTask())),
+      [`POST ${MSG_PATH}`]: (_c, init) => {
+        sse = controlledSse(init?.signal);
+        return sse.response;
+      },
+      [`GET /tasks/${ids.task}/expert-consultations`]: () => json(200, { consultations: [] }),
+    });
+    const user = userEvent.setup();
+    renderPane({ onOpenExperts: vi.fn() });
+    await screen.findByRole('textbox');
+    await user.click(screen.getByRole('radio', { name: '问一问' }));
+    await user.type(screen.getByRole('textbox'), '合成问题');
+    await user.click(screen.getByRole('button', { name: '发送' }));
+    await waitFor(() => expect(sse).toBeDefined());
+    act(() => {
+      sse.send({ type: 'text', messageId: ids.assistantMsg, delta: '合成回答' });
+      sse.send({
+        type: 'consultation',
+        consultationId: expertIds.consultation,
+        status: 'done',
+        crisisSignal: true,
+        emergencySignal: false,
+      });
+      sse.send({ type: 'expert_suggestion', expertId: MENTAL.id });
+      sse.send({ type: 'done', messageId: ids.assistantMsg, reason: 'complete' });
+      sse.close();
+    });
+    const body = await screen.findByText('合成回答');
+    const li = body.closest('li')!;
+    expect(await within(li).findByRole('alert')).toHaveTextContent('心理危机提示');
+    expect(screen.queryByRole('button', { name: /请 @心理专家 看看/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('退回重写时重新请专家（Q21）', () => {
+  function renderView(props: Partial<ArtifactViewProps>) {
+    const all: ArtifactViewProps = {
+      detail: makeArtifactDetail({
+        skillId: 'report-interpretation',
+        consultationId: expertIds.consultation,
+      }),
+      readOnly: false,
+      onDetail: () => {},
+      onReload: () => {},
+      onOpen: () => {},
+      onChanged: () => {},
+      onReadOnly: () => {},
+      onBack: () => {},
+      ...props,
+    };
+    return render(withExperts(<ArtifactView {...all} />));
+  }
+
+  it('默认沿用原来的意见；勾选“重新请专家”后请求带 reconsult', async () => {
+    const detail = makeArtifactDetail({
+      skillId: 'report-interpretation',
+      consultationId: expertIds.consultation,
+    });
+    const api = mockApi({
+      [`POST /artifacts/${detail.artifact.id}/return`]: () => finished(),
+    });
+    const user = userEvent.setup();
+    renderView({ consultation: consultation() });
+    const bar = screen.getByRole('region', { name: '审核' });
+    await user.click(within(bar).getByRole('button', { name: '退回重写' }));
+    const form = within(bar).getByRole('group', { name: '退回重写' });
+    const box = within(form).getByRole('checkbox', { name: /重新请专家/ });
+    expect(box).not.toBeChecked();
+    await user.type(within(form).getByRole('textbox', { name: /退回原因/ }), '合成退回原因');
+    await user.click(box);
+    await user.click(within(form).getByRole('button', { name: '退回并重写' }));
+    await waitFor(() =>
+      expect(api.callsTo('POST', `/artifacts/${detail.artifact.id}/return`)[0]?.body).toEqual({
+        reason: '合成退回原因',
+        reconsult: true,
+      }),
+    );
+  });
+
+  it('报告数值已更正：不让选，提示会按更正后的数值重新请专家', async () => {
+    mockApi({});
+    const user = userEvent.setup();
+    renderView({ consultation: consultation({ reportCorrectedSince: true }) });
+    const bar = screen.getByRole('region', { name: '审核' });
+    await user.click(within(bar).getByRole('button', { name: '退回重写' }));
+    const form = within(bar).getByRole('group', { name: '退回重写' });
+    expect(within(form).queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(within(form).getByText(/按更正后的数值重新请专家/)).toBeInTheDocument();
+  });
+
+  function finished() {
+    return sseResponse([{ type: 'done', messageId: ids.assistantMsg, reason: 'complete' }]);
+  }
 });

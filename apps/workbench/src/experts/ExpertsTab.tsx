@@ -13,6 +13,7 @@ import { Stethoscope, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getExpert, setExpertFeedback } from '../api/experts';
+import { ConsultationFollowUp } from './ConsultationFollowUp';
 import { AiBadge } from './ExpertBadges';
 import { useExpertName, useExpertNames } from './ExpertsContext';
 import styles from './Experts.module.css';
@@ -29,6 +30,13 @@ export interface ExpertsTabProps {
   onRetry: () => void;
   /** 要展开的那次调用（对话区里点了“查看专家意见”）；为空时展开最新的一次 */
   focusId?: string | null;
+  /** 任务只读（客户转出）：意见仍可查看，不能重新请专家或补请 */
+  readOnly?: boolean;
+  /**
+   * 重新请专家、补请专家跑完一轮（规格 6.4）：刷新专家标签和对话。
+   * 不传时不显示这两个操作
+   */
+  onFollowUpDone?: () => void;
 }
 
 /** 卡片要点按（专家，卡片编号）查：编号只在一位专家内唯一（规格 5.2 第 1 条） */
@@ -38,7 +46,13 @@ type CardIndex = Record<string, ReadonlyMap<string, ExpertCard> | null>;
  * 结果区的专家标签（M3 规格 2.7）：按时间倒序列出本任务的每次专家调用。
  * 专家意见只给健管师看：没有复制、导出或任何发给客户的入口（Q9、规格 7.2 第 1 条）。
  */
-export function ExpertsTab({ state, onRetry, focusId = null }: ExpertsTabProps) {
+export function ExpertsTab({
+  state,
+  onRetry,
+  focusId = null,
+  readOnly = false,
+  onFollowUpDone,
+}: ExpertsTabProps) {
   const { t } = useTranslation();
   const cards = useCardIndex(state.consultations);
 
@@ -74,6 +88,8 @@ export function ExpertsTab({ state, onRetry, focusId = null }: ExpertsTabProps) 
               consultation={c}
               cards={cards}
               defaultOpen={c.id === openId}
+              readOnly={readOnly}
+              {...(onFollowUpDone ? { onFollowUpDone } : {})}
             />
           </li>
         ))}
@@ -106,10 +122,14 @@ function ConsultationCard({
   consultation: c,
   cards,
   defaultOpen,
+  readOnly,
+  onFollowUpDone,
 }: {
   consultation: ExpertConsultation;
   cards: CardIndex;
   defaultOpen: boolean;
+  readOnly: boolean;
+  onFollowUpDone?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const names = useExpertNames();
@@ -136,10 +156,17 @@ function ConsultationCard({
         <span className={styles.callStatus}>
           {t('experts.tab.experts', { names: names(c.calls.map((call) => call.expertId)) })} ·{' '}
           {t(`experts.tab.status.${c.status}`)}
+          {c.origin && <> · {t(`experts.tab.origin.${c.origin.kind}`)}</>}
+          {c.reportCorrectedSince && <> · {t('experts.tab.correctedBadge')}</>}
         </span>
       </summary>
       <div className={styles.consultationBody}>
         <SignalAlerts {...signals} />
+        {c.reportCorrectedSince && (
+          <p className={styles.warn} role="note" data-testid="report-corrected">
+            {t('experts.tab.reportCorrected')}
+          </p>
+        )}
         <SynthesisView consultation={c} cards={cards} />
         <section className={styles.block} aria-label={t('experts.tab.opinions')}>
           <h4 className={styles.blockTitle}>{t('experts.tab.opinions')}</h4>
@@ -148,6 +175,9 @@ function ConsultationCard({
           ))}
         </section>
         <p className={styles.note}>{t('experts.tab.note')}</p>
+        {onFollowUpDone && c.status !== 'running' && (
+          <ConsultationFollowUp consultation={c} disabled={readOnly} onDone={onFollowUpDone} />
+        )}
       </div>
     </details>
   );

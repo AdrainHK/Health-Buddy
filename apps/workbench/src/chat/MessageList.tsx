@@ -1,5 +1,5 @@
 import { Button } from '@health-buddy/ui';
-import type { ClientSummary, TaskPlan, TaskStep } from '@health-buddy/shared';
+import type { ClientSummary, ExpertConsultation, TaskPlan, TaskStep } from '@health-buddy/shared';
 import {
   AtSign,
   Check,
@@ -22,6 +22,7 @@ import {
   type ExpertStepContext,
   isConsultStep,
   isExpertStep,
+  isRecentReuseStep,
   useExpertStepLabel,
 } from '../experts/ExpertSteps';
 import { useSkillName, useStepLabel } from '../i18n/dynamic';
@@ -39,6 +40,11 @@ export interface MessageListProps {
   onUseSkill: (skillId: string) => void;
   /** 执行步骤里点“查看专家意见”：打开结果区的专家标签 */
   onOpenExperts?: (consultationId: string | null) => void;
+  /**
+   * 点了回答下方的“请 @某专家 看看”（M3 Q6）：把这条回答对应的问题直接交给这位专家。
+   * 不传时（只读、正在生成）不显示按钮
+   */
+  onAskExpert?: (expertId: string, answerId: string) => void;
 }
 
 /** 对话消息流：健管师消息、AI 回答、执行步骤、计划、技能建议和草稿提示 */
@@ -50,8 +56,13 @@ export function MessageList({
   onConfirmPlan,
   onUseSkill,
   onOpenExperts,
+  onAskExpert,
 }: MessageListProps) {
   const { t } = useTranslation();
+  // 沿用意见的步骤指向被沿用的调用（规格 3.7）：按 id 找，刷新后据此恢复危机、急症提示
+  const consultationsById = new Map(
+    Object.values(conversation.consultations).map((c) => [c.id, c]),
+  );
   return (
     <ol className={styles.list} aria-label={t('chat.messages')}>
       {conversation.messages.map((message) =>
@@ -67,6 +78,10 @@ export function MessageList({
             key={message.id}
             message={message}
             steps={conversation.steps.filter((s) => s.messageId === message.id)}
+            reused={reusedConsultations(
+              conversation.steps.filter((s) => s.messageId === message.id),
+              consultationsById,
+            )}
             plans={conversation.plans.filter((p) => p.messageId === message.id)}
             expert={{
               calls: conversation.expertCalls[message.id],
@@ -77,11 +92,23 @@ export function MessageList({
             canConfirm={canConfirm}
             onConfirmPlan={onConfirmPlan}
             onUseSkill={onUseSkill}
+            {...(onAskExpert ? { onAskExpert } : {})}
           />
         ),
       )}
     </ol>
   );
+}
+
+/** 这条回答的步骤沿用的调用记录（10 分钟内沿用、退回重写沿用上一版） */
+function reusedConsultations(
+  steps: readonly TaskStep[],
+  byId: ReadonlyMap<string, ExpertConsultation>,
+): ExpertConsultation[] {
+  return steps.flatMap((s) => {
+    const c = s.consultationId ? byId.get(s.consultationId) : undefined;
+    return c ? [c] : [];
+  });
 }
 
 function ManagerMessage({
@@ -153,9 +180,12 @@ function AssistantMessage({
   canConfirm,
   onConfirmPlan,
   onUseSkill,
+  onAskExpert,
+  reused,
 }: {
   message: ViewMessage;
   steps: TaskStep[];
+  reused: ExpertConsultation[];
   plans: TaskPlan[];
   expert: ExpertStepContext;
   /** SSE consultation 事件带来的危机、急症信号（接口取到调用记录前先用它） */
@@ -163,21 +193,28 @@ function AssistantMessage({
   canConfirm: boolean;
   onConfirmPlan: (plan: TaskPlan) => void;
   onUseSkill: (skillId: string) => void;
+  onAskExpert?: (expertId: string, answerId: string) => void;
 }) {
   const { t } = useTranslation();
   const skillName = useSkillName();
+  const expertName = useExpertName();
   const expertNames = useExpertNames();
   const streaming = message.status === 'streaming';
   const consultation = expert.consultation;
   // 危机、急症提示置顶，不依赖回答正文里的标记（合规审查第 2 条）
+  // 沿用上次意见的回答没有自己的调用记录：信号取自被沿用的那次调用（规格 7.2 第 5 条）
   const alerts = mergeSignals([
     signals ?? { crisis: false, emergency: false },
     ...(consultation ? [consultationSignals(consultation)] : []),
+    ...reused.map(consultationSignals),
   ]);
   // 请了专家的回答：在正文上方写明是哪几位专家的意见，并标 AI（Q24）
+  // 10 分钟内沿用上次意见的回答没有自己的调用记录，专家取自“沿用”那一步
   const expertIds = consultation
     ? consultation.calls.map((c) => c.expertId)
-    : Object.keys(expert.calls ?? {});
+    : Object.keys(expert.calls ?? {}).length
+      ? Object.keys(expert.calls ?? {})
+      : (steps.find(isRecentReuseStep)?.expertIds ?? []);
   return (
     <li className={styles.assistant} aria-label={t('chat.assistant')} aria-busy={streaming}>
       {steps.length > 0 && <StepList steps={steps} expert={expert} />}
@@ -227,6 +264,20 @@ function AssistantMessage({
           onClick={() => message.suggestion && onUseSkill(message.suggestion)}
         >
           {t('chat.suggestion', { name: skillName(message.suggestion) })}
+        </Button>
+      )}
+
+      {/* 有危机或急症提示时不建议请专家：先按置顶提示处理 */}
+      {message.expertSuggestion && onAskExpert && !alerts.crisis && !alerts.emergency && (
+        <Button
+          className={styles.suggestion}
+          icon={<Stethoscope size={14} />}
+          onClick={() =>
+            message.expertSuggestion && onAskExpert(message.expertSuggestion, message.id)
+          }
+        >
+          {t('chat.experts.suggestion', { name: expertName(message.expertSuggestion) })}
+          <AiBadge />
         </Button>
       )}
 

@@ -32,6 +32,8 @@ export interface ViewMessage {
   status: MessageStatus;
   /** 技能建议（Q5），只建议不执行 */
   suggestion?: string;
+  /** 专家建议（M3 Q6）：“请 @某专家 看看”，点了才调用 */
+  expertSuggestion?: string;
   /** 本轮生成的草稿 */
   artifacts?: ArtifactSummary[];
   errorKind?: StreamErrorKind;
@@ -168,6 +170,14 @@ function applyEvent(state: Conversation, event: TaskStreamEvent): Conversation {
       return {
         ...s,
         messages: updateMessage(s.messages, target, (m) => ({ ...m, suggestion: event.skillId })),
+      };
+    case 'expert_suggestion':
+      return {
+        ...s,
+        messages: updateMessage(s.messages, target, (m) => ({
+          ...m,
+          expertSuggestion: event.expertId,
+        })),
       };
     case 'error':
       return {

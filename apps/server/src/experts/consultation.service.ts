@@ -12,7 +12,12 @@ import {
   toProfile,
   type ExpertInputSource,
 } from '@health-buddy/experts';
-import type { ConsultationTrigger, TaskStep, TaskStreamEvent } from '@health-buddy/shared';
+import type {
+  ConsultationOrigin,
+  ConsultationTrigger,
+  TaskStep,
+  TaskStreamEvent,
+} from '@health-buddy/shared';
 import { LLM_GATEWAY, type AppGateway } from '../ai/gateway.provider.js';
 import { APP_CONFIG, type AppConfig } from '../config.js';
 import type { TenantContext } from '../db/database.js';
@@ -36,6 +41,8 @@ export interface ConsultRun {
   clientId: string | null;
   reportId: string | null;
   trigger: ConsultationTrigger;
+  /** 技能自动调用、计划时是哪个技能（只用于 10 分钟内复用的请求键） */
+  skillId?: string | null;
   /** direct：@专家、专家中心；route：/体检解读 自动选择 */
   mode: 'direct' | 'route';
   forced: string[];
@@ -44,6 +51,28 @@ export interface ConsultRun {
   source: ExpertInputSource;
   /** 今天剩余的专家调用次数不足 3 时，自动选择最多只请这么多位（Q12） */
   maxExperts?: number;
+  /** 重新请专家、补请专家时派生自哪次调用 */
+  origin?: ConsultationOrigin | null;
+  /** 这次调用回答的健管师消息（重新请专家按它的原文再问；10 分钟内复用时比较原文） */
+  requestMessageId?: string | null;
+}
+
+/**
+ * 请求里和专家有关的部分（规格 3.7 “同一组专家”）：直接请还是自动选择、指定、排除、绑定的专家。
+ * 只有专家 id，不含客户资料和问题原文，存进调用记录，10 分钟内复用意见时比较。
+ */
+export function expertRequestKey(
+  run: Pick<ConsultRun, 'trigger' | 'mode' | 'forced' | 'excluded' | 'bound' | 'skillId'>,
+): string {
+  return JSON.stringify({
+    // 触发方式和技能也算在内：计划或另一个技能的调用不会被当成同样的请求复用
+    trigger: run.trigger,
+    skillId: run.skillId ?? null,
+    mode: run.mode,
+    forced: [...new Set(run.forced)].sort(),
+    excluded: [...new Set(run.excluded)].sort(),
+    bound: run.bound ?? null,
+  });
 }
 
 export interface ConsultOutcome {
@@ -200,6 +229,9 @@ export class ConsultationService {
                   trigger: run.trigger,
                   routing,
                   signals: { ...signals },
+                  origin: run.origin ?? null,
+                  requestMessageId: run.requestMessageId ?? null,
+                  requestKey: expertRequestKey(run),
                 },
                 planned,
                 DAILY_EXPERT_CALLS,

@@ -512,6 +512,98 @@ describe('专家数据表的行级安全和约束', () => {
     expect(await repo.get(managerA1(), mine.consultationId)).toBeDefined();
   });
 
+  it('跨租户访问被拒绝：重新请、补请的调用只能派生自同一任务的调用，问题消息也只能是同一任务的（迁移 0015）', async () => {
+    const mine = await seedConsultation();
+    const other = await seedConsultation();
+    const theirs = await seedForA2();
+    const insert = (values: Record<string, unknown>) =>
+      withTenant(app, managerA1(), (trx) =>
+        trx
+          .insertInto('expert_consultations')
+          .values({
+            ...scopeA1(),
+            task_id: mine.taskId,
+            message_id: mine.messageId,
+            trigger: 'mention',
+            routing: ROUTING,
+            status: 'running',
+            ...values,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow(),
+      );
+    // 别人的调用、自己别的任务里的调用都不行
+    await expect(insert({ origin_id: theirs, origin_kind: 'reconsult' })).rejects.toThrow();
+    await expect(
+      insert({ origin_id: other.consultationId, origin_kind: 'reconsult' }),
+    ).rejects.toThrow();
+    // 两列要么都有，要么都没有；类别只有两种
+    await expect(insert({ origin_id: mine.consultationId })).rejects.toThrow();
+    await expect(
+      insert({ origin_id: mine.consultationId, origin_kind: 'reused' }),
+    ).rejects.toThrow();
+    await expect(insert({ request_message_id: other.messageId })).rejects.toThrow();
+    const ok = await insert({
+      origin_id: mine.consultationId,
+      origin_kind: 'add_expert',
+      request_message_id: mine.messageId,
+      request_key: '{"mode":"direct"}',
+    });
+    // 插入后不能改
+    await expect(
+      withTenant(app, managerA1(), (trx) =>
+        trx
+          .updateTable('expert_consultations')
+          .set({ origin_kind: 'reconsult' } as never)
+          .where('id', '=', ok.id)
+          .execute(),
+      ),
+    ).rejects.toThrow();
+    // A2 看不到 A1 派生出的调用
+    const repo = new ExpertsRepository(app);
+    expect(await repo.get(managerA2(), ok.id)).toBeUndefined();
+    expect((await repo.get(managerA1(), ok.id))?.origin).toEqual({
+      kind: 'add_expert',
+      consultationId: mine.consultationId,
+    });
+  });
+
+  it('跨租户访问被拒绝：沿用意见的步骤只能指向同一任务的调用（迁移 0015）', async () => {
+    const mine = await seedConsultation();
+    const other = await seedConsultation();
+    const theirs = await seedForA2();
+    let seq = 40;
+    const insertStep = (consultationId: string) =>
+      withTenant(app, managerA1(), (trx) =>
+        trx
+          .insertInto('task_steps')
+          .values({
+            ...scopeA1(),
+            message_id: mine.messageId,
+            seq: seq++,
+            kind: 'consult_expert',
+            label_key: 'steps.reuseRecentExperts',
+            consultation_id: consultationId,
+            status: 'done',
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow(),
+      );
+    await expect(insertStep(theirs)).rejects.toThrow();
+    await expect(insertStep(other.consultationId)).rejects.toThrow();
+    const ok = await insertStep(mine.consultationId);
+    // 插入后不能改指向
+    await expect(
+      withTenant(app, managerA1(), (trx) =>
+        trx
+          .updateTable('task_steps')
+          .set({ consultation_id: other.consultationId } as never)
+          .where('id', '=', ok.id)
+          .execute(),
+      ),
+    ).rejects.toThrow();
+  });
+
   it('每日上限：并发请求在配额锁下重新计数，不会一起越过上限', async () => {
     const { taskId, messageId } = await seedConsultation();
     const repo = new ExpertsRepository(app);

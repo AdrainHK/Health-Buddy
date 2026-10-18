@@ -8,16 +8,22 @@ import {
   detectEmergencyKeywords,
   expertMentions,
   expertName,
+  getExpert,
   renderConsultationSections,
   renderOpinion,
+  suggestExpert,
   type ExpertOpinion,
 } from '@health-buddy/experts';
-import type {
-  ConsultationTrigger,
-  Synthesis,
-  TaskMode,
-  TaskStep,
-  TaskStreamEvent,
+import {
+  EXPERT_REUSE_WINDOW_MS,
+  type ConsultationOrigin,
+  type ConsultationTrigger,
+  type ExpertConsultation,
+  type Synthesis,
+  type SynthesisStatus,
+  type TaskMode,
+  type TaskStep,
+  type TaskStreamEvent,
 } from '@health-buddy/shared';
 import {
   ASK_NOTICE,
@@ -38,12 +44,18 @@ import {
 } from '@health-buddy/skills';
 import { LLM_GATEWAY, type AppGateway } from '../ai/gateway.provider.js';
 import type { TenantContext } from '../db/database.js';
-import { ConsultationService, type ExpertSteps } from '../experts/consultation.service.js';
+import {
+  ConsultationService,
+  expertRequestKey,
+  type ConsultRun,
+  type ExpertSteps,
+} from '../experts/consultation.service.js';
 import { ExpertQuotaExceeded, ExpertsRepository } from '../experts/experts.repository.js';
 import { RISK_TIER_CRITERIA } from './risk-tier-criteria.js';
 import {
   WorkbenchRepository,
   type ClientContext,
+  type FollowUpContext,
   type RegenerationContext,
 } from './workbench.repository.js';
 
@@ -92,6 +104,81 @@ interface UsedConsultation {
   emergency: boolean;
 }
 
+/** 直接给出专家意见的那一轮：任务、客户、依据的报告和挂执行步骤的回答 */
+interface ExpertTurn {
+  taskId: string;
+  clientId: string | null;
+  reportId?: string | null;
+  assistantMessageId: string;
+  /** 专家中心任务绑定的专家 */
+  expertId: string | null;
+}
+
+/** 这一轮请哪些专家、怎么请 */
+export interface ExpertAnswerPlan {
+  /** 健管师的问题原文（组装提示词前去标识） */
+  question: string;
+  trigger: ConsultationTrigger;
+  /** direct：直接请指定的专家；route：自动选择（重新请 /体检解读 的专家时） */
+  mode: 'direct' | 'route';
+  forced: string[];
+  excluded: string[];
+  bound: string | null;
+  /** 重新请专家、补请专家时派生自哪次调用 */
+  origin?: ConsultationOrigin | null;
+  requestMessageId: string | null;
+  /** 10 分钟内同样的请求复用上次的意见；重新请专家、补请专家时不复用 */
+  reuse: boolean;
+  maxExperts?: number;
+}
+
+type AnsweredCall = { expertId: string; opinion: ExpertOpinion; removed: number };
+
+/** 已回复、有意见的专家 */
+function answeredCalls(
+  calls: readonly {
+    expertId: string;
+    status: string;
+    opinion: ExpertOpinion | null;
+    removedFindings: number;
+  }[],
+): AnsweredCall[] {
+  return calls.flatMap((c) =>
+    c.status === 'done' && c.opinion
+      ? [{ expertId: c.expertId, opinion: c.opinion, removed: c.removedFindings }]
+      : [],
+  );
+}
+
+/**
+ * 直接请专家的回答（M3 实现记录第 4 条）：一位专家时是这位专家的完整意见；
+ * 多位时先写“专家意见汇总”“专家分歧”两节，再逐位列出意见。
+ */
+function renderExpertAnswer(
+  answered: readonly AnsweredCall[],
+  totalCalls: number,
+  synthesis: Synthesis | null,
+  synthesisStatus: SynthesisStatus | null,
+  notices: { crisis: boolean; emergency: boolean },
+): string {
+  if (answered.length === 1 && totalCalls === 1) {
+    const only = answered[0]!;
+    return renderOpinion(only.opinion, {
+      ...notices,
+      expertId: only.expertId,
+      removedFindings: only.removed,
+    });
+  }
+  const sections = renderConsultationSections(synthesis, answered, expertName, {
+    synthesisFailed: synthesisStatus === 'failed',
+  });
+  const each = answered.map(
+    (a) =>
+      `### ${expertName(a.expertId)}\n\n${renderOpinion(a.opinion, { ...notices, expertId: a.expertId, removedFindings: a.removed })}`,
+  );
+  return [sections, ...each].join('\n\n');
+}
+
 /** 疑似急症提示（写在最前面，和心理危机提示一样不依赖模型） */
 const EMERGENCY_HEADER = `**疑似急症提示**：${EMERGENCY_NOTICE}\n\n`;
 
@@ -127,18 +214,57 @@ export class GenerationService {
 
   /**
    * 问一问里直接请专家（M3 规格 2.3、2.4）：@ 的专家和任务绑定的专家，不经过自动路由。
-   * 回答由后端按意见结构确定性渲染，末尾固定拼接提示；专家全部未能回复时只给固定提示。
+   * 10 分钟内同样的问题、同样的专家复用上次的意见（规格 3.7）。
    */
   async consultAnswer(
     ctx: TenantContext,
-    turn: {
-      taskId: string;
-      clientId: string | null;
-      reportId?: string | null;
-      assistantMessageId: string;
-      expertId: string | null;
-    },
+    turn: ExpertTurn & { managerMessageId?: string },
     request: { content: string; expertRefs: string[] },
+    io: TurnIo,
+  ): Promise<void> {
+    await this.expertAnswer(
+      ctx,
+      turn,
+      {
+        question: request.content,
+        trigger: request.expertRefs.length ? 'mention' : 'expert_center',
+        mode: 'direct',
+        forced: [...new Set([...(turn.expertId ? [turn.expertId] : []), ...request.expertRefs])],
+        excluded: [],
+        bound: turn.expertId,
+        requestMessageId: turn.managerMessageId ?? null,
+        reuse: true,
+      },
+      io,
+    );
+  }
+
+  /**
+   * 重新请专家、补请专家（M3 规格 6.4）：按原调用的问题和报告再请一次，生成新的调用记录，
+   * 回答写在一条新的回答里（和直接请专家一样渲染）。不复用 10 分钟内的意见。
+   */
+  async followUpAnswer(
+    ctx: TenantContext,
+    turn: FollowUpContext,
+    plan: Omit<ExpertAnswerPlan, 'question' | 'requestMessageId' | 'reuse'>,
+    io: TurnIo,
+  ): Promise<void> {
+    await this.expertAnswer(
+      ctx,
+      turn,
+      { ...plan, question: turn.question, requestMessageId: turn.requestMessageId, reuse: false },
+      io,
+    );
+  }
+
+  /**
+   * 直接给出专家意见的回答。回答由后端按意见结构确定性渲染，末尾固定拼接提示；
+   * 专家全部未能回复时只给固定提示，不生成替代回答。
+   */
+  private async expertAnswer(
+    ctx: TenantContext,
+    turn: ExpertTurn,
+    plan: ExpertAnswerPlan,
     io: TurnIo,
   ): Promise<void> {
     const messageId = turn.assistantMessageId;
@@ -149,7 +275,7 @@ export class GenerationService {
       (signals.crisis ? CRISIS_HEADER : '') + (signals.emergency ? EMERGENCY_HEADER : '');
     try {
       const earlierTexts = await this.repo.managerTexts(ctx, turn.taskId);
-      const signalTexts = [request.content, ...earlierTexts];
+      const signalTexts = [plan.question, ...earlierTexts];
       signals = {
         crisis: detectCrisisKeywords(signalTexts),
         emergency: detectEmergencyKeywords(signalTexts),
@@ -162,24 +288,71 @@ export class GenerationService {
         if (headers) io.emit({ type: 'text', messageId, delta: headers });
         return await this.finish(ctx, messageId, headers, 'error', io, 'internal_error');
       }
-      const forced = [
-        ...new Set([...(turn.expertId ? [turn.expertId] : []), ...request.expertRefs]),
-      ];
+      const run = {
+        taskId: turn.taskId,
+        messageId,
+        clientId: turn.clientId,
+        reportId: client?.report?.id ?? null,
+        trigger: plan.trigger,
+        mode: plan.mode,
+        forced: plan.forced,
+        excluded: plan.excluded,
+        bound: plan.bound,
+        origin: plan.origin ?? null,
+        requestMessageId: plan.requestMessageId,
+        ...(plan.maxExperts !== undefined ? { maxExperts: plan.maxExperts } : {}),
+      };
+
+      // 10 分钟内同样的请求：沿用上次的意见，不再调用模型（规格 3.7）
+      // 这次关键词识别出、上次调用没有记下的危机或急症信号：不沿用，重新请专家（提示要跟着调用记录走）
+      const found = plan.reuse
+        ? await this.recentConsultation(ctx, { ...run, question: plan.question })
+        : undefined;
+      const recent =
+        found &&
+        (!signals.crisis || consultationCrisis(found)) &&
+        (!signals.emergency || consultationEmergency(found))
+          ? found
+          : undefined;
+      if (recent) {
+        const answered = answeredCalls(recent.calls);
+        await steps.reuseRecent(
+          answered.map((a) => a.expertId),
+          recent.createdAt,
+          recent.id,
+        );
+        signals = {
+          crisis: signals.crisis || consultationCrisis(recent),
+          emergency: signals.emergency || consultationEmergency(recent),
+        };
+        // 危机、急症提示不依赖回答正文（规格 7.2 第 5 条）：和新调用一样通过 consultation 事件置顶
+        io.emit({
+          type: 'consultation',
+          consultationId: recent.id,
+          status: recent.status,
+          crisisSignal: signals.crisis,
+          emergencySignal: signals.emergency,
+        });
+        const text = renderExpertAnswer(
+          answered,
+          recent.calls.length,
+          recent.synthesis,
+          recent.synthesisStatus,
+          signals,
+        );
+        if (!(await io.sessionValid()))
+          return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
+        io.emit({ type: 'text', messageId, delta: text });
+        return await this.finish(ctx, messageId, text, 'complete', io);
+      }
+
       const outcome = await this.consultation.consult(
         ctx,
         {
-          taskId: turn.taskId,
-          messageId,
-          clientId: turn.clientId,
-          reportId: client?.report?.id ?? null,
-          trigger: request.expertRefs.length ? 'mention' : 'expert_center',
-          mode: 'direct',
-          forced,
-          excluded: [],
-          bound: turn.expertId,
+          ...run,
           source: {
             client: client?.snapshot ?? null,
-            question: request.content,
+            question: plan.question,
             identifiers: client?.identifiers ?? [],
             earlierTexts,
           },
@@ -192,39 +365,20 @@ export class GenerationService {
       };
       if (io.signal.aborted || outcome?.result.status === 'stopped')
         throw new GatewayError('aborted');
-      const answered = (outcome?.result.calls ?? []).flatMap((c) =>
-        c.status === 'done' && c.opinion
-          ? [{ expertId: c.expertId, opinion: c.opinion, removed: c.removedFindings }]
-          : [],
-      );
+      const answered = answeredCalls(outcome?.result.calls ?? []);
       if (!outcome || !answered.length) {
         // 专家都没回复（或调用没有发起）也要把危机和急症提示留给健管师（关键词识别不依赖模型）
         const text = `${signalHeaders()}${EXPERTS_UNAVAILABLE}`;
         io.emit({ type: 'text', messageId, delta: text });
         return await this.finish(ctx, messageId, text, 'complete', io);
       }
-      const notices = signals;
-      let text: string;
-      if (answered.length === 1 && outcome.result.calls.length === 1) {
-        const only = answered[0]!;
-        text = renderOpinion(only.opinion, {
-          ...notices,
-          expertId: only.expertId,
-          removedFindings: only.removed,
-        });
-      } else {
-        const sections = renderConsultationSections(
-          outcome.result.synthesis,
-          answered,
-          expertName,
-          { synthesisFailed: outcome.result.synthesisStatus === 'failed' },
-        );
-        const each = answered.map(
-          (a) =>
-            `### ${expertName(a.expertId)}\n\n${renderOpinion(a.opinion, { ...notices, expertId: a.expertId, removedFindings: a.removed })}`,
-        );
-        text = [sections, ...each].join('\n\n');
-      }
+      const text = renderExpertAnswer(
+        answered,
+        outcome.result.calls.length,
+        outcome.result.synthesis,
+        outcome.result.synthesisStatus,
+        signals,
+      );
       if (!(await io.sessionValid()))
         return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
       io.emit({ type: 'text', messageId, delta: text });
@@ -236,6 +390,36 @@ export class GenerationService {
       if (headers && !io.signal.aborted) io.emit({ type: 'text', messageId, delta: headers });
       await this.fail(ctx, messageId, headers, err, io);
     }
+  }
+
+  /**
+   * 10 分钟内可以复用的上一次调用（规格 3.7）：同一任务、同一位客户、同一份报告（之后没有更正）、
+   * 同样的专家请求和问题原文，全部专家都已回复；参与的专家仍然可用、版本没有变。
+   */
+  private async recentConsultation(
+    ctx: TenantContext,
+    q: Pick<
+      ConsultRun,
+      'taskId' | 'clientId' | 'reportId' | 'trigger' | 'skillId' | 'mode' | 'forced' | 'excluded'
+    > & {
+      bound?: string | null;
+      question: string;
+    },
+  ): Promise<ExpertConsultation | undefined> {
+    const found = await this.experts.findReusable(ctx, {
+      taskId: q.taskId,
+      clientId: q.clientId,
+      reportId: q.reportId,
+      requestKey: expertRequestKey(q),
+      question: q.question,
+      since: new Date(Date.now() - EXPERT_REUSE_WINDOW_MS),
+    });
+    if (!found?.calls.length) return undefined;
+    const available = await this.consultation.availableIds(ctx);
+    const current = found.calls.every(
+      (c) => available.has(c.expertId) && getExpert(c.expertId)?.meta.version === c.expertVersion,
+    );
+    return current ? found : undefined;
   }
 
   /** 问一问，或想一想、做一做里没有选技能时：直接回答 */
@@ -277,12 +461,12 @@ export class GenerationService {
       const userContent = buildAskUserContent(client?.snapshot, question);
 
       // 固定的提醒由后端拼在开头，不依赖模型；模型拒答时也保留
-      const crisis = detectCrisisKeywords([
-        request.content,
-        ...(await this.repo.managerTexts(ctx, turn.taskId)),
-      ]);
+      const signalTexts = [request.content, ...(await this.repo.managerTexts(ctx, turn.taskId))];
+      const crisis = detectCrisisKeywords(signalTexts);
+      const emergency = detectEmergencyKeywords(signalTexts);
       const notices =
         (crisis ? CRISIS_HEADER : '') +
+        (emergency ? EMERGENCY_HEADER : '') +
         (client ? criticalNotice(client.snapshot.criticalFlags) : '');
       push(notices);
 
@@ -321,6 +505,17 @@ export class GenerationService {
       await steps.finish(step, 'done');
       const suggestion = suggestSkill(request.content);
       if (suggestion) io.emit({ type: 'suggestion', skillId: suggestion });
+      // 主对话的问一问不自动请专家，问题明显属于某位专家时只建议“请 @某专家 看看”（Q6）。
+      // 有危机或急症信号时不建议：健管师应先按提示处理，不把它当成一般的专业问题（M3 合规审查）
+      if (
+        request.mode === 'ask' &&
+        this.consultation.preview &&
+        !crisis &&
+        !detectEmergencyKeywords(signalTexts)
+      ) {
+        const expertId = suggestExpert(request.content, await this.consultation.availableIds(ctx));
+        if (expertId) io.emit({ type: 'expert_suggestion', expertId });
+      }
       await this.finish(ctx, messageId, final, 'complete', io);
     } catch (err) {
       await steps.failRunning();
@@ -362,6 +557,8 @@ export class GenerationService {
       reportId?: string | null;
       /** 技能自动调用专家（M3，只在预览开关打开时生效） */
       experts?: SkillExpertOptions;
+      /** 退回重写时重新请专家，不复用上一版的意见（Q21） */
+      reconsult?: boolean;
     },
     io: TurnIo,
   ): Promise<void> {
@@ -408,7 +605,7 @@ export class GenerationService {
         // M3：接入专家的技能（/体检解读）先请专家，预览开关关闭时和 M2 完全一样
         const used =
           skill.experts === 'auto' && this.consultation.preview
-            ? await this.skillConsultation(ctx, run, client, steps, io)
+            ? await this.skillConsultation(ctx, run, skill.id, client, steps, io)
             : undefined;
         if (io.signal.aborted) throw new GatewayError('aborted');
         const skillInput = used
@@ -544,8 +741,10 @@ export class GenerationService {
   }
 
   /**
-   * 技能的专家调用（M3 规格 2.5）：退回重写默认复用上一版的专家意见（Q21）；
-   * 否则自动路由，“一定要请”“不要请”按健管师的选择。当天专家调用次数用完时不请专家，技能照常生成（Q12）。
+   * 技能的专家调用（M3 规格 2.5）：退回重写默认复用上一版的专家意见（Q21），健管师要求重新请、
+   * 或依据的报告数值之后被更正过时重新请（沿用上一版的“一定要请”“不要请”）；
+   * 10 分钟内同样的请求复用上次的意见（规格 3.7）；否则自动路由。
+   * 当天专家调用次数用完时不请专家，技能照常生成（Q12）。
    */
   private async skillConsultation(
     ctx: TenantContext,
@@ -555,46 +754,80 @@ export class GenerationService {
       managerRequest: string;
       assistantMessageId: string;
       reuseConsultationId?: string | null;
+      requestMessageId?: string | null;
       experts?: SkillExpertOptions;
+      reconsult?: boolean;
     },
+    skillId: string,
     client: ClientContext,
     steps: StepRunner,
     io: TurnIo,
   ): Promise<UsedConsultation | undefined> {
+    let options = run.experts ?? { trigger: 'skill_auto' as const, forced: [], excluded: [] };
+    let origin: ConsultationOrigin | null = null;
+    const reuse = async (
+      previous: ExpertConsultation,
+      labelKey: string,
+      labelTime: Date | null,
+    ): Promise<UsedConsultation> => {
+      const opinions = previous.calls.flatMap((c) =>
+        c.status === 'done' && c.opinion ? [{ expertId: c.expertId, opinion: c.opinion }] : [],
+      );
+      const step = await steps.start(
+        'consult_experts',
+        labelKey,
+        opinions.map((o) => o.expertId),
+        labelTime,
+        previous.id,
+      );
+      await steps.finish(step, 'done');
+      const signals = expertSignals(opinions, previous.synthesis);
+      return {
+        consultationId: previous.id,
+        opinions,
+        synthesis: previous.synthesis,
+        synthesisFailed: previous.synthesisStatus === 'failed',
+        crisis: signals.crisis || previous.crisisSignal,
+        emergency:
+          signals.emergency ||
+          previous.emergencySignal ||
+          detectEmergencyKeywords([
+            run.managerRequest,
+            ...(await this.repo.managerTexts(ctx, run.taskId)),
+          ]),
+      };
+    };
+
     if (run.reuseConsultationId) {
       const previous = await this.experts.get(ctx, run.reuseConsultationId);
-      if (previous) {
-        const opinions = previous.calls.flatMap((c) =>
-          c.status === 'done' && c.opinion ? [{ expertId: c.expertId, opinion: c.opinion }] : [],
-        );
-        const reuse = await steps.start(
-          'consult_experts',
-          'steps.reuseExperts',
-          opinions.map((o) => o.expertId),
-        );
-        await steps.finish(reuse, 'done');
-        const signals = expertSignals(opinions, previous.synthesis);
-        return {
-          consultationId: previous.id,
-          opinions,
-          synthesis: previous.synthesis,
-          synthesisFailed: previous.synthesisStatus === 'failed',
-          crisis: signals.crisis,
-          emergency:
-            signals.emergency ||
-            detectEmergencyKeywords([
-              run.managerRequest,
-              ...(await this.repo.managerTexts(ctx, run.taskId)),
-            ]),
-        };
+      if (previous && !run.reconsult && !previous.reportCorrectedSince) {
+        return reuse(previous, 'steps.reuseExperts', null);
       }
+      if (previous) {
+        // 重新请专家：新的调用记录指向上一版的调用，沿用当时健管师的指定和排除
+        origin = { kind: 'reconsult', consultationId: previous.id };
+        options = await this.carriedOptions(ctx, previous);
+      }
+    }
+    if (!origin && !run.reconsult) {
+      const recent = await this.recentConsultation(ctx, {
+        taskId: run.taskId,
+        clientId: run.clientId,
+        reportId: client.report?.id ?? null,
+        trigger: options.trigger,
+        skillId,
+        mode: 'route',
+        forced: options.forced,
+        excluded: options.excluded,
+        question: run.managerRequest,
+      });
+      if (recent) return reuse(recent, 'steps.reuseRecentExperts', new Date(recent.createdAt));
     }
     const remaining = await this.consultation.remainingToday(ctx);
     if (remaining <= 0) {
       this.logger.warn('expert daily limit reached, skill runs without experts');
       return undefined;
     }
-    const options = run.experts ?? { trigger: 'skill_auto' as const, forced: [], excluded: [] };
     const outcome = await this.consultation
       .consult(
         ctx,
@@ -604,6 +837,7 @@ export class GenerationService {
           clientId: run.clientId,
           reportId: client.report?.id ?? null,
           trigger: options.trigger,
+          skillId,
           mode: 'route',
           forced: options.forced,
           excluded: options.excluded,
@@ -614,6 +848,8 @@ export class GenerationService {
             earlierTexts: await this.repo.managerTexts(ctx, run.taskId),
           },
           maxExperts: Math.min(remaining, 3),
+          origin,
+          requestMessageId: run.requestMessageId ?? null,
         },
         { emit: io.emit, signal: io.signal, steps: steps.forExperts() },
       )
@@ -638,6 +874,24 @@ export class GenerationService {
       synthesisFailed: outcome.result.synthesisStatus === 'failed',
       crisis: signals.crisis || outcome.crisisDetected,
       emergency: signals.emergency || outcome.emergencyDetected,
+    };
+  }
+
+  /**
+   * 重新请专家时沿用上一次调用里健管师的选择：“一定要请”的专家（仍可用的）和“不要请”的专家。
+   * 触发方式沿用技能自动调用或计划。
+   */
+  private async carriedOptions(
+    ctx: TenantContext,
+    previous: ExpertConsultation,
+  ): Promise<SkillExpertOptions> {
+    const available = await this.consultation.availableIds(ctx);
+    return {
+      trigger: previous.trigger === 'plan' ? 'plan' : 'skill_auto',
+      forced: previous.routing.selected
+        .filter((s) => s.reasons.some((r) => r.kind === 'manager') && available.has(s.expertId))
+        .map((s) => s.expertId),
+      excluded: previous.routing.excluded,
     };
   }
 
@@ -771,7 +1025,13 @@ class StepRunner {
     private readonly emit: Emit,
   ) {}
 
-  async start(kind: TaskStep['kind'], labelKey: string, expertIds?: string[]): Promise<TaskStep> {
+  async start(
+    kind: TaskStep['kind'],
+    labelKey: string,
+    expertIds?: string[],
+    labelTime: Date | null = null,
+    consultationId: string | null = null,
+  ): Promise<TaskStep> {
     const step = await this.repo.startStep(
       this.ctx,
       this.messageId,
@@ -780,6 +1040,8 @@ class StepRunner {
       labelKey,
       null,
       expertIds,
+      labelTime,
+      consultationId,
     );
     this.running.add(step);
     this.emit({ type: 'step', step });
@@ -791,6 +1053,18 @@ class StepRunner {
     if (!this.running.delete(step)) return;
     const done = await this.repo.finishStep(this.ctx, step, status, labelDate);
     this.emit({ type: 'step', step: done });
+  }
+
+  /** “沿用 10:32 的专家意见”（规格 3.7）：一步就完成，步骤记下被沿用的调用（刷新后恢复危机、急症提示） */
+  async reuseRecent(expertIds: string[], createdAt: string, consultationId: string): Promise<void> {
+    const step = await this.start(
+      expertIds.length === 1 ? 'consult_expert' : 'consult_experts',
+      'steps.reuseRecentExperts',
+      expertIds,
+      new Date(createdAt),
+      consultationId,
+    );
+    await this.finish(step, 'done');
   }
 
   forExperts(): ExpertSteps {
@@ -805,4 +1079,22 @@ class StepRunner {
       await this.finish(step, 'failed').catch(() => undefined);
     }
   }
+}
+
+/** 调用记录上的危机信号：记录本身、汇总或任何一位专家的意见（和工作台 consultationSignals 一致） */
+function consultationCrisis(c: ExpertConsultation): boolean {
+  return (
+    c.crisisSignal ||
+    Boolean(c.synthesis?.crisisSignal) ||
+    c.calls.some((call) => Boolean(call.opinion?.crisisSignal))
+  );
+}
+
+/** 调用记录上的急症信号 */
+function consultationEmergency(c: ExpertConsultation): boolean {
+  return (
+    c.emergencySignal ||
+    Boolean(c.synthesis?.emergencySignal) ||
+    c.calls.some((call) => Boolean(call.opinion?.emergencySignal))
+  );
 }

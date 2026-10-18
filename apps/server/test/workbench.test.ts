@@ -4,7 +4,7 @@ import type {
   Provider,
   ResolvedRoute,
 } from '@health-buddy/ai-engine';
-import { DISCLAIMER, type TaskStreamEvent } from '@health-buddy/shared';
+import { DISCLAIMER, EMERGENCY_NOTICE, type TaskStreamEvent } from '@health-buddy/shared';
 import { ASK_NOTICE, CRISIS_NOTICE } from '@health-buddy/skills';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -528,6 +528,19 @@ describe('对话和生成接口', () => {
     // 危机信号来自之前的消息
     expect(last?.content).toContain(CRISIS_NOTICE);
     expect(last?.content).toContain('**危急指标提醒**');
+  });
+
+  it('问一问时健管师转述疑似急症：回答开头固定急症提示，不依赖模型', async () => {
+    const agent = await loginAs(app, f.users.managerA1.email);
+    const taskId = await newTask(agent, f.clients.a1[0]);
+    provider.queue.push({ chunks: ['先安抚客户。'], finishReason: 'complete' });
+    await send(agent, taskId, {
+      mode: 'ask',
+      content: '客户现在胸痛、出冷汗，怎么沟通？',
+      clientRefs: [f.clients.a1[0]],
+    }).expect(200);
+    const [, assistant] = await messagesOf(taskId);
+    expect(assistant?.content.startsWith(`**疑似急症提示**：${EMERGENCY_NOTICE}`)).toBe(true);
   });
 
   it('之前几轮提到的危机信号和姓名、手机号：后续回答仍提示，历史发给模型前去标识', async () => {
