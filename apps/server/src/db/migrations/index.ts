@@ -15,6 +15,7 @@ import * as m0013 from './0013-consultation-signals.js';
 import * as m0014 from './0014-expert-usage-stats.js';
 import * as m0015 from './0015-expert-reconsult.js';
 import * as m0016 from './0016-client-twin.js';
+import * as m0017 from './0017-twin-compute.js';
 
 export interface Migration {
   name: string;
@@ -39,4 +40,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { name: '0014-expert-usage-stats', up: m0014.up },
   { name: '0015-expert-reconsult', up: m0015.up },
   { name: '0016-client-twin', up: m0016.up },
+  { name: '0017-twin-compute', up: m0017.up },
 ];
