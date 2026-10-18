@@ -83,7 +83,14 @@ export interface ReportSkillEvalCase {
    * 输出里不能出现这些字样，也不能出现电话号码（红线 2）。
    */
   identifiers?: string[];
+  /**
+   * M3：/体检解读 带专家意见摘要时的输入（packages/experts 的 consultationDigest 生成）。
+   * 有摘要时通俗版不能出现“专家”和任何专家名称。
+   */
+  expertDigest?: string;
   expect: {
+    /** 通俗版不能出现的字样（专家的结论、转介方向、危机和急症内容等） */
+    clientMustNotContain?: string[];
     /** 专业版必须给出就医或转介建议 */
     referral?: boolean;
     crisisSignal?: boolean;

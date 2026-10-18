@@ -1,4 +1,5 @@
 import { Body, Controller, HttpCode, Inject, Param, Post, Req, Res } from '@nestjs/common';
+import { getExpert } from '@health-buddy/experts';
 import {
   returnArtifactRequestSchema,
   sendMessageRequestSchema,
@@ -19,7 +20,8 @@ import { CurrentSession } from '../auth/decorators.js';
 import { SESSION_COOKIE, SessionService } from '../auth/session.service.js';
 import { badRequest, notFound, tooManyRequests } from '../common/api-error.js';
 import { requireManager } from '../common/manager-only.js';
-import { GenerationService, type TurnIo } from './generation.service.js';
+import { ConsultationService } from '../experts/consultation.service.js';
+import { GenerationService, type SkillExpertOptions, type TurnIo } from './generation.service.js';
 import { GenerationRegistry } from './generation-registry.js';
 import { LLM_RATE_LIMITER, type LlmRateLimiter } from './llm-rate-limiter.js';
 import { WorkbenchRepository, type RegenerationContext } from './workbench.repository.js';
@@ -51,6 +53,7 @@ export class WorkbenchController {
     private readonly registry: GenerationRegistry,
     private readonly sessions: SessionService,
     @Inject(LLM_RATE_LIMITER) private readonly limiter: LlmRateLimiter,
+    private readonly consultation: ConsultationService,
   ) {}
 
   @Post('tasks/:id/messages')
@@ -83,6 +86,7 @@ export class WorkbenchController {
       if (fallback === null) throw badRequest();
       input.content = fallback;
     }
+    const direct = await this.checkExperts(session, taskId, input, skill, plan);
     this.acquire(session);
 
     const turn = await this.claim(session, (claim) =>
@@ -98,21 +102,78 @@ export class WorkbenchController {
           requiresClient: (plan ?? skill)?.requiresClient ?? false,
           requiresReport: plan?.requiresReport ?? skill?.requiresReport ?? false,
           usesReport: plan ? true : skill ? skillUsesReport(skill) : false,
+          expertRefs: input.expertRefs,
+          excludedExperts: input.excludedExperts,
         },
         claim,
       ),
     );
     await this.stream(turn, req, res, session, (io) => {
       if (plan) return this.generation.propose(session, turn.value, plan.skills, io);
+      if (direct)
+        return this.generation.consultAnswer(
+          session,
+          turn.value,
+          { content: input.content, expertRefs: input.expertRefs },
+          io,
+        );
       if (!skill) return this.generation.answer(session, turn.value, input, io);
       if (input.mode === 'plan')
         return this.generation.propose(session, turn.value, [skill.id], io);
       return this.generation.runSkill(
         session,
-        { ...turn.value, skills: [skill], managerRequest: input.content, parent: undefined },
+        {
+          ...turn.value,
+          skills: [skill],
+          managerRequest: input.content,
+          parent: undefined,
+          experts: {
+            trigger: 'skill_auto',
+            forced: input.expertRefs,
+            excluded: input.excludedExperts,
+          },
+        },
         io,
       );
     });
+  }
+
+  /**
+   * 专家相关的校验（M3 规格 2.3、2.4、3.7），都在占用任务和写库之前：
+   * - 只有接入专家的技能（experts: auto）和问一问可以 @专家；“不要请”只对技能有效；多步计划不接入，返回 400；
+   * - @ 的专家对当前账号不可用（预览关闭、平台暂停、不存在）按“不存在”处理，返回 404；
+   * - 专家中心的任务固定为问一问；
+   * - 直接请专家（问一问）超出当天的专家调用次数时返回 429。
+   * 返回这条消息是否直接请专家回答。
+   */
+  private async checkExperts(
+    session: ResolvedSession,
+    taskId: string,
+    input: { mode: string; expertRefs: string[]; excludedExperts: string[] },
+    skill: SkillDefinition | undefined,
+    plan: PlanTemplate | undefined,
+  ): Promise<boolean> {
+    const { expertRefs, excludedExperts } = input;
+    if (expertRefs.length || excludedExperts.length) {
+      if (plan) throw badRequest();
+      if (skill && skill.experts !== 'auto') throw badRequest();
+      if (!skill && excludedExperts.length) throw badRequest();
+      if (!this.consultation.preview) throw expertRefs.length ? notFound() : badRequest();
+      if (!(await this.consultation.allAvailable(session, expertRefs))) throw notFound();
+      if (excludedExperts.some((id) => !getExpert(id))) throw notFound();
+    }
+    const bound = await this.repo.taskExpert(session, taskId);
+    if (bound === undefined) throw notFound();
+    if (bound) {
+      if (input.mode !== 'ask' || skill || plan) throw badRequest();
+      if (!(await this.consultation.allAvailable(session, [bound]))) throw notFound();
+    }
+    const direct = input.mode === 'ask' && !skill && !plan && (expertRefs.length > 0 || !!bound);
+    if (direct) {
+      const count = new Set([...expertRefs, ...(bound ? [bound] : [])]).size;
+      if ((await this.consultation.remainingToday(session)) < count) throw tooManyRequests();
+    }
+    return direct;
   }
 
   @Post('tasks/:id/plans/:planId/confirm')
@@ -135,7 +196,11 @@ export class WorkbenchController {
         return skill && skillUsesReport(skill) ? 'optional' : 'none';
       }),
     );
-    await this.regenerate(run, req, res, session);
+    await this.regenerate(run, req, res, session, undefined, {
+      trigger: 'plan',
+      forced: run.value.expertRefs ?? [],
+      excluded: run.value.excludedExperts ?? [],
+    });
   }
 
   /** 退回重写：产物改为已退回，AI 按退回原因生成新版本（规格 3.6） */
@@ -181,6 +246,7 @@ export class WorkbenchController {
     res: Response,
     session: ResolvedSession,
     returnReason?: string,
+    experts?: SkillExpertOptions,
   ): Promise<void> {
     const skills = run.value.skillIds.map((id) => getSkill(id));
     await this.stream(run, req, res, session, async (io) => {
@@ -195,6 +261,7 @@ export class WorkbenchController {
           ...run.value,
           skills: skills as SkillDefinition[],
           ...(returnReason !== undefined ? { returnReason } : {}),
+          ...(experts ? { experts } : {}),
         },
         io,
       );

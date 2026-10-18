@@ -28,8 +28,10 @@ export interface GatewayOptions<C extends CallContext = CallContext> {
 
 const STRUCTURED_ATTEMPTS = 2;
 
+/** usage 是所有尝试（含结构不合格重试）的合计，provider 是这次实际用的厂商 */
 export type StructuredResult<T> =
-  { status: 'ok'; data: T; model: string } | { status: 'refused'; model: string };
+  | { status: 'ok'; data: T; model: string; provider: ProviderName; usage: Usage }
+  | { status: 'refused'; model: string; provider: ProviderName; usage: Usage };
 
 function parseJson(text: string): unknown {
   try {
@@ -44,6 +46,7 @@ export interface CompleteResult {
   finishReason: FinishReason;
   usage: Usage;
   model: string;
+  provider: ProviderName;
 }
 
 /**
@@ -72,6 +75,7 @@ export class LlmGateway<C extends CallContext = CallContext> {
       provider: route.provider,
       operatorId: ctx.operatorId,
       userId: ctx.userId,
+      ...(request.expertId ? { expertId: request.expertId } : {}),
     };
 
     let finished = false;
@@ -102,6 +106,7 @@ export class LlmGateway<C extends CallContext = CallContext> {
         inputTokens: record.inputTokens,
         outputTokens: record.outputTokens,
         errorType: record.errorType ?? null,
+        ...(record.expertId ? { expertId: record.expertId } : {}),
         ...(detail?.status ? { status: detail.status } : {}),
         ...(detail?.code ? { code: detail.code } : {}),
       };
@@ -157,12 +162,16 @@ export class LlmGateway<C extends CallContext = CallContext> {
     // 厂商不需要元数据字段
     delete jsonSchema.$schema;
     const responseFormat = { name: format.name, schema: jsonSchema };
+    const usage: Usage = { inputTokens: 0, outputTokens: 0 };
     for (let attempt = 1; attempt <= STRUCTURED_ATTEMPTS; attempt++) {
       const result = await this.complete(ctx, { ...request, responseFormat }, signal);
-      if (result.finishReason === 'refused') return { status: 'refused', model: result.model };
+      usage.inputTokens += result.usage.inputTokens;
+      usage.outputTokens += result.usage.outputTokens;
+      const meta = { model: result.model, provider: result.provider, usage };
+      if (result.finishReason === 'refused') return { status: 'refused', ...meta };
       const data = result.finishReason === 'complete' ? parseJson(result.text) : undefined;
       const parsed = data === undefined ? undefined : format.schema.safeParse(data);
-      if (parsed?.success) return { status: 'ok', data: parsed.data, model: result.model };
+      if (parsed?.success) return { status: 'ok', data: parsed.data, ...meta };
       this.options.logger?.error('llm structured output invalid', {
         route: request.route,
         attempt,
@@ -174,6 +183,7 @@ export class LlmGateway<C extends CallContext = CallContext> {
 
   /** 非流式调用：读完整个流再返回。 */
   async complete(ctx: C, request: GatewayRequest, signal?: AbortSignal): Promise<CompleteResult> {
+    const provider = resolveRoute(this.options.config, request.route).provider;
     let text = '';
     for await (const event of this.stream(ctx, request, signal)) {
       if (event.type === 'text') text += event.delta;
@@ -183,6 +193,7 @@ export class LlmGateway<C extends CallContext = CallContext> {
           finishReason: event.finishReason,
           usage: event.usage,
           model: event.model,
+          provider,
         };
     }
     throw new GatewayError('provider_error');

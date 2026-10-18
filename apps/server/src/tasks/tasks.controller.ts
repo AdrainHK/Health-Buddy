@@ -12,6 +12,7 @@ import type { ResolvedSession } from '../auth/auth.repository.js';
 import { CurrentSession } from '../auth/decorators.js';
 import { badRequest, notFound } from '../common/api-error.js';
 import { requireManager } from '../common/manager-only.js';
+import { ConsultationService } from '../experts/consultation.service.js';
 import { TasksRepository } from './tasks.repository.js';
 
 const idSchema = z.uuid();
@@ -23,7 +24,10 @@ function parseId(id: string): string {
 
 @Controller('tasks')
 export class TasksController {
-  constructor(private readonly tasks: TasksRepository) {}
+  constructor(
+    private readonly tasks: TasksRepository,
+    private readonly consultation: ConsultationService,
+  ) {}
 
   @Get()
   async list(
@@ -50,6 +54,9 @@ export class TasksController {
     requireManager(session);
     const parsed = createTaskRequestSchema.safeParse(body ?? {});
     if (!parsed.success) throw badRequest();
+    // 专家中心新建绑定专家的任务（M3 规格 2.3）：专家对当前账号不可用时按“不存在”处理
+    const { expertId } = parsed.data;
+    if (expertId && !(await this.consultation.allAvailable(session, [expertId]))) throw notFound();
     const task = await this.tasks.create(session, parsed.data);
     if (!task) throw notFound();
     return { task };

@@ -56,6 +56,7 @@ export class TasksRepository {
           org_id: ctx.orgId,
           manager_id: ctx.userId,
           client_id: input.clientId ?? null,
+          expert_id: input.expertId ?? null,
           title: input.title ?? DEFAULT_TASK_TITLE,
           archived_at: null,
         })
@@ -101,6 +102,8 @@ export class TasksRepository {
           'skill_id',
           'client_refs',
           'report_refs',
+          'expert_refs',
+          'excluded_experts',
           'status',
           'created_at',
         ])
@@ -119,6 +122,7 @@ export class TasksRepository {
               'kind',
               'label_key',
               'label_date',
+              'expert_ids',
               'status',
               'started_at',
               'finished_at',
@@ -155,6 +159,8 @@ export class TasksRepository {
           skillId: m.skill_id,
           clientRefs: m.client_refs,
           reportRefs: m.report_refs,
+          expertRefs: m.expert_refs,
+          excludedExperts: m.excluded_experts,
           status: m.status,
           createdAt: m.created_at.toISOString(),
         })),
@@ -165,6 +171,7 @@ export class TasksRepository {
           kind: s.kind,
           labelKey: s.label_key,
           labelDate: s.label_date,
+          expertIds: s.expert_ids,
           status: s.status,
           startedAt: s.started_at.toISOString(),
           finishedAt: s.finished_at?.toISOString() ?? null,
@@ -188,6 +195,7 @@ const TASK_COLUMNS = [
   'client_id',
   'archived_at',
   'detached_reason',
+  'expert_id',
   'created_at',
   'updated_at',
 ] as const;
@@ -216,6 +224,7 @@ function toTask(row: {
   client_id: string | null;
   archived_at: Date | null;
   detached_reason: Task['detachedReason'];
+  expert_id: string | null;
   created_at: Date;
   updated_at: Date;
 }): Task {
@@ -225,6 +234,7 @@ function toTask(row: {
     clientId: row.client_id,
     archived: row.archived_at !== null,
     detachedReason: row.detached_reason,
+    expertId: row.expert_id,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
   };

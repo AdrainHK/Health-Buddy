@@ -137,6 +137,11 @@
     "generateInterpretation": "生成体检解读",
     "generateOutline": "生成面谈提纲",
     "answer": "生成回答",
+    "routeExperts": "选择专家",
+    "consultExpert": "请专家分析",
+    "consultExperts": "调用专家",
+    "reuseExperts": "沿用上一版的专家意见",
+    "synthesizeExperts": "汇总专家意见",
     "unknown": "处理中"
   },
   "skills": {
@@ -692,5 +697,34 @@
     "heart_rate": "心率",
     "steps": "步数",
     "sleep_hours": "睡眠时长"
+  },
+  "experts": {
+    "sources": {
+      "columns": {
+        "name": "来源文件原名",
+        "section": "分组",
+        "publisher": "颁布机构",
+        "version": "版本",
+        "priority": "优先级",
+        "scope": "使用范围",
+        "status": "确认状态"
+      },
+      "nameHint": "文件名照来源原样显示，不代表本产品的说法",
+      "priority": {
+        "1": "1级 国内官方指南",
+        "2": "2级 国内专家共识",
+        "3": "3级 国际学会指南",
+        "4": "4级 兜底细则"
+      },
+      "scope": {
+        "advice": "可作为建议依据",
+        "referral_only": "只用于判断是否转介"
+      },
+      "status": {
+        "candidate": "待医学顾问核实",
+        "confirmed": "已确认",
+        "retired": "已停用"
+      }
+    }
   }
 }

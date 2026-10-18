@@ -500,6 +500,8 @@ describe('M2 验收补齐', () => {
             'created_at',
             'duration_ms',
             'error_type',
+            // M3：专家调用记专家 id（可空），仍不记客户 id 和任务 id
+            'expert_id',
             'id',
             'input_tokens',
             'model',

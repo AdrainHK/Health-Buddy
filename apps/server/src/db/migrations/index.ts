@@ -10,6 +10,7 @@ import * as m0008 from './0008-client-record.js';
 import * as m0009 from './0009-report-upload.js';
 import * as m0010 from './0010-interpretation.js';
 import * as m0011 from './0011-upload-identity-confirm.js';
+import * as m0012 from './0012-experts.js';
 
 export interface Migration {
   name: string;
@@ -29,4 +30,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { name: '0009-report-upload', up: m0009.up },
   { name: '0010-interpretation', up: m0010.up },
   { name: '0011-upload-identity-confirm', up: m0011.up },
+  { name: '0012-experts', up: m0012.up },
 ];

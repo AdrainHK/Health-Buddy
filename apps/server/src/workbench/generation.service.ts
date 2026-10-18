@@ -1,6 +1,24 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { GatewayError } from '@health-buddy/ai-engine';
-import type { TaskMode, TaskStep, TaskStreamEvent } from '@health-buddy/shared';
+import {
+  EMERGENCY_NOTICE,
+  EXPERTS,
+  EXPERT_MENTION_NOTE,
+  consultationDigest,
+  detectEmergencyKeywords,
+  expertMentions,
+  expertName,
+  renderConsultationSections,
+  renderOpinion,
+  type ExpertOpinion,
+} from '@health-buddy/experts';
+import type {
+  ConsultationTrigger,
+  Synthesis,
+  TaskMode,
+  TaskStep,
+  TaskStreamEvent,
+} from '@health-buddy/shared';
 import {
   ASK_NOTICE,
   ASK_SYSTEM_PROMPT,
@@ -20,6 +38,8 @@ import {
 } from '@health-buddy/skills';
 import { LLM_GATEWAY, type AppGateway } from '../ai/gateway.provider.js';
 import type { TenantContext } from '../db/database.js';
+import { ConsultationService, type ExpertSteps } from '../experts/consultation.service.js';
+import { ExpertQuotaExceeded, ExpertsRepository } from '../experts/experts.repository.js';
 import { RISK_TIER_CRITERIA } from './risk-tier-criteria.js';
 import {
   WorkbenchRepository,
@@ -50,6 +70,43 @@ type ErrorKind =
 /** 流式回答期间多久把已生成的文本存一次库，刷新页面也能看到 */
 const FLUSH_MS = 2000;
 
+/** 问一问里专家全部未能回复时的固定提示（M3 规格 3.6），不生成替代回答 */
+export const EXPERTS_UNAVAILABLE = '专家暂时无法回复，请稍后再试。';
+
+/** 技能自动调用专家的选项（M3 规格 2.4、2.5） */
+export interface SkillExpertOptions {
+  trigger: Extract<ConsultationTrigger, 'skill_auto' | 'plan'>;
+  forced: string[];
+  excluded: string[];
+}
+
+/** 一次专家调用里已回复的意见，供 /体检解读 专业版和摘要使用 */
+interface UsedConsultation {
+  consultationId: string;
+  opinions: { expertId: string; opinion: ExpertOpinion }[];
+  synthesis: Synthesis | null;
+  synthesisFailed: boolean;
+  /** 关键词、任何一位专家或汇总标出的心理危机信号 */
+  crisis: boolean;
+  /** 关键词、任何一位专家或汇总标出的疑似急症信号 */
+  emergency: boolean;
+}
+
+/** 疑似急症提示（写在最前面，和心理危机提示一样不依赖模型） */
+const EMERGENCY_HEADER = `**疑似急症提示**：${EMERGENCY_NOTICE}\n\n`;
+
+/** 专家意见、汇总里的危机和急症信号 */
+function expertSignals(
+  opinions: readonly { opinion: ExpertOpinion }[],
+  synthesis: Synthesis | null,
+): { crisis: boolean; emergency: boolean } {
+  return {
+    crisis: Boolean(synthesis?.crisisSignal) || opinions.some((o) => o.opinion.crisisSignal),
+    emergency:
+      Boolean(synthesis?.emergencySignal) || opinions.some((o) => o.opinion.emergencySignal),
+  };
+}
+
 /**
  * 主智能体（M1 规格 7.1）：按模式分流。问一问直接回答；想一想先出计划；
  * 做一做调用健管师指定的技能，生成草稿。不自动选择技能，只给建议（Q5）。
@@ -64,7 +121,122 @@ export class GenerationService {
     private readonly repo: WorkbenchRepository,
     @Inject(LLM_GATEWAY) private readonly gateway: AppGateway,
     @Inject(RISK_TIER_CRITERIA) private readonly riskTierCriteria: string | null,
+    private readonly consultation: ConsultationService,
+    private readonly experts: ExpertsRepository,
   ) {}
+
+  /**
+   * 问一问里直接请专家（M3 规格 2.3、2.4）：@ 的专家和任务绑定的专家，不经过自动路由。
+   * 回答由后端按意见结构确定性渲染，末尾固定拼接提示；专家全部未能回复时只给固定提示。
+   */
+  async consultAnswer(
+    ctx: TenantContext,
+    turn: {
+      taskId: string;
+      clientId: string | null;
+      reportId?: string | null;
+      assistantMessageId: string;
+      expertId: string | null;
+    },
+    request: { content: string; expertRefs: string[] },
+    io: TurnIo,
+  ): Promise<void> {
+    const messageId = turn.assistantMessageId;
+    const steps = new StepRunner(this.repo, ctx, messageId, io.emit);
+    // 危机和急症关键词在最前面自己识别，不依赖专家调用：调用没发起、全部失败或出错时也要提示健管师
+    let signals = { crisis: false, emergency: false };
+    const signalHeaders = () =>
+      (signals.crisis ? CRISIS_HEADER : '') + (signals.emergency ? EMERGENCY_HEADER : '');
+    try {
+      const earlierTexts = await this.repo.managerTexts(ctx, turn.taskId);
+      const signalTexts = [request.content, ...earlierTexts];
+      signals = {
+        crisis: detectCrisisKeywords(signalTexts),
+        emergency: detectEmergencyKeywords(signalTexts),
+      };
+      const client = turn.clientId
+        ? await this.readClient(ctx, turn.clientId, steps, turn.reportId ?? null, true)
+        : undefined;
+      if (turn.clientId && !client) {
+        const headers = signalHeaders();
+        if (headers) io.emit({ type: 'text', messageId, delta: headers });
+        return await this.finish(ctx, messageId, headers, 'error', io, 'internal_error');
+      }
+      const forced = [
+        ...new Set([...(turn.expertId ? [turn.expertId] : []), ...request.expertRefs]),
+      ];
+      const outcome = await this.consultation.consult(
+        ctx,
+        {
+          taskId: turn.taskId,
+          messageId,
+          clientId: turn.clientId,
+          reportId: client?.report?.id ?? null,
+          trigger: request.expertRefs.length ? 'mention' : 'expert_center',
+          mode: 'direct',
+          forced,
+          excluded: [],
+          bound: turn.expertId,
+          source: {
+            client: client?.snapshot ?? null,
+            question: request.content,
+            identifiers: client?.identifiers ?? [],
+            earlierTexts,
+          },
+        },
+        { emit: io.emit, signal: io.signal, steps: steps.forExperts() },
+      );
+      signals = {
+        crisis: signals.crisis || Boolean(outcome?.crisisDetected),
+        emergency: signals.emergency || Boolean(outcome?.emergencyDetected),
+      };
+      if (io.signal.aborted || outcome?.result.status === 'stopped')
+        throw new GatewayError('aborted');
+      const answered = (outcome?.result.calls ?? []).flatMap((c) =>
+        c.status === 'done' && c.opinion
+          ? [{ expertId: c.expertId, opinion: c.opinion, removed: c.removedFindings }]
+          : [],
+      );
+      if (!outcome || !answered.length) {
+        // 专家都没回复（或调用没有发起）也要把危机和急症提示留给健管师（关键词识别不依赖模型）
+        const text = `${signalHeaders()}${EXPERTS_UNAVAILABLE}`;
+        io.emit({ type: 'text', messageId, delta: text });
+        return await this.finish(ctx, messageId, text, 'complete', io);
+      }
+      const notices = signals;
+      let text: string;
+      if (answered.length === 1 && outcome.result.calls.length === 1) {
+        const only = answered[0]!;
+        text = renderOpinion(only.opinion, {
+          ...notices,
+          expertId: only.expertId,
+          removedFindings: only.removed,
+        });
+      } else {
+        const sections = renderConsultationSections(
+          outcome.result.synthesis,
+          answered,
+          expertName,
+          { synthesisFailed: outcome.result.synthesisStatus === 'failed' },
+        );
+        const each = answered.map(
+          (a) =>
+            `### ${expertName(a.expertId)}\n\n${renderOpinion(a.opinion, { ...notices, expertId: a.expertId, removedFindings: a.removed })}`,
+        );
+        text = [sections, ...each].join('\n\n');
+      }
+      if (!(await io.sessionValid()))
+        return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
+      io.emit({ type: 'text', messageId, delta: text });
+      await this.finish(ctx, messageId, text, 'complete', io);
+    } catch (err) {
+      await steps.failRunning();
+      // 出错时同样保留危机和急症提示
+      const headers = signalHeaders();
+      if (headers && !io.signal.aborted) io.emit({ type: 'text', messageId, delta: headers });
+      await this.fail(ctx, messageId, headers, err, io);
+    }
+  }
 
   /** 问一问，或想一想、做一做里没有选技能时：直接回答 */
   async answer(
@@ -188,6 +360,8 @@ export class GenerationService {
       skills: SkillDefinition[];
       returnReason?: string;
       reportId?: string | null;
+      /** 技能自动调用专家（M3，只在预览开关打开时生效） */
+      experts?: SkillExpertOptions;
     },
     io: TurnIo,
   ): Promise<void> {
@@ -202,12 +376,14 @@ export class GenerationService {
         : await this.readClient(ctx, run.clientId, steps, run.reportId ?? null);
       if (!client) return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
 
-      // 心理危机信号不只依赖模型判断：健管师的原话、退回原因、本任务之前的消息里有关键词也算
-      const crisis = detectCrisisKeywords([
+      // 心理危机和疑似急症信号不只依赖模型判断：健管师的原话、退回原因、本任务之前的消息里有关键词也算
+      const signalTexts = [
         run.managerRequest,
         run.returnReason ?? '',
         ...(await this.repo.managerTexts(ctx, run.taskId)),
-      ]);
+      ];
+      const crisis = detectCrisisKeywords(signalTexts);
+      const emergencyKeywords = detectEmergencyKeywords(signalTexts);
       const redact = (t: string) => redactClientIdentity(t, client.identifiers);
       const snapshot = {
         ...client.snapshot,
@@ -229,8 +405,20 @@ export class GenerationService {
       };
 
       for (const skill of run.skills) {
+        // M3：接入专家的技能（/体检解读）先请专家，预览开关关闭时和 M2 完全一样
+        const used =
+          skill.experts === 'auto' && this.consultation.preview
+            ? await this.skillConsultation(ctx, run, client, steps, io)
+            : undefined;
+        if (io.signal.aborted) throw new GatewayError('aborted');
+        const skillInput = used
+          ? { ...input, expertDigest: consultationDigest(used.opinions, expertName) }
+          : input;
+        // 疑似急症：关键词，或专家、汇总标出的信号（和危机信号一样各自识别，再取“或”）
+        const emergency = emergencyKeywords || Boolean(used?.emergency);
+        const crisisSignal = crisis || Boolean(used?.crisis);
         const step = await steps.start('run_skill', skill.runStepLabel ?? 'steps.runSkill');
-        const userMessage = skill.buildUserMessage(input);
+        const userMessage = skill.buildUserMessage(skillInput);
         const call = (content: string) =>
           this.gateway.completeStructured(
             ctx,
@@ -246,35 +434,69 @@ export class GenerationService {
           );
         let result = await call(userMessage);
         // 保存前的确定性措辞检查（/面谈提纲，规格 2.8）：没通过就带着纠正说明重新生成一次，
-        // 仍没通过就不保存草稿。日志只记类别和次数，不记输出内容
-        let issues = result.status === 'ok' ? (skill.checkOutput?.(result.data) ?? []) : [];
-        if (issues.length) {
+        // 仍没通过就不保存草稿。日志只记类别和次数，不记输出内容。
+        // M3：用了专家意见时，通俗版里不能出现“专家”和专家名称（合规审查第 4 条），同样重试一次
+        const check = (data: unknown) => {
+          const wording = skill.checkOutput?.(data as never) ?? [];
+          const clientFacing = (data as { clientFacing?: unknown }).clientFacing;
+          const mentions =
+            used && skill.clientFacing && typeof clientFacing === 'string'
+              ? expertMentions(
+                  clientFacing,
+                  EXPERTS.map((e) => e.meta.name),
+                )
+              : [];
+          const categories: string[] = [
+            ...wordingCategories(wording),
+            ...(mentions.length ? ['expert_mention'] : []),
+          ];
+          return { wording, mentions, categories };
+        };
+        let issues = result.status === 'ok' ? check(result.data) : undefined;
+        if (issues?.categories.length) {
           this.logger.warn(
-            `output check failed ${JSON.stringify({ skill: skill.id, attempt: 1, categories: wordingCategories(issues) })}`,
+            `output check failed ${JSON.stringify({ skill: skill.id, attempt: 1, categories: issues.categories })}`,
           );
-          const note = skill.correctionNote?.(issues) ?? '';
+          const note = [
+            issues.wording.length ? (skill.correctionNote?.(issues.wording) ?? '') : '',
+            issues.mentions.length ? EXPERT_MENTION_NOTE : '',
+          ]
+            .filter(Boolean)
+            .join('\n\n');
           result = await call(note ? `${userMessage}\n\n${note}` : userMessage);
-          issues = result.status === 'ok' ? (skill.checkOutput?.(result.data) ?? []) : [];
-          if (issues.length) {
+          issues = result.status === 'ok' ? check(result.data) : undefined;
+          if (issues?.categories.length) {
             this.logger.warn(
-              `output check failed ${JSON.stringify({ skill: skill.id, attempt: 2, categories: wordingCategories(issues) })}`,
+              `output check failed ${JSON.stringify({ skill: skill.id, attempt: 2, categories: issues.categories })}`,
             );
             await steps.finish(step, 'failed');
             const notices =
-              (crisis ? CRISIS_HEADER : '') + criticalNotice(client.snapshot.criticalFlags);
+              (crisisSignal ? CRISIS_HEADER : '') +
+              (emergency ? EMERGENCY_HEADER : '') +
+              criticalNotice(client.snapshot.criticalFlags);
             return await this.finish(ctx, messageId, notices, 'error', io, 'wording_check_failed');
           }
         }
         if (result.status === 'refused') {
-          // 没有产物，但危机和危急指标提醒要留给健管师
+          // 没有产物，但危机、急症和危急指标提醒要留给健管师
           await steps.finish(step, 'failed');
           const notices =
-            (crisis ? CRISIS_HEADER : '') + criticalNotice(client.snapshot.criticalFlags);
+            (crisisSignal ? CRISIS_HEADER : '') +
+            (emergency ? EMERGENCY_HEADER : '') +
+            criticalNotice(client.snapshot.criticalFlags);
           return await this.finish(ctx, messageId, withAskNotice(notices), 'refused', io);
         }
         const output = result.data as Record<string, unknown>;
-        if (crisis) output.crisisSignal = true;
-        const rendered = skill.render(output, input);
+        // 心理危机：关键词，或专家、汇总标出的信号（合规审查第 2 条）
+        if (crisisSignal) output.crisisSignal = true;
+        const rendered = skill.render(output, skillInput);
+        // 专家意见汇总和分歧由后端确定性写进专业版，绝不进通俗版（M3 规格 2.7）；
+        // 疑似急症提示放在专业版最前面
+        const professional =
+          (emergency ? EMERGENCY_HEADER : '') +
+          (used
+            ? `${rendered.professional}\n\n${renderConsultationSections(used.synthesis, used.opinions, expertName, { synthesisFailed: used.synthesisFailed })}`
+            : rendered.professional);
 
         // 保存前重新确认：会话仍然有效、任务没有断开、客户仍归当前健管师
         if (io.signal.aborted) throw new GatewayError('aborted');
@@ -285,7 +507,7 @@ export class GenerationService {
         const artifact = await this.repo.saveArtifact(ctx, run.taskId, run.clientId, {
           skillId: skill.id,
           kind: skill.kind,
-          professional: rendered.professional,
+          professional,
           clientFacing: skill.clientFacing
             ? finalizeClientText(greetClient(client.displayName, rendered.clientFacing))
             : '',
@@ -294,6 +516,9 @@ export class GenerationService {
           parent: run.skills.length === 1 ? run.parent : undefined,
           sourceReportId: skillUsesReport(skill) ? (client.report?.id ?? null) : null,
           riskTierSuggestion: rendered.riskTierSuggestion ?? null,
+          consultationId: used?.consultationId ?? null,
+          emergencySignal: emergency,
+          crisisSignal,
         });
         if (!artifact) {
           await steps.finish(step, 'failed');
@@ -307,6 +532,7 @@ export class GenerationService {
             criticalFlags: client.snapshot.criticalFlags.length,
             urgent: client.snapshot.criticalFlags.filter((f) => f.rule.level === 'urgent').length,
             riskTierSuggested: Boolean(rendered.riskTierSuggestion),
+            experts: used?.opinions.length ?? 0,
           })}`,
         );
       }
@@ -315,6 +541,104 @@ export class GenerationService {
       await steps.failRunning();
       await this.fail(ctx, messageId, '', err, io);
     }
+  }
+
+  /**
+   * 技能的专家调用（M3 规格 2.5）：退回重写默认复用上一版的专家意见（Q21）；
+   * 否则自动路由，“一定要请”“不要请”按健管师的选择。当天专家调用次数用完时不请专家，技能照常生成（Q12）。
+   */
+  private async skillConsultation(
+    ctx: TenantContext,
+    run: {
+      taskId: string;
+      clientId: string | null;
+      managerRequest: string;
+      assistantMessageId: string;
+      reuseConsultationId?: string | null;
+      experts?: SkillExpertOptions;
+    },
+    client: ClientContext,
+    steps: StepRunner,
+    io: TurnIo,
+  ): Promise<UsedConsultation | undefined> {
+    if (run.reuseConsultationId) {
+      const previous = await this.experts.get(ctx, run.reuseConsultationId);
+      if (previous) {
+        const opinions = previous.calls.flatMap((c) =>
+          c.status === 'done' && c.opinion ? [{ expertId: c.expertId, opinion: c.opinion }] : [],
+        );
+        const reuse = await steps.start(
+          'consult_experts',
+          'steps.reuseExperts',
+          opinions.map((o) => o.expertId),
+        );
+        await steps.finish(reuse, 'done');
+        const signals = expertSignals(opinions, previous.synthesis);
+        return {
+          consultationId: previous.id,
+          opinions,
+          synthesis: previous.synthesis,
+          synthesisFailed: previous.synthesisStatus === 'failed',
+          crisis: signals.crisis,
+          emergency:
+            signals.emergency ||
+            detectEmergencyKeywords([
+              run.managerRequest,
+              ...(await this.repo.managerTexts(ctx, run.taskId)),
+            ]),
+        };
+      }
+    }
+    const remaining = await this.consultation.remainingToday(ctx);
+    if (remaining <= 0) {
+      this.logger.warn('expert daily limit reached, skill runs without experts');
+      return undefined;
+    }
+    const options = run.experts ?? { trigger: 'skill_auto' as const, forced: [], excluded: [] };
+    const outcome = await this.consultation
+      .consult(
+        ctx,
+        {
+          taskId: run.taskId,
+          messageId: run.assistantMessageId,
+          clientId: run.clientId,
+          reportId: client.report?.id ?? null,
+          trigger: options.trigger,
+          mode: 'route',
+          forced: options.forced,
+          excluded: options.excluded,
+          source: {
+            client: client.snapshot,
+            question: run.managerRequest,
+            identifiers: client.identifiers,
+            earlierTexts: await this.repo.managerTexts(ctx, run.taskId),
+          },
+          maxExperts: Math.min(remaining, 3),
+        },
+        { emit: io.emit, signal: io.signal, steps: steps.forExperts() },
+      )
+      .catch((err: unknown) => {
+        // 并发请求刚好用完了今天的专家调用次数：这次不请专家，技能照常生成（Q12）
+        if (err instanceof ExpertQuotaExceeded) {
+          this.logger.warn('expert daily limit reached, skill runs without experts');
+          return undefined;
+        }
+        throw err;
+      });
+    if (!outcome) return undefined;
+    if (outcome.result.status === 'stopped') throw new GatewayError('aborted');
+    const opinions = outcome.result.calls.flatMap((c) =>
+      c.status === 'done' && c.opinion ? [{ expertId: c.expertId, opinion: c.opinion }] : [],
+    );
+    const signals = expertSignals(opinions, outcome.result.synthesis);
+    return {
+      consultationId: outcome.consultationId,
+      opinions,
+      synthesis: outcome.result.synthesis,
+      synthesisFailed: outcome.result.synthesisStatus === 'failed',
+      crisis: signals.crisis || outcome.crisisDetected,
+      emergency: signals.emergency || outcome.emergencyDetected,
+    };
   }
 
   /**
@@ -371,9 +695,10 @@ export class GenerationService {
     clientId: string,
     steps: StepRunner,
     reportId: string | null = null,
+    detail = false,
   ): Promise<ClientContext | undefined> {
     const read = await steps.start('read_client', 'steps.readClient');
-    const client = await this.repo.clientContext(ctx, clientId, reportId);
+    const client = await this.repo.clientContext(ctx, clientId, reportId, { detail });
     if (!client) {
       await steps.finish(read, 'failed');
       return undefined;
@@ -417,6 +742,8 @@ export class GenerationService {
 }
 
 function errorKind(err: unknown): ErrorKind {
+  // 每日专家调用次数在并发时用完：和限流一样提示稍后再试
+  if (err instanceof ExpertQuotaExceeded) return 'rate_limited';
   if (err instanceof GatewayError) {
     switch (err.kind) {
       case 'not_configured':
@@ -444,17 +771,33 @@ class StepRunner {
     private readonly emit: Emit,
   ) {}
 
-  async start(kind: TaskStep['kind'], labelKey: string): Promise<TaskStep> {
-    const step = await this.repo.startStep(this.ctx, this.messageId, this.seq++, kind, labelKey);
+  async start(kind: TaskStep['kind'], labelKey: string, expertIds?: string[]): Promise<TaskStep> {
+    const step = await this.repo.startStep(
+      this.ctx,
+      this.messageId,
+      this.seq++,
+      kind,
+      labelKey,
+      null,
+      expertIds,
+    );
     this.running.add(step);
     this.emit({ type: 'step', step });
     return step;
   }
 
+  /** 已经结束的步骤不再重复结束（专家调用出错时会统一收尾） */
   async finish(step: TaskStep, status: 'done' | 'failed', labelDate?: string): Promise<void> {
-    this.running.delete(step);
+    if (!this.running.delete(step)) return;
     const done = await this.repo.finishStep(this.ctx, step, status, labelDate);
     this.emit({ type: 'step', step: done });
+  }
+
+  forExperts(): ExpertSteps {
+    return {
+      start: (kind, labelKey, expertIds) => this.start(kind, labelKey, expertIds),
+      finish: (step, status) => this.finish(step, status),
+    };
   }
 
   async failRunning(): Promise<void> {

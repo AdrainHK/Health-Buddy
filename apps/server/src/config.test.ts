@@ -27,6 +27,14 @@ describe('config', () => {
     expect(loadConfig({ ...base }).adminDist).toBeUndefined();
   });
 
+  it('keeps the expert preview off unless EXPERTS_PREVIEW is exactly true', () => {
+    expect(loadConfig({ ...base }).expertsPreview).toBe(false);
+    expect(loadConfig({ ...base, EXPERTS_PREVIEW: '' }).expertsPreview).toBe(false);
+    expect(loadConfig({ ...base, EXPERTS_PREVIEW: 'false' }).expertsPreview).toBe(false);
+    expect(loadConfig({ ...base, EXPERTS_PREVIEW: 'true' }).expertsPreview).toBe(true);
+    expect(() => loadConfig({ ...base, EXPERTS_PREVIEW: 'yes' })).toThrow(/EXPERTS_PREVIEW/);
+  });
+
   it('requires both platform admin variables', () => {
     expect(loadConfig({ ...base, PLATFORM_ADMIN_EMAIL: 'a@x.com' }).platformAdmin).toBeUndefined();
   });

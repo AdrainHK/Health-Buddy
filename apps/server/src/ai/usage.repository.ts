@@ -24,6 +24,7 @@ export class UsageRepository {
           duration_ms: r.durationMs,
           outcome: r.outcome,
           error_type: r.errorType ?? null,
+          expert_id: r.expertId ?? null,
         })
         .execute(),
     );

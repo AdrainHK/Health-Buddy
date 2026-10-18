@@ -1,5 +1,11 @@
 import { z } from 'zod';
 import { artifactSummarySchema } from './artifacts.js';
+import {
+  consultationEventSchema,
+  expertCallEventSchema,
+  expertIdSchema,
+  EXPERTS_PER_CALL_MAX,
+} from './experts.js';
 import { reportUploadSummarySchema } from './reports.js';
 
 /** 三种工作模式：问一问、想一想、做一做（M1 规格 3.3） */
@@ -18,6 +24,8 @@ export const taskSchema = z.object({
   archived: z.boolean(),
   /** 不为空时任务只读 */
   detachedReason: taskDetachedReasonSchema.nullable(),
+  /** 专家中心发起的任务绑定的专家（M3 规格 2.3）；普通任务为空 */
+  expertId: expertIdSchema.nullable().default(null),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -30,6 +38,8 @@ export const MESSAGE_CONTENT_MAX = 4000;
 export const createTaskRequestSchema = z.object({
   title: z.string().trim().min(1).max(TASK_TITLE_MAX).optional(),
   clientId: z.uuid().optional(),
+  /** 从专家中心新建绑定专家的任务（M3 规格 2.3）；专家对当前账号不可用时 404 */
+  expertId: expertIdSchema.optional(),
 });
 export type CreateTaskRequest = z.infer<typeof createTaskRequestSchema>;
 
@@ -63,6 +73,10 @@ export const taskMessageSchema = z.object({
   clientRefs: z.array(z.uuid()),
   /** @ 引用的已核对报告（M2 规格 2.6） */
   reportRefs: z.array(z.uuid()).default([]),
+  /** @ 的专家（M3 规格 2.4） */
+  expertRefs: z.array(expertIdSchema).default([]),
+  /** “不要请”的专家（M3 规格 2.5） */
+  excludedExperts: z.array(expertIdSchema).default([]),
   status: messageStatusSchema,
   createdAt: z.iso.datetime(),
 });
@@ -80,8 +94,15 @@ export const taskStepSchema = z.object({
     'detect_critical',
     'run_skill',
     'answer',
+    // M3 规格 2.6：选择专家、调用专家（多位）、调用单位专家、汇总
+    'route_experts',
+    'consult_experts',
+    'consult_expert',
+    'synthesize_experts',
   ]),
   labelKey: z.string(),
+  /** 步骤文案参数：涉及的专家 id（如“已调用：内分泌与代谢专家、营养专家”） */
+  expertIds: z.array(expertIdSchema).default([]),
   /** 步骤涉及的报告日期，如“正在读取报告（2026-09-12）”（M2 规格 2.6） */
   labelDate: z.iso.date().nullable().default(null),
   status: z.enum(['running', 'done', 'failed']),
@@ -131,6 +152,10 @@ export const sendMessageRequestSchema = z
     clientRefs: z.array(z.uuid()).max(1).default([]),
     /** @ 引用的已核对报告，最多 1 份，必须属于任务关联的客户（M2 规格 2.6） */
     reportRefs: z.array(z.uuid()).max(1).default([]),
+    /** @ 的专家，最多 3 位（M3 Q5）；后端重新校验专家对当前账号可用 */
+    expertRefs: z.array(expertIdSchema).max(EXPERTS_PER_CALL_MAX).default([]),
+    /** “不要请”的专家，只对这一条消息生效（M3 Q22） */
+    excludedExperts: z.array(expertIdSchema).max(20).default([]),
   })
   // 问一问不能调用技能（Q4），前端会先提示切换模式
   .refine((v) => !(v.mode === 'ask' && v.skillId !== undefined), {
@@ -141,6 +166,15 @@ export const sendMessageRequestSchema = z
   .refine((v) => v.content.length > 0 || v.skillId !== undefined, {
     message: 'content is required without a skill',
     path: ['content'],
+  })
+  .refine((v) => new Set(v.expertRefs).size === v.expertRefs.length, {
+    message: 'duplicate expert',
+    path: ['expertRefs'],
+  })
+  // 同一位专家不能既要请又不要请
+  .refine((v) => !v.expertRefs.some((e) => v.excludedExperts.includes(e)), {
+    message: 'expert both requested and excluded',
+    path: ['excludedExperts'],
   });
 export type SendMessageRequest = z.input<typeof sendMessageRequestSchema>;
 
@@ -169,5 +203,8 @@ export const taskStreamEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('suggestion'), skillId: z.string() }),
   z.object({ type: z.literal('done'), messageId: z.uuid(), reason: doneReasonSchema }),
   z.object({ type: z.literal('error'), kind: streamErrorKindSchema }),
+  // M3：每位专家的状态、一次专家调用结束（规格 6.3）
+  expertCallEventSchema,
+  consultationEventSchema,
 ]);
 export type TaskStreamEvent = z.infer<typeof taskStreamEventSchema>;

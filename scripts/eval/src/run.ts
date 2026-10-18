@@ -10,7 +10,9 @@ import {
   type ReportSkillEvalCase,
   type SkillEvalCase,
 } from '@health-buddy/skills';
+import type { ExpertEvalCase, RoutingEvalCase, SynthesisEvalCase } from '@health-buddy/experts';
 import { runAskOnce } from './ask.js';
+import { runExpertOnce, runRoutingOnce, runSynthesisOnce } from './expert.js';
 import { runExtractionOnce } from './extraction.js';
 import { describeError, gradeRecentSummary, type Finding } from './graders.js';
 import { judgeClientText } from './judge.js';
@@ -177,10 +179,62 @@ export async function runPlanEval(options: {
   return runPool(jobs, options.concurrency ?? 2);
 }
 
-/** 厂商或中转临时故障（5xx、限流、超时）：重试，不算模型答错 */
+/** 专家意见评测（M3 规格 8.1） */
+export async function runExpertEval(options: {
+  gateway: LlmGateway;
+  provider: ProviderName;
+  cases: readonly ExpertEvalCase[];
+  runs: number;
+  concurrency?: number;
+}): Promise<RunResult[]> {
+  const jobs = options.cases.flatMap((c) =>
+    Array.from(
+      { length: options.runs },
+      (_, i) => () => runExpertOnce(options.gateway, EVAL_CTX, options.provider, c, i + 1),
+    ),
+  );
+  // 专家用例多、单次调用长，CI 单组 60 分钟内跑完需要更高并发；太高会让单次调用变慢、超过 60 秒
+  return runPool(jobs, options.concurrency ?? 4);
+}
+
+/** 路由评测（M3 规格 8.2） */
+export async function runRoutingEval(options: {
+  gateway: LlmGateway;
+  provider: ProviderName;
+  cases: readonly RoutingEvalCase[];
+  runs: number;
+}): Promise<RunResult[]> {
+  const jobs = options.cases.flatMap((c) =>
+    Array.from(
+      { length: options.runs },
+      (_, i) => () => runRoutingOnce(options.gateway, EVAL_CTX, options.provider, c, i + 1),
+    ),
+  );
+  return runPool(jobs, 3);
+}
+
+/** 汇总评测（M3 规格 8.2） */
+export async function runSynthesisEval(options: {
+  gateway: LlmGateway;
+  provider: ProviderName;
+  cases: readonly SynthesisEvalCase[];
+  runs: number;
+}): Promise<RunResult[]> {
+  const jobs = options.cases.flatMap((c) =>
+    Array.from(
+      { length: options.runs },
+      (_, i) => () => runSynthesisOnce(options.gateway, EVAL_CTX, options.provider, c, i + 1),
+    ),
+  );
+  return runPool(jobs, 2);
+}
+
+/** 厂商或中转临时故障（5xx、限流、超时，含专家调用超过 60 秒）：重试，不算模型答错 */
 export function isTransientFailure(result: RunResult): boolean {
   return result.findings.some(
-    (f) => f.rule === 'output.error' && /\b(5\d\d|rate_limited|timeout)\b/.test(f.detail),
+    (f) =>
+      (f.rule === 'output.error' && /\b(5\d\d|rate_limited|timeout)\b/.test(f.detail)) ||
+      (f.rule === 'opinion.missing' && /^timeout\b/.test(f.detail)),
   );
 }
 

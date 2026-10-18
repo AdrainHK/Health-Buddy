@@ -18,6 +18,9 @@ on:
       provider:
         description: openai、anthropic 或 all（有密钥的都跑）；留空用仓库变量 EVAL_PROVIDER，默认 openai
         default: ''
+      show_failures:
+        description: 把未通过用例的模型输出（合成数据）打进日志，填 true 开启
+        default: 'false'
 
 concurrency:
   group: eval-${{ github.ref }}
@@ -27,6 +30,15 @@ jobs:
   eval:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # 用例多了单个任务会超过 60 分钟，按组并行跑
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - summary,ask,extraction
+          - interpretation,outline,plan
+          - expert
+          - expert-routing,expert-synthesis
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -66,17 +78,19 @@ jobs:
           RUNS: ${{ inputs.runs || '3' }}
           # Claude 中转暂停使用（2026-10-16 产品决定），默认只跑 OpenAI；恢复后把仓库变量 EVAL_PROVIDER 设为 all
           PROVIDER: ${{ inputs.provider || vars.EVAL_PROVIDER || 'openai' }}
+          SUITE: ${{ matrix.suite }}
+          SHOW: ${{ inputs.show_failures == 'true' && '--show-failures' || '' }}
         run: |
           case "$RUNS" in ''|*[!0-9]*) echo "runs 必须是数字"; exit 1;; esac
           if [ "$PROVIDER" != all ]; then
-            pnpm eval --runs "$RUNS" --provider "$PROVIDER"
+            pnpm eval --runs "$RUNS" --provider "$PROVIDER" --suite "$SUITE" $SHOW
           else
-            pnpm eval --runs "$RUNS"
+            pnpm eval --runs "$RUNS" --suite "$SUITE" $SHOW
           fi
       - name: 上传报告
         if: always() && steps.keys.outputs.ready == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: eval-results
+          name: eval-results-${{ strategy.job-index }}
           path: scripts/eval/eval-results/
           retention-days: 30

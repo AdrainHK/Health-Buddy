@@ -57,6 +57,7 @@ const task: Task = {
   clientId: ids.client,
   archived: false,
   detachedReason: null,
+  expertId: null,
   createdAt: NOW,
   updatedAt: NOW,
 };
@@ -71,6 +72,7 @@ const skills: SkillSummary[] = [
     usesReport: true,
     allowsEmptyRequest: false,
     planSkills: [],
+    experts: 'auto',
   },
 ];
 
@@ -286,6 +288,9 @@ const artifactDetail: ArtifactDetailResponse = {
     sourceReportId: ids.report,
     riskTierSuggestion: null,
     clientFacing: true,
+    consultationId: null,
+    emergencySignal: false,
+    crisisSignal: false,
   },
   sourceReport: { id: ids.report, reportDate: '2026-09-12', correctedSince: false },
   hints: { judgementHints: [], criticalValueMentions: [], riskTierMentions: [] },

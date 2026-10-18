@@ -35,7 +35,11 @@ export function getPlanTemplate(id: string): PlanTemplate | undefined {
 }
 
 /** GET /api/skills 返回的技能概要；多步计划也列在这里，planSkills 不为空、只能用于想一想 */
-export function skillSummaries(): SkillSummary[] {
+/**
+ * expertsEnabled：专家预览开启时（M3 Q2），接入专家的技能显示 experts = auto；
+ * 关闭时一律 none，/体检解读 保持 M2 的行为。
+ */
+export function skillSummaries(expertsEnabled = false): SkillSummary[] {
   return [
     ...SKILLS.map((s) => ({
       id: s.id,
@@ -47,6 +51,7 @@ export function skillSummaries(): SkillSummary[] {
       usesReport: skillUsesReport(s),
       allowsEmptyRequest: s.defaultRequest !== null,
       planSkills: [],
+      experts: expertsEnabled ? (s.experts ?? 'none') : ('none' as const),
     })),
     ...PLAN_TEMPLATES.map((p) => {
       const skills = p.skills.map((id) => getSkill(id)).filter((s) => s !== undefined);
@@ -60,6 +65,7 @@ export function skillSummaries(): SkillSummary[] {
         usesReport: p.requiresReport || skills.some(skillUsesReport),
         allowsEmptyRequest: p.defaultRequest !== null,
         planSkills: [...p.skills],
+        experts: 'none' as const,
       };
     }),
   ];

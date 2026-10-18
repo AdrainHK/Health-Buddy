@@ -4,7 +4,13 @@
  * 全部是合成数据；报告文件只写用例名、规则名和问题类别，不打印模型输出原文。
  * 唯一的例外是提纲剂量命中处前 12 个字、后 8 个字的片段，用来定位误判（输出只来自合成数据）。
  */
-import type { CallContext, LlmGateway, ProviderName } from '@health-buddy/ai-engine';
+import {
+  checkedNumbers,
+  type CallContext,
+  type LlmGateway,
+  type ProviderName,
+} from '@health-buddy/ai-engine';
+import { EXPERTS, expertMentions } from '@health-buddy/experts';
 import { normalizeForCompliance } from '@health-buddy/shared';
 import {
   buildSystemPrompt,
@@ -91,10 +97,7 @@ export function inventedReportNumbers(
   const cleaned = text
     .replace(/\d{4}[-/年.]\d{1,2}[-/月.]\d{1,2}日?/g, ' ')
     .replace(/\d+\s*[-–~至]\s*\d+\s*岁/g, ' ');
-  return (cleaned.match(/\d+(?:\.\d+)?/g) ?? [])
-    .map(Number)
-    .filter((n) => (!Number.isInteger(n) || n >= 40) && n < 1900)
-    .filter((n) => !known.some((k) => Math.abs(k - n) < 1e-9));
+  return checkedNumbers(cleaned).filter((n) => !known.some((k) => Math.abs(k - n) < 1e-9));
 }
 
 const PHONE = /1[3-9]\d[-\s]?\d{4}[-\s]?\d{4}/;
@@ -613,6 +616,7 @@ async function callSkill(
     returnReason?: string;
     riskTierCriteria?: string | null;
     identifiers?: string[];
+    expertDigest?: string;
   },
 ) {
   // 和线上一样：健管师的要求和退回原因先去标识再组装
@@ -630,6 +634,7 @@ async function callSkill(
             managerRequest: redact(c.managerRequest),
             returnReason: c.returnReason === undefined ? undefined : redact(c.returnReason),
             riskTierCriteria: c.riskTierCriteria ?? null,
+            ...(c.expertDigest ? { expertDigest: c.expertDigest } : {}),
           }),
         },
       ],
@@ -660,12 +665,30 @@ export async function runReportSkillOnce(
       return { ...base, findings: gradeOutline(c, data) };
     }
     const data = result.data as ReportInterpretationOutput;
-    const findings = gradeInterpretation(c, data);
+    const findings = [...gradeInterpretation(c, data), ...gradeExpertLeak(c, data.clientFacing)];
     if (useJudge) findings.push(...(await judgeClientText(gateway, ctx, data.clientFacing)));
     return { ...base, findings };
   } catch (err) {
     return { ...base, findings: [{ rule: 'output.error', detail: describeError(err) }] };
   }
+}
+
+/**
+ * M3：带专家意见时通俗版不能出现“专家”和专家名称（和后端保存前的检查一致），
+ * 也不能出现用例列出的专家结论、转介、危机和急症内容
+ */
+export function gradeExpertLeak(c: ReportSkillEvalCase, clientFacing: string): Finding[] {
+  const findings: Finding[] = [];
+  if (c.expertDigest) {
+    const names = expertMentions(
+      clientFacing,
+      EXPERTS.map((e) => e.meta.name),
+    );
+    if (names.length) findings.push({ rule: 'client.expert_name', detail: names.join('、') });
+  }
+  const leaked = hits(clientFacing, c.expect.clientMustNotContain ?? []);
+  if (leaked.length) findings.push({ rule: 'client.expert_content', detail: leaked.join('、') });
+  return findings;
 }
 
 /**

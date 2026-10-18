@@ -115,9 +115,13 @@ export const reportInterpretation: SkillDefinition<typeof reportInterpretationOu
   criticalInClientText: 'omit',
   reportReferenceInClientText: true,
   runStepLabel: 'steps.generateInterpretation',
+  experts: 'auto',
 
   buildUserMessage(input) {
-    return appendRequest([describeReportClient(input, { includeCriteria: true })], input);
+    const parts = [describeReportClient(input, { includeCriteria: true })];
+    // M3：专家意见摘要放在客户资料后面、健管师的要求前面；没有调用专家时和 M2 一字不差
+    if (input.expertDigest) parts.push('', input.expertDigest);
+    return appendRequest(parts, input);
   },
 
   render(output, input) {

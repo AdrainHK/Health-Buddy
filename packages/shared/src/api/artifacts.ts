@@ -69,6 +69,12 @@ export const artifactSchema = artifactSummarySchema.extend({
    * 不能复制、导出，界面上不显示通俗版。
    */
   clientFacing: z.boolean().default(true),
+  /** 产物用到的专家调用（M3 规格 6.2）；没有调用专家时为空 */
+  consultationId: z.uuid().nullable().default(null),
+  /** 专家意见里有疑似急症信号：审核栏醒目提示（M3 合规审查） */
+  emergencySignal: z.boolean().default(false),
+  /** 有心理危机信号（关键词，或专家、汇总标出）：审核栏醒目提示 */
+  crisisSignal: z.boolean().default(false),
 });
 export type Artifact = z.infer<typeof artifactSchema>;
 

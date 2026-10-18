@@ -6,12 +6,24 @@
  *   pnpm eval --runs 5 --case crisis-signal --no-judge
  *   pnpm eval --suite ask          只跑问一问（summary 只跑近况小结，extraction 只跑报告识别，
  *                                  interpretation 只跑体检解读，outline 只跑面谈提纲，plan 只跑多步计划；默认都跑）
+ *   pnpm eval --suite interpretation,outline  逗号分隔可同时跑多组
+ *   pnpm eval --suite expert --expert nutrition
+ *                                  M3：只跑专家评测（expert-routing 只跑路由，expert-synthesis 只跑汇总；
+ *                                  --expert 限定一位专家）。改专家的 expert.md、sources.md、共用规则后必须跑
+ *
+ *   pnpm eval --suite expert --show-failures  未通过用例的模型输出打进日志（合成数据）
  *
  * 密钥从环境变量读取（OPENAI_API_KEY、ANTHROPIC_API_KEY），不会打印。
  * 结果写到 eval-results/，全部是合成数据。有用例没通过时退出码为 1。
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createGateway, loadGatewayConfig, type ProviderName } from '@health-buddy/ai-engine';
+import {
+  EXPERT_EVAL_CASES,
+  interpretationExpertEvalCases,
+  routingEvalCases,
+  synthesisEvalCases,
+} from '@health-buddy/experts';
 import { sampleFontAvailable } from '@health-buddy/seed';
 import {
   askEvalCases,
@@ -24,9 +36,12 @@ import {
 import {
   runAskEval,
   runEval,
+  runExpertEval,
   runExtractionEval,
   runPlanEval,
   runReportSkillEval,
+  runRoutingEval,
+  runSynthesisEval,
   summarize,
   type RunResult,
 } from './run.js';
@@ -48,9 +63,12 @@ if (!providers.length) {
 
 const runs = Number(arg('runs') ?? 3);
 const onlyCase = arg('case');
-const suite = arg('suite');
+// --suite 可用逗号写多个，CI 按组并行跑，单组不超时
+const suites = arg('suite')?.split(',').filter(Boolean);
 const pick = <T extends { id: string }>(name: string, list: T[]) =>
-  (!suite || suite === name ? list : []).filter((c) => !onlyCase || c.id === onlyCase);
+  (!suites?.length || suites.includes(name) ? list : []).filter(
+    (c) => !onlyCase || c.id === onlyCase,
+  );
 const cases = pick('summary', recentSummaryEvalCases);
 // 报告识别：合成报告样本由 scripts/seed 渲染，需要中文字体（CI 装 fonts-noto-cjk）
 const extractionCases = pick('extraction', reportExtractionEvalCases);
@@ -60,9 +78,22 @@ if (extractionCases.length && !sampleFontAvailable()) {
   console.error(process.env.GITHUB_ACTIONS ? `::error title=eval 缺少字体::${msg}` : msg);
   process.exit(1);
 }
-const interpretationCases = pick('interpretation', reportInterpretationEvalCases);
+// M3：/体检解读 带专家意见摘要的用例也在 interpretation 里跑
+const interpretationCases = pick('interpretation', [
+  ...reportInterpretationEvalCases,
+  ...interpretationExpertEvalCases,
+]);
 const outlineCases = pick('outline', interviewOutlineEvalCases);
 const planCases = pick('plan', assessmentPlanEvalCases);
+const onlyExpert = arg('expert');
+const expertCases = pick(
+  'expert',
+  Object.values(EXPERT_EVAL_CASES)
+    .flat()
+    .filter((c) => !onlyExpert || c.expertId === onlyExpert),
+);
+const expertRoutingCases = pick('expert-routing', routingEvalCases);
+const expertSynthesisCases = pick('expert-synthesis', synthesisEvalCases);
 const useJudge = !process.argv.includes('--no-judge');
 // 越界类问一问主要靠大模型评审判断，不开评审时不跑，免得“全部通过”有误导
 const askCases = pick('ask', askEvalCases).filter(
@@ -74,7 +105,7 @@ const all: RunResult[] = [];
 for (const provider of providers) {
   const gateway = createGateway({ ...config, defaultProvider: provider, routes: {} });
   console.log(
-    `\n${provider}（${config.defaultModels[provider]}）：${cases.length + askCases.length + extractionCases.length + interpretationCases.length + outlineCases.length + planCases.length} 个用例 × ${runs} 次`,
+    `\n${provider}（${config.defaultModels[provider]}）：${cases.length + askCases.length + extractionCases.length + interpretationCases.length + outlineCases.length + planCases.length + expertCases.length + expertRoutingCases.length + expertSynthesisCases.length} 个用例 × ${runs} 次`,
   );
   const results = [
     ...(await runEval({ gateway, provider, cases, runs, useJudge })),
@@ -97,6 +128,9 @@ for (const provider of providers) {
       useJudge,
     })),
     ...(await runPlanEval({ gateway, provider, cases: planCases, runs, useJudge })),
+    ...(await runExpertEval({ gateway, provider, cases: expertCases, runs })),
+    ...(await runRoutingEval({ gateway, provider, cases: expertRoutingCases, runs })),
+    ...(await runSynthesisEval({ gateway, provider, cases: expertSynthesisCases, runs })),
   ];
   all.push(...results);
   for (const s of summarize(results)) {
@@ -125,11 +159,22 @@ const DETAIL_RULES = new Set([
   'outline.invented_report',
   'outline.judgment',
   'client.banned_terms',
+  'client.expert_name',
+  'client.expert_content',
   'client.disease_terms',
   'client.drug_terms',
   'client.judgment_terms',
   'client.urgency_terms',
   'client.crisis_terms',
+  // 专家评测：失败类别和校验问题类别（代码）、命中的词表词、期望值
+  'opinion.missing',
+  'validation.removed',
+  'opinion.judgment_hint',
+  'opinion.forbidden',
+  'opinion.referral',
+  'opinion.missing_point',
+  'routing.missed',
+  'routing.model_failed',
 ]);
 /** GitHub 注解的转义：先 %，再回车和换行 */
 const escapeAnnotation = (t: string) =>
@@ -155,6 +200,18 @@ if (process.env.GITHUB_ACTIONS && failed.length) {
     );
   });
   console.log(`::error title=eval 未通过 ${failed.length} 项::${lines.join('%0A')}`);
+  // --show-failures：把未通过的专家意见原文打进日志（评测只用合成数据，不含真实客户信息），
+  // 下载不了报告时也能看到模型实际写了什么；默认不打
+  if (process.argv.includes('--show-failures')) {
+    for (const r of all) {
+      if (!r.findings.length || typeof r.output !== 'string') continue;
+      console.log(
+        `::group::${r.provider} ${r.caseId} 第${r.run}次：${r.findings.map((f) => f.rule).join(' ')}`,
+      );
+      console.log(r.output);
+      console.log('::endgroup::');
+    }
+  }
 }
 console.log(`\n报告：${file}`);
 console.log(failed.length ? `未通过：${failed.length} 项` : '全部通过');

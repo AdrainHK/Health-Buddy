@@ -132,6 +132,11 @@ export interface SkillInput {
    * 只写“需要了解的情况”；后端也会丢弃这时模型给出的分层。
    */
   riskTierCriteria?: string | null | undefined;
+  /**
+   * 专家意见摘要（M3 规格 2.7、Q8）：/体检解读 调用专家后由后端组装，只给专业版参考；
+   * 通俗版可以改写其中的生活方式建议，但不出现专家名称和专家结论。没有调用专家时为空。
+   */
+  expertDigest?: string | undefined;
 }
 
 /** 技能输出渲染后的产物内容。clientFacing 还没有拼接免责声明。 */
@@ -168,6 +173,8 @@ export interface SkillDefinition<S extends z.ZodType = z.ZodType> extends SkillM
   reportReferenceInClientText?: boolean;
   /** 大模型网关的用途，默认 skill（规格 4.1：/体检解读 用 report_interpretation） */
   route?: 'skill' | 'report_interpretation';
+  /** 是否接入专家（M3 规格 2.4、Q7）：auto 执行时自动选择专家；默认 none */
+  experts?: 'none' | 'auto';
   /** 执行步骤里“调用技能”那一步的 i18n 键，默认 steps.runSkill */
   runStepLabel?: string;
   /** 把客户资料和健管师的要求组装成用户消息 */

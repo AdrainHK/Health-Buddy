@@ -110,6 +110,7 @@ describe('M2 技能登记', () => {
       usesReport: true,
       allowsEmptyRequest: true,
       planSkills: ['report-interpretation', 'interview-outline'],
+      experts: 'none',
     });
     // 验收反馈 8：三个技能都不需要再写要求，后端有默认要求
     for (const skill of SKILLS) expect(skill.defaultRequest).toBeTruthy();
@@ -732,5 +733,32 @@ describe('M2 评测用例', () => {
         expect(row!.value! > prev ? 'up' : 'down', `${c.id} ${t.indicator}`).toBe(t.direction);
       }
     }
+  });
+});
+
+describe('M3：/体检解读 接入专家', () => {
+  const input = { client: REPORT_SNAPSHOTS.singleAbnormal, managerRequest: '请解读' };
+
+  it('只在专家预览开启时标为自动调用专家', () => {
+    const find = (enabled: boolean) =>
+      skillSummaries(enabled).find((s) => s.id === 'report-interpretation')?.experts;
+    expect(find(false)).toBe('none');
+    expect(find(true)).toBe('auto');
+    expect(skillSummaries(true).find((s) => s.id === 'interview-outline')?.experts).toBe('none');
+  });
+
+  it('没有专家意见时用户消息和 M2 一样；有时把摘要放在要求前面', () => {
+    const skill = getSkill('report-interpretation');
+    const plain = skill?.buildUserMessage(input) ?? '';
+    expect(skill?.buildUserMessage({ ...input, expertDigest: undefined })).toBe(plain);
+    const withDigest =
+      skill?.buildUserMessage({
+        ...input,
+        expertDigest: '## AI 专家意见（只给健管师参考）\n- 摘要',
+      }) ?? '';
+    expect(withDigest).toContain('## AI 专家意见');
+    expect(withDigest.indexOf('## AI 专家意见')).toBeLessThan(
+      withDigest.indexOf('## 健管师的要求'),
+    );
   });
 });

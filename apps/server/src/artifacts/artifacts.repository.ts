@@ -177,9 +177,12 @@ export class ArtifactsRepository {
           parent_id: row.id,
           status: 'draft',
           content: JSON.stringify(row.content),
-          // 危急指标、依据的报告和建议分层沿用原版本的快照
+          // 危急指标、依据的报告、建议分层和专家调用沿用原版本的快照
           critical_flags: JSON.stringify(row.critical_flags),
           source_report_id: row.source_report_id,
+          consultation_id: row.consultation_id,
+          emergency_signal: row.emergency_signal,
+          crisis_signal: row.crisis_signal,
           risk_tier_suggestion: row.risk_tier_suggestion
             ? JSON.stringify(row.risk_tier_suggestion)
             : null,
@@ -280,6 +283,9 @@ interface ArtifactRow {
   critical_flags: CriticalFlag[];
   source_report_id: string | null;
   risk_tier_suggestion: RiskTierSuggestion | null;
+  consultation_id: string | null;
+  emergency_signal: boolean;
+  crisis_signal: boolean;
   created_at: Date;
   detached: boolean;
 }
@@ -321,6 +327,9 @@ async function loadArtifact(
       'artifacts.critical_flags',
       'artifacts.source_report_id',
       'artifacts.risk_tier_suggestion',
+      'artifacts.consultation_id',
+      'artifacts.emergency_signal',
+      'artifacts.crisis_signal',
       'artifacts.created_at',
       'tasks.detached_reason',
     ])
@@ -410,6 +419,9 @@ async function buildDetail(
       criticalFlags: row.critical_flags,
       sourceReportId: row.source_report_id,
       riskTierSuggestion: row.risk_tier_suggestion,
+      consultationId: row.consultation_id,
+      emergencySignal: row.emergency_signal,
+      crisisSignal: row.crisis_signal,
       clientFacing: isClientFacing(row),
     },
     sourceReport: await sourceReport(trx, row),

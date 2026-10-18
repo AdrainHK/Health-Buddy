@@ -251,6 +251,8 @@ describe('LlmGateway.completeStructured', () => {
       status: 'ok',
       data: { professional: '专业版', clientFacing: '通俗版' },
       model: 'gpt-6.1-sol',
+      provider: 'openai',
+      usage: { inputTokens: 12, outputTokens: 6 },
     });
     const sent = provider.calls[0]?.request.responseFormat;
     expect(sent?.name).toBe('summary');
@@ -260,6 +262,22 @@ describe('LlmGateway.completeStructured', () => {
       additionalProperties: false,
     });
     expect(sent?.schema).not.toHaveProperty('$schema');
+  });
+
+  it('sums usage over retries and records the expert id', async () => {
+    const { gateway, records, logs } = setup([
+      { chunks: ['{"professional":"x"}'], usage: { inputTokens: 10, outputTokens: 2 } },
+      { chunks: [valid], usage: { inputTokens: 11, outputTokens: 3 } },
+    ]);
+    const result = await gateway.completeStructured(
+      ctx,
+      { ...skillRequest, route: 'expert', expertId: 'nutrition' },
+      format,
+    );
+    expect(result.usage).toEqual({ inputTokens: 21, outputTokens: 5 });
+    expect(records.map((r) => r.expertId)).toEqual(['nutrition', 'nutrition']);
+    expect(records.every((r) => r.route === 'expert')).toBe(true);
+    expect(JSON.stringify(logs)).toContain('"expertId":"nutrition"');
   });
 
   it('retries once when the output does not match, then succeeds', async () => {
@@ -301,7 +319,12 @@ describe('LlmGateway.completeStructured', () => {
   it('returns refused without retrying', async () => {
     const { gateway, provider } = setup({ chunks: [], finishReason: 'refused' });
     const result = await gateway.completeStructured(ctx, skillRequest, format);
-    expect(result).toEqual({ status: 'refused', model: 'gpt-6.1-sol' });
+    expect(result).toEqual({
+      status: 'refused',
+      model: 'gpt-6.1-sol',
+      provider: 'openai',
+      usage: { inputTokens: 12, outputTokens: 0 },
+    });
     expect(provider.calls).toHaveLength(1);
   });
 });
