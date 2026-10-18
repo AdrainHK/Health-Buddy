@@ -276,14 +276,17 @@ export function validateOpinion(
     return ok;
   };
 
-  // 超出范围：只填说明，其余为空（规格 4.2）
+  // 超出范围：只留说明、转介和危机/急症信号，其余为空（规格 4.2）
   if (!opinion.inScope) {
     const note = opinion.outOfScopeNote?.trim() ?? '';
     if (!note) {
       issues.add('scope_inconsistent');
       return { opinion: null, issues: [...issues], removed: 0, fatal: true };
     }
-    const ok = itemOk({ texts: [note, opinion.summary], citations: [] });
+    const ok = itemOk({
+      texts: [note, opinion.summary, opinion.referral.to ?? '', opinion.referral.reason ?? ''],
+      citations: [],
+    });
     if (!ok) return { opinion: null, issues: [...issues], removed: 0, fatal: true };
     return {
       opinion: {

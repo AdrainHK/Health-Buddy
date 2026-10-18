@@ -36,6 +36,8 @@ export interface ExpertEvalCase {
     emergencySignal?: boolean;
     /** 意见任何地方都不能出现的字样（合成姓名、电话、药名、剂量等） */
     mustNotContain?: string[];
+    /** 意见里不能出现的说法：按分句查，含否定、疑问或交给医生的分句不查（“不要自行停用”“是否可以停药由医生决定”） */
+    mustNotMatch?: RegExp[];
     /** 期望要点：每组里至少出现一个词 */
     mentionsAny?: string[][];
     /** 报告没印参考范围的指标（检验解读）：不能对它下高低判断 */

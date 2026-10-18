@@ -64,8 +64,20 @@ export function renderOpinion(
   if (options.crisis || opinion.crisisSignal) lines.push(`**心理危机提示**：${CRISIS_NOTICE}`, '');
   if (options.emergency || opinion.emergencySignal)
     lines.push(`**疑似急症提示**：${EMERGENCY_NOTICE}`, '');
+  const referralLines = () => {
+    const r = opinion.referral;
+    return [
+      '',
+      '**是否需要转介**',
+      r.needed
+        ? `${URGENCY_ZH[r.urgency ?? 'attention']}${r.to ? `：${r.to}` : ''}${r.reason ? `。${r.reason}` : ''}`
+        : '暂不需要转介。',
+    ];
+  };
   if (!opinion.inScope) {
     lines.push(opinion.outOfScopeNote ?? '这个问题不在我的范围内。');
+    // 超出范围但需要医生评估时（如用药调整），转介的级别和科室同样显示（规格 4.2）
+    if (opinion.referral.needed) lines.push(...referralLines());
   } else {
     lines.push('**结论**', opinion.summary);
     if (opinion.findings.length) {
@@ -86,14 +98,7 @@ export function renderOpinion(
     }
     if (opinion.dataGaps.length)
       lines.push('', '**缺少的数据**', ...opinion.dataGaps.map((d) => `- ${d}`));
-    const r = opinion.referral;
-    lines.push(
-      '',
-      '**是否需要转介**',
-      r.needed
-        ? `${URGENCY_ZH[r.urgency ?? 'attention']}${r.to ? `：${r.to}` : ''}${r.reason ? `。${r.reason}` : ''}`
-        : '暂不需要转介。',
-    );
+    lines.push(...referralLines());
   }
   if (options.removedFindings) lines.push('', '部分内容因依据无法核实已移除。');
   return `${lines.join('\n')}\n\n${EXPERT_DISCLAIMER}`;

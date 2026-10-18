@@ -640,6 +640,22 @@ describe('rendering for managers only', () => {
     );
   });
 
+  it('shows the referral for out-of-scope opinions that need a doctor', () => {
+    const out = {
+      ...opinion,
+      inScope: false,
+      outOfScopeNote: '用药调整不在我的范围内。',
+      referral: { needed: true, urgency: 'urgent' as const, to: '急诊', reason: '胸痛' },
+    };
+    const text = renderOpinion(out, { expertId: 'nutrition' });
+    expect(text).toContain('用药调整不在我的范围内。');
+    expect(text).toContain('**是否需要转介**');
+    expect(text).toContain('急诊');
+    expect(renderOpinion({ ...out, referral: { ...out.referral, needed: false } })).not.toContain(
+      '是否需要转介',
+    );
+  });
+
   it('splits the digest: only lifestyle advice without crisis or emergency signals is rewritable', () => {
     const calm = {
       ...opinion,

@@ -268,7 +268,7 @@ packages/experts/
 
 | 字段 | 内容 |
 |---|---|
-| `inScope` | 问题是否在本专家范围内。为 false 时只填 `outOfScopeNote`（建议改问哪位专家或转介哪类医生），其余为空 |
+| `inScope` | 问题是否在本专家范围内。为 false 时只填 `outOfScopeNote`（建议改问哪位专家或转介哪类医生），其余为空；需要医生评估时（如用药、剂量调整）`referral` 照常填写，`crisisSignal`、`emergencySignal` 照常标注 |
 | `summary` | 结论，两三句话，写给健管师 |
 | `findings[]` | 每条要点：`point`（观点）、`dataRefs`（引用的输入数据：指标名、数值、日期、来源）、`citations`（`sourceId` + 条目编号）。没有知识来源支撑的要点必须标 `basis: "data_only"`，只能描述数据，不能下专业判断 |
 | `suggestions[]` | 给健管师的建议（生活方式干预重点、复测安排、要和客户沟通的点），每条可带引用，并标类别 `category`：lifestyle（生活方式，唯一可以改写进通俗版的一类）/ follow_up（复查、就医、跟进）/ communication（沟通和要了解的情况） |
