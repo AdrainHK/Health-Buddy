@@ -344,6 +344,11 @@ async function mockApi(page: Page, { followUp = false } = {}): Promise<Mock> {
             contentType: 'text/event-stream',
             body: sse([{ type: 'done', messageId: ids.assistant1, reason: 'complete' }]),
           });
+        // M4：左侧栏的今日跟进角标和客户状态圆点（本用例不关心，给空数据）
+        case key.startsWith('GET /api/follow-ups?'):
+          return json(route, { items: [], openCount: 0, date: '2026-10-18', timeZone: 'UTC' });
+        case key === 'GET /api/twin/levels':
+          return json(route, { clients: [] });
         default:
           mock.unknown.push(key);
           return json(route, { error: 'not_found' }, 404);

@@ -423,13 +423,17 @@ async function openResults(page: Page) {
 test('档案：375px 下不横向滚动', async ({ page }) => {
   const unknown = await mockApi(page);
   await openResults(page);
-  await page.getByRole('tab', { name: '档案' }).click();
+  // M4：“客户”标签默认是孪生，档案在第二个子视图
+  await page.getByRole('tab', { name: '客户' }).click();
   const panel = page.getByRole('tabpanel');
+  await panel.getByRole('button', { name: '档案', exact: true }).click();
   await expect(panel.getByRole('region', { name: '健康史' })).toBeVisible();
   await expect(panel.getByRole('region', { name: '指标趋势' })).toBeVisible();
   await expect(panel.getByText(/合成理由/)).toBeVisible();
   await expectNoHorizontalScroll(page, 'record');
-  expect(unknown.filter((k) => k.startsWith('GET /api/clients'))).toEqual([]);
+  expect(unknown.filter((k) => k.startsWith('GET /api/clients') && !k.includes('/twin'))).toEqual(
+    [],
+  );
 });
 
 test('核对：375px 下不横向滚动，原件在上、数值在下', async ({ page }) => {
