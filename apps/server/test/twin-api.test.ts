@@ -1,7 +1,10 @@
 import type { INestApplication } from '@nestjs/common';
 import {
   followUpListResponseSchema,
+  monitoringReadingListResponseSchema,
+  worstTwinLevel,
   twinForecastDetailResponseSchema,
+  twinLevelsResponseSchema,
   twinOrgAdminResponseSchema,
   twinResponseSchema,
   twinRulesResponseSchema,
@@ -922,5 +925,122 @@ describe('孪生接口', () => {
     const res = await a1.get(`/api/clients/${f.clients.a1[0]}/twin`).expect(200);
     const view: TwinResponse = twinResponseSchema.strict().parse(res.body);
     expect(view.forecasts.length).toBeGreaterThan(0);
+  });
+
+  // ---------- 工作台第 3 步新增的两个只读接口 ----------
+
+  describe('GET /api/twin/levels（左侧栏客户状态圆点）', () => {
+    it('只列自己的客户，等级是四个方面里最严重的，和孪生主视图一致；手动调整优先', async () => {
+      const a1 = await as(f.users.managerA1);
+      const res = twinLevelsResponseSchema.parse(
+        (await a1.get('/api/twin/levels').expect(200)).body,
+      );
+      expect(res.clients.map((c) => c.clientId).sort()).toEqual([...f.clients.a1].sort());
+      for (const c of res.clients) {
+        const view = twinResponseSchema.parse(
+          (await a1.get(`/api/clients/${c.clientId}/twin`).expect(200)).body,
+        );
+        expect(c.level).toBe(worstTwinLevel(view.domains.map((d) => d.level)));
+      }
+      // 只有颜色等级，不带依据和数值
+      expect(Object.keys(res.clients[0]!).sort()).toEqual(['clientId', 'level']);
+
+      const domains = ['metabolic', 'cardiovascular', 'sleep', 'weight'] as const;
+      for (const domain of domains)
+        await a1
+          .post(`/api/clients/${f.clients.a1[1]}/twin/status`)
+          .send({ domain, level: 'green', reason: '合成理由：已电话确认' })
+          .expect(200);
+      try {
+        const after = twinLevelsResponseSchema.parse(
+          (await a1.get('/api/twin/levels').expect(200)).body,
+        );
+        expect(after.clients.find((c) => c.clientId === f.clients.a1[1])?.level).toBe('green');
+      } finally {
+        for (const domain of domains)
+          await a1.delete(`/api/clients/${f.clients.a1[1]}/twin/status/${domain}`).expect(200);
+      }
+    });
+
+    it('跨租户：别的健管师的列表里没有这些客户；机构管理员、运营商、平台 → 404；未登录 → 401', async () => {
+      for (const u of [f.users.managerB1, f.users.managerA2, f.users.managerA3]) {
+        const agent = await as(u);
+        const res = twinLevelsResponseSchema.parse(
+          (await agent.get('/api/twin/levels').expect(200)).body,
+        );
+        for (const id of f.clients.a1) expect(res.clients.map((c) => c.clientId)).not.toContain(id);
+      }
+      for (const u of [f.users.orgAdminA, f.users.operatorAdminA, f.users.platform]) {
+        const agent = await as(u);
+        await agent.get('/api/twin/levels').expect(404);
+      }
+      await request(app.getHttpServer()).get('/api/twin/levels').expect(401);
+    });
+  });
+
+  describe('GET /api/clients/:id/manual-readings（自己手动录入的读数）', () => {
+    it('只列自己手动录入的，不含合成数据；可以删除；别人的客户、机构管理员 → 404', async () => {
+      const a1 = await as(f.users.managerA1);
+      const created = await a1
+        .post(`/api/clients/${f.clients.a1[0]}/monitoring-readings`)
+        .send({ metric: 'weight', value: 64.5, measuredAt: new Date().toISOString() })
+        .expect(201);
+      await queue.idle();
+      await addReadings(f.clients.a1[0], 'weight', 'kg', [[1, 64.8]]);
+      const list = monitoringReadingListResponseSchema.parse(
+        (await a1.get(`/api/clients/${f.clients.a1[0]}/manual-readings`).expect(200)).body,
+      );
+      expect(list.readings.map((r) => r.id)).toContain(created.body.reading.id);
+      expect(list.readings.every((r) => r.source === 'manual' && r.deletable)).toBe(true);
+
+      for (const u of [
+        f.users.managerB1,
+        f.users.managerA2,
+        f.users.orgAdminA,
+        f.users.operatorAdminA,
+        f.users.platform,
+      ]) {
+        const agent = await as(u);
+        await agent.get(`/api/clients/${f.clients.a1[0]}/manual-readings`).expect(404);
+      }
+      await a1.get('/api/clients/not-a-uuid/manual-readings').expect(404);
+
+      await a1.delete(`/api/monitoring-readings/${created.body.reading.id}`).expect(204);
+      await queue.idle();
+      const after = monitoringReadingListResponseSchema.parse(
+        (await a1.get(`/api/clients/${f.clients.a1[0]}/manual-readings`).expect(200)).body,
+      );
+      expect(after.readings.map((r) => r.id)).not.toContain(created.body.reading.id);
+    });
+
+    it('客户转给别的健管师：新健管师看不到原健管师录入的（只列自己录入的），原健管师 → 404', async () => {
+      const a1 = await as(f.users.managerA1);
+      const created = await a1
+        .post(`/api/clients/${f.clients.a1[0]}/monitoring-readings`)
+        .send({ metric: 'heart_rate', value: 72, measuredAt: new Date().toISOString() })
+        .expect(201);
+      await queue.idle();
+      await owner
+        .updateTable('clients')
+        .set({ manager_id: f.users.managerA2.id })
+        .where('id', '=', f.clients.a1[0])
+        .execute();
+      try {
+        await a1.get(`/api/clients/${f.clients.a1[0]}/manual-readings`).expect(404);
+        const a2 = await as(f.users.managerA2);
+        const theirs = monitoringReadingListResponseSchema.parse(
+          (await a2.get(`/api/clients/${f.clients.a1[0]}/manual-readings`).expect(200)).body,
+        );
+        expect(theirs.readings).toEqual([]);
+      } finally {
+        await owner
+          .updateTable('clients')
+          .set({ manager_id: f.users.managerA1.id })
+          .where('id', '=', f.clients.a1[0])
+          .execute();
+      }
+      await a1.delete(`/api/monitoring-readings/${created.body.reading.id}`).expect(204);
+      await queue.idle();
+    });
   });
 });

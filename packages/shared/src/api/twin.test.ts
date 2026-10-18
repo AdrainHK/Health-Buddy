@@ -9,7 +9,11 @@ import {
   updateFollowUpRequestSchema,
 } from './follow-ups.js';
 import { updateMeRequestSchema } from './auth.js';
-import { createMonitoringReadingRequestSchema, monitoringReadingSchema } from './monitoring.js';
+import {
+  createMonitoringReadingRequestSchema,
+  monitoringReadingListResponseSchema,
+  monitoringReadingSchema,
+} from './monitoring.js';
 import { twinStatsQuerySchema, twinUsageStatsSchema } from './twin-stats.js';
 import { createTwinStatusRuleRequestSchema } from './twin-rules.js';
 import {
@@ -19,6 +23,7 @@ import {
   setTwinStatusRequestSchema,
   twinBasisItemSchema,
   twinRefSchema,
+  twinLevelsResponseSchema,
   twinTimelineEventSchema,
 } from './twin.js';
 
@@ -220,5 +225,28 @@ describe('第 2 步新增契约', () => {
     };
     expect(monitoringReadingSchema.safeParse(base).success).toBe(true);
     expect(monitoringReadingSchema.safeParse({ ...base, id: 'abc' }).success).toBe(false);
+  });
+
+  it('客户状态圆点只有客户 id 和颜色等级；手动录入列表复用读数 schema', () => {
+    const id = '20000000-0000-4000-8000-00000000000a';
+    expect(
+      twinLevelsResponseSchema.parse({ clients: [{ clientId: id, level: 'yellow' }] }).clients,
+    ).toHaveLength(1);
+    expect(
+      twinLevelsResponseSchema.safeParse({ clients: [{ clientId: id, level: 'orange' }] }).success,
+    ).toBe(false);
+    const reading = {
+      id: '42',
+      clientId: id,
+      metric: 'sbp',
+      value: 128,
+      unit: 'mmHg',
+      measuredAt: '2026-10-18T08:00:00.000Z',
+      source: 'manual',
+      deletable: true,
+    };
+    expect(monitoringReadingListResponseSchema.parse({ readings: [reading] }).readings[0]).toEqual(
+      monitoringReadingSchema.parse(reading),
+    );
   });
 });

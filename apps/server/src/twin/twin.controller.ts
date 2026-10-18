@@ -14,9 +14,11 @@ import {
   setTwinStatusRequestSchema,
   twinDomainSchema,
   twinTimelineQuerySchema,
+  type MonitoringReadingListResponse,
   type MonitoringReadingResponse,
   type TwinDomainResponse,
   type TwinForecastDetailResponse,
+  type TwinLevelsResponse,
   type TwinOrgAdminResponse,
   type TwinResponse,
   type TwinStatusHistoryResponse,
@@ -91,6 +93,13 @@ export class TwinController {
       return { ...result.view, computing: true };
     }
     return result.view;
+  }
+
+  /** 左侧栏客户列表的状态圆点（2.1）：只给健管师，其他角色 404 */
+  @Get('twin/levels')
+  async levels(@CurrentSession() session: ResolvedSession): Promise<TwinLevelsResponse> {
+    requireManager(session);
+    return { clients: await this.repo.clientLevels(session) };
   }
 
   @Get('clients/:id/twin/timeline')
@@ -188,6 +197,19 @@ export class TwinController {
     if (!reading) throw notFound();
     await this.compute.request(session, clientId, 'monitoring');
     return { reading };
+  }
+
+  /** 自己给这位客户手动录入的读数（用来删除录错的，Q29）。别人的客户、机构管理员 → 404 */
+  @Get('clients/:id/manual-readings')
+  async manualReadings(
+    @CurrentSession() session: ResolvedSession,
+    @Param('id') id: string,
+  ): Promise<MonitoringReadingListResponse> {
+    requireManager(session);
+    const clientId = parseId(id);
+    const readings = await this.repo.manualReadings(session, clientId);
+    if (!readings) throw notFound();
+    return { readings };
   }
 
   /** 删除自己手动录入的读数；合成、伴侣、设备数据不能删 → 409 */

@@ -54,3 +54,15 @@ export type MonitoringReading = z.infer<typeof monitoringReadingSchema>;
 
 export const monitoringReadingResponseSchema = z.object({ reading: monitoringReadingSchema });
 export type MonitoringReadingResponse = z.infer<typeof monitoringReadingResponseSchema>;
+
+/** 手动录入列表最多返回最近这么多条（按测量时间从新到旧） */
+export const MANUAL_READINGS_LIST_LIMIT = 50;
+
+/**
+ * 当前健管师自己给这位客户手动录入的读数（Q29：只能删除自己录入的）。
+ * 合成、伴侣、设备数据不在这里列出。
+ */
+export const monitoringReadingListResponseSchema = z.object({
+  readings: z.array(monitoringReadingSchema),
+});
+export type MonitoringReadingListResponse = z.infer<typeof monitoringReadingListResponseSchema>;
