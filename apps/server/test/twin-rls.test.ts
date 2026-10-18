@@ -1133,6 +1133,19 @@ describe('孪生数据表的行级安全和约束', () => {
       expect(after).toHaveLength(DEFAULT_TWIN_STATUS_RULES.length);
       expect(new Set(after.map((r) => r.updated_by))).toEqual(new Set([f.users.platform.id]));
     });
+
+    it('恢复为默认值：空列表或非数组被拒绝，规则不被清空', async () => {
+      for (const bad of ['[]', '{}', 'null']) {
+        await expect(
+          asPlatform((trx) => sql`select twin_status_rules_reset(${bad}::jsonb)`.execute(trx)),
+        ).rejects.toMatchObject({ code: '22023' });
+      }
+      const rules = await asPlatform((trx) =>
+        trx.selectFrom('twin_status_rules').select('id').execute(),
+      );
+      expect(rules).toHaveLength(DEFAULT_TWIN_STATUS_RULES.length);
+      expect(await version()).toBe(1);
+    });
     it('自己设会话变量或写标记表都不能把普通修改记成 reset', async () => {
       await asPlatform(async (trx) => {
         await sql`select set_config('hb.twin_rules_reset', 'on', true)`.execute(trx);

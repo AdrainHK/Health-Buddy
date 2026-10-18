@@ -286,6 +286,9 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       if app_role() is distinct from 'platform_admin' or app_user_id() is null then
         raise exception 'only the platform admin can reset rules' using errcode = 'insufficient_privilege';
       end if;
+      if p_rules is null or jsonb_typeof(p_rules) <> 'array' or jsonb_array_length(p_rules) = 0 then
+        raise exception 'reset needs a non-empty rule list' using errcode = 'invalid_parameter_value';
+      end if;
       insert into twin_rules_reset_marker (xact) values (pg_current_xact_id())
         on conflict do nothing;
       delete from twin_status_rules;
