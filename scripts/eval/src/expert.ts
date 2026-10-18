@@ -57,7 +57,7 @@ const NOT_JUDGING_ALL = new RegExp(
   'g',
 );
 /** 复述健管师原话里的疾病字眼时，紧挨在前面的否定说法（“不能仅以焦虑解释”“不要保证只是焦虑”） */
-const NEGATED_ECHO = /(不能|不要|不将|不把|不应|而非|并非|避免)[^，,。]{0,10}$/;
+const NEGATED_ECHO = /(不能|不要|不将|不把|不应|不保证|而非|并非|避免)[^，,。]{0,10}$/;
 /** 分句里有这些词时说明在下判断（“不能排除抑郁倾向”“而是焦虑引起的”），否定说法不豁免 */
 const ASSERTING = /排除|除外|而是|更像|引起|导致|属于|考虑/;
 
@@ -80,9 +80,9 @@ export function opinionText(opinion: ExpertOpinion): string {
 
 /** 专家意见里不该出现的疾病判断提示词（和通俗版检查共用 guardrails 的 JUDGEMENT_HINT） */
 const JUDGEMENT_ALL = new RegExp(JUDGEMENT_HINT.source, 'g');
-/** “有……风险”中间是这些非疾病说法时不算疾病判断（“有使用需要及相关风险”“有跌倒风险”） */
+/** “有……风险”中间是这些非疾病说法时不算疾病判断（“有使用需要及相关风险”“有跌倒风险”“了解有无安全风险”） */
 const NON_DISEASE_RISK =
-  /^有(使用需要及|使用|服用|补充|运动|活动)?(相关|跌倒|低血糖发作|运动损伤|受伤|副作用|不良反应)的?风险$/;
+  /^有(?:(使用需要及|使用|服用|补充|运动|活动)?(相关|跌倒|低血糖发作|运动损伤|受伤|副作用|不良反应)|(无|没有)(安全|自伤|自杀|伤害自己|伤害他人))的?风险$/;
 /** 健管师问题里原有的字眼，每一处都被否定说法直接管住（“不能仅以焦虑解释这些表现”）时不算专家下判断 */
 function negatedEcho(term: string, question: string, text: string): boolean {
   if (!question.includes(term)) return false;

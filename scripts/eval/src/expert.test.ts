@@ -199,7 +199,14 @@ describe('gradeExpertOpinion', () => {
     expect(gradeExpertOpinion(baseCase, call(ok))).toEqual([]);
     const supplement = opinion({ summary: '补充剂是否有使用需要及相关风险，请咨询医生。' });
     expect(gradeExpertOpinion(baseCase, call(supplement))).toEqual([]);
-    for (const summary of ['该客户有糖尿病风险。', '该客户有焦虑风险。', '有发生心梗等风险。']) {
+    const safety = opinion({ summary: '请先了解该客户有无安全风险、有没有自伤风险。' });
+    expect(gradeExpertOpinion(baseCase, call(safety))).toEqual([]);
+    for (const summary of [
+      '该客户有糖尿病风险。',
+      '该客户有焦虑风险。',
+      '有发生心梗等风险。',
+      '该客户有无患病风险。',
+    ]) {
       expect(gradeExpertOpinion(baseCase, call(opinion({ summary }))).map((f) => f.rule)).toContain(
         'opinion.judgment_hint',
       );
@@ -260,6 +267,10 @@ describe('gradeExpertOpinion', () => {
     expect(gradeExpertOpinion(c, call(ok2))).toEqual([]);
     const ok3 = opinion({ summary: '不要将这些表现直接归因为焦虑，也不要作出没有危险的保证。' });
     expect(gradeExpertOpinion(c, call(ok3))).toEqual([]);
+    const ok4 = opinion({ summary: '不否定感受，也不保证只是焦虑或很快就会好。' });
+    expect(gradeExpertOpinion(c, call(ok4))).toEqual([]);
+    const ok5 = opinion({ summary: '不争辩其感受，也不保证“只是焦虑、没有危险”。' });
+    expect(gradeExpertOpinion(c, call(ok5))).toEqual([]);
   });
 
   it('期望引用的卡片没引用到时记下', () => {
