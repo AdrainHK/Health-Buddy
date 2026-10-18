@@ -19,6 +19,7 @@ import { ExpertsModule } from './experts/experts.module.js';
 import { HealthController } from './health/health.controller.js';
 import { SkillsController } from './skills/skills.controller.js';
 import { TasksModule } from './tasks/tasks.module.js';
+import { TwinModule } from './twin/twin.module.js';
 import { WorkbenchModule } from './workbench/workbench.module.js';
 import { RISK_TIER_GUIDE, RISK_TIER_CRITERIA } from './workbench/risk-tier-criteria.js';
 
@@ -48,6 +49,7 @@ export class AppModule {
         ReportsModule,
         AiModule,
         ExpertsModule,
+        TwinModule,
       ],
       controllers: [HealthController, SkillsController],
       providers: [

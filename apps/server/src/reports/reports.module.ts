@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AiModule } from '../ai/ai.module.js';
 import { APP_CONFIG, type AppConfig } from '../config.js';
+import { TwinModule } from '../twin/twin.module.js';
 import { WorkbenchModule } from '../workbench/workbench.module.js';
 import {
   BullMqExtractionQueue,
@@ -23,7 +24,7 @@ export interface ReportInfraOverrides {
 export const REPORT_INFRA_OVERRIDES = Symbol('REPORT_INFRA_OVERRIDES');
 
 @Module({
-  imports: [AiModule, WorkbenchModule],
+  imports: [AiModule, WorkbenchModule, TwinModule],
   controllers: [ReportUploadsController, ReportsController],
   providers: [
     ReportsRepository,

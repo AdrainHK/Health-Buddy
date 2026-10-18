@@ -44,6 +44,7 @@ import {
 } from '../common/api-error.js';
 import { describeError } from '../common/exception.filter.js';
 import { requireManager } from '../common/manager-only.js';
+import { TwinComputeService } from '../twin/twin-compute.service.js';
 import { LLM_RATE_LIMITER, type LlmRateLimiter } from '../workbench/llm-rate-limiter.js';
 import { EXTRACTION_QUEUE, type ExtractionQueue } from './extraction-queue.js';
 import { UploadEvents } from './extraction.service.js';
@@ -97,6 +98,7 @@ export class ReportUploadsController {
     @Inject(EXTRACTION_QUEUE) private readonly queue: ExtractionQueue,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage | null,
     @Inject(LLM_RATE_LIMITER) private readonly limiter: LlmRateLimiter,
+    private readonly twin: TwinComputeService,
   ) {}
 
   /**
@@ -328,6 +330,8 @@ export class ReportUploadsController {
         confirmAll: parsed.data.confirmAll,
       })}`,
     );
+    // 孪生：核对后按新报告重算状态、预测和跟进项（M4 规格 3.2）
+    await this.twin.request(session, upload.clientId, 'report_verified');
     return critical.length ? { upload, critical } : { upload };
   }
 
@@ -380,7 +384,10 @@ export class ReportUploadsController {
 /** 已核对的报告、指标更正和趋势（规格 2.2、2.4、3.4） */
 @Controller()
 export class ReportsController {
-  constructor(private readonly repo: ReportsRepository) {}
+  constructor(
+    private readonly repo: ReportsRepository,
+    private readonly twin: TwinComputeService,
+  ) {}
 
   @Get('clients/:id/reports')
   async list(
@@ -418,7 +425,9 @@ export class ReportsController {
     const indicator = parseId(indicatorId);
     const parsed = correctIndicatorRequestSchema.safeParse(body);
     if (!parsed.success) throw badRequest();
-    return { report: await this.repo.correctIndicator(session, reportId, indicator, parsed.data) };
+    const report = await this.repo.correctIndicator(session, reportId, indicator, parsed.data);
+    await this.twin.request(session, report.clientId, 'correction');
+    return { report };
   }
 
   @Get('clients/:id/indicators/:code/trend')

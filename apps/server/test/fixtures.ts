@@ -56,7 +56,7 @@ export function ownerDb(): Owner {
  * 全部是虚构数据。
  */
 export async function seedFixtures(db: Owner): Promise<Fixtures> {
-  await sql`truncate twin_rules_reset_marker, follow_up_events, follow_up_items, twin_forecasts, twin_status_history, twin_status_rule_events, twin_status_rules, expert_feedback, expert_calls, expert_consultations, expert_availability_events, expert_availability, storage_purge_queue, client_risk_tiers, client_health_history, artifact_events, artifacts, task_plans, task_steps, task_messages, tasks, critical_threshold_events, critical_thresholds, llm_usage, monitoring_readings, report_indicators, health_reports, sessions, clients, users, organizations, operators cascade`.execute(
+  await sql`truncate twin_usage_daily, twin_compute_state, twin_rules_reset_marker, follow_up_events, follow_up_items, twin_forecasts, twin_status_history, twin_status_rule_events, twin_status_rules, expert_feedback, expert_calls, expert_consultations, expert_availability_events, expert_availability, storage_purge_queue, client_risk_tiers, client_health_history, artifact_events, artifacts, task_plans, task_steps, task_messages, tasks, critical_threshold_events, critical_thresholds, llm_usage, monitoring_readings, report_indicators, health_reports, sessions, clients, users, organizations, operators cascade`.execute(
     db,
   );
   // 阈值由迁移写入（全平台一套），清空后补回来

@@ -24,6 +24,7 @@ import { InlineExtractionQueue } from '../src/reports/extraction-queue.js';
 import { ReportsRepository } from '../src/reports/reports.repository.js';
 import { InMemoryObjectStorage } from '../src/reports/storage.js';
 import { TEST_APP_URL } from './env.js';
+import { TWIN_QUEUE, type InProcessTwinQueue } from '../src/twin/twin-queue.js';
 import { PASSWORD, ownerDb, seedFixtures, type Account, type Fixtures } from './fixtures.js';
 import { createTestApp, loginAs } from './http.js';
 import { pageJson, syntheticPng, type ItemSpec } from './report-fixtures.js';
@@ -205,6 +206,8 @@ describe('M2 验收补齐', () => {
   beforeEach(async () => {
     queue.resume();
     await queue.idle();
+    // 核对、更正会排孪生计算任务，清空数据前也等它们执行完
+    await app.get<InProcessTwinQueue>(TWIN_QUEUE).idle();
     f = await seedFixtures(owner);
     provider.reset();
     storage.objects.clear();
