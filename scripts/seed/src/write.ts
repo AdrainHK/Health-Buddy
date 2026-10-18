@@ -1,5 +1,5 @@
 import { hash } from '@node-rs/argon2';
-import { MONITORING_METRICS, REPORT_INDICATORS } from '@health-buddy/shared';
+import { MONITORING_METRICS, REPORT_INDICATORS, abnormalFromColumns } from '@health-buddy/shared';
 import { sql, type Kysely, type Transaction } from 'kysely';
 import {
   DEMO_EMAIL_DOMAIN,
@@ -108,6 +108,7 @@ export async function writeDemoData(
               code,
               value,
               unit: unitOf(code),
+              ...printedReference(report.references?.[code as never], value),
             }));
             if (rows.length) await trx.insertInto('report_indicators').values(rows).execute();
             summary.indicators += rows.length;
@@ -190,6 +191,26 @@ async function insertId(trx: Trx, table: string, values: Record<string, unknown>
     id: string;
   };
   return row.id;
+}
+
+/** 报告上印的参考范围（M2 Q10）和按它算出的高低标记；没印范围时不写这几列（默认 no_reference） */
+function printedReference(
+  ref: { low: number | null; high: number | null } | undefined,
+  value: number,
+): Record<string, unknown> {
+  if (!ref) return {};
+  const text =
+    ref.low !== null && ref.high !== null
+      ? `${ref.low}-${ref.high}`
+      : ref.high !== null
+        ? `≤${ref.high}`
+        : `≥${ref.low}`;
+  return {
+    ref_low: ref.low,
+    ref_high: ref.high,
+    ref_text: text,
+    abnormal: abnormalFromColumns(value, ref.low, ref.high, text),
+  };
 }
 
 function unitOf(code: string): string {
