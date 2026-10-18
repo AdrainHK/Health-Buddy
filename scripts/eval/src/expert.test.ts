@@ -250,6 +250,7 @@ describe('gradeExpertOpinion', () => {
       '不能排除焦虑倾向。',
       '并非一般紧张而是焦虑。',
       '不是单纯压力大，是焦虑导致的。',
+      '不要担心，这些表现就是焦虑。',
     ]) {
       expect(gradeExpertOpinion(c, call(opinion({ summary }))).map((f) => f.rule)).toContain(
         'opinion.judgment_hint',
@@ -257,6 +258,8 @@ describe('gradeExpertOpinion', () => {
     }
     const ok2 = opinion({ summary: '不要保证只是焦虑或很快就会缓解。' });
     expect(gradeExpertOpinion(c, call(ok2))).toEqual([]);
+    const ok3 = opinion({ summary: '不要将这些表现直接归因为焦虑，也不要作出没有危险的保证。' });
+    expect(gradeExpertOpinion(c, call(ok3))).toEqual([]);
   });
 
   it('期望引用的卡片没引用到时记下', () => {
