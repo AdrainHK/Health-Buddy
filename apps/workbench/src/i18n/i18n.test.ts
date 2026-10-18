@@ -3,6 +3,14 @@ import { join, relative } from 'node:path';
 import {
   ABNORMAL_FLAGS,
   CONSULTATION_STATUSES,
+  DISCLAIMER,
+  FOLLOW_UP_DISMISS_REASONS,
+  FOLLOW_UP_KINDS,
+  FOLLOW_UP_RESOLUTIONS,
+  TWIN_DOMAINS,
+  TWIN_LEVELS,
+  TWIN_STATUS_ORIGINS,
+  TWIN_TIMELINE_TYPES,
   CRISIS_NOTICE,
   EMERGENCY_NOTICE,
   EXPERT_DISCLAIMER,
@@ -62,7 +70,7 @@ describe('界面文字走 i18n（验收标准 25）', () => {
   it('组件和逻辑代码里没有写死的中文', () => {
     const files = sourceFiles(SRC);
     // 确实扫到了各个界面目录（档案、核对、对话、结果区）
-    for (const dir of ['record', 'reports', 'chat', 'artifacts', 'shell', 'experts'])
+    for (const dir of ['record', 'reports', 'chat', 'artifacts', 'shell', 'experts', 'twin'])
       expect(
         files.some((f) => relative(SRC, f).startsWith(dir)),
         dir,
@@ -177,5 +185,41 @@ describe('界面文字走 i18n（验收标准 25）', () => {
       'results.artifacts.signals.emergencyText',
     ])
       expect(lookup(key), key).toBeUndefined();
+  });
+
+  it('M4 孪生和跟进的枚举值都有翻译', () => {
+    const groups: [string, readonly string[]][] = [
+      ['twin.levels', TWIN_LEVELS],
+      ['twin.colors', TWIN_LEVELS],
+      ['twin.domains', TWIN_DOMAINS],
+      ['twin.timeline.types', TWIN_TIMELINE_TYPES],
+      ['twin.timeline.origin', TWIN_STATUS_ORIGINS],
+      ['followUps.kinds', FOLLOW_UP_KINDS],
+      ['followUps.form.resolutions', FOLLOW_UP_RESOLUTIONS],
+      ['followUps.form.dismissReasons', FOLLOW_UP_DISMISS_REASONS],
+    ];
+    for (const [prefix, values] of groups)
+      for (const v of values)
+        expect(typeof lookup(`${prefix}.${v}`), `${prefix}.${v}`).toBe('string');
+  });
+
+  it('孪生和跟进清单的词条没有禁用词，只有固定的“仅供参考，非医疗诊断”（验收标准 21）', () => {
+    const strings = (node: unknown, path: string): [string, string][] =>
+      typeof node === 'string'
+        ? [[path, node]]
+        : node && typeof node === 'object'
+          ? Object.entries(node).flatMap(([k, v]) => strings(v, `${path}.${k}`))
+          : [];
+    const all = ['twin', 'followUps', 'nav'].flatMap((root) => strings(lookup(root), root));
+    expect(all.length).toBeGreaterThan(100);
+    const issues = all.flatMap(([path, text]) =>
+      findBannedTerms(text).map((issue) => `${path}: ${issue.term}`),
+    );
+    expect(issues).toEqual([]);
+    // 提示条和后端的标准免责声明一字不差；含“诊断”的只有这一处，靠白名单放行
+    expect(lookup('twin.disclaimer')).toBe(DISCLAIMER);
+    expect(all.filter(([, text]) => text.includes('诊断')).map(([p]) => p)).toEqual([
+      'twin.disclaimer',
+    ]);
   });
 });
