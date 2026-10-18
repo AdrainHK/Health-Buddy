@@ -251,16 +251,30 @@ export async function runExpertOnce(
       return { ...base, findings: [{ rule: 'deidentify.input', detail: `${leaked.length} 处` }] };
     }
     const profile = toProfile(def, { preview: true });
-    const result = await runConsultation(gateway, ctx, {
-      input,
-      available: [profile],
-      mode: 'direct',
-      forced: [c.expertId],
-      excluded: [],
-      bound: c.expertId,
-    });
+    // 记下后端校验没通过的类别（只有类别代码），写进 opinion.missing、validation.removed 的说明
+    const issues = new Set<string>();
+    const logger = {
+      warn: (_message: string, fields: Record<string, string | number | null>) => {
+        if (typeof fields.issues === 'string')
+          for (const i of fields.issues.split(',')) issues.add(`第${fields.attempt}次:${i}`);
+      },
+    };
+    const result = await runConsultation(
+      gateway,
+      ctx,
+      {
+        input,
+        available: [profile],
+        mode: 'direct',
+        forced: [c.expertId],
+        excluded: [],
+        bound: c.expertId,
+      },
+      { logger },
+    );
     const call = result.calls[0];
     if (!call) return { ...base, findings: [{ rule: 'opinion.missing', detail: 'not_called' }] };
+    const issueNote = issues.size ? `：${[...issues].join(',')}` : '';
     return {
       ...base,
       findings: gradeExpertOpinion(
@@ -268,6 +282,10 @@ export async function runExpertOnce(
         call,
         input.allowedNumbers,
         profile.cards.flatMap((k) => [...k.numbers]),
+      ).map((f) =>
+        f.rule === 'opinion.missing' || f.rule === 'validation.removed'
+          ? { ...f, detail: `${f.detail}${issueNote}` }
+          : f,
       ),
       ...(call.opinion
         ? {

@@ -164,6 +164,15 @@ const DETAIL_RULES = new Set([
   'client.judgment_terms',
   'client.urgency_terms',
   'client.crisis_terms',
+  // 专家评测：失败类别和校验问题类别（代码）、命中的词表词、期望值
+  'opinion.missing',
+  'validation.removed',
+  'opinion.judgment_hint',
+  'opinion.forbidden',
+  'opinion.referral',
+  'opinion.missing_point',
+  'routing.missed',
+  'routing.model_failed',
 ]);
 /** GitHub 注解的转义：先 %，再回车和换行 */
 const escapeAnnotation = (t: string) =>
