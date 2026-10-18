@@ -1,3 +1,4 @@
+import { CRISIS_NOTICE, EMERGENCY_NOTICE, EXPERT_DISCLAIMER } from '@health-buddy/shared';
 import type { ExpertSummary, Task, TaskStep, TaskStreamEvent } from '@health-buddy/shared';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -188,7 +189,13 @@ describe('专家库和专家中心提问（规格 2.2、2.3）', () => {
         }),
       });
       sse.send({ type: 'text', messageId: ids.assistantMsg, delta: '**结论**\n合成专家回答' });
-      sse.send({ type: 'consultation', consultationId: expertIds.consultation, status: 'done' });
+      sse.send({
+        type: 'consultation',
+        consultationId: expertIds.consultation,
+        status: 'done',
+        crisisSignal: false,
+        emergencySignal: false,
+      });
       sse.send({ type: 'done', messageId: ids.assistantMsg, reason: 'complete' });
       sse.close();
     });
@@ -342,7 +349,13 @@ describe('@专家（规格 2.4、Q5、Q22）', () => {
       ),
     );
     act(() => {
-      sse.send({ type: 'consultation', consultationId: expertIds.consultation, status: 'partial' });
+      sse.send({
+        type: 'consultation',
+        consultationId: expertIds.consultation,
+        status: 'partial',
+        crisisSignal: false,
+        emergencySignal: false,
+      });
       sse.send({ type: 'done', messageId: ids.assistantMsg, reason: 'complete' });
       sse.close();
     });
@@ -616,6 +629,115 @@ describe('专家标签（规格 2.7、Q14、Q20）', () => {
     );
     expect(screen.getByText('暂时无法回复（AI 服务暂时不可用）')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '有用' })).not.toBeInTheDocument();
+  });
+});
+
+describe('危机和急症信号不依赖汇总（M3 合规审查第 1–3 条）', () => {
+  it('专家都没回复、没有汇总，但关键词识别出危机：专家标签最前面仍有危机提示', () => {
+    mockApi({});
+    render(
+      withExperts(
+        <ExpertsTab
+          state={{
+            status: 'ready',
+            consultations: [
+              consultation({
+                status: 'failed',
+                synthesis: null,
+                synthesisStatus: null,
+                crisisSignal: true,
+                calls: [
+                  call({ status: 'failed', failureCategory: 'invalid_output', opinion: null }),
+                ],
+              }),
+            ],
+          }}
+          onRetry={() => {}}
+        />,
+      ),
+    );
+    const [alert] = screen.getAllByRole('alert');
+    expect(alert).toHaveTextContent(`心理危机提示${CRISIS_NOTICE}`);
+    expect(screen.queryByText(/疑似急症提示/)).not.toBeInTheDocument();
+  });
+
+  it('被停止的旧调用带急症信号：默认展开，标题里有醒目标记', () => {
+    mockApi({});
+    const older = consultation({
+      id: expertIds.consultation2,
+      createdAt: '2026-10-01T08:00:00.000Z',
+      status: 'stopped',
+      synthesis: null,
+      synthesisStatus: null,
+      emergencySignal: true,
+      calls: [call({ status: 'stopped', opinion: null })],
+    });
+    const newer = consultation({ createdAt: '2026-10-02T08:00:00.000Z' });
+    render(
+      withExperts(
+        <ExpertsTab
+          state={{ status: 'ready', consultations: [older, newer] }}
+          onRetry={() => {}}
+        />,
+      ),
+    );
+    const cards = screen.getAllByTestId('consultation');
+    expect(cards).toHaveLength(2);
+    // 新的在前；旧的那次虽然不是最新，但有信号，所以也展开
+    expect(cards[1]).toHaveAttribute('open');
+    expect(within(cards[1]!).getByRole('alert')).toHaveTextContent(
+      `疑似急症提示${EMERGENCY_NOTICE}`,
+    );
+    expect(cards[1]!.querySelector('summary')).toHaveTextContent('疑似急症提示');
+    expect(cards[0]!.querySelector('summary')).not.toHaveTextContent('急症');
+  });
+
+  it('对话区：SSE 带来的危机信号置顶提示，正文按 Markdown 显示，写明参与的专家并标 AI', async () => {
+    let sse!: ReturnType<typeof controlledSse>;
+    mockApi({
+      [`GET /tasks/${ids.task}`]: () => json(200, emptyDetail(makeTask())),
+      [`POST ${MSG_PATH}`]: (_c, init) => {
+        sse = controlledSse(init?.signal);
+        return sse.response;
+      },
+      // 调用记录还没取到（或取失败）时也要提示：只靠 SSE 事件
+      [`GET /tasks/${ids.task}/expert-consultations`]: () => json(200, { consultations: [] }),
+    });
+    const user = userEvent.setup();
+    renderPane({ onOpenExperts: vi.fn() });
+    await screen.findByRole('textbox');
+    await mention(user, '营', /营养专家/);
+    await user.click(screen.getByRole('radio', { name: '问一问' }));
+    await user.type(screen.getByRole('textbox'), '合成问题');
+    await user.click(screen.getByRole('button', { name: '发送' }));
+    await waitFor(() => expect(sse).toBeDefined());
+
+    const text = `**心理危机提示**：${CRISIS_NOTICE}\n\n专家暂时无法回复，请稍后再试。\n\n${EXPERT_DISCLAIMER}`;
+    act(() => {
+      sse.send(expertCall(NUTRI.id, 'running'));
+      sse.send(expertCall(NUTRI.id, 'failed', 'provider_error'));
+      sse.send({ type: 'text', messageId: ids.assistantMsg, delta: text });
+      sse.send({
+        type: 'consultation',
+        consultationId: expertIds.consultation,
+        status: 'failed',
+        crisisSignal: true,
+        emergencySignal: false,
+      });
+      sse.send({ type: 'done', messageId: ids.assistantMsg, reason: 'complete' });
+    });
+    // 换成真实 id 后回答会重新挂载：等正文出来再取
+    await screen.findByText('专家暂时无法回复，请稍后再试。', { exact: false });
+    const answer = screen.getByTestId('assistant-text').closest('li')!;
+    const alert = await within(answer).findByRole('alert');
+    expect(alert).toHaveTextContent(`心理危机提示${CRISIS_NOTICE}`);
+    const body = within(answer).getByTestId('assistant-text');
+    // 置顶提示在正文前面
+    expect(alert.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // 正文里的 **心理危机提示** 是粗体，不显示星号
+    expect(body).not.toHaveTextContent('**');
+    expect(within(body).getByText('心理危机提示').tagName).toBe('STRONG');
+    expect(within(answer).getByTestId('answered-by')).toHaveTextContent('专家意见：营养专家AI');
   });
 });
 

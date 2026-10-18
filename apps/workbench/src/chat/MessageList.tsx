@@ -13,7 +13,10 @@ import {
   X,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useExpertName } from '../experts/ExpertsContext';
+import { PlainMarkdown } from '../artifacts/PlainMarkdown';
+import { AiBadge } from '../experts/ExpertBadges';
+import { useExpertName, useExpertNames } from '../experts/ExpertsContext';
+import { consultationSignals, mergeSignals, SignalAlerts } from '../experts/SignalAlerts';
 import {
   ExpertStepDetail,
   type ExpertStepContext,
@@ -70,6 +73,7 @@ export function MessageList({
               consultation: conversation.consultations[message.id],
               ...(onOpenExperts ? { onOpenExperts } : {}),
             }}
+            signals={conversation.expertSignals[message.id]}
             canConfirm={canConfirm}
             onConfirmPlan={onConfirmPlan}
             onUseSkill={onUseSkill}
@@ -145,6 +149,7 @@ function AssistantMessage({
   steps,
   plans,
   expert,
+  signals,
   canConfirm,
   onConfirmPlan,
   onUseSkill,
@@ -153,21 +158,44 @@ function AssistantMessage({
   steps: TaskStep[];
   plans: TaskPlan[];
   expert: ExpertStepContext;
+  /** SSE consultation 事件带来的危机、急症信号（接口取到调用记录前先用它） */
+  signals?: { crisis: boolean; emergency: boolean } | undefined;
   canConfirm: boolean;
   onConfirmPlan: (plan: TaskPlan) => void;
   onUseSkill: (skillId: string) => void;
 }) {
   const { t } = useTranslation();
   const skillName = useSkillName();
+  const expertNames = useExpertNames();
   const streaming = message.status === 'streaming';
+  const consultation = expert.consultation;
+  // 危机、急症提示置顶，不依赖回答正文里的标记（合规审查第 2 条）
+  const alerts = mergeSignals([
+    signals ?? { crisis: false, emergency: false },
+    ...(consultation ? [consultationSignals(consultation)] : []),
+  ]);
+  // 请了专家的回答：在正文上方写明是哪几位专家的意见，并标 AI（Q24）
+  const expertIds = consultation
+    ? consultation.calls.map((c) => c.expertId)
+    : Object.keys(expert.calls ?? {});
   return (
     <li className={styles.assistant} aria-label={t('chat.assistant')} aria-busy={streaming}>
       {steps.length > 0 && <StepList steps={steps} expert={expert} />}
 
-      {message.content ? (
-        <p className={styles.text} data-testid="assistant-text">
-          {message.content}
+      <SignalAlerts {...alerts} />
+
+      {expertIds.length > 0 && message.content && (
+        <p className={styles.answeredBy} data-testid="answered-by">
+          <Stethoscope size={14} aria-hidden />
+          {t('chat.experts.answeredBy', { names: expertNames(expertIds) })}
+          <AiBadge />
         </p>
+      )}
+
+      {message.content ? (
+        <div className={styles.answer} data-testid="assistant-text">
+          <PlainMarkdown source={message.content} />
+        </div>
       ) : (
         streaming && (
           <p className={styles.pending} role="status">

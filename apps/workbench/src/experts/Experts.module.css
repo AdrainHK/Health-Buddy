@@ -460,6 +460,22 @@
   display: block;
 }
 
+.signalBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hb-space-1);
+}
+
+.signalBadge {
+  padding: 0 var(--hb-space-2);
+  border-radius: var(--hb-radius-full);
+  border: 1px solid var(--hb-danger);
+  background: color-mix(in oklab, var(--hb-danger) 12%, var(--hb-surface));
+  color: var(--hb-danger);
+  font-size: var(--hb-text-xs);
+  font-weight: 600;
+}
+
 .warn {
   margin: 0;
   padding: var(--hb-space-2) var(--hb-space-3);

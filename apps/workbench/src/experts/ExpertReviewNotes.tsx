@@ -2,6 +2,7 @@ import type { ExpertConsultation } from '@health-buddy/shared';
 import { Button } from '@health-buddy/ui';
 import { useTranslation } from 'react-i18next';
 import styles from './Experts.module.css';
+import { consultationSignals, SignalAlerts } from './SignalAlerts';
 
 /**
  * 专业版里有没有写就医或转介建议：找到这一节的标题，并且标题下面有内容。
@@ -59,22 +60,15 @@ export function ExpertReviewNotes({
     consultation !== null &&
     expertsSuggestReferral(consultation) &&
     !hasReferralSection(professional, t('results.artifacts.experts.referralHeading'));
-  if (!crisisSignal && !emergencySignal && !consultation) return null;
+  // 产物上的信号，和这次专家调用记录的信号取并集
+  const fromConsultation = consultation ? consultationSignals(consultation) : null;
+  const crisis = crisisSignal || Boolean(fromConsultation?.crisis);
+  const emergency = emergencySignal || Boolean(fromConsultation?.emergency);
+  if (!crisis && !emergency && !consultation) return null;
   return (
     <div className={styles.block} data-testid="expert-review-notes">
-      {crisisSignal && (
-        <p className={styles.alert} role="alert">
-          <strong>{t('results.artifacts.signals.crisis')}</strong>
-          {t('results.artifacts.signals.crisisText')}
-        </p>
-      )}
-      {emergencySignal && (
-        <p className={styles.alert} role="alert">
-          <strong>{t('results.artifacts.signals.emergency')}</strong>
-          {t('results.artifacts.signals.emergencyText')}
-        </p>
-      )}
-      {(crisisSignal || emergencySignal) && (
+      <SignalAlerts crisis={crisis} emergency={emergency} />
+      {(crisis || emergency) && (
         <p className={styles.note}>{t('results.artifacts.signals.note')}</p>
       )}
       {consultation && (

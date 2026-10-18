@@ -167,6 +167,8 @@ function consultationFor(taskId: string): ExpertConsultation {
       ruleOnly: false,
     },
     synthesisStatus: 'done',
+    crisisSignal: true,
+    emergencySignal: false,
     synthesis: {
       consensus: [
         {
@@ -319,7 +321,13 @@ async function mockApi(page: Page): Promise<Mock> {
                 messageId: ids.assistant1,
                 delta: `**结论**\n合成专家回答 ${LONG_LATIN}\n\n仅供健管师专业参考，非医疗诊断，请勿直接转发给客户`,
               },
-              { type: 'consultation', consultationId: ids.consultation, status: 'done' },
+              {
+                type: 'consultation',
+                consultationId: ids.consultation,
+                status: 'done',
+                crisisSignal: true,
+                emergencySignal: false,
+              },
               { type: 'done', messageId: ids.assistant1, reason: 'complete' },
             ]),
           });
@@ -440,6 +448,12 @@ test('专家标签：危机提示在最前面（375px）', async ({ page }) => {
   await page.getByRole('radio', { name: '问一问' }).click();
   await box.fill('合成问题');
   await page.getByRole('button', { name: '发送' }).click();
+  // 对话区的回答最前面也有危机提示，正文按 Markdown 显示，写明参与的专家
+  const answer = page.getByRole('listitem', { name: 'AI 助手' }).last();
+  await expect(answer.getByRole('alert').first()).toContainText('心理危机提示');
+  await expect(answer.getByTestId('answered-by')).toContainText('专家意见：');
+  await expect(answer.getByTestId('assistant-text')).not.toContainText('**');
+  await expectNoHorizontalScroll(page, 'chat with crisis alert');
   await page.getByRole('button', { name: '查看专家意见' }).click();
 
   const panel = page.getByRole('tabpanel');

@@ -331,6 +331,13 @@ export const expertConsultationSchema = z.object({
   routing: routingDecisionSchema,
   synthesis: synthesisSchema.nullable(),
   synthesisStatus: synthesisStatusSchema.nullable(),
+  /**
+   * 心理危机 / 疑似急症信号，由后端确定性合并：关键词识别、每位专家（包括意见没通过校验的）
+   * 和汇总，任何一处标出即为 true。专家都没回复、调用被停止、汇总为空时也保留（合规审查第 1 条），
+   * 界面以这两个字段为准置顶提示。
+   */
+  crisisSignal: z.boolean(),
+  emergencySignal: z.boolean(),
   calls: z.array(expertCallSchema),
   createdAt: z.iso.datetime(),
   finishedAt: z.iso.datetime().nullable(),
@@ -376,4 +383,7 @@ export const consultationEventSchema = z.object({
   type: z.literal('consultation'),
   consultationId: z.uuid(),
   status: consultationStatusSchema,
+  /** 同 expertConsultationSchema：关键词、各位专家和汇总合并后的信号 */
+  crisisSignal: z.boolean(),
+  emergencySignal: z.boolean(),
 });

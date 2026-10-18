@@ -13,9 +13,8 @@ import {
 import type { CriticalFlag } from '@health-buddy/shared';
 import type { SkillDefinition } from './framework.js';
 
-/** Q13：在拿到具体热线列表之前，危机提示统一用这段通用措辞 */
-export const CRISIS_NOTICE =
-  '客户可能存在心理危机信号，请按危机流程处理：立即联系客户本人和家属，必要时拨打当地急救电话。';
+/** Q13：危机提示的通用措辞，定义在 packages/shared/compliance（工作台也用同一段） */
+export { CRISIS_NOTICE } from '@health-buddy/shared';
 
 const bannedList = BANNED_TERMS.map((t) => `“${t.term}”`).join('、');
 

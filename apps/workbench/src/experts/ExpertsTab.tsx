@@ -17,6 +17,7 @@ import { AiBadge } from './ExpertBadges';
 import { useExpertName, useExpertNames } from './ExpertsContext';
 import styles from './Experts.module.css';
 import { useCallStatusLabel } from './labels';
+import { consultationSignals, SignalAlerts, SignalBadges } from './SignalAlerts';
 
 export interface ConsultationListState {
   status: 'loading' | 'ready' | 'error';
@@ -101,35 +102,6 @@ function useCardIndex(consultations: readonly ExpertConsultation[]): CardIndex {
   return index;
 }
 
-/** 危机、急症信号：任何一位专家或汇总标出，就在最前面醒目提示（规格 7.2 第 5 条） */
-function signalsOf(c: ExpertConsultation): { crisis: boolean; emergency: boolean } {
-  const opinions = c.calls.flatMap((call) => (call.opinion ? [call.opinion] : []));
-  return {
-    crisis: Boolean(c.synthesis?.crisisSignal) || opinions.some((o) => o.crisisSignal),
-    emergency: Boolean(c.synthesis?.emergencySignal) || opinions.some((o) => o.emergencySignal),
-  };
-}
-
-export function SignalAlerts({ crisis, emergency }: { crisis: boolean; emergency: boolean }) {
-  const { t } = useTranslation();
-  return (
-    <>
-      {crisis && (
-        <p className={styles.alert} role="alert">
-          <strong>{t('experts.tab.crisis')}</strong>
-          {t('experts.tab.crisisText')}
-        </p>
-      )}
-      {emergency && (
-        <p className={styles.alert} role="alert">
-          <strong>{t('experts.tab.emergency')}</strong>
-          {t('experts.tab.emergencyText')}
-        </p>
-      )}
-    </>
-  );
-}
-
 function ConsultationCard({
   consultation: c,
   cards,
@@ -147,10 +119,17 @@ function ConsultationCard({
     hour: '2-digit',
     minute: '2-digit',
   });
-  const signals = signalsOf(c);
+  const signals = consultationSignals(c);
+  // 有危机或急症信号的调用一律默认展开，收起时标题里也有醒目标记（合规审查第 3 条）
+  const open = defaultOpen || signals.crisis || signals.emergency;
   return (
-    <details className={styles.consultation} open={defaultOpen} data-testid="consultation">
+    <details className={styles.consultation} open={open} data-testid="consultation">
       <summary>
+        {(signals.crisis || signals.emergency) && (
+          <span className={styles.signalBadges}>
+            <SignalBadges {...signals} />
+          </span>
+        )}
         <span className={styles.consultationTitle}>
           {t('experts.tab.callTitle', { trigger: t(`experts.trigger.${c.trigger}`), time })}
         </span>

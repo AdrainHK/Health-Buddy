@@ -258,6 +258,65 @@ describe('专家数据表的行级安全和约束', () => {
     ).rejects.toThrow(/permission denied/);
   });
 
+  it('危机和急症信号：插入时可写，结束时只能从 false 变成 true，结束后不能再改', async () => {
+    const { taskId, messageId } = await seedConsultation();
+    const insert = (crisis: boolean) =>
+      withTenant(app, managerA1(), (trx) =>
+        trx
+          .insertInto('expert_consultations')
+          .values({
+            ...scopeA1(),
+            task_id: taskId,
+            message_id: messageId,
+            trigger: 'mention',
+            routing: ROUTING,
+            status: 'running',
+            crisis_signal: crisis,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow(),
+      );
+    const finish = (id: string, set: { crisis_signal?: boolean; emergency_signal?: boolean }) =>
+      withTenant(app, managerA1(), (trx) =>
+        trx
+          .updateTable('expert_consultations')
+          .set({ status: 'failed', ...set })
+          .where('id', '=', id)
+          .execute(),
+      );
+    const read = (id: string) =>
+      owner
+        .selectFrom('expert_consultations')
+        .select(['status', 'crisis_signal', 'emergency_signal'])
+        .where('id', '=', id)
+        .executeTakeFirstOrThrow();
+
+    const flagged = await insert(true);
+    await expect(finish(flagged.id, { crisis_signal: false })).rejects.toThrow(/cannot be cleared/);
+    expect(await read(flagged.id)).toEqual({
+      status: 'running',
+      crisis_signal: true,
+      emergency_signal: false,
+    });
+
+    const plain = await insert(false);
+    await finish(plain.id, { emergency_signal: true });
+    expect(await read(plain.id)).toEqual({
+      status: 'failed',
+      crisis_signal: false,
+      emergency_signal: true,
+    });
+    await expect(
+      withTenant(app, managerA1(), (trx) =>
+        trx
+          .updateTable('expert_consultations')
+          .set({ crisis_signal: true })
+          .where('id', '=', plain.id)
+          .execute(),
+      ),
+    ).rejects.toThrow(/immutable/);
+  });
+
   it('产物只能引用同一任务的专家调用，引用后不能改', async () => {
     const first = await seedConsultation();
     const second = await seedConsultation();
@@ -463,6 +522,7 @@ describe('专家数据表的行级安全和约束', () => {
           reportId: null,
           trigger: 'mention',
           routing: { selected: [], excluded: [], overCap: [], ruleOnly: false },
+          signals: { crisis: false, emergency: false },
         },
         [call],
         // seedConsultation 已经有 1 次，上限 2 时只能再成功 1 次

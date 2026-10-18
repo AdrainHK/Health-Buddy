@@ -125,4 +125,28 @@ describe('conversationReducer：专家调用（M3 规格 2.6）', () => {
       'endocrine-metabolism': { status: 'done', failureCategory: null },
     });
   });
+
+  it('consultation 事件的危机、急症信号记在回答上（换成真实 id 时一起搬过去），没有信号时不记', () => {
+    const consultationEvent = (crisisSignal: boolean, emergencySignal: boolean) =>
+      ({
+        type: 'event',
+        event: {
+          type: 'consultation',
+          consultationId: '90000000-0000-4000-8000-0000000000c1',
+          status: 'failed',
+          crisisSignal,
+          emergencySignal,
+        },
+      }) as const;
+    let s = conversationReducer(started(), consultationEvent(false, false));
+    expect(s.expertSignals).toEqual({});
+    s = conversationReducer(s, consultationEvent(false, true));
+    expect(s.expertSignals['local:1']).toEqual({ crisis: false, emergency: true });
+    s = conversationReducer(s, {
+      type: 'event',
+      event: { type: 'text', messageId: ids.assistantMsg, delta: '甲' },
+    });
+    s = conversationReducer(s, consultationEvent(true, false));
+    expect(s.expertSignals).toEqual({ [ids.assistantMsg]: { crisis: true, emergency: true } });
+  });
 });

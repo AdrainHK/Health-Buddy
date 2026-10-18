@@ -191,6 +191,8 @@ export function consultation(overrides: Partial<ExpertConsultation> = {}): Exper
     },
     synthesis: null,
     synthesisStatus: 'skipped',
+    crisisSignal: false,
+    emergencySignal: false,
     calls: [call()],
     createdAt: NOW,
     finishedAt: NOW,

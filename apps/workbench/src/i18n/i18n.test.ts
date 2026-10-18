@@ -3,6 +3,10 @@ import { join, relative } from 'node:path';
 import {
   ABNORMAL_FLAGS,
   CONSULTATION_STATUSES,
+  CRISIS_NOTICE,
+  EMERGENCY_NOTICE,
+  EXPERT_DISCLAIMER,
+  findBannedTerms,
   CONSULTATION_TRIGGERS,
   EXPERT_CALL_STATUSES,
   EXPERT_FAILURE_CATEGORIES,
@@ -129,5 +133,49 @@ describe('界面文字走 i18n（验收标准 25）', () => {
         expect(String(text).length, `${prefix}.${v}`).toBeGreaterThan(0);
       }
     }
+  });
+
+  it('专家相关的词条里没有禁用词（合规审查第 4 条）', () => {
+    const strings = (node: unknown, path: string): [string, string][] =>
+      typeof node === 'string'
+        ? [[path, node]]
+        : node && typeof node === 'object'
+          ? Object.entries(node).flatMap(([k, v]) => strings(v, `${path}.${k}`))
+          : [];
+    const roots = [
+      'experts',
+      'chat.experts',
+      'results.artifacts.experts',
+      'results.artifacts.signals',
+      'signals',
+    ];
+    const all = roots.flatMap((root) => strings(lookup(root), root));
+    expect(all.length).toBeGreaterThan(50);
+    const issues = all.flatMap(([path, text]) =>
+      findBannedTerms(text).map((issue) => `${path}: ${issue.term}`),
+    );
+    expect(issues).toEqual([]);
+  });
+
+  it('专家意见的提示语和后端拼接的 EXPERT_DISCLAIMER 一字不差', () => {
+    expect(lookup('experts.bound.note')).toBe(EXPERT_DISCLAIMER);
+    expect(lookup('experts.tab.note')).toBe(EXPERT_DISCLAIMER);
+  });
+
+  it('危机、急症提示只有一组词条，和后端的 CRISIS_NOTICE、EMERGENCY_NOTICE 一字不差（合规审查第 5 条）', () => {
+    expect(lookup('signals.crisisText')).toBe(CRISIS_NOTICE);
+    expect(lookup('signals.emergencyText')).toBe(EMERGENCY_NOTICE);
+    // 不再有重复的副本
+    for (const key of [
+      'experts.tab.crisis',
+      'experts.tab.crisisText',
+      'experts.tab.emergency',
+      'experts.tab.emergencyText',
+      'results.artifacts.signals.crisis',
+      'results.artifacts.signals.crisisText',
+      'results.artifacts.signals.emergency',
+      'results.artifacts.signals.emergencyText',
+    ])
+      expect(lookup(key), key).toBeUndefined();
   });
 });

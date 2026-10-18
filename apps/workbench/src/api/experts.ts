@@ -44,7 +44,7 @@ export async function listTaskConsultations(
   signal?: AbortSignal,
 ): Promise<ExpertConsultation[]> {
   const { consultations } = await apiRequest(
-    `/tasks/${taskId}/expert-consultations`,
+    `/tasks/${encodeURIComponent(taskId)}/expert-consultations`,
     expertConsultationListResponseSchema,
     signal ? { signal } : {},
   );
@@ -57,7 +57,7 @@ export async function getConsultation(
   signal?: AbortSignal,
 ): Promise<ExpertConsultation> {
   const { consultation } = await apiRequest(
-    `/expert-consultations/${id}`,
+    `/expert-consultations/${encodeURIComponent(id)}`,
     consultationResponseSchema,
     signal ? { signal } : {},
   );
@@ -66,5 +66,8 @@ export async function getConsultation(
 
 /** 有用/没用（Q14）：只收类别，不收自由文字 */
 export function setExpertFeedback(callId: string, body: ExpertFeedbackRequest): Promise<void> {
-  return apiRequest(`/expert-calls/${callId}/feedback`, null, { method: 'PUT', body });
+  return apiRequest(`/expert-calls/${encodeURIComponent(callId)}/feedback`, null, {
+    method: 'PUT',
+    body,
+  });
 }

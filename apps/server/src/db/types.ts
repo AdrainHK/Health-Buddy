@@ -420,6 +420,9 @@ export interface ExpertConsultationsTable extends ManagerScoped {
   status: 'running' | 'done' | 'partial' | 'failed' | 'stopped';
   synthesis: NullableJson<unknown>;
   synthesis_status: Nullable<'skipped' | 'done' | 'failed'>;
+  /** 心理危机 / 疑似急症信号：关键词、各位专家和汇总合并，只能从 false 变成 true */
+  crisis_signal: Generated<boolean>;
+  emergency_signal: Generated<boolean>;
   reused_from: ColumnType<string | null, string | null | undefined, never>;
   created_at: Timestamp;
   finished_at: ColumnType<Date | null, Date | null | undefined, Date | null>;

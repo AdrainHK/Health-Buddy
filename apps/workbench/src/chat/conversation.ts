@@ -56,6 +56,11 @@ export interface Conversation {
   expertCalls: Record<string, Record<string, ExpertCallView>>;
   /** 已结束的专家调用（路由原因、汇总、分歧），按回答的消息 id 存；刷新后从接口重新取 */
   consultations: Record<string, ExpertConsultation>;
+  /**
+   * SSE consultation 事件带来的危机、急症信号，按回答的消息 id 存：调用一结束就能置顶提示，
+   * 不等重新取接口（合规审查第 2 条）。接口取到后以两者的并集为准。
+   */
+  expertSignals: Record<string, { crisis: boolean; emergency: boolean }>;
   /** 正在接收流式事件的回答。开始时是本地临时 id，收到第一个带 messageId 的事件后换成真实 id。 */
   streamingId: string | null;
 }
@@ -66,6 +71,7 @@ export const emptyConversation: Conversation = {
   plans: [],
   expertCalls: {},
   consultations: {},
+  expertSignals: {},
   streamingId: null,
 };
 
@@ -108,11 +114,13 @@ function adopt(state: Conversation, messageId: string): Conversation {
   const current = state.streamingId;
   if (!current || current === messageId || !current.startsWith(LOCAL_PREFIX)) return state;
   const { [current]: calls, ...otherCalls } = state.expertCalls;
+  const { [current]: signals, ...otherSignals } = state.expertSignals;
   return {
     ...state,
     streamingId: messageId,
     messages: updateMessage(state.messages, current, (m) => ({ ...m, id: messageId })),
     expertCalls: calls ? { ...otherCalls, [messageId]: calls } : state.expertCalls,
+    expertSignals: signals ? { ...otherSignals, [messageId]: signals } : state.expertSignals,
   };
 }
 
@@ -190,8 +198,19 @@ function applyEvent(state: Conversation, event: TaskStreamEvent): Conversation {
         },
       };
     case 'consultation':
-      // 调用结束：详情（路由、汇总）由对话区重新取接口后通过 consultations 写入
-      return s;
+      // 调用结束：详情（路由、汇总）由对话区重新取接口后通过 consultations 写入；
+      // 危机、急症信号先记下，马上置顶提示
+      if (!event.crisisSignal && !event.emergencySignal) return s;
+      return {
+        ...s,
+        expertSignals: {
+          ...s.expertSignals,
+          [target]: {
+            crisis: event.crisisSignal || Boolean(s.expertSignals[target]?.crisis),
+            emergency: event.emergencySignal || Boolean(s.expertSignals[target]?.emergency),
+          },
+        },
+      };
   }
 }
 
@@ -241,6 +260,7 @@ export function conversationReducer(state: Conversation, action: ConversationAct
         plans: action.detail.plans,
         expertCalls: {},
         consultations: {},
+        expertSignals: {},
         streamingId: null,
       };
     case 'start':

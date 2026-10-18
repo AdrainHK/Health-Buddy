@@ -3,6 +3,7 @@
  * 这里重新导出，并提供只给健管师看的渲染（专家标签、/体检解读 专业版的“专家意见汇总”“专家分歧”）。
  */
 import {
+  EMERGENCY_NOTICE,
   EXPERT_DISCLAIMER,
   expertOpinionSchema,
   normalizeForCompliance,
@@ -20,8 +21,8 @@ export const MENTAL_HEALTH_EXPERT = 'mental-health';
 
 const URGENCY_ZH = { attention: '建议就医评估', urgent: '需尽快就医' } as const;
 
-export const EMERGENCY_NOTICE =
-  '健管师转述的情况里有疑似急症，请建议客户及时就医，必要时拨打当地急救电话。';
+/** 疑似急症提示的措辞定义在 packages/shared/compliance（工作台也用同一段） */
+export { EMERGENCY_NOTICE } from '@health-buddy/shared';
 
 /**
  * 引用的卡片编号；医学顾问还没确认的卡片标“来源待确认”（预览环境才可能引用到）。

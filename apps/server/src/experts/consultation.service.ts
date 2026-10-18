@@ -137,6 +137,8 @@ export class ConsultationService {
     );
     if (!available.length) return undefined;
     const input = buildConsultationInput(run.source);
+    // 信号随调用进展只增不减：关键词 → 每位专家（意见没通过校验也算）→ 汇总（合规审查第 1 条）
+    const signals = { crisis: input.crisisDetected, emergency: input.emergencyDetected };
 
     let consultationId: string | undefined;
     const callIds = new Map<string, string>();
@@ -197,6 +199,7 @@ export class ConsultationService {
                   reportId: run.reportId,
                   trigger: run.trigger,
                   routing,
+                  signals: { ...signals },
                 },
                 planned,
                 DAILY_EXPERT_CALLS,
@@ -223,6 +226,8 @@ export class ConsultationService {
               });
             },
             onCallFinished: async (r) => {
+              signals.crisis ||= r.crisisSignal;
+              signals.emergency ||= r.emergencySignal;
               const callId = callIds.get(r.expertId);
               if (!consultationId) return;
               if (callId) await this.repo.finishCall(ctx, callId, r);
@@ -246,14 +251,25 @@ export class ConsultationService {
       if (synthStep)
         await finishStep(synthStep, result.synthesisStatus === 'done' ? 'done' : 'failed');
       const final = result.status;
+      signals.crisis ||=
+        result.calls.some((c) => c.crisisSignal) || !!result.synthesis?.crisisSignal;
+      signals.emergency ||=
+        result.calls.some((c) => c.emergencySignal) || !!result.synthesis?.emergencySignal;
       await this.repo.finishConsultation(
         ctx,
         consultationId,
         final,
         final === 'stopped' ? null : result.synthesis,
         final === 'stopped' ? null : result.synthesisStatus,
+        signals,
       );
-      io.emit({ type: 'consultation', consultationId, status: final });
+      io.emit({
+        type: 'consultation',
+        consultationId,
+        status: final,
+        crisisSignal: signals.crisis,
+        emergencySignal: signals.emergency,
+      });
       this.logger.log(
         `consultation finished ${JSON.stringify({
           trigger: run.trigger,
@@ -269,16 +285,22 @@ export class ConsultationService {
         consultationId,
         result,
         // 关键词，或任何一位专家标出的信号（意见没通过校验时也算，合规审查第 2 条）
-        crisisDetected: input.crisisDetected || result.calls.some((c) => c.crisisSignal),
-        emergencyDetected: input.emergencyDetected || result.calls.some((c) => c.emergencySignal),
+        crisisDetected: signals.crisis,
+        emergencyDetected: signals.emergency,
       };
     } catch (err) {
       for (const step of [routeStep, consultStep, synthStep]) {
         if (step && !finished.has(step)) await finishStep(step, 'failed').catch(() => undefined);
       }
       if (consultationId) {
-        await this.repo.stopRunning(ctx, consultationId);
-        io.emit({ type: 'consultation', consultationId, status: 'stopped' });
+        await this.repo.stopRunning(ctx, consultationId, signals);
+        io.emit({
+          type: 'consultation',
+          consultationId,
+          status: 'stopped',
+          crisisSignal: signals.crisis,
+          emergencySignal: signals.emergency,
+        });
       }
       throw err;
     }
