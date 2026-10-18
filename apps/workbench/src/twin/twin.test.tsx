@@ -13,12 +13,18 @@ import {
   makeForecast,
   makeForecastDetail,
   makeStatusRecord,
+  makeThreshold,
   makeTwin,
   twinIds,
   tzQuery,
 } from '../test/twinFixtures';
 import { FollowUpCenter } from './FollowUpCenter';
-import { ForecastCard, ForecastDialog, forecastCrossing } from './ForecastChart';
+import {
+  ForecastCard,
+  ForecastDialog,
+  forecastCriticalCrossing,
+  forecastCrossing,
+} from './ForecastChart';
 import { StatusCard } from './StatusCard';
 import { TWIN_POLL_MS, TwinView } from './TwinView';
 
@@ -42,6 +48,7 @@ function mockTwin(
     [`GET /follow-ups${tzQuery({ clientId: A })}`]: () =>
       json(200, followUpList(options.followUps ?? [])),
     [`GET /clients/${A}/twin/timeline`]: () => json(200, options.timeline ?? EMPTY_TIMELINE),
+    'GET /critical-thresholds': () => json(200, { thresholds: [makeThreshold()] }),
     ...extra,
   });
 }
@@ -79,6 +86,10 @@ describe('孪生视图（规格 2.2）', () => {
     // 第 4 步的按钮还没有
     expect(screen.queryByRole('button', { name: /生成孪生小结|请专家看看/ })).toBeNull();
     expect(container.querySelector('[data-layout]')).toHaveAttribute('data-layout', 'wide');
+    // 默认规则尚待医学审核
+    expect(screen.getByTestId('twin-rules-note')).toHaveTextContent(
+      '红黄绿的默认规则是初步做法，不是医学标准，还在等待医学审核。',
+    );
   });
 
   it('有未处理的危急指标：提示条变为醒目样式“有危急指标，请先电话联系客户”', async () => {
@@ -308,7 +319,9 @@ describe('状态卡片（规格 2.3）', () => {
         onOpenRecord={() => {}}
       />,
     );
-    expect(screen.getByText('系统计算：需要留意；健管师调整为：平稳')).toBeInTheDocument();
+    expect(
+      screen.getByText('系统计算：黄（需要留意）；健管师调整为：绿（平稳）'),
+    ).toBeInTheDocument();
     expect(
       screen.getByText('健管师 合成健管师 手动调整：客户已复查，结果正常'),
     ).toBeInTheDocument();
@@ -494,13 +507,81 @@ describe('趋势预测（规格 2.4）', () => {
       </ul>,
     );
     // 6 个月后的中间值 142 高于参考范围上限 140
-    expect(screen.getByTestId('forecast-crossing')).toBeInTheDocument();
-    expect(screen.getByText('按当前走势，约 6 个月后可能高于报告参考范围上限')).toBeInTheDocument();
+    const marker = screen.getByTestId('forecast-crossing');
+    expect(marker).toHaveAttribute('data-kind', 'reference');
+    // 图形是箭头，不和红色状态的“!”混淆；<title> 里写明提醒
+    expect(marker).toHaveTextContent('↗');
+    expect(marker).not.toHaveTextContent('!');
+    expect(marker.querySelector('title')).toHaveTextContent(
+      '按当前走势，约 6 个月后可能高于报告参考范围上限。',
+    );
+    // 小卡片上也有简短说明：只是提醒
+    expect(screen.getByTestId('forecast-crossing-text')).toHaveTextContent(
+      '按当前走势，约 6 个月后可能高于报告参考范围上限。仅作提醒，不生成跟进项',
+    );
     expect(forecastCrossing(makeForecast(), { low: null, high: 160 })).toBeNull();
     expect(forecastCrossing(makeForecast(), { low: 140, high: null })).toEqual({
       side: 'low',
       months: 3,
     });
+  });
+
+  it('预测达到危急阈值：图上和文字标出，只是提醒；停用的阈值和别的指标不算', () => {
+    const forecast = makeForecast();
+    const rule = makeThreshold({ value: 140 });
+    expect(forecastCriticalCrossing(forecast, [rule])).toEqual({
+      side: 'high',
+      months: 6,
+      comparator: 'gte',
+      value: 140,
+    });
+    expect(forecastCriticalCrossing(forecast, [{ ...rule, enabled: false }])).toBeNull();
+    expect(forecastCriticalCrossing(forecast, [{ ...rule, metric: 'dbp' }])).toBeNull();
+    expect(forecastCriticalCrossing(forecast, [makeThreshold()])).toBeNull();
+    expect(forecastCriticalCrossing(forecast, null)).toBeNull();
+    expect(
+      forecastCriticalCrossing(forecast, [makeThreshold({ comparator: 'lt', value: 137 })]),
+    ).toEqual({ side: 'low', months: 3, comparator: 'lt', value: 137 });
+    expect(
+      forecastCriticalCrossing(makeForecast({ status: 'insufficient_data', points: [] }), [rule]),
+    ).toBeNull();
+
+    render(
+      <ul>
+        <ForecastCard
+          forecast={forecast}
+          detail={makeForecastDetail({ reference: null })}
+          detailState="ready"
+          thresholds={[rule]}
+          onOpen={() => {}}
+        />
+      </ul>,
+    );
+    const marker = screen.getByTestId('forecast-crossing');
+    expect(marker).toHaveAttribute('data-kind', 'critical');
+    expect(marker).toHaveTextContent('↗');
+    expect(marker.querySelector('title')).toHaveTextContent(
+      '按当前走势，约 6 个月后可能达到危急阈值 ≥ 140 mmHg。',
+    );
+    expect(screen.getByTestId('forecast-crossing-text')).toHaveTextContent(
+      '按当前走势，约 6 个月后可能达到危急阈值 ≥ 140 mmHg。仅作提醒，不生成跟进项',
+    );
+  });
+
+  it('区间水平按预测结果显示，不写死 80%', () => {
+    render(
+      <ForecastDialog
+        forecast={makeForecast({ intervalLevel: 0.9 })}
+        detail={makeForecastDetail()}
+        onClose={() => {}}
+      />,
+    );
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent('阴影为 90% 区间');
+    expect(dialog).toHaveTextContent('大约 10 次里有 9 次会落在这个范围内');
+    expect(dialog).toHaveTextContent('90% 区间 128–144 mmHg');
+    expect(dialog).not.toHaveTextContent('80%');
+    expect(screen.getByRole('img', { name: /阴影是 90% 区间/ })).toBeInTheDocument();
   });
 
   it('大图：下方固定写明依据、方法、80% 区间的含义、局限和不确定性等级', async () => {
@@ -526,18 +607,35 @@ describe('趋势预测（规格 2.4）', () => {
       '3 个月后（2027-01-15）：中间值 136 mmHg，80% 区间 128–144 mmHg',
     );
     expect(dialog).toHaveTextContent('参考范围取自最近一份报告：90–140 mmHg');
+    // 规格 5.4 第 5 条：每张预测大图下方标注
+    expect(within(dialog).getByTestId('forecast-disclaimer')).toHaveTextContent(
+      '仅供参考，非医疗诊断',
+    );
+    expect(dialog).toHaveTextContent(
+      '按当前走势，约 6 个月后可能高于报告参考范围上限。只是给健管师的提醒',
+    );
     await user.keyboard('{Escape}');
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('在孪生里点小图打开大图', async () => {
-    mockTwin();
+  it('在孪生里点小图打开大图（危急阈值从平台阈值读取）', async () => {
+    const api = mockTwin(makeTwin(), {
+      'GET /critical-thresholds': () =>
+        json(200, { thresholds: [makeThreshold({ value: 140, level: 'attention' })] }),
+    });
     const user = userEvent.setup();
     renderTwin();
     await user.click(
       await screen.findByRole('button', { name: '查看收缩压（日常监测）的大图和依据' }),
     );
-    expect(await screen.findByRole('dialog')).toHaveTextContent('局限：只根据过去的数值推算');
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('局限：只根据过去的数值推算');
+    await waitFor(() =>
+      expect(dialog).toHaveTextContent('约 6 个月后可能达到危急阈值 ≥ 140 mmHg。'),
+    );
+    expect(dialog).toHaveTextContent('仅供参考，非医疗诊断');
+    // 只读阈值，不生成跟进项、不改状态
+    expect(api.calls.filter((c) => c.method !== 'GET')).toEqual([]);
     await user.click(screen.getByRole('button', { name: '关闭' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
@@ -575,6 +673,31 @@ describe('今日跟进清单（规格 2.6）', () => {
     expect(items[1]).toHaveTextContent('已延续 3 天');
     expect(items[2]).toHaveTextContent('已延续 8 天');
     expect(items[1]).toHaveTextContent('代谢由绿变黄：空腹血糖 6.5 mmol/L（2026-09-12 报告）');
+  });
+
+  it('预测偏离：区间水平跟着数据走，旧数据没有时按固定的 80%', () => {
+    const basis = {
+      source: 'monitoring',
+      metric: 'sbp',
+      value: 150,
+      unit: 'mmHg',
+      observedOn: '2026-10-16',
+      expected: { low: 128, high: 144 },
+      side: 'above',
+      direction: 'worse',
+    };
+    renderCenter([
+      makeFollowUp({ kind: 'forecast_deviation', basis }),
+      makeFollowUp({
+        id: twinIds.follow3,
+        kind: 'forecast_deviation',
+        basis: { ...basis, intervalLevel: 0.9 },
+      }),
+    ]);
+    const items = within(screen.getByRole('list', { name: '跟进项' })).getAllByRole('listitem');
+    const texts = items.map((i) => i.textContent ?? '');
+    expect(texts.some((t) => t.includes('高于之前预测的 80% 区间 128–144（偏向变差）'))).toBe(true);
+    expect(texts.some((t) => t.includes('高于之前预测的 90% 区间 128–144'))).toBe(true);
   });
 
   it('打开客户', async () => {

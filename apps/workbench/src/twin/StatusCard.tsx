@@ -44,6 +44,9 @@ export const StatusCard = forwardRef<HTMLElement, StatusCardProps>(function Stat
   const domainName = t(`twin.domains.${view.domain}`);
   const levelName = (l: TwinLevel) => t(`twin.levels.${l}`);
   const colorName = (l: TwinLevel) => t(`twin.colors.${l}`);
+  // 规格 2.3：“系统计算：黄；健管师调整为：绿”，颜色名后面括注含义
+  const colorAndLevel = (l: TwinLevel) =>
+    t('twin.card.levelWithColor', { color: colorName(l), level: levelName(l) });
   const basis = view.computed?.basis ?? view.manual?.basis ?? [];
 
   const cancelAdjust = () => {
@@ -78,8 +81,8 @@ export const StatusCard = forwardRef<HTMLElement, StatusCardProps>(function Stat
       {view.manual && view.computed && (
         <p className={styles.cardLine}>
           {t('twin.card.both', {
-            computed: levelName(view.computed.level),
-            manual: levelName(view.manual.level),
+            computed: colorAndLevel(view.computed.level),
+            manual: colorAndLevel(view.manual.level),
           })}
         </p>
       )}

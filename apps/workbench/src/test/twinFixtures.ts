@@ -1,4 +1,5 @@
 import type {
+  CriticalThreshold,
   FollowUpItem,
   FollowUpListResponse,
   TwinDomain,
@@ -223,6 +224,21 @@ export function followUpList(items: FollowUpItem[]): FollowUpListResponse {
     openCount: items.length,
     date: '2026-10-18',
     timeZone: browserTimeZone() ?? 'UTC',
+  };
+}
+
+/** 危急阈值（合成）：默认的收缩压 ≥ 180，预测中间值最高 142，不会触发 */
+export function makeThreshold(overrides: Partial<CriticalThreshold> = {}): CriticalThreshold {
+  return {
+    id: 'b0000000-0000-4000-8000-000000000001',
+    metric: 'sbp',
+    comparator: 'gte',
+    value: 180,
+    level: 'urgent',
+    enabled: true,
+    updatedBy: null,
+    updatedAt: NOW,
+    ...overrides,
   };
 }
 

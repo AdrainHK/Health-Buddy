@@ -1,4 +1,5 @@
 import {
+  criticalThresholdListResponseSchema,
   followUpItemResponseSchema,
   followUpListResponseSchema,
   monitoringReadingListResponseSchema,
@@ -10,6 +11,7 @@ import {
   twinResponseSchema,
   twinTimelineResponseSchema,
   type CreateMonitoringReadingRequest,
+  type CriticalThreshold,
   type FollowUpItem,
   type FollowUpListResponse,
   type MonitoringReading,
@@ -119,6 +121,19 @@ export async function clearTwinStatus(
 export async function getTwinLevels(signal?: AbortSignal): Promise<TwinClientLevel[]> {
   const { clients } = await apiRequest('/twin/levels', twinLevelsResponseSchema, opts(signal));
   return clients;
+}
+
+/**
+ * 危急指标阈值（全平台一套，健管师可读）。孪生用它在预测图上提醒“可能达到危急阈值”，
+ * 只是提醒，不生成跟进项、不改状态（规格 2.4）。
+ */
+export async function getCriticalThresholds(signal?: AbortSignal): Promise<CriticalThreshold[]> {
+  const { thresholds } = await apiRequest(
+    '/critical-thresholds',
+    criticalThresholdListResponseSchema,
+    opts(signal),
+  );
+  return thresholds;
 }
 
 /** 今日跟进清单（未处理的）。clientId 为空时是所有客户的 */

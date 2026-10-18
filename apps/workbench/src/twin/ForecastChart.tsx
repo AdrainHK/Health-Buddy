@@ -1,9 +1,15 @@
-import type { TwinForecast, TwinForecastDetailResponse } from '@health-buddy/shared';
+import {
+  matchesRule,
+  type CriticalComparator,
+  type CriticalThreshold,
+  type TwinForecast,
+  type TwinForecastDetailResponse,
+} from '@health-buddy/shared';
 import { Button } from '@health-buddy/ui';
-import { useEffect, useId, useRef } from 'react';
+import { useCallback, useEffect, useId, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { displayDate } from './errors';
-import { formatNumber, useMetricName, useRangeText } from './format';
+import { formatNumber, useComparator, useMetricName, useRangeText } from './format';
 import styles from './Twin.module.css';
 
 const DAY_MS = 86_400_000;
@@ -32,6 +38,92 @@ export function forecastCrossing(
   return null;
 }
 
+/** 危急阈值里预测要用到的字段（GET /critical-thresholds，全平台一套） */
+export type ForecastThreshold = Pick<
+  CriticalThreshold,
+  'metric' | 'comparator' | 'value' | 'enabled'
+>;
+
+export interface CriticalCrossing {
+  side: 'high' | 'low';
+  months: 3 | 6;
+  comparator: CriticalComparator;
+  value: number;
+}
+
+/**
+ * 预测达到危急阈值（规格 2.4）：按中间值找第一个命中启用的危急阈值的预测点。
+ * 和越过参考范围一样，只在图上和文字里提醒，不生成跟进项、不改状态。
+ */
+export function forecastCriticalCrossing(
+  forecast: Pick<TwinForecast, 'status' | 'points' | 'metric'>,
+  thresholds: readonly ForecastThreshold[] | null,
+): CriticalCrossing | null {
+  if (forecast.status !== 'ok' || !thresholds) return null;
+  const rules = thresholds.filter((r) => r.enabled && r.metric === forecast.metric);
+  for (const p of forecast.points) {
+    const hit = rules.find((r) => matchesRule(r, p.mid));
+    if (hit)
+      return {
+        side: hit.comparator === 'gte' || hit.comparator === 'gt' ? 'high' : 'low',
+        months: p.monthsAhead,
+        comparator: hit.comparator,
+        value: hit.value,
+      };
+  }
+  return null;
+}
+
+export interface CrossingReminder {
+  kind: 'reference' | 'critical';
+  side: 'high' | 'low';
+  months: 3 | 6;
+  text: string;
+}
+
+/** 两种越线提醒的文字（参考范围、危急阈值），危急的排在前面 */
+export function useCrossings(): (
+  forecast: TwinForecast,
+  detail: TwinForecastDetailResponse | null,
+  thresholds: readonly ForecastThreshold[] | null,
+) => CrossingReminder[] {
+  const { t } = useTranslation();
+  const comparator = useComparator();
+  return useCallback(
+    (forecast, detail, thresholds) => {
+      const out: CrossingReminder[] = [];
+      const critical = forecastCriticalCrossing(forecast, thresholds);
+      if (critical)
+        out.push({
+          kind: 'critical',
+          side: critical.side,
+          months: critical.months,
+          text: t('twin.forecast.crossing.critical', {
+            months: critical.months,
+            comparator: comparator(critical.comparator),
+            threshold: formatNumber(critical.value),
+            unit: detail?.unit ?? '',
+          }),
+        });
+      const reference = forecastCrossing(forecast, detail?.reference ?? null);
+      if (reference)
+        out.push({
+          kind: 'reference',
+          side: reference.side,
+          months: reference.months,
+          text: t(`twin.forecast.crossing.${reference.side}`, { months: reference.months }),
+        });
+      return out;
+    },
+    [t, comparator],
+  );
+}
+
+/** 区间水平的显示：0.8 → 80（%），以及“10 次里有几次” */
+export function intervalParams(level: number): { level: number; n: string } {
+  return { level: Math.round(level * 100), n: formatNumber(level * 10) };
+}
+
 interface Size {
   width: number;
   height: number;
@@ -49,14 +141,17 @@ const LARGE: Size = { width: 640, height: 260, pad: { left: 48, right: 16, top: 
 export function ForecastSvg({
   forecast,
   detail,
+  thresholds = null,
   large = false,
 }: {
   forecast: TwinForecast;
   detail: TwinForecastDetailResponse | null;
+  thresholds?: readonly ForecastThreshold[] | null;
   large?: boolean;
 }) {
   const { t } = useTranslation();
   const metricName = useMetricName();
+  const crossingsFor = useCrossings();
   const size = large ? LARGE : SMALL;
   const actual = (detail?.actual ?? [])
     .filter((a) => a.source === forecast.source)
@@ -73,6 +168,7 @@ export function ForecastSvg({
   ];
   const label = t(ok ? 'twin.forecast.chartLabel' : 'twin.forecast.chartLabelNoForecast', {
     metric: metricName(forecast.metric),
+    level: intervalParams(forecast.intervalLevel).level,
   });
   if (xs.length === 0 || ys.length === 0) {
     return (
@@ -119,8 +215,15 @@ export function ForecastSvg({
           .join(' ')} Z`
       : null;
   const median = band.map((p) => ({ x: p.x, y: p.mid }));
-  const crossing = forecastCrossing(forecast, reference);
-  const crossPoint = crossing ? points.find((p) => p.monthsAhead === crossing.months) : undefined;
+  // 越线标记：同一个预测点上的提醒合成一个标记，图形是箭头（不和红色状态的“!”混淆），
+  // <title> 里写明提醒文字，读屏和悬停都能看到
+  const byMonths = new Map<number, CrossingReminder[]>();
+  for (const c of crossingsFor(forecast, detail, thresholds))
+    byMonths.set(c.months, [...(byMonths.get(c.months) ?? []), c]);
+  const markers = [...byMonths].flatMap(([months, reminders]) => {
+    const point = points.find((p) => p.monthsAhead === months);
+    return point ? [{ point, reminders }] : [];
+  });
 
   return (
     <svg
@@ -184,20 +287,26 @@ export function ForecastSvg({
             <title>{`${displayDate(a.date)} ${formatNumber(a.y)}`}</title>
           </circle>
         ))}
-      {crossPoint && (
-        <g className={styles.crossing} data-testid="forecast-crossing">
-          <circle cx={sx(crossPoint.x)} cy={sy(crossPoint.mid)} r={large ? 7 : 6} />
+      {markers.map(({ point, reminders }) => (
+        <g
+          key={point.monthsAhead}
+          className={styles.crossing}
+          data-testid="forecast-crossing"
+          data-kind={reminders.map((r) => r.kind).join(' ')}
+        >
+          <title>{reminders.map((r) => r.text).join(' ')}</title>
+          <circle cx={sx(point.x)} cy={sy(point.mid)} r={large ? 7 : 6} />
           <text
-            x={sx(crossPoint.x)}
-            y={sy(crossPoint.mid)}
+            x={sx(point.x)}
+            y={sy(point.mid)}
             textAnchor="middle"
             dominantBaseline="central"
             aria-hidden
           >
-            !
+            {reminders[0]!.side === 'high' ? '↗' : '↘'}
           </text>
         </g>
-      )}
+      ))}
     </svg>
   );
 }
@@ -219,11 +328,13 @@ export function ForecastCard({
   forecast,
   detail,
   detailState,
+  thresholds = null,
   onOpen,
 }: {
   forecast: TwinForecast;
   detail: TwinForecastDetailResponse | null;
   detailState: 'loading' | 'ready' | 'error';
+  thresholds?: readonly ForecastThreshold[] | null;
   onOpen: () => void;
 }) {
   const { t } = useTranslation();
@@ -231,7 +342,7 @@ export function ForecastCard({
   const insufficient = useInsufficientText();
   const metric = metricName(forecast.metric);
   const source = t(`twin.forecast.source.${forecast.source}`);
-  const crossing = forecastCrossing(forecast, detail?.reference ?? null);
+  const crossings = useCrossings()(forecast, detail, thresholds);
   return (
     <li className={styles.forecastItem}>
       <button
@@ -250,7 +361,7 @@ export function ForecastCard({
             </span>
           )}
         </span>
-        <ForecastSvg forecast={forecast} detail={detail} />
+        <ForecastSvg forecast={forecast} detail={detail} thresholds={thresholds} />
         {detailState === 'loading' && !detail && (
           <span className={styles.muted}>{t('twin.forecast.loading')}</span>
         )}
@@ -262,9 +373,10 @@ export function ForecastCard({
             {insufficient(forecast)}
           </span>
         )}
-        {crossing && (
-          <span className={styles.crossingText}>
-            {t(`twin.forecast.crossing.${crossing.side}`, { months: crossing.months })}
+        {crossings.length > 0 && (
+          <span className={styles.crossingText} data-testid="forecast-crossing-text">
+            {crossings.map((c) => c.text).join('')}
+            <span className={styles.muted}>{t('twin.forecast.crossingNoteShort')}</span>
           </span>
         )}
       </button>
@@ -276,10 +388,12 @@ export function ForecastCard({
 export function ForecastDialog({
   forecast,
   detail,
+  thresholds = null,
   onClose,
 }: {
   forecast: TwinForecast;
   detail: TwinForecastDetailResponse | null;
+  thresholds?: readonly ForecastThreshold[] | null;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -291,7 +405,8 @@ export function ForecastDialog({
   const metric = metricName(forecast.metric);
   const source = t(`twin.forecast.source.${forecast.source}`);
   const unit = detail?.unit ?? '';
-  const crossing = forecastCrossing(forecast, detail?.reference ?? null);
+  const crossings = useCrossings()(forecast, detail, thresholds);
+  const interval = intervalParams(forecast.intervalLevel);
   const refText = detail?.reference ? range(detail.reference.low, detail.reference.high) : null;
 
   useEffect(() => {
@@ -321,7 +436,7 @@ export function ForecastDialog({
             {t('twin.forecast.detail.close')}
           </Button>
         </header>
-        <ForecastSvg forecast={forecast} detail={detail} large />
+        <ForecastSvg forecast={forecast} detail={detail} thresholds={thresholds} large />
         <ul className={styles.legend}>
           <li data-series="actual">{t('twin.forecast.legend.actual')}</li>
           {forecast.status === 'ok' && (
@@ -329,14 +444,16 @@ export function ForecastDialog({
               <li data-series="median" data-uncertainty={forecast.uncertainty ?? undefined}>
                 {t('twin.forecast.legend.median')}
               </li>
-              <li data-series="band">{t('twin.forecast.legend.band')}</li>
+              <li data-series="band">
+                {t('twin.forecast.legend.band', { level: interval.level })}
+              </li>
             </>
           )}
           {refText && <li data-series="reference">{t('twin.forecast.legend.reference')}</li>}
         </ul>
-        {crossing && (
+        {crossings.length > 0 && (
           <p className={styles.crossingText}>
-            {t(`twin.forecast.crossing.${crossing.side}`, { months: crossing.months })}
+            {crossings.map((c) => c.text).join('')}
             {t('twin.forecast.crossingNote')}
           </p>
         )}
@@ -357,11 +474,7 @@ export function ForecastDialog({
                     })}
               </p>
               <p>{t('twin.forecast.detail.method', { version: forecast.methodVersion })}</p>
-              <p>
-                {t('twin.forecast.detail.interval', {
-                  level: Math.round(forecast.intervalLevel * 100),
-                })}
-              </p>
+              <p>{t('twin.forecast.detail.interval', interval)}</p>
               <p data-uncertainty={forecast.uncertainty ?? undefined}>
                 {forecast.uncertainty === 'high'
                   ? t('twin.forecast.detail.uncertaintyHigh')
@@ -377,6 +490,7 @@ export function ForecastDialog({
                       low: formatNumber(p.low),
                       high: formatNumber(p.high),
                       unit,
+                      level: interval.level,
                     })}
                     {p.clipped && t('twin.forecast.detail.clipped')}
                   </li>
@@ -387,6 +501,8 @@ export function ForecastDialog({
             <p>{insufficient(forecast)}</p>
           )}
           <p>{t('twin.forecast.detail.limitation')}</p>
+          {/* 规格 5.4 第 5 条：每张预测大图下方都标注 */}
+          <p data-testid="forecast-disclaimer">{t('twin.disclaimer')}</p>
           {refText && <p>{t('twin.forecast.detail.reference', { range: refText, unit })}</p>}
           <p className={styles.muted}>
             {t('twin.forecast.detail.computedAt', { date: displayDate(forecast.computedAt) })}

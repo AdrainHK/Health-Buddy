@@ -4,6 +4,7 @@ import {
   FOLLOW_UP_NOTE_MAX,
   FOLLOW_UP_RESOLUTIONS,
   FOLLOW_UP_SNOOZE_DAYS,
+  FORECAST_INTERVAL_LEVEL,
   TWIN_LEVELS,
   type FollowUpItem,
   type UpdateFollowUpRequest,
@@ -37,6 +38,8 @@ const statusBasisSchema = z.object({
 const deviationBasisSchema = valueSchema.extend({
   expected: z.object({ low: z.number(), high: z.number() }),
   side: z.enum(['above', 'below']),
+  // 旧数据没有区间水平，按预测固定的 FORECAST_INTERVAL_LEVEL 显示
+  intervalLevel: z.number().optional(),
   direction: z.enum(['worse', 'better', 'unknown']).nullable().optional(),
 });
 
@@ -76,6 +79,7 @@ export function useFollowUpBasis(): (item: FollowUpItem) => string {
             side: t(`followUps.basis.side.${b.data.side}`),
             low: formatNumber(b.data.expected.low),
             high: formatNumber(b.data.expected.high),
+            level: Math.round((b.data.intervalLevel ?? FORECAST_INTERVAL_LEVEL) * 100),
           }) + t(`followUps.basis.direction.${b.data.direction ?? 'unknown'}`)
         );
       }

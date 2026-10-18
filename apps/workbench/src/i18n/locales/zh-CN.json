@@ -1033,7 +1033,8 @@
     "domainLevel": "{{domain}}：{{level}}",
     "portrait": {
       "title": "画像",
-      "note": "状态由系统按平台规则计算，只给健管师看，不会发给客户。"
+      "note": "状态由系统按平台规则计算，只给健管师看，不会发给客户。",
+      "rulesNote": "红黄绿的默认规则是初步做法，不是医学标准，还在等待医学审核。"
     },
     "body": {
       "label": "人体轮廓：点一个区域查看对应方面",
@@ -1059,7 +1060,8 @@
       "adjustLabel": "调整状态：{{domain}}",
       "cancelAdjust": "取消调整",
       "cancelAdjustLabel": "取消调整：{{domain}}（恢复系统计算）",
-      "cancelled": "已恢复系统计算"
+      "cancelled": "已恢复系统计算",
+      "levelWithColor": "{{color}}（{{level}}）"
     },
     "basis": {
       "report": "{{metric}} {{value}} {{unit}}（{{date}} 报告）",
@@ -1109,7 +1111,7 @@
       "open": "查看{{metric}}（{{source}}）的大图和依据",
       "loading": "正在加载数值…",
       "loadFailed": "数值加载失败",
-      "chartLabel": "{{metric}}趋势图：实线是实际数值，虚线是预测中间值，阴影是 80% 区间",
+      "chartLabel": "{{metric}}趋势图：实线是实际数值，虚线是预测中间值，阴影是 {{level}}% 区间",
       "chartLabelNoForecast": "{{metric}}趋势图：只有实际数值，暂不预测",
       "insufficient": {
         "report": "数据不足，暂不预测：还需要 {{count}} 次已核对报告的数值",
@@ -1124,12 +1126,13 @@
       "legend": {
         "actual": "实际数值",
         "median": "预测中间值",
-        "band": "80% 区间",
+        "band": "{{level}}% 区间",
         "reference": "报告参考范围"
       },
       "crossing": {
-        "high": "按当前走势，约 {{months}} 个月后可能高于报告参考范围上限",
-        "low": "按当前走势，约 {{months}} 个月后可能低于报告参考范围下限"
+        "high": "按当前走势，约 {{months}} 个月后可能高于报告参考范围上限。",
+        "low": "按当前走势，约 {{months}} 个月后可能低于报告参考范围下限。",
+        "critical": "按当前走势，约 {{months}} 个月后可能达到危急阈值 {{comparator}} {{threshold}} {{unit}}。"
       },
       "crossingNote": "只是给健管师的提醒，不生成跟进项，也不改变状态。",
       "detail": {
@@ -1137,15 +1140,16 @@
         "basisReport": "依据：根据 {{from}} 至 {{to}} 共 {{count}} 次已核对报告的数值推算",
         "basisMonitoring": "依据：根据 {{from}} 至 {{to}} 共 {{count}} 个有效周的监测周平均推算",
         "method": "方法：按过去的变化速度直线外推（方法版本 {{version}}）",
-        "interval": "不确定性：阴影为 {{level}}% 区间：如果按过去的变化规律，大约 10 次里有 8 次会落在这个范围内。数据次数少、波动大时区间更宽",
+        "interval": "不确定性：阴影为 {{level}}% 区间：如果按过去的变化规律，大约 10 次里有 {{n}} 次会落在这个范围内。数据次数少、波动大时区间更宽",
         "limitation": "局限：只根据过去的数值推算，没有考虑用药、生活方式变化和其他因素；不是对任何疾病的预测",
         "uncertaintyHigh": "不确定性等级：高（数据次数少或区间较宽，图上的虚线改为浅色）",
         "uncertaintyNormal": "不确定性等级：一般",
-        "point": "{{months}} 个月后（{{date}}）：中间值 {{mid}} {{unit}}，80% 区间 {{low}}–{{high}} {{unit}}",
+        "point": "{{months}} 个月后（{{date}}）：中间值 {{mid}} {{unit}}，{{level}}% 区间 {{low}}–{{high}} {{unit}}",
         "clipped": "（区间已截在合理范围内）",
         "reference": "参考范围取自最近一份报告：{{range}} {{unit}}",
         "computedAt": "计算时间：{{date}}"
-      }
+      },
+      "crossingNoteShort": "仅作提醒，不生成跟进项"
     },
     "followUps": {
       "title": "待跟进",
@@ -1284,7 +1288,7 @@
       "status": "{{domain}}由{{from}}变{{to}}",
       "statusFirst": "{{domain}}变为{{to}}",
       "statusItems": "{{status}}：{{items}}",
-      "deviation": "{{value}}{{side}}之前预测的 80% 区间 {{low}}–{{high}}",
+      "deviation": "{{value}}{{side}}之前预测的 {{level}}% 区间 {{low}}–{{high}}",
       "side": {
         "above": "高于",
         "below": "低于"

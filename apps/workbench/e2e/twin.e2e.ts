@@ -273,6 +273,21 @@ async function mockApi(page: Page) {
           return json(route, { skills });
         case key === `GET /api/tasks/${ids.task}`:
           return json(route, detail);
+        case key === 'GET /api/critical-thresholds':
+          return json(route, {
+            thresholds: [
+              {
+                id: 'b0000000-0000-4000-8000-000000000001',
+                metric: 'sbp',
+                comparator: 'gte',
+                value: 180,
+                level: 'urgent',
+                enabled: true,
+                updatedBy: null,
+                updatedAt: '2026-10-01T00:00:00.000Z',
+              },
+            ],
+          });
         case key === 'GET /api/twin/levels':
           return json(route, { clients: [{ clientId: ids.client, level: 'yellow' }] });
         case key === 'GET /api/follow-ups':
@@ -361,6 +376,7 @@ test('孪生：左侧栏点客户打开“客户 · 孪生”，375px 下单列�
   await expect(dialog).toContainText('方法：按过去的变化速度直线外推');
   await expect(dialog).toContainText('不确定性等级：高');
   await expect(dialog).toContainText('按当前走势，约 6 个月后可能高于报告参考范围上限');
+  await expect(dialog.getByTestId('forecast-disclaimer')).toHaveText('仅供参考，非医疗诊断');
   const box = await dialog.boundingBox();
   expect(box!.x + box!.width).toBeLessThanOrEqual(375 + 1);
   await expectNoHorizontalScroll(page, 'forecast dialog');

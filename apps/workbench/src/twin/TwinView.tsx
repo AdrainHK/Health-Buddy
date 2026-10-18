@@ -13,11 +13,11 @@ import { Activity } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { isAbortError } from '../api/http';
-import { getForecastDetail, getTwin, listFollowUps } from '../api/twin';
+import { getCriticalThresholds, getForecastDetail, getTwin, listFollowUps } from '../api/twin';
 import { BodyOutline } from './BodyOutline';
 import { twinErrorKey, type TwinErrorKey } from './errors';
 import { FollowUpCard } from './FollowUpCard';
-import { ForecastCard, ForecastDialog } from './ForecastChart';
+import { ForecastCard, ForecastDialog, type ForecastThreshold } from './ForecastChart';
 import { ManualReadings } from './ManualReadings';
 import { StatusCard } from './StatusCard';
 import styles from './Twin.module.css';
@@ -64,6 +64,8 @@ export function TwinView({
   const [details, setDetails] = useState<Record<string, DetailState>>({});
   const [followUps, setFollowUps] = useState<FollowUpItem[] | null>(null);
   const [openForecast, setOpenForecast] = useState<TwinForecast | null>(null);
+  // 危急阈值：读不到时只是少一条提醒，不影响其他内容
+  const [thresholds, setThresholds] = useState<ForecastThreshold[] | null>(null);
   const cardRefs = useRef<Partial<Record<TwinDomain, HTMLElement | null>>>({});
 
   useEffect(() => {
@@ -127,6 +129,16 @@ export function TwinView({
     }
     return () => controller.abort();
   }, [clientId, metricsKey]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    getCriticalThresholds(controller.signal)
+      .then(setThresholds)
+      .catch(() => {
+        if (!controller.signal.aborted) setThresholds(null);
+      });
+    return () => controller.abort();
+  }, [refreshKey]);
 
   // 这位客户未处理的跟进项
   useEffect(() => {
@@ -230,6 +242,9 @@ export function TwinView({
           </div>
         </div>
         <p className={styles.muted}>{t('twin.portrait.note')}</p>
+        <p className={styles.muted} data-testid="twin-rules-note">
+          {t('twin.portrait.rulesNote')}
+        </p>
       </Section>
 
       {shown.hasData && (
@@ -244,6 +259,7 @@ export function TwinView({
                   forecast={f}
                   detail={detailFor(f).detail}
                   detailState={detailFor(f).status}
+                  thresholds={thresholds}
                   onOpen={() => setOpenForecast(f)}
                 />
               ))}
@@ -275,6 +291,7 @@ export function TwinView({
         <ForecastDialog
           forecast={openForecast}
           detail={detailFor(openForecast).detail}
+          thresholds={thresholds}
           onClose={() => setOpenForecast(null)}
         />
       )}

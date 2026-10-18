@@ -523,6 +523,11 @@
   font-weight: 700;
 }
 
+/* 可能达到危急阈值：颜色更醒目，图形仍是箭头，提醒文字在 <title> 和图下方 */
+.crossing[data-kind~='critical'] circle {
+  fill: var(--hb-danger);
+}
+
 .axis text {
   fill: var(--hb-text-3);
   font-size: 11px;

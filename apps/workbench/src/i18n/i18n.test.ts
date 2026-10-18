@@ -221,5 +221,12 @@ describe('界面文字走 i18n（验收标准 25）', () => {
     expect(all.filter(([, text]) => text.includes('诊断')).map(([p]) => p)).toEqual([
       'twin.disclaimer',
     ]);
+    // 红线 4：不对任何疾病风险下结论（预测只说“可能”，不说概率、必然）
+    const riskWords = ['会得', '患病', '概率', '将会', '必然', '一定会'];
+    expect(
+      all.flatMap(([path, text]) =>
+        riskWords.filter((w) => text.includes(w)).map((w) => `${path}: ${w}`),
+      ),
+    ).toEqual([]);
   });
 });
