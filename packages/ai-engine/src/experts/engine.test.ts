@@ -768,6 +768,9 @@ describe('validateOpinion', () => {
 
   it('checks unit-bearing and threshold numbers of any size, and Chinese numerals', () => {
     expect(checkedNumbers('近 30 天监测 3 次，每周 5 天')).toEqual([]);
+    // “进一步”“下一步”的“步”不是步数；“一万步”“八千步”仍核对
+    expect(checkedNumbers('进一步了解，下一步复测，第一步先记录，一步一步来')).toEqual([]);
+    expect(checkedNumbers('每天走一万步，至少八千步')).toEqual([10000, 8000]);
     expect(checkedNumbers('糖化血红蛋白 7 % 以下')).toEqual([7]);
     expect(checkedNumbers('空腹血糖 7 mmol/L，BMI 24 kg/m²，心率 60 次/分')).toEqual([7, 24, 60]);
     expect(checkedNumbers('控制在 6 以内，超过 9 要注意，体重减 5kg')).toEqual([6, 9, 5]);

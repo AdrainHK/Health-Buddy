@@ -160,7 +160,10 @@ function normalizeChineseNumbers(text: string): string {
     const after = whole.slice(offset + raw.length, offset + raw.length + 8);
     const decimal = raw.includes('点');
     const percent = before.endsWith('百分之');
-    const unit = new RegExp(`^\\s*(?:${UNIT}|${THRESHOLD_AFTER})`).test(after);
+    // “进一步”“下一步”“第一步”的“步”不是步数：单个中文数字后面跟“步”不算单位
+    const unit =
+      new RegExp(`^\\s*(?:${UNIT}|${THRESHOLD_AFTER})`).test(after) &&
+      !(/^[零〇一二两三四五六七八九]$/.test(raw) && after.startsWith('步'));
     const threshold = new RegExp(`${THRESHOLD_BEFORE}\\s*$`).test(before);
     // 带十、百、千、万的中文数字（“一百四十”“一万步”“十二”）一律换算；
     // 以百、千、万开头的不换（“百分之”“千卡”“万一”不是数字）
