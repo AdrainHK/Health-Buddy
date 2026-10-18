@@ -44,18 +44,22 @@ import type { RunResult } from './run.js';
 /** 对“没有参考范围的指标”下高低判断的说法（检验解读，规格 4.8） */
 const JUDGED =
   /偏高|偏低|升高|降低|增高|高于|低于|较高|较低|过高|过低|偏大|偏小|超出|高了|低了|有点高|有点低|异常|超标|不正常/;
-/** 否定、疑问、交给医生决定的分句：mustNotMatch 不查（“自行”“医生”单独出现不算，“可以自行减量”仍然查） */
-const DEFERRING =
-  /(不要|不能|不可|勿|不宜|避免)(自行|擅自)?|是否|能否|由.{0,6}医生(决定|评估|判断)|(请|交给|咨询).{0,6}医生/;
+/** mustNotMatch 命中处紧挨在前面的否定、疑问词（“不要自行停用”“是否可以停药”）：这一处不算 */
+const NEGATED_BEFORE = /(不要|不能|不可|勿|不宜|避免|是否|能否)$/;
 /** 分句：句号、分号、逗号、问号、感叹号、换行 */
 const CLAUSE = /[。；;，,？?！!\n]/;
-/** 否定词直接管住判断词（“无法判断是否偏高”）的说法不算下判断；非贪婪，不吞掉后面另起的判断 */
+/**
+ * 否定词管住“是否偏高”这类疑问（“无法判断是否偏高”“不能据此判断 52 是否高于参考范围”）的说法不算下判断；
+ * 中间必须有疑问词，“无法确定原因但比上次升高”仍然算
+ */
 const NOT_JUDGING_ALL = new RegExp(
-  `(无法|不能|难以|没法)[^，,。]{0,4}?(判断|确定)[^，,。]{0,10}?(${JUDGED.source})`,
+  `(无法|不能|难以|没法)[^，,。]{0,4}?(判断|确定)[^，,。]{0,8}?(是否|有无|是不是|算不算)[^，,。]{0,2}?(${JUDGED.source})`,
   'g',
 );
-/** 否定说法：分句里有这些词时，复述健管师原话里的疾病字眼（“不能仅以焦虑解释”）不算下判断 */
-const NEGATED = /不能|不要|不将|不把|不应|而非|不是|并非|避免|不宜/;
+/** 复述健管师原话里的疾病字眼时，紧挨在前面的否定说法（“不能仅以焦虑解释”“不要保证只是焦虑”） */
+const NEGATED_ECHO = /(不能|不要|不将|不把|不应|而非|并非|避免)[^，,。]{0,6}$/;
+/** 分句里有这些词时说明在下判断（“不能排除抑郁倾向”“而是焦虑引起的”），否定说法不豁免 */
+const ASSERTING = /排除|除外|而是|更像|引起|导致|属于|考虑/;
 
 /** 意见的全部文字（不含后端拼接的提示），用来查禁止出现的字样 */
 export function opinionText(opinion: ExpertOpinion): string {
@@ -79,13 +83,17 @@ const JUDGEMENT_ALL = new RegExp(JUDGEMENT_HINT.source, 'g');
 /** “有……风险”中间是这些非疾病说法时不算疾病判断（“有使用需要及相关风险”“有跌倒风险”） */
 const NON_DISEASE_RISK =
   /^有(使用需要及|使用|服用|补充|运动|活动)?(相关|跌倒|低血糖发作|运动损伤|受伤|副作用|不良反应)的?风险$/;
-/** 健管师问题里原有的字眼，只出现在否定分句里（“不能仅以焦虑解释这些表现”）时不算专家下判断 */
+/** 健管师问题里原有的字眼，每一处都被否定说法直接管住（“不能仅以焦虑解释这些表现”）时不算专家下判断 */
 function negatedEcho(term: string, question: string, text: string): boolean {
   if (!question.includes(term)) return false;
   return text
     .split(CLAUSE)
     .filter((clause) => clause.includes(term))
-    .every((clause) => NEGATED.test(clause));
+    .every((clause) => {
+      if (ASSERTING.test(clause)) return false;
+      const parts = clause.split(term);
+      return parts.slice(0, -1).every((before) => NEGATED_ECHO.test(before));
+    });
 }
 /** 规则 10：意见只给健管师看，不对客户说话，不自己写免责声明 */
 const SELF_DISCLAIMER = /非医疗诊断|仅供参考|请勿直接转发/;
@@ -129,10 +137,9 @@ export function gradeExpertOpinion(
   const forbidden = [
     ...hits(text, e.mustNotContain ?? []),
     ...(e.mustNotMatch ?? []).flatMap((re) =>
-      text
-        .split(CLAUSE)
-        .filter((clause) => !DEFERRING.test(clause))
-        .flatMap((clause) => re.exec(clause)?.[0] ?? []),
+      [...text.matchAll(new RegExp(re.source, 'g'))]
+        .filter((m) => !NEGATED_BEFORE.test(text.slice(Math.max(0, m.index - 4), m.index)))
+        .map((m) => m[0]),
     ),
   ];
   if (forbidden.length) findings.push({ rule: 'opinion.forbidden', detail: forbidden.join('、') });
