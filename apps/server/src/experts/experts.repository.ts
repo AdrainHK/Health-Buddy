@@ -16,6 +16,7 @@ import {
 } from '@health-buddy/shared';
 import { DB } from '../db/db.provider.js';
 import { withTenant, type Db, type TenantContext, type TenantTransaction } from '../db/database.js';
+import { expertUsageStats, type ExpertUsageStatsRow } from '../db/expert-functions.js';
 import { lockExpertQuota } from '../db/locks.js';
 
 /** 今天的专家调用次数已经用完（并发请求在事务里重新数时发现），这次一位专家都不请 */
@@ -87,6 +88,51 @@ export class ExpertsRepository {
         .onConflict((oc) => oc.column('expert_id').doUpdateSet({ enabled, updated_by: ctx.userId }))
         .execute();
     });
+  }
+
+  /**
+   * 专家调用统计（规格 6.2、6.4）：只走数据库的 SECURITY DEFINER 函数，不读明细表。
+   * 运营商只能拿到本协会的行（operatorId 被数据库忽略），平台管理员看全部或按协会筛选。
+   */
+  usageStats(
+    ctx: TenantContext,
+    range: { from: string; to: string; operatorId: string | null },
+  ): Promise<ExpertUsageStatsRow[]> {
+    return withTenant(this.db, ctx, (trx) => expertUsageStats(trx, range));
+  }
+
+  /** 协会名称（平台管理员的统计筛选和表格用）。行级安全：平台看全部，运营商只看本协会 */
+  operators(ctx: TenantContext): Promise<{ id: string; name: string }[]> {
+    return withTenant(this.db, ctx, (trx) =>
+      trx.selectFrom('operators').select(['id', 'name']).orderBy('name').orderBy('id').execute(),
+    );
+  }
+
+  /** 平台的上下架开关（Q11）：是否启用和最后操作时间，不读操作人 */
+  availability(ctx: TenantContext): Promise<Map<string, { enabled: boolean; updatedAt: Date }>> {
+    return withTenant(this.db, ctx, async (trx) => {
+      const rows = await trx
+        .selectFrom('expert_availability')
+        .select(['expert_id', 'enabled', 'updated_at'])
+        .execute();
+      return new Map(
+        rows.map((r) => [r.expert_id, { enabled: r.enabled, updatedAt: new Date(r.updated_at) }]),
+      );
+    });
+  }
+
+  /** 暂停、恢复记录，新的在前。行级安全只放行平台管理员 */
+  availabilityEvents(ctx: TenantContext, expertId: string, limit = 50) {
+    return withTenant(this.db, ctx, (trx) =>
+      trx
+        .selectFrom('expert_availability_events')
+        .select(['id', 'expert_id', 'action', 'actor_id', 'created_at'])
+        .where('expert_id', '=', expertId)
+        .orderBy('created_at', 'desc')
+        .orderBy('id', 'desc')
+        .limit(limit)
+        .execute(),
+    );
   }
 
   /** 本人使用某位专家的次数（Q15） */

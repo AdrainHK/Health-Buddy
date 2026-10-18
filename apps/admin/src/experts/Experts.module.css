@@ -1,0 +1,130 @@
+/* 专家管理和专家统计：表格、弹窗等通用样式沿用危急指标页（Thresholds.module.css） */
+
+.note {
+  margin: 0;
+  font-size: var(--hb-text-sm);
+  color: var(--hb-text-2);
+}
+
+.mono {
+  font-family: var(--hb-font-mono);
+  font-size: var(--hb-text-xs);
+  white-space: nowrap;
+}
+
+.number {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-1);
+}
+
+.hint {
+  font-size: var(--hb-text-xs);
+  color: var(--hb-text-3);
+}
+
+.badge {
+  display: inline-block;
+  align-self: flex-start;
+  padding: 0 var(--hb-space-2);
+  font-size: var(--hb-text-xs);
+  font-weight: 500;
+  border-radius: var(--hb-radius-full);
+  white-space: nowrap;
+}
+
+.on {
+  color: var(--hb-success);
+  background: color-mix(in oklab, var(--hb-success) 12%, var(--hb-surface));
+}
+
+.off {
+  color: var(--hb-warning);
+  background: color-mix(in oklab, var(--hb-warning) 14%, var(--hb-surface));
+}
+
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-3);
+  padding: var(--hb-space-4);
+  background: var(--hb-surface);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-md);
+}
+
+.historyHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hb-space-2);
+}
+
+.historyTitle {
+  margin: 0;
+  font-size: var(--hb-text-md);
+  font-weight: 600;
+}
+
+.events {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--hb-text-sm);
+}
+
+.event {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hb-space-2);
+}
+
+/* 统计页的筛选条 */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--hb-space-3);
+}
+
+.filters label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-1);
+  min-width: 0;
+  font-size: var(--hb-text-sm);
+  color: var(--hb-text-2);
+}
+
+.filters input,
+.filters select {
+  height: 38px;
+  padding: 0 var(--hb-space-3);
+  font-size: var(--hb-text-md);
+  color: var(--hb-text);
+  background: var(--hb-surface);
+  border: 1px solid var(--hb-border-strong);
+  border-radius: var(--hb-radius-md);
+}
+
+.filters input:focus,
+.filters select:focus {
+  outline: none;
+  border-color: var(--hb-brand);
+  box-shadow: var(--hb-focus-ring);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: var(--hb-text-lg);
+  font-weight: 600;
+}

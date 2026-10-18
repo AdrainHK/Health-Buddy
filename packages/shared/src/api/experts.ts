@@ -369,6 +369,128 @@ export type ExpertFeedbackRequest = z.input<typeof expertFeedbackRequestSchema>;
 export const setExpertAvailabilityRequestSchema = z.object({ enabled: z.boolean() }).strict();
 export type SetExpertAvailabilityRequest = z.infer<typeof setExpertAvailabilityRequestSchema>;
 
+/**
+ * 后台统计的日期范围（UTC 自然日，含首尾两天）。不传时默认最近 30 天；最长 366 天。
+ * 统计按 UTC 日期分组，和每日上限（Q12）的口径一致。
+ */
+export const EXPERT_STATS_DEFAULT_DAYS = 30;
+export const EXPERT_STATS_MAX_DAYS = 366;
+
+export const expertStatsQuerySchema = z
+  .object({
+    from: z.iso.date().optional(),
+    to: z.iso.date().optional(),
+    /** 只对平台管理员生效：按协会筛选。运营商传了也只返回本协会（规格 6.4） */
+    operatorId: z.uuid().optional(),
+  })
+  .strict();
+export type ExpertStatsQuery = z.infer<typeof expertStatsQuerySchema>;
+
+/** 调用量和反馈的汇总数字：不含健管师、客户、任务的任何 id，也不含意见内容（规格 6.2） */
+const usageCountsShape = {
+  /** 已结束的调用次数（进行中的不计） */
+  calls: z.number().int().nonnegative(),
+  succeeded: z.number().int().nonnegative(),
+  timedOut: z.number().int().nonnegative(),
+  /** 成功率、超时率：0–1；没有调用时为 null */
+  successRate: z.number().min(0).max(1).nullable(),
+  timeoutRate: z.number().min(0).max(1).nullable(),
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  /** 费用估算（美元）：取模型网关计量时按价目表算出的估算值；价目表里没有的型号不计入 */
+  costUsd: z.number().nonnegative(),
+  useful: z.number().int().nonnegative(),
+  notUseful: z.number().int().nonnegative(),
+};
+
+/**
+ * 统计视图 expert_usage_stats 的一行（规格 6.2）：按协会、专家、日期汇总。
+ * operatorId、operatorName 只在平台管理员的结果里出现；运营商看到的都是本协会，为 null。
+ */
+export const expertUsageStatsSchema = z.object({
+  operatorId: z.uuid().nullable(),
+  operatorName: z.string().nullable(),
+  expertId: expertIdSchema,
+  expertName: z.string(),
+  date: z.iso.date(),
+  ...usageCountsShape,
+});
+export type ExpertUsageStats = z.infer<typeof expertUsageStatsSchema>;
+
+/** 每位专家在整个日期范围内的合计 */
+export const expertUsageTotalSchema = z.object({
+  expertId: expertIdSchema,
+  expertName: z.string(),
+  ...usageCountsShape,
+});
+export type ExpertUsageTotal = z.infer<typeof expertUsageTotalSchema>;
+
+/** GET /api/expert-stats */
+export const expertStatsResponseSchema = z.object({
+  /** platform：全平台（可按协会筛选）；operator：本协会 */
+  scope: z.enum(['platform', 'operator']),
+  from: z.iso.date(),
+  to: z.iso.date(),
+  /** 平台管理员筛选时选中的协会；运营商为 null */
+  operatorId: z.uuid().nullable(),
+  /** 平台管理员可选的协会（筛选用）；运营商为空数组 */
+  operators: z.array(z.object({ id: z.uuid(), name: z.string() })),
+  rows: z.array(expertUsageStatsSchema),
+  totals: z.array(expertUsageTotalSchema),
+});
+export type ExpertStatsResponse = z.infer<typeof expertStatsResponseSchema>;
+
+/**
+ * 平台总后台的专家列表一项（GET /api/admin/experts，只有平台管理员）。
+ * 版本、知识来源指纹、状态来自专家定义（代码）；enabled 来自平台的上下架开关（Q11）。
+ * 评测状态：评测结果不入库，这里给出评测用例条数和目标条数（规格 8.1），是否全部通过以 pnpm eval 为准。
+ */
+export const adminExpertSchema = z.object({
+  id: expertIdSchema,
+  name: z.string(),
+  version: z.string(),
+  sourcesVersion: z.string(),
+  status: expertStatusSchema,
+  sourcesPending: z.boolean(),
+  /** 当前环境下这个状态能否使用（预览开关，Q2）；和是否暂停无关 */
+  statusAllowed: z.boolean(),
+  /** 平台没有暂停 */
+  enabled: z.boolean(),
+  /** 最后一次暂停或恢复的时间；从没操作过为 null */
+  updatedAt: z.iso.datetime().nullable(),
+  evalCases: z.number().int().nonnegative(),
+  evalTarget: z.number().int().positive(),
+  /** 所选日期范围内全平台的调用次数和有用/没用数量（Q14） */
+  calls: z.number().int().nonnegative(),
+  useful: z.number().int().nonnegative(),
+  notUseful: z.number().int().nonnegative(),
+});
+export type AdminExpert = z.infer<typeof adminExpertSchema>;
+
+export const adminExpertListResponseSchema = z.object({
+  from: z.iso.date(),
+  to: z.iso.date(),
+  experts: z.array(adminExpertSchema),
+});
+export type AdminExpertListResponse = z.infer<typeof adminExpertListResponseSchema>;
+
+/** 暂停、恢复记录（数据库触发器写入，只有平台管理员能看）。操作人只给 id，不给姓名 */
+export const expertAvailabilityEventSchema = z.object({
+  id: z.uuid(),
+  expertId: expertIdSchema,
+  action: z.enum(['paused', 'resumed']),
+  actorId: z.uuid().nullable(),
+  createdAt: z.iso.datetime(),
+});
+export type ExpertAvailabilityEvent = z.infer<typeof expertAvailabilityEventSchema>;
+
+export const expertAvailabilityEventListResponseSchema = z.object({
+  events: z.array(expertAvailabilityEventSchema),
+});
+export type ExpertAvailabilityEventListResponse = z.infer<
+  typeof expertAvailabilityEventListResponseSchema
+>;
+
 /** SSE：每位专家的状态单独推送（规格 2.6） */
 export const expertCallEventSchema = z.object({
   type: z.literal('expert_call'),

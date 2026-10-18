@@ -1,18 +1,30 @@
 import { PRODUCT_NAME, type CurrentUser } from '@health-buddy/shared';
 import { IconButton } from '@health-buddy/ui';
-import { Heart, LogOut, ShieldAlert } from 'lucide-react';
+import { Heart, LogOut } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import styles from './AdminShell.module.css';
 
+/** 导航里的一个版块：id 同时是地址栏的 #锚点 */
+export interface AdminSection {
+  id: string;
+  label: string;
+  icon: ReactNode;
+}
+
 export interface AdminShellProps {
   user: CurrentUser;
   onLogout: () => void;
+  sections: readonly AdminSection[];
+  current: string;
   children: ReactNode;
 }
 
-/** 后台外框：顶栏（产品名、账号、退出）、版块导航和内容区。M1 只有“危急指标设置”一个版块。 */
-export function AdminShell({ user, onLogout, children }: AdminShellProps) {
+/**
+ * 后台外框：顶栏（产品名、账号、退出）、版块导航和内容区。
+ * 能看到哪些版块由 App 按角色决定；真正的权限在后端。
+ */
+export function AdminShell({ user, onLogout, sections, current, children }: AdminShellProps) {
   const { t } = useTranslation();
   return (
     <div className={styles.root}>
@@ -34,12 +46,19 @@ export function AdminShell({ user, onLogout, children }: AdminShellProps) {
       </header>
       <div className={styles.body}>
         <nav className={styles.nav} aria-label={t('shell.nav')}>
-          <a className={styles.navItem} href="#critical-thresholds" aria-current="page">
-            <ShieldAlert size={16} aria-hidden />
-            <span>{t('thresholds.nav')}</span>
-          </a>
+          {sections.map((section) => (
+            <a
+              key={section.id}
+              className={styles.navItem}
+              href={`#${section.id}`}
+              aria-current={section.id === current ? 'page' : undefined}
+            >
+              {section.icon}
+              <span>{section.label}</span>
+            </a>
+          ))}
         </nav>
-        <main className={styles.main} id="critical-thresholds">
+        <main className={styles.main} id="admin-main">
           {children}
         </main>
       </div>
