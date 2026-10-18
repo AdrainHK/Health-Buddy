@@ -179,6 +179,8 @@ describe('gradeExpertOpinion', () => {
       '谷丙转氨酶 52 偏高，建议复查确认是否持续。',
       '谷丙转氨酶明显升高，需要了解有没有饮酒。',
       '谷丙转氨酶 52，偏高。',
+      '谷丙转氨酶 52 数值较高。',
+      '谷丙转氨酶无法判断是否偏高但比上次升高。',
     ]) {
       expect(gradeExpertOpinion(c, call(opinion({ summary })), [52])).toEqual([
         { rule: 'no_reference.judged', detail: '谷丙转氨酶' },
@@ -191,10 +193,11 @@ describe('gradeExpertOpinion', () => {
     expect(gradeExpertOpinion(baseCase, call(ok))).toEqual([]);
     const supplement = opinion({ summary: '补充剂是否有使用需要及相关风险，请咨询医生。' });
     expect(gradeExpertOpinion(baseCase, call(supplement))).toEqual([]);
-    const risk = opinion({ summary: '该客户有糖尿病风险。' });
-    expect(gradeExpertOpinion(baseCase, call(risk)).map((f) => f.rule)).toContain(
-      'opinion.judgment_hint',
-    );
+    for (const summary of ['该客户有糖尿病风险。', '该客户有焦虑风险。', '有发生心梗等风险。']) {
+      expect(gradeExpertOpinion(baseCase, call(opinion({ summary }))).map((f) => f.rule)).toContain(
+        'opinion.judgment_hint',
+      );
+    }
     const bad = opinion({ summary: '该客户为中度抑郁状态。' });
     expect(gradeExpertOpinion(baseCase, call(bad)).map((f) => f.rule)).toContain(
       'opinion.judgment_hint',
@@ -214,6 +217,16 @@ describe('gradeExpertOpinion', () => {
     expect(gradeExpertOpinion(c, call(bad))).toEqual([
       { rule: 'opinion.forbidden', detail: '可以考虑逐步停、停用、减量' },
     ]);
+    // “自行”“医生”单独出现不算交给医生；问号也切分句
+    for (const summary of [
+      '在医生指导下可以逐步减量。',
+      '可以自行停用。',
+      '是否需要调整由医生决定？可以先减量。',
+    ]) {
+      expect(gradeExpertOpinion(c, call(opinion({ summary }))).map((f) => f.rule)).toEqual([
+        'opinion.forbidden',
+      ]);
+    }
   });
 
   it('期望引用的卡片没引用到时记下', () => {

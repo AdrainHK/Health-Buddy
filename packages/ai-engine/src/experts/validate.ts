@@ -283,11 +283,15 @@ export function validateOpinion(
       issues.add('scope_inconsistent');
       return { opinion: null, issues: [...issues], removed: 0, fatal: true };
     }
-    const ok = itemOk({
-      texts: [note, opinion.summary, opinion.referral.to ?? '', opinion.referral.reason ?? ''],
-      citations: [],
-    });
+    // 超出范围的说明没有引用，不能写“根据指南”
+    const ok = itemOk({ texts: [note, opinion.summary], citations: [], dataOnly: true });
     if (!ok) return { opinion: null, issues: [...issues], removed: 0, fatal: true };
+    // 转介和范围内一样：文字不合格只去掉文字，needed 和 urgency 一定保留
+    const referral = normalizeReferral(opinion.referral);
+    if (referral.to && !itemOk({ texts: [referral.to], citations: [], dataOnly: true }))
+      referral.to = null;
+    if (referral.reason && !itemOk({ texts: [referral.reason], citations: [], dataOnly: true }))
+      referral.reason = null;
     return {
       opinion: {
         ...opinion,
@@ -295,7 +299,7 @@ export function validateOpinion(
         suggestions: [],
         questionsToAsk: [],
         dataGaps: [],
-        referral: normalizeReferral(opinion.referral),
+        referral,
       },
       issues: [...issues],
       removed: 0,

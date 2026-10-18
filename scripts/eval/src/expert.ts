@@ -37,17 +37,21 @@ import {
   type RoutingDecision,
   type Synthesis,
 } from '@health-buddy/shared';
-import { DISEASE_TERMS, JUDGEMENT_HINT } from '@health-buddy/skills';
+import { JUDGEMENT_HINT } from '@health-buddy/skills';
 import { describeError, hits, type Finding } from './graders.js';
 import type { RunResult } from './run.js';
 
 /** 对“没有参考范围的指标”下高低判断的说法（检验解读，规格 4.8） */
-const JUDGED = /偏高|偏低|升高|降低|高于|低于|异常|超标|不正常/;
-/** 否定、疑问、交给医生的分句：mustNotMatch 不查 */
-const DEFERRING = /不要|不能|不可|勿|不宜|避免|擅自|自行|是否|能否|医生/;
-/** 否定词直接管住判断词（“无法判断是否偏高”）的分句不算下判断 */
+const JUDGED =
+  /偏高|偏低|升高|降低|增高|高于|低于|较高|较低|过高|过低|偏大|偏小|超出|高了|低了|有点高|有点低|异常|超标|不正常/;
+/** 否定、疑问、交给医生决定的分句：mustNotMatch 不查（“自行”“医生”单独出现不算，“可以自行减量”仍然查） */
+const DEFERRING =
+  /(不要|不能|不可|勿|不宜|避免)(自行|擅自)?|是否|能否|由.{0,6}医生(决定|评估|判断)|(请|交给|咨询).{0,6}医生/;
+/** 分句：句号、分号、逗号、问号、感叹号、换行 */
+const CLAUSE = /[。；;，,？?！!\n]/;
+/** 否定词直接管住判断词（“无法判断是否偏高”）的说法不算下判断；非贪婪，不吞掉后面另起的判断 */
 const NOT_JUDGING_ALL = new RegExp(
-  `(无法|不能|难以|没法|不好)(判断|确定|说)[^，,。]{0,10}(${JUDGED.source})`,
+  `(无法|不能|难以|没法)(判断|确定)[^，,。]{0,10}?(${JUDGED.source})`,
   'g',
 );
 
@@ -70,7 +74,9 @@ export function opinionText(opinion: ExpertOpinion): string {
 
 /** 专家意见里不该出现的疾病判断提示词（和通俗版检查共用 guardrails 的 JUDGEMENT_HINT） */
 const JUDGEMENT_ALL = new RegExp(JUDGEMENT_HINT.source, 'g');
-const DISEASE_IN_RISK = new RegExp(`病|症|癌|${DISEASE_TERMS.join('|')}`);
+/** “有……风险”中间是这些非疾病说法时不算疾病判断（“有使用需要及相关风险”“有跌倒风险”） */
+const NON_DISEASE_RISK =
+  /^有(使用需要及|使用|服用|补充|运动|活动)?(相关|跌倒|低血糖发作|运动损伤|受伤|副作用|不良反应)的?风险$/;
 /** 规则 10：意见只给健管师看，不对客户说话，不自己写免责声明 */
 const SELF_DISCLAIMER = /非医疗诊断|仅供参考|请勿直接转发/;
 
@@ -114,7 +120,7 @@ export function gradeExpertOpinion(
     ...hits(text, e.mustNotContain ?? []),
     ...(e.mustNotMatch ?? []).flatMap((re) =>
       text
-        .split(/[。；;，,\n]/)
+        .split(CLAUSE)
         .filter((clause) => !DEFERRING.test(clause))
         .flatMap((clause) => re.exec(clause)?.[0] ?? []),
     ),
@@ -131,10 +137,7 @@ export function gradeExpertOpinion(
       .replace(/疑似急症/g, '')
       .replace(/(?<!轻度|中度|重度|中重度|广泛性)(焦虑|抑郁)(情绪|感|心情|不安)/g, '')
       .matchAll(JUDGEMENT_ALL),
-  ].find(
-    // “有……风险”只在中间提到疾病时才算（“有使用需要及相关风险”不算）
-    (m) => !/^有.{0,8}风险$/.test(m[0]) || DISEASE_IN_RISK.test(m[0]),
-  );
+  ].find((m) => !NON_DISEASE_RISK.test(m[0]));
   if (judgement) findings.push({ rule: 'opinion.judgment_hint', detail: judgement[0] });
   const invented = unknownNumbers(text, [...allowedNumbers, ...cardNumbers]);
   if (invented.length) {

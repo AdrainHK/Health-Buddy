@@ -764,6 +764,29 @@ describe('validateOpinion', () => {
       INPUT.allowedNumbers,
     );
     expect(ok.opinion?.findings).toEqual([]);
+    // 超出范围：转介文字不合格只去掉文字，needed 和 urgency 保留；说明里写“根据指南”整份不可用
+    const kept = validateOpinion(
+      opinion({
+        inScope: false,
+        outOfScopeNote: '用药调整请转介开药医生。',
+        referral: { needed: true, urgency: 'attention', to: '开药医生', reason: '可加用二甲双胍' },
+      }),
+      profileCards,
+      INPUT.allowedNumbers,
+    );
+    expect(kept.fatal).toBe(false);
+    expect(kept.opinion?.referral).toEqual({
+      needed: true,
+      urgency: 'attention',
+      to: '开药医生',
+      reason: null,
+    });
+    const claim = validateOpinion(
+      opinion({ inScope: false, outOfScopeNote: '根据指南，用药调整应转介开药医生。' }),
+      profileCards,
+      INPUT.allowedNumbers,
+    );
+    expect(claim.fatal).toBe(true);
   });
 
   it('checks unit-bearing and threshold numbers of any size, and Chinese numerals', () => {
