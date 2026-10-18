@@ -100,6 +100,7 @@
 
 .stepsSummary {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--hb-space-2);
   padding: var(--hb-space-2) var(--hb-space-3);
@@ -118,9 +119,32 @@
 
 .step {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--hb-space-2);
   color: var(--hb-text-2);
+}
+
+.stepLabel {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 专家步骤展开后的内容：每位专家一行（规格 2.6） */
+.stepDetail {
+  flex-basis: 100%;
+  min-width: 0;
+}
+
+.stepDetail:empty {
+  display: none;
+}
+
+.summaryExperts {
+  min-width: 0;
+  color: var(--hb-text);
+  overflow-wrap: anywhere;
 }
 
 .step[data-status='done'] svg {

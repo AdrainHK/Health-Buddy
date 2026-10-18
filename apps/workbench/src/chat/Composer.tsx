@@ -2,10 +2,11 @@ import { IconButton } from '@health-buddy/ui';
 import {
   TASK_MODES,
   type ClientSummary,
+  type ExpertSummary,
   type SkillSummary,
   type TaskMode,
 } from '@health-buddy/shared';
-import { ArrowUp, AtSign, FileText, Paperclip, Slash, Square, X } from 'lucide-react';
+import { ArrowUp, AtSign, FileText, Paperclip, Slash, Square, Stethoscope, X } from 'lucide-react';
 import {
   type ChangeEvent,
   type ClipboardEvent,
@@ -20,6 +21,7 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { REPORT_ACCEPT } from '../api/reports';
+import { AiBadge } from '../experts/ExpertBadges';
 import { useSkillName } from '../i18n/dynamic';
 import styles from './Composer.module.css';
 
@@ -55,6 +57,10 @@ interface Option {
   description?: string;
   /** 列出来但不能选（如还没核对完的报告） */
   disabled?: boolean;
+  /** 分组标题：这一项是该组的第一项时，在它前面显示（@ 列表的“专家”组，M3 规格 2.1） */
+  group?: string;
+  /** 专家带“AI”标记（Q24） */
+  ai?: boolean;
   select: () => void;
 }
 
@@ -94,6 +100,17 @@ export interface ComposerProps {
   onReportChange?: (report: ReportOption | null) => void;
   /** 选择、粘贴或拖入了报告文件（一次算一份报告） */
   onAttachFiles?: (files: File[]) => void;
+  /** @ 列表里可以选的专家（M3 规格 2.4）；专家预览没开时为空 */
+  experts?: readonly ExpertSummary[];
+  /** 这条消息 @ 的专家 id */
+  expertRefs?: readonly string[];
+  onExpertRefsChange?: (ids: string[]) => void;
+  /** 这条消息最多还能 @ 几位专家（Q5：一条消息最多 3 位，含绑定的专家） */
+  maxExperts?: number;
+  /** 模式固定（专家中心的任务固定为问一问，Q9）：其他模式不能选 */
+  lockedMode?: TaskMode;
+  /** 输入框上方的专家选择条（运行会自动请专家的技能时，规格 2.5） */
+  expertBar?: ReactNode;
 }
 
 /** 输入框：模式切换、/ 技能和 @ 客户补全、发送和停止 */
@@ -119,6 +136,12 @@ export function Composer({
   report = null,
   onReportChange,
   onAttachFiles,
+  experts = [],
+  expertRefs = [],
+  onExpertRefsChange,
+  maxExperts = 3,
+  lockedMode,
+  expertBar,
 }: ComposerProps) {
   const { t } = useTranslation();
   const skillName = useSkillName();
@@ -166,6 +189,24 @@ export function Composer({
               ...(!r.pending && r.critical ? { description: t('record.reports.critical') } : {}),
               select: r.pending ? () => {} : pick(() => onReportChange?.(r)),
             })),
+          ...(onExpertRefsChange ? experts : [])
+            .filter((e) => !expertRefs.includes(e.id))
+            .filter(
+              (e) =>
+                e.name.toLowerCase().includes(query) || e.tagline.toLowerCase().includes(query),
+            )
+            .map((e, i) => {
+              const full = expertRefs.length >= maxExperts;
+              return {
+                id: `expert:${e.id}`,
+                label: e.name,
+                description: full ? t('chat.experts.max') : e.tagline,
+                ai: true,
+                ...(i === 0 ? { group: t('chat.experts.group') } : {}),
+                ...(full ? { disabled: true } : {}),
+                select: full ? () => {} : pick(() => onExpertRefsChange?.([...expertRefs, e.id])),
+              };
+            }),
         ];
   const activeIndex = Math.min(active, Math.max(options.length - 1, 0));
   const menuOpen = trigger !== null;
@@ -245,7 +286,9 @@ export function Composer({
         </div>
       )}
 
-      {(skill || client || report) && (
+      {expertBar && <div className={styles.notice}>{expertBar}</div>}
+
+      {(skill || client || report || expertRefs.length > 0) && (
         <div className={styles.chips}>
           {skill && (
             <Chip
@@ -274,6 +317,19 @@ export function Composer({
               disabled={disabled}
             />
           )}
+          {expertRefs.map((id) => {
+            const name = experts.find((e) => e.id === id)?.name ?? id;
+            return (
+              <Chip
+                key={id}
+                icon={<Stethoscope size={12} />}
+                label={name}
+                removeLabel={t('chat.experts.removeExpert', { name })}
+                onRemove={() => onExpertRefsChange?.(expertRefs.filter((x) => x !== id))}
+                disabled={disabled}
+              />
+            );
+          })}
         </div>
       )}
 
@@ -304,7 +360,12 @@ export function Composer({
             aria-label={trigger.kind === 'skill' ? t('chat.skillMenu') : t('chat.clientMenu')}
           >
             {options.length === 0 && <li className={styles.menuEmpty}>{t('chat.noMatch')}</li>}
-            {options.map((option, index) => (
+            {options.map((option, index) => [
+              option.group && (
+                <li key={`group-${option.id}`} role="presentation" className={styles.menuGroup}>
+                  {option.group}
+                </li>
+              ),
               <li
                 key={option.id}
                 id={`${listId}-${index}`}
@@ -319,11 +380,17 @@ export function Composer({
                 }}
               >
                 {option.label}
+                {option.ai && (
+                  <>
+                    {' '}
+                    <AiBadge />
+                  </>
+                )}
                 {option.description && (
                   <span className={styles.optionNote}>{option.description}</span>
                 )}
-              </li>
-            ))}
+              </li>,
+            ])}
           </ul>
         )}
       </div>
@@ -337,7 +404,7 @@ export function Composer({
               role="radio"
               aria-checked={mode === m}
               className={styles.mode}
-              disabled={disabled}
+              disabled={disabled || (lockedMode !== undefined && m !== lockedMode)}
               onClick={() => onModeChange(m)}
             >
               {t(`chat.modes.${m}`)}

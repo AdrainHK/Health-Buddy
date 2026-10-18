@@ -1,7 +1,10 @@
-import type { ClientSummary, SkillSummary, Task } from '@health-buddy/shared';
+import type { ClientSummary, ExpertSummary, SkillSummary, Task } from '@health-buddy/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { listExperts } from '../api/experts';
 import { isAbortError } from '../api/http';
+import { ExpertCenter, type ExpertListState } from '../experts/ExpertCenter';
+import { ExpertsContext } from '../experts/ExpertsContext';
 import { getTask, listClients, listSkills, listTasks, updateTask } from '../api/workbench';
 import styles from './AppShell.module.css';
 import { ChatPane } from './ChatPane';
@@ -45,6 +48,23 @@ export function AppShell({ account }: AppShellProps = {}) {
   );
   /** 识别记录有变化（对话里上传、识别结束、核对确认），对话区和结果区据此刷新 */
   const [uploadsVersion, setUploadsVersion] = useState(0);
+  /** 中间区域显示对话还是专家库（M3 规格 2.1：左侧栏的专家中心入口） */
+  const [centerView, setCenterView] = useState<'chat' | 'experts'>('chat');
+  /** 当前账号可用的专家：专家库、@ 列表、步骤和专家标签里的名称都用它 */
+  const [expertList, setExpertList] = useState<ExpertListState>({
+    status: 'loading',
+    experts: [],
+  });
+  const [expertsReload, setExpertsReload] = useState(0);
+  /** 在专家中心点了“向 TA 提问”、还没发出第一条消息 */
+  const [pendingExpert, setPendingExpert] = useState<ExpertSummary | null>(null);
+  /** 一次专家调用结束，结果区的专家标签据此刷新 */
+  const [consultationsVersion, setConsultationsVersion] = useState(0);
+  /** 对话区里点了“查看专家意见”：结果区切到专家标签 */
+  const [expertsTabRequest, setExpertsTabRequest] = useState<{
+    key: number;
+    consultationId: string | null;
+  } | null>(null);
 
   // 刷新页面后恢复当前任务（验收反馈：刷新后产物和记录都空了）。任务 id 记在地址栏，
   // 恢复时按 id 重新取任务，后端按行级安全判断；取不到（别人的、已删除）就回到欢迎页
@@ -88,6 +108,19 @@ export function AppShell({ account }: AppShellProps = {}) {
     };
   }, []);
 
+  // 专家列表（专家预览没开时为空，所有专家入口都不显示内容）
+  useEffect(() => {
+    const controller = new AbortController();
+    setExpertList((list) => ({ status: 'loading', experts: list.experts }));
+    listExperts(controller.signal)
+      .then((experts) => setExpertList({ status: 'ready', experts }))
+      .catch((err: unknown) => {
+        if (!isAbortError(err))
+          setExpertList((list) => ({ status: 'error', experts: list.experts }));
+      });
+    return () => controller.abort();
+  }, [expertsReload]);
+
   // 任务列表。刷新时保留旧列表，避免闪烁；当前任务换成最新的数据（比如刚关联了客户、变成只读）
   useEffect(() => {
     let cancelled = false;
@@ -122,7 +155,22 @@ export function AppShell({ account }: AppShellProps = {}) {
   const selectTask = (task: Task | null) => {
     setActiveTask(task);
     setCreatedClientId(null);
+    setPendingExpert(null);
+    setCenterView('chat');
     closeDrawerOnNarrow();
+  };
+
+  const openExpertCenter = () => {
+    setCenterView('experts');
+    closeDrawerOnNarrow();
+  };
+
+  /** 专家详情里的“向 TA 提问”：回到对话区，发第一条消息时新建绑定这位专家的任务 */
+  const askExpert = (expert: ExpertSummary) => {
+    setActiveTask(null);
+    setCreatedClientId(null);
+    setPendingExpert(expert);
+    setCenterView('chat');
   };
 
   const archiveTask = (task: Task, archived: boolean) => {
@@ -136,6 +184,7 @@ export function AppShell({ account }: AppShellProps = {}) {
 
   const onTaskCreated = (task: Task) => {
     setActiveTask(task);
+    setPendingExpert(null);
     if (view === 'active') refreshTasks();
     else changeView('active');
   };
@@ -151,6 +200,12 @@ export function AppShell({ account }: AppShellProps = {}) {
     setResultsOpen(true);
   }, []);
   const onUploadsChanged = useCallback(() => setUploadsVersion((v) => v + 1), []);
+  const onConsultation = useCallback(() => setConsultationsVersion((v) => v + 1), []);
+  const onOpenExperts = useCallback((consultationId: string | null) => {
+    setExpertsTabRequest((r) => ({ key: (r?.key ?? 0) + 1, consultationId }));
+    setDrawerOpen(false);
+    setResultsOpen(true);
+  }, []);
 
   const onArtifact = useCallback(() => {
     // 结果区自动打开并刷新（规格 3.2）
@@ -216,80 +271,105 @@ export function AppShell({ account }: AppShellProps = {}) {
   };
 
   return (
-    <div
-      className={styles.shell}
-      data-layout={narrow ? 'narrow' : 'wide'}
-      data-sidebar={!narrow && sidebarCollapsed ? 'collapsed' : 'expanded'}
-      data-results={!narrow && resultsOpen ? 'open' : 'closed'}
-    >
-      <Sidebar
-        mode={narrow ? 'drawer' : 'docked'}
-        collapsed={!narrow && sidebarCollapsed}
-        open={narrow ? drawerOpen : true}
-        onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
-        onClose={() => setDrawerOpen(false)}
-        {...(account ? { account } : {})}
-        tasks={{
-          view,
-          list: taskList,
-          clients,
-          activeTaskId: activeTask?.id ?? null,
-          onViewChange: changeView,
-          onSelect: selectTask,
-          // 新建任务先回到欢迎页，发送第一条消息时才真正创建，避免留下空任务
-          onNewTask: () => selectTask(null),
-          onArchive: archiveTask,
-          onRetry: refreshTasks,
-        }}
-      />
-      <ChatPane
-        narrow={narrow}
-        onOpenMenu={() => {
-          setResultsOpen(false);
-          setDrawerOpen(true);
-        }}
-        resultsOpen={resultsOpen}
-        onToggleResults={toggleResults}
-        task={activeTask}
-        skills={skills}
-        clients={clients ?? []}
-        onTaskCreated={onTaskCreated}
-        onTaskChanged={refreshTasks}
-        onArtifact={onArtifact}
-        conversationVersion={conversationVersion}
-        onDraftClientChange={onDraftClientChange}
-        onNewTask={() => selectTask(null)}
-        onReviewUpload={onReviewUpload}
-        onUploadsChanged={onUploadsChanged}
-        uploadsVersion={uploadsVersion}
-      />
-      <ResultsPanel
-        mode={narrow ? 'sheet' : 'docked'}
-        open={resultsOpen}
-        onClose={() => setResultsOpen(false)}
-        task={activeTask}
-        client={panelClient}
-        onArtifactsChanged={refreshTasks}
-        onConversationChanged={onConversationChanged}
-        onClientCreated={onClientCreated}
-        onClientSaved={upsertClient}
-        refreshKey={`${activeTask?.id ?? 'none'}:${artifactsVersion}`}
-        reviewRequest={reviewRequest}
-        uploadsVersion={uploadsVersion}
-        // 结果区里确认核对、放弃、重新识别后，对话区的识别卡片也要刷新（验收反馈 3）
-        onUploadsChanged={onUploadsChanged}
-      />
-      {overlayOpen && (
-        <button
-          type="button"
-          className={styles.backdrop}
-          aria-label={drawerOpen ? t('nav.closeMenu') : t('results.close')}
-          onClick={() => {
-            setDrawerOpen(false);
-            setResultsOpen(false);
+    <ExpertsContext.Provider value={expertList.experts}>
+      <div
+        className={styles.shell}
+        data-layout={narrow ? 'narrow' : 'wide'}
+        data-sidebar={!narrow && sidebarCollapsed ? 'collapsed' : 'expanded'}
+        data-results={!narrow && resultsOpen ? 'open' : 'closed'}
+      >
+        <Sidebar
+          mode={narrow ? 'drawer' : 'docked'}
+          collapsed={!narrow && sidebarCollapsed}
+          open={narrow ? drawerOpen : true}
+          onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
+          onClose={() => setDrawerOpen(false)}
+          {...(account ? { account } : {})}
+          tasks={{
+            view,
+            list: taskList,
+            clients,
+            activeTaskId: activeTask?.id ?? null,
+            onViewChange: changeView,
+            onSelect: selectTask,
+            // 新建任务先回到欢迎页，发送第一条消息时才真正创建，避免留下空任务
+            onNewTask: () => selectTask(null),
+            onArchive: archiveTask,
+            onRetry: refreshTasks,
           }}
+          experts={{ active: centerView === 'experts', onOpen: openExpertCenter }}
         />
-      )}
-    </div>
+        <div className={styles.center}>
+          {centerView === 'experts' && (
+            <ExpertCenter
+              narrow={narrow}
+              onOpenMenu={() => {
+                setResultsOpen(false);
+                setDrawerOpen(true);
+              }}
+              state={expertList}
+              onRetry={() => setExpertsReload((v) => v + 1)}
+              onAsk={askExpert}
+            />
+          )}
+          {/* 看专家库时对话区仍保持挂载（只是隐藏），正在进行的生成不会被打断 */}
+          <div className={styles.slot} hidden={centerView !== 'chat'}>
+            <ChatPane
+              narrow={narrow}
+              onOpenMenu={() => {
+                setResultsOpen(false);
+                setDrawerOpen(true);
+              }}
+              resultsOpen={resultsOpen}
+              onToggleResults={toggleResults}
+              task={activeTask}
+              skills={skills}
+              clients={clients ?? []}
+              onTaskCreated={onTaskCreated}
+              onTaskChanged={refreshTasks}
+              onArtifact={onArtifact}
+              conversationVersion={conversationVersion}
+              onDraftClientChange={onDraftClientChange}
+              onNewTask={() => selectTask(null)}
+              onReviewUpload={onReviewUpload}
+              onUploadsChanged={onUploadsChanged}
+              uploadsVersion={uploadsVersion}
+              pendingExpert={activeTask ? null : pendingExpert}
+              onOpenExperts={onOpenExperts}
+              onConsultation={onConsultation}
+            />
+          </div>
+        </div>
+        <ResultsPanel
+          mode={narrow ? 'sheet' : 'docked'}
+          open={resultsOpen}
+          onClose={() => setResultsOpen(false)}
+          task={activeTask}
+          client={panelClient}
+          onArtifactsChanged={refreshTasks}
+          onConversationChanged={onConversationChanged}
+          onClientCreated={onClientCreated}
+          onClientSaved={upsertClient}
+          refreshKey={`${activeTask?.id ?? 'none'}:${artifactsVersion}`}
+          reviewRequest={reviewRequest}
+          uploadsVersion={uploadsVersion}
+          // 结果区里确认核对、放弃、重新识别后，对话区的识别卡片也要刷新（验收反馈 3）
+          onUploadsChanged={onUploadsChanged}
+          consultationsVersion={consultationsVersion}
+          expertsTabRequest={expertsTabRequest}
+        />
+        {overlayOpen && (
+          <button
+            type="button"
+            className={styles.backdrop}
+            aria-label={drawerOpen ? t('nav.closeMenu') : t('results.close')}
+            onClick={() => {
+              setDrawerOpen(false);
+              setResultsOpen(false);
+            }}
+          />
+        )}
+      </div>
+    </ExpertsContext.Provider>
   );
 }

@@ -10,12 +10,14 @@ import { FileText, History, Plus, UserRound, X } from 'lucide-react';
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getArtifact } from '../api/artifacts';
+import { listTaskConsultations } from '../api/experts';
 import { isAbortError } from '../api/http';
 import { listUploads } from '../api/reports';
 import { getTask } from '../api/workbench';
 import { ArtifactHistory } from '../artifacts/ArtifactHistory';
 import { ArtifactList, sortArtifacts } from '../artifacts/ArtifactList';
 import { ArtifactView } from '../artifacts/ArtifactView';
+import { type ConsultationListState, ExpertsTab } from '../experts/ExpertsTab';
 import { ClientForm } from '../record/ClientForm';
 import { ClientRecord } from '../record/ClientRecord';
 import { ReviewTab } from '../reports/ReviewTab';
@@ -23,8 +25,8 @@ import styles from './ResultsPanel.module.css';
 import { isReadOnlyTask } from './taskGroups';
 import { readUrlId, writeUrlId } from './urlState';
 
-const TABS = ['artifacts', 'client', 'review', 'history'] as const;
-type Tab = (typeof TABS)[number];
+const ALL_TABS = ['artifacts', 'experts', 'client', 'review', 'history'] as const;
+type Tab = (typeof ALL_TABS)[number];
 
 type LoadState = 'loading' | 'ready' | 'error';
 
@@ -56,6 +58,10 @@ export interface ResultsPanelProps {
   uploadsVersion?: number;
   /** 核对标签里的识别记录有变化（确认、放弃、重新识别） */
   onUploadsChanged?: () => void;
+  /** 一次专家调用结束时改变，专家标签据此重新加载 */
+  consultationsVersion?: number;
+  /** 要切到专家标签（对话区里点了“查看专家意见”）；key 变了就重新切 */
+  expertsTabRequest?: { key: number; consultationId: string | null } | null;
 }
 
 /** 右侧结果区：产物预览和审核、客户档案、修改记录（M1 规格 3.1、3.6；M2 规格 2.2） */
@@ -73,6 +79,8 @@ export function ResultsPanel({
   reviewRequest = null,
   uploadsVersion = 0,
   onUploadsChanged,
+  consultationsVersion = 0,
+  expertsTabRequest = null,
 }: ResultsPanelProps) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('artifacts');
@@ -96,6 +104,15 @@ export function ResultsPanel({
   const [detailVersion, setDetailVersion] = useState(0);
   /** 操作时后端报告任务只读（409 read_only），在任务列表刷新前先禁用操作 */
   const [readOnlyTaskId, setReadOnlyTaskId] = useState<string | null>(null);
+  /** 本任务的专家调用（专家标签，M3 规格 2.7）；没有调用时不显示这个标签 */
+  const [consultations, setConsultations] = useState<ConsultationListState>({
+    status: 'loading',
+    consultations: [],
+  });
+  const [consultationsReload, setConsultationsReload] = useState(0);
+  const [focusConsultation, setFocusConsultation] = useState<string | null>(null);
+  const hasExperts = consultations.consultations.length > 0;
+  const TABS = ALL_TABS.filter((id) => id !== 'experts' || hasExperts);
 
   const seenRef = useRef<{ taskId: string | null; refreshKey: string | undefined }>({
     taskId: null,
@@ -169,6 +186,37 @@ export function ResultsPanel({
     onUploadsChanged?.();
   }, [onUploadsChanged]);
   const reviewCount = (uploads ?? []).filter((u) => u.status === 'needs_review').length;
+
+  // 专家调用：换任务、生成了新草稿、一次专家调用结束时重新加载
+  useEffect(() => {
+    setConsultations((c) =>
+      c.consultations[0] && c.consultations[0].taskId !== taskId
+        ? { status: 'loading', consultations: [] }
+        : { ...c, status: 'loading' },
+    );
+    if (taskId === null) return;
+    const controller = new AbortController();
+    listTaskConsultations(taskId, controller.signal)
+      .then((list) => setConsultations({ status: 'ready', consultations: list }))
+      .catch((err: unknown) => {
+        if (!isAbortError(err)) setConsultations({ status: 'error', consultations: [] });
+      });
+    return () => controller.abort();
+  }, [taskId, refreshKey, consultationsVersion, consultationsReload]);
+
+  // 对话区里点了“查看专家意见”：切到专家标签，展开那一次调用
+  const expertsRequestKey = expertsTabRequest?.key ?? null;
+  const expertsRequestId = expertsTabRequest?.consultationId ?? null;
+  useEffect(() => {
+    if (expertsRequestKey === null) return;
+    setFocusConsultation(expertsRequestId);
+    setTab('experts');
+  }, [expertsRequestKey, expertsRequestId]);
+
+  const openExpertsTab = useCallback((consultationId: string | null) => {
+    setFocusConsultation(consultationId);
+    setTab('experts');
+  }, []);
 
   // 产物列表：来自任务详情。换任务时回到列表；同一任务里刷新时打开最新的产物。
   useEffect(() => {
@@ -260,10 +308,13 @@ export function ResultsPanel({
     const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
     if (!step) return;
     e.preventDefault();
-    const next = TABS[(TABS.indexOf(tab) + step + TABS.length) % TABS.length] ?? 'artifacts';
+    const next = TABS[(TABS.indexOf(shownTab) + step + TABS.length) % TABS.length] ?? 'artifacts';
     setTab(next);
     tabRefs.current[next]?.focus();
   };
+
+  // 专家标签只在有专家调用时出现；没有了（换了任务）就回到产物标签
+  const shownTab: Tab = tab === 'experts' && !hasExperts ? 'artifacts' : tab;
 
   const classes = [styles.panel, mode === 'sheet' && styles.sheet].filter(Boolean).join(' ');
   /** 产物标题里的客户称呼（只在健管师界面上显示） */
@@ -302,6 +353,12 @@ export function ResultsPanel({
             newerArtifactId={newerId}
             onDirtyChange={onDirtyChange}
             clientName={clientName}
+            consultation={
+              consultations.consultations.find(
+                (c) => c.id === shownDetail.artifact.consultationId,
+              ) ?? null
+            }
+            onOpenExperts={openExpertsTab}
             {...(onConversationChanged ? { onRegenerated: onConversationChanged } : {})}
           />
         );
@@ -405,9 +462,9 @@ export function ResultsPanel({
             type="button"
             role="tab"
             id={`hb-tab-${id}`}
-            aria-selected={tab === id}
+            aria-selected={shownTab === id}
             aria-controls={`hb-tabpanel-${id}`}
-            tabIndex={tab === id ? 0 : -1}
+            tabIndex={shownTab === id ? 0 : -1}
             className={styles.tab}
             onClick={() => setTab(id)}
             onKeyDown={onTabKeyDown}
@@ -427,12 +484,19 @@ export function ResultsPanel({
 
       <div
         className={styles.content}
-        data-fill={tab === 'artifacts' && shownDetail !== null ? true : undefined}
+        data-fill={shownTab === 'artifacts' && shownDetail !== null ? true : undefined}
         role="tabpanel"
-        id={`hb-tabpanel-${tab}`}
-        aria-labelledby={`hb-tab-${tab}`}
+        id={`hb-tabpanel-${shownTab}`}
+        aria-labelledby={`hb-tab-${shownTab}`}
       >
-        {tab === 'artifacts' && renderArtifacts()}
+        {shownTab === 'artifacts' && renderArtifacts()}
+        {shownTab === 'experts' && (
+          <ExpertsTab
+            state={consultations}
+            focusId={focusConsultation}
+            onRetry={() => setConsultationsReload((v) => v + 1)}
+          />
+        )}
         {tab === 'client' && creatingClient && (
           <div className={styles.form}>
             <ClientForm

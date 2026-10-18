@@ -2,6 +2,11 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import {
   ABNORMAL_FLAGS,
+  CONSULTATION_STATUSES,
+  CONSULTATION_TRIGGERS,
+  EXPERT_CALL_STATUSES,
+  EXPERT_FAILURE_CATEGORIES,
+  SUGGESTION_CATEGORIES,
   SOURCE_PRIORITIES,
   SOURCE_SCOPES,
   SOURCE_STATUSES,
@@ -53,7 +58,7 @@ describe('界面文字走 i18n（验收标准 25）', () => {
   it('组件和逻辑代码里没有写死的中文', () => {
     const files = sourceFiles(SRC);
     // 确实扫到了各个界面目录（档案、核对、对话、结果区）
-    for (const dir of ['record', 'reports', 'chat', 'artifacts', 'shell'])
+    for (const dir of ['record', 'reports', 'chat', 'artifacts', 'shell', 'experts'])
       expect(
         files.some((f) => relative(SRC, f).startsWith(dir)),
         dir,
@@ -87,6 +92,11 @@ describe('界面文字走 i18n（验收标准 25）', () => {
       'steps.generateInterpretation',
       'steps.generateOutline',
       'steps.answer',
+      'steps.routeExperts',
+      'steps.consultExpert',
+      'steps.consultExperts',
+      'steps.reuseExperts',
+      'steps.synthesizeExperts',
       'skills.client-recent-summary.name',
       'skills.report-interpretation.name',
       'skills.interview-outline.name',
@@ -105,6 +115,12 @@ describe('界面文字走 i18n（验收标准 25）', () => {
       ['record.tier.levels', RISK_TIERS],
       ['record.history.categories', HEALTH_HISTORY_CATEGORIES],
       ['chat.streamErrors', streamErrorKindSchema.options],
+      // M3：专家调用状态、失败类别、触发方式、建议类别
+      ['experts.call.status', EXPERT_CALL_STATUSES],
+      ['experts.call.failure', EXPERT_FAILURE_CATEGORIES],
+      ['experts.trigger', CONSULTATION_TRIGGERS],
+      ['experts.tab.status', CONSULTATION_STATUSES],
+      ['experts.tab.suggestionCategory', SUGGESTION_CATEGORIES],
     ];
     for (const [prefix, values] of groups) {
       for (const v of values) {

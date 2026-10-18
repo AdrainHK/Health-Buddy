@@ -174,3 +174,12 @@
 .composer[data-dragging] {
   border-color: var(--hb-brand);
 }
+
+/* @ 列表的分组标题（“专家”组，M3 规格 2.1） */
+.menuGroup {
+  padding: var(--hb-space-2) var(--hb-space-3) var(--hb-space-1);
+  border-top: 1px solid var(--hb-border);
+  color: var(--hb-text-3);
+  font-size: var(--hb-text-xs);
+  font-weight: 600;
+}

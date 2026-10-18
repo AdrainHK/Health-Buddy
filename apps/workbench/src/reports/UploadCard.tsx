@@ -3,6 +3,7 @@ import { Button } from '@health-buddy/ui';
 import { CircleAlert, FileSearch, FileCheck2, Loader } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { isActive, retryUpload } from '../api/reports';
 import { uploadErrorKey } from './errors';
 import styles from './Reports.module.css';
@@ -148,7 +149,7 @@ function newer(a: ReportUploadSummary, b: ReportUploadSummary): ReportUploadSumm
   return b;
 }
 
-type T = ReturnType<typeof useTranslation>['t'];
+type T = TFunction;
 
 export function statusText(t: T, upload: ReportUploadSummary): string {
   switch (upload.status) {

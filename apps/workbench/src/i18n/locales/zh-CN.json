@@ -126,7 +126,30 @@
     "duplicateFailed": "这份文件已经上传过，识别没有成功，请在核对标签里重新识别或放弃后再上传",
     "openReview": "去核对",
     "autoInterpret": "核对完成后会自动开始体检解读",
-    "interpretKeyword": "解读"
+    "interpretKeyword": "解读",
+    "experts": {
+      "group": "专家",
+      "removeExpert": "移除专家 {{name}}",
+      "max": "一条消息最多请 3 位专家",
+      "skillNoExperts": "这个技能暂不调用专家，请移除 @ 的专家",
+      "needAsk": "@专家 需要在问一问模式下直接提问，或配合会请专家的技能使用",
+      "switchToAsk": "切换到问一问",
+      "excludedTag": "不要请 {{name}}",
+      "selector": {
+        "label": "专家",
+        "auto": "自动选择",
+        "open": "调整",
+        "close": "收起",
+        "autoOption": "自动",
+        "include": "一定要请",
+        "exclude": "不要请",
+        "includeSummary": "一定要请：{{names}}",
+        "excludeSummary": "不要请：{{names}}",
+        "summarySeparator": "；",
+        "rowLabel": "{{name}} 的选择",
+        "note": "选择只对这一条消息生效"
+      }
+    }
   },
   "steps": {
     "readClient": "读取客户档案",
@@ -170,7 +193,8 @@
       "artifacts": "产物",
       "client": "档案",
       "review": "核对",
-      "history": "记录"
+      "history": "记录",
+      "experts": "专家"
     },
     "empty": {
       "artifacts": "还没有产物",
@@ -325,6 +349,20 @@
         "title": "AI 建议分层：{{tier}}",
         "note": "建议分层只给健管师看，不会进入通俗版。是否采用由你决定。",
         "adopt": "采用建议分层（确认时写入客户档案的分层历史）"
+      },
+      "experts": {
+        "summary": "本次调用了 {{count}} 位专家，有 {{disagreements}} 处分歧，请在专家标签查看",
+        "open": "查看专家标签",
+        "disagreementHint": "有分歧时只提示，不影响确认。",
+        "missingReferral": "专家建议转介，但专业版里没有就医或转介建议，请确认是否补上（仅提示，不影响确认）",
+        "referralHeading": "就医或转介建议"
+      },
+      "signals": {
+        "crisis": "心理危机提示",
+        "crisisText": "客户可能存在心理危机信号，请按危机流程处理：立即联系客户本人和家属，必要时拨打当地急救电话。",
+        "emergency": "疑似急症提示",
+        "emergencyText": "健管师转述的情况里有疑似急症，请建议客户及时就医，必要时拨打当地急救电话。",
+        "note": "这些提示只给健管师看，不会进入通俗版。"
       }
     },
     "history": {
@@ -699,7 +737,55 @@
     "sleep_hours": "睡眠时长"
   },
   "experts": {
+    "title": "专家中心",
+    "library": "专家库",
+    "intro": "选一位 AI 专家直接提问，或在任务里输入 @ 请专家一起看。专家的意见只给健管师参考。",
+    "ai": "AI",
+    "aiLabel": "AI 生成",
+    "aiNote": "由 AI 根据收录的指南生成意见，仅供健管师专业参考。",
+    "loading": "正在加载专家…",
+    "loadFailed": "专家加载失败",
+    "retry": "重试",
+    "empty": "暂时没有可用的专家",
+    "emptyHint": "专家的知识来源还在等医学顾问确认，开放后会显示在这里。",
+    "openDetail": "查看{{name}}",
+    "back": "返回专家库",
+    "pending": "知识来源待医学顾问确认，仅供试用",
+    "paused": "已暂停",
+    "pausedHint": "这位专家已被平台暂停，暂时不能提问。",
+    "version": "版本 {{version}}",
+    "usage": "我用过 {{count}} 次",
+    "strengths": "擅长的问题",
+    "outOfScope": "不负责的问题",
+    "outOfScopeHint": "超出范围时，专家会说明并建议改问哪位专家或转介哪类医生。",
+    "ask": "向 TA 提问",
+    "askTaskTitle": "向{{name}}提问",
+    "detailLoading": "正在加载专家详情…",
+    "detailFailed": "专家详情加载失败",
+    "unknownName": "AI 专家",
+    "avatar": "专家：{{name}}",
+    "names": {
+      "endocrine-metabolism": "内分泌与代谢专家",
+      "cardiovascular": "心血管专家",
+      "nutrition": "营养专家",
+      "exercise-rehab": "运动康复专家",
+      "mental-health": "心理专家",
+      "lab-interpretation": "检验解读专家"
+    },
+    "bound": {
+      "label": "本任务绑定的专家",
+      "greeting": "向{{name}}提问",
+      "subtitle": "可以 @ 一位客户，把 TA 去标识化的资料带进来；不 @ 客户就是一般的专业问题。",
+      "askOnly": "专家中心的提问固定为问一问，专家不生成产物。",
+      "note": "仅供健管师专业参考，非医疗诊断，请勿直接转发给客户",
+      "notSendable": "专家的回答不经审核，没有发给客户的入口。需要给客户的内容请用技能生成草稿。"
+    },
     "sources": {
+      "title": "知识来源",
+      "count": "共 {{count}} 条",
+      "sectionCount": "{{section}}（{{count}} 条）",
+      "noSection": "未分组",
+      "publisherVersion": "{{publisher}} · {{version}}",
       "columns": {
         "name": "来源文件原名",
         "section": "分组",
@@ -725,6 +811,146 @@
         "confirmed": "已确认",
         "retired": "已停用"
       }
+    },
+    "separator": "、",
+    "call": {
+      "status": {
+        "running": "进行中",
+        "done": "已回复",
+        "timeout": "未能按时回复",
+        "failed": "暂时无法回复",
+        "refused": "暂时无法回复",
+        "stopped": "已停止"
+      },
+      "failure": {
+        "timeout": "超时",
+        "refused": "拒答",
+        "invalid_output": "意见未通过依据核对",
+        "provider_error": "AI 服务暂时不可用"
+      },
+      "withFailure": "{{status}}（{{category}}）",
+      "item": "{{name}}：{{status}}",
+      "pending": "等待中"
+    },
+    "reasons": {
+      "manager": "健管师指定",
+      "bound": "本任务绑定的专家",
+      "indicator": "报告中{{indicator}}{{direction}}",
+      "someIndicator": "有指标",
+      "direction": {
+        "high": "高于参考范围",
+        "low": "低于参考范围",
+        "no_reference": "报告未提供参考范围"
+      },
+      "model": {
+        "manager_request": "根据健管师的要求",
+        "health_history": "根据健康史",
+        "indicator_relation": "根据指标之间的关联"
+      }
+    },
+    "routing": {
+      "selected": "{{name}}：{{reasons}}",
+      "excluded": "按您的要求未请{{name}}",
+      "overCap": "因数量上限未调用：{{name}}",
+      "ruleOnly": "自动选择没有完成，只按报告指标选了专家"
+    },
+    "steps": {
+      "routing": "正在选择专家",
+      "routed": "已选择 {{count}} 位专家",
+      "consulting": "正在请{{names}}分析",
+      "consulted": "已调用：{{names}}",
+      "consultFailed": "专家未能回复：{{names}}",
+      "synthesizing": "正在汇总专家意见",
+      "synthesized": "已汇总专家意见",
+      "synthesizedWith": "已汇总，有 {{count}} 处分歧",
+      "synthesisFailed": "未能自动汇总，请逐条查看",
+      "viewOpinions": "查看专家意见"
+    },
+    "trigger": {
+      "expert_center": "专家中心提问",
+      "mention": "@专家",
+      "skill_auto": "体检解读自动请专家",
+      "plan": "想一想计划"
+    },
+    "tab": {
+      "loading": "正在加载专家意见…",
+      "loadFailed": "专家意见加载失败",
+      "retry": "重试",
+      "empty": "本任务还没有请过专家",
+      "list": "本任务的专家调用",
+      "callTitle": "{{trigger}} · {{time}}",
+      "experts": "参与的专家：{{names}}",
+      "status": {
+        "running": "进行中",
+        "done": "已完成",
+        "partial": "部分专家未回复",
+        "failed": "专家都未能回复",
+        "stopped": "已停止"
+      },
+      "crisis": "心理危机提示",
+      "crisisText": "客户可能存在心理危机信号，请按危机流程处理：立即联系客户本人和家属，必要时拨打当地急救电话。",
+      "emergency": "疑似急症提示",
+      "emergencyText": "健管师转述的情况里有疑似急症，请建议客户及时就医，必要时拨打当地急救电话。",
+      "summary": "汇总",
+      "consensus": "共同要点",
+      "consensusItem": "{{point}}（{{names}}）",
+      "referral": "转介建议",
+      "referralItem": "{{name}}：{{urgency}}",
+      "referralTo": "转介：{{to}}",
+      "referralReason": "原因：{{reason}}",
+      "followUp": "建议健管师关注",
+      "missing": "未能回复的专家：{{names}}",
+      "synthesisFailed": "未能自动汇总，请逐条查看各位专家的原始意见。",
+      "disagreements": "专家分歧（{{count}} 处）",
+      "disagreementNote": "分歧只列出各位专家的观点和依据，不替你下结论；有分歧不影响确认草稿。",
+      "position": "{{name}}：{{view}}",
+      "backendGenerated": "由系统按各位专家的转介建议标出",
+      "opinions": "原始意见",
+      "conclusion": "结论",
+      "findings": "依据",
+      "dataRefs": "数据：{{data}}",
+      "dataOnly": "仅描述数据",
+      "suggestions": "建议健管师关注",
+      "suggestionCategory": {
+        "lifestyle": "生活方式",
+        "follow_up": "复查和跟进",
+        "communication": "沟通"
+      },
+      "questions": "建议进一步了解",
+      "gaps": "缺少的数据",
+      "referralNeeded": "{{urgency}}",
+      "referralNone": "暂不需要转介",
+      "outOfScope": "这个问题不在这位专家的范围内",
+      "removed": "部分内容因依据无法核实已移除",
+      "urgency": {
+        "attention": "建议就医评估",
+        "urgent": "需尽快就医"
+      },
+      "citationPending": "来源待确认",
+      "citationLabel": "查看引用 {{cardId}}",
+      "cardSource": "来源 {{sourceId}} · {{section}}",
+      "cardUnknown": "这张卡片暂时无法显示，请在专家详情里查看来源 {{sourceId}}",
+      "note": "仅供健管师专业参考，非医疗诊断，请勿直接转发给客户"
+    },
+    "feedback": {
+      "label": "这条意见有用吗？",
+      "useful": "有用",
+      "notUseful": "没用",
+      "reasonLegend": "没用的原因（选一项）",
+      "reasons": {
+        "inaccurate": "不准确",
+        "too_general": "太笼统",
+        "out_of_scope": "超出范围",
+        "bad_citation": "引用不对",
+        "other": "其他"
+      },
+      "submit": "提交",
+      "cancel": "取消",
+      "saved": "已记录你的反馈，可以随时修改",
+      "failed": "反馈没有保存，请重试",
+      "currentUseful": "你选了“有用”",
+      "currentNotUseful": "你选了“没用”（{{reason}}）",
+      "note": "反馈只用于平台评估专家质量，其他健管师看不到。"
     }
   }
 }

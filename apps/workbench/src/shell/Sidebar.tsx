@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ExpertAvatar } from '../experts/ExpertBadges';
+import { useExpertName } from '../experts/ExpertsContext';
 import styles from './Sidebar.module.css';
 import { groupTasks, isReadOnlyTask, type TaskGroup } from './taskGroups';
 
@@ -55,6 +57,8 @@ export interface SidebarProps {
   onClose: () => void;
   account?: SidebarAccount;
   tasks?: SidebarTasks;
+  /** 专家中心入口（M3 规格 2.1）：点击后中间区域显示专家库 */
+  experts?: { active: boolean; onOpen: () => void };
 }
 
 export function Sidebar({
@@ -65,6 +69,7 @@ export function Sidebar({
   onClose,
   account,
   tasks,
+  experts,
 }: SidebarProps) {
   const { t } = useTranslation();
   const classes = [
@@ -119,7 +124,11 @@ export function Sidebar({
 
       <nav className={styles.nav}>
         <NavItem icon={<Sparkles size={18} />} label={t('nav.skills')} />
-        <NavItem icon={<Stethoscope size={18} />} label={t('nav.experts')} />
+        <NavItem
+          icon={<Stethoscope size={18} />}
+          label={t('nav.experts')}
+          {...(experts ? { onClick: experts.onOpen, current: experts.active } : {})}
+        />
         <NavItem icon={<Timer size={18} />} label={t('nav.automations')} />
       </nav>
 
@@ -201,6 +210,7 @@ function TaskSection({ tasks }: { tasks: SidebarTasks | undefined }) {
 
 function TaskGroupList({ group, tasks }: { group: TaskGroup; tasks: SidebarTasks | undefined }) {
   const { t } = useTranslation();
+  const expertName = useExpertName();
   const label =
     group.kind === 'client'
       ? (group.clientName ?? '…')
@@ -226,6 +236,8 @@ function TaskGroupList({ group, tasks }: { group: TaskGroup; tasks: SidebarTasks
                 onClick={() => tasks?.onSelect(task)}
                 title={title}
               >
+                {/* 专家中心发起的任务名前带专家头像（Q25） */}
+                {task.expertId && <ExpertAvatar name={expertName(task.expertId)} size="small" />}
                 <span className={styles.taskTitle}>{title}</span>
                 {readOnly && (
                   <span className={styles.badge} title={t('nav.readOnlyHint')}>
@@ -254,9 +266,25 @@ function TaskGroupList({ group, tasks }: { group: TaskGroup; tasks: SidebarTasks
   );
 }
 
-function NavItem({ icon, label }: { icon: ReactNode; label: string }) {
+function NavItem({
+  icon,
+  label,
+  onClick,
+  current,
+}: {
+  icon: ReactNode;
+  label: string;
+  onClick?: () => void;
+  current?: boolean;
+}) {
   return (
-    <button type="button" className={styles.navItem} title={label}>
+    <button
+      type="button"
+      className={styles.navItem}
+      title={label}
+      onClick={onClick}
+      aria-current={current ? 'page' : undefined}
+    >
       {icon}
       <span className={styles.label}>{label}</span>
     </button>

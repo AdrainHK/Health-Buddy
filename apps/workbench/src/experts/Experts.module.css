@@ -1,0 +1,629 @@
+/* 专家中心、专家标签、专家选择条共用的样式。颜色和间距一律用 --hb-* 变量 */
+
+.aiBadge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  padding: 0 var(--hb-space-1);
+  border: 1px solid color-mix(in oklab, var(--hb-info) 45%, var(--hb-border));
+  border-radius: var(--hb-radius-sm);
+  background: color-mix(in oklab, var(--hb-info) 10%, var(--hb-surface));
+  color: var(--hb-info);
+  font-size: var(--hb-text-xs);
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.avatar {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--hb-radius-full);
+  background: var(--hb-brand-soft);
+  color: var(--hb-brand);
+}
+
+.avatar[data-size='small'] {
+  width: 20px;
+  height: 20px;
+}
+
+.pendingBadge,
+.pausedBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hb-space-1);
+  padding: 2px var(--hb-space-2);
+  border-radius: var(--hb-radius-sm);
+  font-size: var(--hb-text-xs);
+  line-height: 1.4;
+}
+
+.pendingBadge {
+  background: color-mix(in oklab, var(--hb-warning) 14%, var(--hb-surface));
+  color: var(--hb-warning);
+}
+
+.pausedBadge {
+  background: var(--hb-surface-3);
+  color: var(--hb-text-2);
+}
+
+/* ---------- 专家中心（中间区域） ---------- */
+
+.center {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--hb-surface);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--hb-space-2);
+  height: 52px;
+  padding: 0 var(--hb-space-3);
+  border-bottom: 1px solid var(--hb-border);
+}
+
+.topbarTitle {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--hb-text-md);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  padding: var(--hb-space-5) var(--hb-space-4);
+  overflow-y: auto;
+}
+
+.column {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.intro {
+  margin: 0 0 var(--hb-space-4);
+  color: var(--hb-text-2);
+  font-size: var(--hb-text-sm);
+}
+
+.status {
+  margin: 0;
+  padding: var(--hb-space-4) 0;
+  color: var(--hb-text-2);
+  font-size: var(--hb-text-sm);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: var(--hb-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--hb-space-2);
+  min-width: 0;
+  padding: var(--hb-space-4);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-lg);
+  background: var(--hb-surface);
+  color: var(--hb-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.card:hover {
+  border-color: var(--hb-border-strong);
+  box-shadow: var(--hb-shadow-sm);
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: var(--hb-space-2);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.name {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--hb-text-md);
+  font-weight: 600;
+}
+
+.tagline {
+  margin: 0;
+  color: var(--hb-text-2);
+  font-size: var(--hb-text-sm);
+  overflow-wrap: anywhere;
+}
+
+/* 专家详情 */
+
+.detailHead {
+  display: flex;
+  align-items: center;
+  gap: var(--hb-space-3);
+  min-width: 0;
+  margin-bottom: var(--hb-space-3);
+}
+
+.detailTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hb-space-2);
+  min-width: 0;
+  margin: 0;
+  font-size: var(--hb-text-xl);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hb-space-2) var(--hb-space-4);
+  margin: var(--hb-space-2) 0 var(--hb-space-4);
+  color: var(--hb-text-3);
+  font-size: var(--hb-text-sm);
+}
+
+.notice {
+  margin: 0 0 var(--hb-space-3);
+  padding: var(--hb-space-2) var(--hb-space-3);
+  border-radius: var(--hb-radius-md);
+  background: color-mix(in oklab, var(--hb-warning) 12%, var(--hb-surface));
+  color: var(--hb-text);
+  font-size: var(--hb-text-sm);
+}
+
+.note {
+  margin: var(--hb-space-1) 0;
+  color: var(--hb-text-3);
+  font-size: var(--hb-text-xs);
+}
+
+.section {
+  margin-top: var(--hb-space-5);
+}
+
+.sectionTitle {
+  margin: 0 0 var(--hb-space-2);
+  font-size: var(--hb-text-md);
+  font-weight: 600;
+}
+
+.bullets {
+  margin: 0;
+  padding-left: var(--hb-space-5);
+  line-height: var(--hb-leading);
+  overflow-wrap: anywhere;
+}
+
+.sourceGroup {
+  margin-top: var(--hb-space-2);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-md);
+}
+
+.sourceGroup > summary {
+  padding: var(--hb-space-2) var(--hb-space-3);
+  font-size: var(--hb-text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--hb-text-sm);
+  table-layout: fixed;
+}
+
+.table th,
+.table td {
+  padding: var(--hb-space-2) var(--hb-space-3);
+  border-top: 1px solid var(--hb-border);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.table th {
+  color: var(--hb-text-3);
+  font-size: var(--hb-text-xs);
+  font-weight: 600;
+}
+
+.table th:first-child {
+  width: 46%;
+}
+
+.sub {
+  display: block;
+  color: var(--hb-text-3);
+  font-size: var(--hb-text-xs);
+}
+
+/* 手机宽度：来源表格改为一行一张小卡片，列名写在每个值前面，不横向滚动 */
+@media (max-width: 640px) {
+  .table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .table,
+  .table tbody,
+  .table tr,
+  .table td {
+    display: block;
+    width: 100%;
+  }
+
+  .table tr {
+    padding: var(--hb-space-2) var(--hb-space-3);
+    border-top: 1px solid var(--hb-border);
+  }
+
+  .table td {
+    padding: 2px 0;
+    border: 0;
+  }
+
+  .table td::before {
+    content: attr(data-label) '：';
+    color: var(--hb-text-3);
+    font-size: var(--hb-text-xs);
+  }
+
+  .table td:first-child::before {
+    content: none;
+  }
+
+  .table td:first-child {
+    font-weight: 600;
+  }
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hb-space-2);
+}
+
+/* ---------- 对话区：绑定专家的任务、专家选择条 ---------- */
+
+.boundBar {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--hb-space-2);
+  margin-bottom: var(--hb-space-4);
+  padding: var(--hb-space-3);
+  border-radius: var(--hb-radius-md);
+  background: var(--hb-surface-2);
+  font-size: var(--hb-text-sm);
+}
+
+.boundText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.boundName {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hb-space-2);
+  font-weight: 600;
+}
+
+.forwardNote {
+  color: var(--hb-warning);
+  font-weight: 600;
+}
+
+.selector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-2);
+  min-width: 0;
+  width: 100%;
+}
+
+.selectorHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hb-space-2);
+  min-width: 0;
+}
+
+.selectorSummary {
+  min-width: 0;
+  color: var(--hb-text-2);
+  overflow-wrap: anywhere;
+}
+
+.selectorList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.selectorRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hb-space-1) var(--hb-space-2);
+}
+
+.choice {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--hb-space-1);
+  padding: 0;
+  border: 0;
+  margin: 0;
+}
+
+.choiceOption {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: var(--hb-text-xs);
+  cursor: pointer;
+}
+
+/* ---------- 专家标签（结果区） ---------- */
+
+.tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-3);
+  padding: var(--hb-space-3);
+}
+
+.consultation {
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-md);
+  background: var(--hb-surface);
+}
+
+.consultation > summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--hb-space-2) var(--hb-space-3);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.consultationTitle {
+  font-weight: 600;
+}
+
+.consultationBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-3);
+  padding: 0 var(--hb-space-3) var(--hb-space-3);
+}
+
+.alert {
+  margin: 0;
+  padding: var(--hb-space-2) var(--hb-space-3);
+  border: 1px solid color-mix(in oklab, var(--hb-danger) 40%, var(--hb-border));
+  border-radius: var(--hb-radius-md);
+  background: color-mix(in oklab, var(--hb-danger) 8%, var(--hb-surface));
+  color: var(--hb-danger);
+  font-size: var(--hb-text-sm);
+  overflow-wrap: anywhere;
+}
+
+.alert strong {
+  display: block;
+}
+
+.warn {
+  margin: 0;
+  padding: var(--hb-space-2) var(--hb-space-3);
+  border-radius: var(--hb-radius-md);
+  background: color-mix(in oklab, var(--hb-warning) 12%, var(--hb-surface));
+  color: var(--hb-text);
+  font-size: var(--hb-text-sm);
+  overflow-wrap: anywhere;
+}
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-1);
+  min-width: 0;
+}
+
+.blockTitle {
+  margin: 0;
+  font-size: var(--hb-text-sm);
+  font-weight: 600;
+}
+
+.items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-1);
+  margin: 0;
+  padding-left: var(--hb-space-5);
+  font-size: var(--hb-text-sm);
+  line-height: var(--hb-leading);
+  overflow-wrap: anywhere;
+}
+
+.opinion {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-2);
+  padding: var(--hb-space-3);
+  border-radius: var(--hb-radius-md);
+  background: var(--hb-surface-2);
+  min-width: 0;
+}
+
+.opinionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hb-space-2);
+  font-weight: 600;
+}
+
+.callStatus {
+  font-size: var(--hb-text-xs);
+  font-weight: 400;
+  color: var(--hb-text-3);
+}
+
+.callStatus[data-status='failed'],
+.callStatus[data-status='timeout'],
+.callStatus[data-status='refused'] {
+  color: var(--hb-danger);
+}
+
+.text {
+  margin: 0;
+  font-size: var(--hb-text-sm);
+  line-height: var(--hb-leading);
+  overflow-wrap: anywhere;
+}
+
+.citations {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--hb-space-1);
+  margin-left: var(--hb-space-1);
+}
+
+.citation {
+  padding: 0 var(--hb-space-1);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-sm);
+  background: var(--hb-surface);
+  color: var(--hb-text-2);
+  font-size: var(--hb-text-xs);
+  cursor: pointer;
+}
+
+.citation[aria-expanded='true'] {
+  border-color: var(--hb-brand);
+  color: var(--hb-brand);
+}
+
+.citationCard {
+  margin: var(--hb-space-1) 0 0;
+  padding: var(--hb-space-2);
+  border-left: 2px solid var(--hb-brand);
+  background: var(--hb-surface);
+  color: var(--hb-text-2);
+  font-size: var(--hb-text-xs);
+  overflow-wrap: anywhere;
+}
+
+.unconfirmed {
+  color: var(--hb-warning);
+}
+
+.feedback {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hb-space-2);
+  font-size: var(--hb-text-sm);
+}
+
+.reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hb-space-1) var(--hb-space-3);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: var(--hb-text-sm);
+}
+
+.reasons legend {
+  width: 100%;
+  margin-bottom: var(--hb-space-1);
+  color: var(--hb-text-2);
+  font-size: var(--hb-text-xs);
+}
+
+/* ---------- 执行步骤里每位专家的状态 ---------- */
+
+.callList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: var(--hb-space-1) 0 0;
+  padding-left: var(--hb-space-5);
+  list-style: none;
+  font-size: var(--hb-text-xs);
+}
+
+.callItem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hb-space-1) var(--hb-space-2);
+  color: var(--hb-text-2);
+}
+
+.callItem[data-status='failed'],
+.callItem[data-status='timeout'],
+.callItem[data-status='refused'] {
+  color: var(--hb-danger);
+}
+
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--hb-brand);
+  font-size: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
