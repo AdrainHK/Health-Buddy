@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from './App';
 import { json, makeThresholds, mockApi, USERS } from './test/mockApi';
@@ -61,6 +61,27 @@ describe('后台登录和角色分流', () => {
 
     await user.click(screen.getByRole('button', { name: '退出登录' }));
     expect(await screen.findByRole('heading', { name: '登录后台' })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['平台管理员', USERS.platform_admin, ['危急指标设置', '专家管理', '专家统计']],
+    ['协会管理员', USERS.operator_admin, ['危急指标设置', '专家统计']],
+    ['机构管理员', USERS.org_admin, ['危急指标设置']],
+  ])('%s的导航只列出能用的版块', async (_label, account, expected) => {
+    mockApi(account, {
+      'GET /critical-thresholds': () => json(200, { thresholds: makeThresholds() }),
+    });
+    render(<App />);
+    const nav = await screen.findByRole('navigation', { name: '后台导航' });
+    expect(
+      within(nav)
+        .getAllByRole('link')
+        .map((a) => a.textContent),
+    ).toEqual(expected);
+    expect(within(nav).getByRole('link', { name: '危急指标设置' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
   });
 
   it('会话中途过期时回到登录页', async () => {
