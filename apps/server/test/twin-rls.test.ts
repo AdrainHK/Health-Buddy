@@ -214,6 +214,69 @@ describe('孪生数据表的行级安全和约束', () => {
     }
   });
 
+  it('运营商和平台管理员不能给任何客户写孪生数据', async () => {
+    for (const c of [operatorAdminA(), platform()]) {
+      const item = await owner
+        .selectFrom('follow_up_items')
+        .select('id')
+        .where('client_id', '=', f.clients.a1[0])
+        .executeTakeFirstOrThrow();
+      for (const [label, attempt] of [
+        [
+          'status',
+          (trx: TenantTransaction) =>
+            trx.insertInto('twin_status_history').values(statusRow(f.clients.a1[0])).execute(),
+        ],
+        [
+          'forecast',
+          (trx: TenantTransaction) =>
+            trx.insertInto('twin_forecasts').values(forecastRow(f.clients.a1[0], 'dbp')).execute(),
+        ],
+        [
+          'follow-up',
+          (trx: TenantTransaction) =>
+            trx
+              .insertInto('follow_up_items')
+              .values(followUpRow(f.clients.a1[0], { dedupe_key: 'op' }))
+              .execute(),
+        ],
+        [
+          'event',
+          (trx: TenantTransaction) =>
+            trx
+              .insertInto('follow_up_events')
+              .values({
+                client_id: f.clients.a1[0],
+                item_id: item.id,
+                actor_id: c.userId,
+                action: 'consulted',
+              })
+              .execute(),
+        ],
+        [
+          'reading',
+          (trx: TenantTransaction) =>
+            trx
+              .insertInto('monitoring_readings')
+              .values({
+                client_id: f.clients.a1[0],
+                metric: 'sbp',
+                value: 120,
+                unit: 'mmHg',
+                measured_at: new Date(),
+                source: 'manual',
+                created_by: c.userId,
+              })
+              .execute(),
+        ],
+      ] as const) {
+        await expect(withTenant(app, c, attempt), `${c.role} ${label}`).rejects.toMatchObject({
+          code: '42501',
+        });
+      }
+    }
+  });
+
   describe('跨租户写入被拒绝', () => {
     const targets = () => [f.clients.a2, f.clients.a3, f.clients.b1];
 
@@ -1069,6 +1132,27 @@ describe('孪生数据表的行级安全和约束', () => {
       );
       expect(after).toHaveLength(DEFAULT_TWIN_STATUS_RULES.length);
       expect(new Set(after.map((r) => r.updated_by))).toEqual(new Set([f.users.platform.id]));
+    });
+    it('自己设会话变量或写标记表都不能把普通修改记成 reset', async () => {
+      await asPlatform(async (trx) => {
+        await sql`select set_config('hb.twin_rules_reset', 'on', true)`.execute(trx);
+        await trx
+          .updateTable('twin_status_rules')
+          .set({ enabled: false, updated_by: f.users.platform.id })
+          .where('metric', '=', 'sleep_hours')
+          .execute();
+      });
+      const events = await asPlatform((trx) =>
+        trx.selectFrom('twin_status_rule_events').select('action').execute(),
+      );
+      expect(events.map((e) => e.action)).toEqual(['updated']);
+      await expect(
+        asPlatform((trx) =>
+          sql`insert into twin_rules_reset_marker (xact) values (pg_current_xact_id())`.execute(
+            trx,
+          ),
+        ),
+      ).rejects.toMatchObject({ code: '42501' });
     });
   });
 

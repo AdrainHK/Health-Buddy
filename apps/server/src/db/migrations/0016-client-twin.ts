@@ -252,7 +252,10 @@ export async function up(db: Kysely<unknown>): Promise<void> {
           coalesce(new.id, old.id),
           app_user_id(),
           case
-            when current_setting('hb.twin_rules_reset', true) = 'on' then 'reset'
+            -- 只有 twin_status_rules_reset 能写标记表（应用角色没有任何权限），应用自己设不了
+            when exists (
+              select 1 from twin_rules_reset_marker m where m.xact = pg_current_xact_id()
+            ) then 'reset'
             when tg_op = 'INSERT' then 'created'
             when tg_op = 'UPDATE' then 'updated'
             else 'deleted'
@@ -268,16 +271,23 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     create trigger twin_status_rules_audit after insert or update or delete on twin_status_rules
       for each row execute function twin_status_rules_audit();
 
-    -- 恢复为默认值（2.10）：以调用者身份执行，只有平台管理员的策略放行删除和写入；
-    -- 修改记录标为 reset，版本号只加一次。默认规则由后端从 packages/shared 传入。
+    -- 恢复为默认值（2.10）的标记：当前事务在恢复默认值。应用角色没有任何权限，
+    -- 只有下面以所有者身份执行的函数能写，所以修改记录里的 reset 不能被伪造。
+    create table twin_rules_reset_marker (xact xid8 primary key);
+    alter table twin_rules_reset_marker enable row level security;
+
+    -- 恢复为默认值：只有平台管理员能调用；修改记录标为 reset，版本号只加一次。
+    -- 以所有者身份执行（要写标记表），所以在这里显式校验角色，并以调用者名义记 updated_by。
+    -- 默认规则由后端从 packages/shared 传入，形状、单位和范围仍由 check 和触发器校验。
     create function twin_status_rules_reset(p_rules jsonb) returns void
-      language plpgsql set search_path = pg_catalog, public, pg_temp
+      language plpgsql security definer set search_path = pg_catalog, public, pg_temp
     as $$
     begin
-      if app_role() is distinct from 'platform_admin' then
+      if app_role() is distinct from 'platform_admin' or app_user_id() is null then
         raise exception 'only the platform admin can reset rules' using errcode = 'insufficient_privilege';
       end if;
-      perform set_config('hb.twin_rules_reset', 'on', true);
+      insert into twin_rules_reset_marker (xact) values (pg_current_xact_id())
+        on conflict do nothing;
       delete from twin_status_rules;
       insert into twin_status_rules
         (domain, metric, source, method, comparator, value, unit, window_days, level, updated_by)
@@ -285,7 +295,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
                r.window_days, r.level, app_user_id()
         from jsonb_to_recordset(p_rules) as r(domain text, metric text, source text, method text,
           comparator text, value numeric, unit text, window_days int, level text);
-      perform set_config('hb.twin_rules_reset', 'off', true);
+      delete from twin_rules_reset_marker where xact = pg_current_xact_id();
     end
     $$;
     revoke all on function twin_status_rules_reset(jsonb) from public;
