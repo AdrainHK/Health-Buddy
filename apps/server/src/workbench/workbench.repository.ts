@@ -73,9 +73,25 @@ export interface RegenerationContext {
   reportId: string | null;
   /** 退回重写时，上一版用到的专家调用：默认复用，不重新请专家（M3 Q21） */
   reuseConsultationId?: string | null;
+  /** 健管师当初的要求是哪条消息（专家调用记下它，重新请专家时按原文再问） */
+  requestMessageId?: string | null;
   /** 确认计划时沿用提出计划那条消息里的“一定要请”“不要请”（M3 规格 2.8） */
   expertRefs?: string[];
   excludedExperts?: string[];
+}
+
+/** 重新请专家、补请专家：按原调用的问题和报告再请一次（M3 规格 6.4） */
+export interface FollowUpContext {
+  taskId: string;
+  clientId: string | null;
+  /** 原调用依据的报告；没有时直接请专家读档案用最近一份（和原来一样） */
+  reportId: string | null;
+  assistantMessageId: string;
+  /** 专家中心任务绑定的专家 */
+  expertId: string | null;
+  /** 原来的问题原文（只在内存里用，组装提示词前去标识） */
+  question: string;
+  requestMessageId: string;
 }
 
 export interface NewArtifact {
@@ -261,7 +277,7 @@ export class WorkbenchRepository {
       if (!skillIds.length) throw conflict();
       const request = await trx
         .selectFrom('task_messages')
-        .select(['content', 'report_refs', 'expert_refs', 'excluded_experts'])
+        .select(['id', 'content', 'report_refs', 'expert_refs', 'excluded_experts'])
         .where('task_id', '=', task.id)
         .where('role', '=', 'manager')
         .where('created_at', '<', plan.created_at)
@@ -310,6 +326,7 @@ export class WorkbenchRepository {
         reportId,
         expertRefs: request.expert_refs,
         excludedExperts: request.excluded_experts,
+        requestMessageId: request.id,
       };
     });
   }
@@ -363,7 +380,7 @@ export class WorkbenchRepository {
       // 健管师当初的要求：直接调用这个技能的消息，或调用了包含它的多步计划的消息
       const request = await trx
         .selectFrom('task_messages')
-        .select('content')
+        .select(['id', 'content'])
         .where('task_id', '=', task.id)
         .where('role', '=', 'manager')
         .where('skill_id', 'in', requestSkillIds(artifact.skill_id))
@@ -407,6 +424,72 @@ export class WorkbenchRepository {
         // 重写沿用原来依据的报告
         reportId: artifact.source_report_id,
         reuseConsultationId: artifact.consultation_id,
+        requestMessageId: request?.id ?? null,
+      };
+    });
+  }
+
+  /**
+   * 重新请专家、补请专家（M3 规格 6.4）前的准备：调用必须属于当前健管师（否则 404），任务不能只读（409）。
+   * 按原调用的问题原文和报告再请一次：原来依据的报告已经看不到（客户转出、报告删除）时拒绝，
+   * 不悄悄换成别的报告。通过后占住任务的生成，再写一条“生成中”的回答，用来挂执行步骤。
+   */
+  prepareFollowUp(
+    ctx: TenantContext,
+    consultationId: string,
+    claim: (taskId: string) => boolean,
+    options: { requiresReport: boolean },
+  ): Promise<FollowUpContext> {
+    return withTenant(this.db, ctx, async (trx) => {
+      const consultation = await trx
+        .selectFrom('expert_consultations as c')
+        .innerJoin('task_messages as m', 'm.id', 'c.message_id')
+        .select(['c.task_id', 'c.report_id', 'c.request_message_id', 'm.created_at'])
+        .where('c.id', '=', consultationId)
+        .executeTakeFirst();
+      if (!consultation) throw notFound();
+      const task = await lockTask(trx, consultation.task_id);
+      // 原来的问题：记下的那条消息；更早的调用没有记，取回答之前最近的一条健管师消息
+      let request = consultation.request_message_id
+        ? await trx
+            .selectFrom('task_messages')
+            .select(['id', 'content'])
+            .where('id', '=', consultation.request_message_id)
+            .executeTakeFirst()
+        : undefined;
+      request ??= await trx
+        .selectFrom('task_messages')
+        .select(['id', 'content'])
+        .where('task_id', '=', task.id)
+        .where('role', '=', 'manager')
+        .where('created_at', '<', consultation.created_at)
+        .orderBy('created_at', 'desc')
+        .limit(1)
+        .executeTakeFirst();
+      if (!request) throw conflict();
+      if (consultation.report_id) {
+        if (!task.client_id || !(await reportOfClient(trx, consultation.report_id, task.client_id)))
+          throw conflict({ reasons: ['source_report_unavailable'] });
+      } else if (options.requiresReport) {
+        throw conflict({ reasons: ['source_report_unavailable'] });
+      }
+      if (!claim(task.id)) throw conflict({ reasons: ['busy'] });
+
+      await closeStaleTurns(trx, task.id);
+      const assistant = await insertAssistant(trx, ctx, task.id, 'ask', undefined, Date.now());
+      await trx
+        .updateTable('tasks')
+        .set({ updated_at: new Date() })
+        .where('id', '=', task.id)
+        .execute();
+      return {
+        taskId: task.id,
+        clientId: task.client_id,
+        reportId: consultation.report_id,
+        assistantMessageId: assistant,
+        expertId: task.expert_id,
+        question: request.content,
+        requestMessageId: request.id,
       };
     });
   }
@@ -621,6 +704,7 @@ export class WorkbenchRepository {
     labelKey: string,
     labelDate: string | null = null,
     expertIds: string[] = [],
+    labelTime: Date | null = null,
   ): Promise<TaskStep> {
     return withTenant(this.db, ctx, async (trx) => {
       const row = await trx
@@ -632,6 +716,7 @@ export class WorkbenchRepository {
           kind,
           label_key: labelKey,
           label_date: labelDate,
+          label_time: labelTime,
           expert_ids: expertIds,
           status: 'running',
         })
@@ -642,6 +727,7 @@ export class WorkbenchRepository {
           'kind',
           'label_key',
           'label_date',
+          'label_time',
           'expert_ids',
           'status',
           'started_at',
@@ -675,6 +761,7 @@ export class WorkbenchRepository {
           'kind',
           'label_key',
           'label_date',
+          'label_time',
           'expert_ids',
           'status',
           'started_at',
@@ -850,6 +937,7 @@ function toStep(row: {
   kind: TaskStep['kind'];
   label_key: string;
   label_date: string | null;
+  label_time: Date | null;
   expert_ids: string[];
   status: TaskStep['status'];
   started_at: Date;
@@ -862,6 +950,7 @@ function toStep(row: {
     kind: row.kind,
     labelKey: row.label_key,
     labelDate: row.label_date,
+    labelTime: row.label_time?.toISOString() ?? null,
     expertIds: row.expert_ids,
     status: row.status,
     startedAt: row.started_at.toISOString(),

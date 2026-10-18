@@ -4,6 +4,7 @@ import {
   expertOpinionSchema,
   routingDecisionSchema,
   synthesisSchema,
+  type ConsultationOrigin,
   type ConsultationStatus,
   type ConsultationTrigger,
   type ExpertCall,
@@ -168,6 +169,11 @@ export class ExpertsRepository {
       routing: RoutingDecision;
       /** 关键词识别出的信号：插入时就写好，调用中途出错也不会丢 */
       signals: ConsultationSignals;
+      /** 重新请专家、补请专家时，派生自哪次调用（同一任务） */
+      origin?: ConsultationOrigin | null;
+      /** 这次调用回答的健管师消息，和请求里与专家有关的部分（10 分钟内复用意见时比较） */
+      requestMessageId?: string | null;
+      requestKey?: string | null;
     },
     calls: readonly PlannedCall[],
     dailyLimit: number,
@@ -190,6 +196,10 @@ export class ExpertsRepository {
           status: 'running',
           crisis_signal: input.signals.crisis,
           emergency_signal: input.signals.emergency,
+          origin_id: input.origin?.consultationId ?? null,
+          origin_kind: input.origin?.kind ?? null,
+          request_message_id: input.requestMessageId ?? null,
+          request_key: input.requestKey ?? null,
         })
         .returning('id')
         .executeTakeFirstOrThrow();
@@ -306,17 +316,61 @@ export class ExpertsRepository {
         .executeTakeFirst();
       if (!task) return undefined;
       const rows = await selectConsultation(trx)
-        .where('task_id', '=', taskId)
-        .orderBy('created_at', 'desc')
-        .orderBy('id')
+        .where('expert_consultations.task_id', '=', taskId)
+        .orderBy('expert_consultations.created_at', 'desc')
+        .orderBy('expert_consultations.id')
         .execute();
       return withCalls(trx, rows);
     });
   }
 
+  /**
+   * 10 分钟内可以复用的上一次调用（规格 3.7）：同一任务、同一位客户、同一份报告、同样的专家请求、
+   * 同样的问题原文，全部专家都已回复，依据的报告之后没有更正过。找不到时返回 undefined。
+   * 问题原文只在数据库里比较，不读出来。
+   */
+  findReusable(
+    ctx: TenantContext,
+    q: {
+      taskId: string;
+      clientId: string | null;
+      reportId: string | null;
+      requestKey: string;
+      question: string;
+      since: Date;
+    },
+  ): Promise<ExpertConsultation | undefined> {
+    return withTenant(this.db, ctx, async (trx) => {
+      const rows = await selectConsultation(trx)
+        .innerJoin('task_messages as m', 'm.id', 'expert_consultations.request_message_id')
+        .where('expert_consultations.task_id', '=', q.taskId)
+        .where('expert_consultations.status', '=', 'done')
+        .where('expert_consultations.request_key', '=', q.requestKey)
+        .where('expert_consultations.created_at', '>=', q.since)
+        .where((eb) =>
+          q.clientId === null
+            ? eb('expert_consultations.client_id', 'is', null)
+            : eb('expert_consultations.client_id', '=', q.clientId),
+        )
+        .where((eb) =>
+          q.reportId === null
+            ? eb('expert_consultations.report_id', 'is', null)
+            : eb('expert_consultations.report_id', '=', q.reportId),
+        )
+        .where('m.content', '=', q.question)
+        .orderBy('expert_consultations.created_at', 'desc')
+        .limit(1)
+        .execute();
+      const [found] = await withCalls(trx, rows);
+      return found && !found.reportCorrectedSince ? found : undefined;
+    });
+  }
+
   get(ctx: TenantContext, id: string): Promise<ExpertConsultation | undefined> {
     return withTenant(this.db, ctx, async (trx) => {
-      const rows = await selectConsultation(trx).where('id', '=', id).execute();
+      const rows = await selectConsultation(trx)
+        .where('expert_consultations.id', '=', id)
+        .execute();
       return (await withCalls(trx, rows))[0];
     });
   }
@@ -373,19 +427,41 @@ function selectConsultation(trx: TenantTransaction) {
   return trx
     .selectFrom('expert_consultations')
     .select([
-      'id',
-      'task_id',
-      'message_id',
-      'trigger',
-      'status',
-      'routing',
-      'synthesis',
-      'synthesis_status',
-      'crisis_signal',
-      'emergency_signal',
-      'created_at',
-      'finished_at',
+      'expert_consultations.id',
+      'expert_consultations.task_id',
+      'expert_consultations.message_id',
+      'expert_consultations.trigger',
+      'expert_consultations.status',
+      'expert_consultations.routing',
+      'expert_consultations.synthesis',
+      'expert_consultations.synthesis_status',
+      'expert_consultations.crisis_signal',
+      'expert_consultations.emergency_signal',
+      'expert_consultations.report_id',
+      'expert_consultations.origin_id',
+      'expert_consultations.origin_kind',
+      'expert_consultations.created_at',
+      'expert_consultations.finished_at',
     ]);
+}
+
+/**
+ * 依据的报告在调用之后有没有指标被更正（更正会插入新的指标行，M2 规格 2.4），和产物的 correctedSince 同一口径。
+ * 行级安全下看不到的报告（客户已转出）查不到指标行，按没有更正处理。
+ */
+async function correctedReports(
+  trx: TenantTransaction,
+  rows: readonly ConsultationRow[],
+): Promise<Map<string, Date>> {
+  const ids = [...new Set(rows.flatMap((r) => (r.report_id ? [r.report_id] : [])))];
+  if (!ids.length) return new Map();
+  const latest = await trx
+    .selectFrom('report_indicators')
+    .select((eb) => ['report_id', eb.fn.max('created_at').as('latest')])
+    .where('report_id', 'in', ids)
+    .groupBy('report_id')
+    .execute();
+  return new Map(latest.map((r) => [r.report_id, new Date(r.latest)]));
 }
 
 type ConsultationRow = Awaited<
@@ -397,6 +473,7 @@ async function withCalls(
   rows: ConsultationRow[],
 ): Promise<ExpertConsultation[]> {
   if (!rows.length) return [];
+  const indicatorsAt = await correctedReports(trx, rows);
   const calls = await trx
     .selectFrom('expert_calls')
     .leftJoin('expert_feedback as f', 'f.expert_call_id', 'expert_calls.id')
@@ -429,6 +506,11 @@ async function withCalls(
     messageId: r.message_id,
     trigger: r.trigger,
     status: r.status,
+    origin:
+      r.origin_id && r.origin_kind ? { kind: r.origin_kind, consultationId: r.origin_id } : null,
+    reportCorrectedSince: Boolean(
+      r.report_id && (indicatorsAt.get(r.report_id)?.getTime() ?? 0) > r.created_at.getTime(),
+    ),
     routing: routingDecisionSchema.parse(r.routing),
     synthesis: r.synthesis === null ? null : synthesisSchema.parse(r.synthesis),
     synthesisStatus: r.synthesis_status,

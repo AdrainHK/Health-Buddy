@@ -3,6 +3,7 @@ import { artifactSummarySchema } from './artifacts.js';
 import {
   consultationEventSchema,
   expertCallEventSchema,
+  expertSuggestionEventSchema,
   expertIdSchema,
   EXPERTS_PER_CALL_MAX,
 } from './experts.js';
@@ -105,6 +106,8 @@ export const taskStepSchema = z.object({
   expertIds: z.array(expertIdSchema).default([]),
   /** 步骤涉及的报告日期，如“正在读取报告（2026-09-12）”（M2 规格 2.6） */
   labelDate: z.iso.date().nullable().default(null),
+  /** 步骤涉及的时间，如“沿用 10:32 的专家意见”（M3 规格 3.7），界面按本地时区显示 */
+  labelTime: z.iso.datetime().nullable().default(null),
   status: z.enum(['running', 'done', 'failed']),
   startedAt: z.iso.datetime(),
   finishedAt: z.iso.datetime().nullable(),
@@ -206,5 +209,6 @@ export const taskStreamEventSchema = z.discriminatedUnion('type', [
   // M3：每位专家的状态、一次专家调用结束（规格 6.3）
   expertCallEventSchema,
   consultationEventSchema,
+  expertSuggestionEventSchema,
 ]);
 export type TaskStreamEvent = z.infer<typeof taskStreamEventSchema>;

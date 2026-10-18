@@ -322,12 +322,29 @@ export type ConsultationStatus = z.infer<typeof consultationStatusSchema>;
 export const synthesisStatusSchema = z.enum(['skipped', 'done', 'failed']);
 export type SynthesisStatus = z.infer<typeof synthesisStatusSchema>;
 
+/**
+ * 由哪次调用派生（规格 6.4）：reconsult 重新请专家（可调整指定和排除；报告更正后重新生成解读时自动重新请也记为这一类），
+ * add_expert 补请因数量上限没请的专家（2.6）。都是新的调用记录，原记录不变。
+ */
+export const CONSULTATION_ORIGIN_KINDS = ['reconsult', 'add_expert'] as const;
+export const consultationOriginSchema = z.object({
+  kind: z.enum(CONSULTATION_ORIGIN_KINDS),
+  consultationId: z.uuid(),
+});
+export type ConsultationOrigin = z.infer<typeof consultationOriginSchema>;
+
 export const expertConsultationSchema = z.object({
   id: z.uuid(),
   taskId: z.uuid(),
   messageId: z.uuid(),
   trigger: consultationTriggerSchema,
   status: consultationStatusSchema,
+  origin: consultationOriginSchema.nullable().default(null),
+  /**
+   * 依据的报告在这次调用之后有指标被更正过（M2 规格 2.4）：意见标“基于更正前的数值”（规格 2.5）。
+   * 读取时按报告的指标行计算，不存库；看不到的报告（客户已转出）按没有更正处理。
+   */
+  reportCorrectedSince: z.boolean().default(false),
   routing: routingDecisionSchema,
   synthesis: synthesisSchema.nullable(),
   synthesisStatus: synthesisStatusSchema.nullable(),
@@ -364,6 +381,34 @@ export const expertFeedbackRequestSchema = z
     path: ['reason'],
   });
 export type ExpertFeedbackRequest = z.input<typeof expertFeedbackRequestSchema>;
+
+/**
+ * POST /api/expert-consultations/:id/reconsult：重新请专家（规格 6.4、Q21）。
+ * 不传时沿用原来的“一定要请”和“不要请”；传了就以这次为准，只对这一次生效（Q22）。
+ * 直接请专家（@专家、专家中心）的调用只能调整 forced，带 excluded 返回 400。
+ */
+export const reconsultRequestSchema = z
+  .object({
+    forced: z.array(expertIdSchema).max(EXPERTS_PER_CALL_MAX).optional(),
+    excluded: z.array(expertIdSchema).max(20).optional(),
+  })
+  .strict()
+  .refine((v) => !v.forced || new Set(v.forced).size === v.forced.length, {
+    message: 'duplicate expert',
+    path: ['forced'],
+  })
+  .refine((v) => !(v.forced ?? []).some((e) => (v.excluded ?? []).includes(e)), {
+    message: 'expert both requested and excluded',
+    path: ['excluded'],
+  });
+export type ReconsultRequest = z.infer<typeof reconsultRequestSchema>;
+
+/** POST /api/expert-consultations/:id/add-expert：补请因数量上限没请的一位专家（规格 2.6、3.2 第 4 条） */
+export const addExpertRequestSchema = z.object({ expertId: expertIdSchema }).strict();
+export type AddExpertRequest = z.infer<typeof addExpertRequestSchema>;
+
+/** 同一任务里同样的请求多久之内复用上次的专家意见（规格 3.7） */
+export const EXPERT_REUSE_WINDOW_MS = 10 * 60 * 1000;
 
 /** 平台管理员暂停或恢复专家（Q11） */
 export const setExpertAvailabilityRequestSchema = z.object({ enabled: z.boolean() }).strict();
@@ -498,6 +543,15 @@ export const expertCallEventSchema = z.object({
   expertId: expertIdSchema,
   status: expertCallStatusSchema,
   failureCategory: expertFailureCategorySchema.nullable(),
+});
+
+/**
+ * SSE：主对话的问一问（没有 @专家、没有技能）里，问题明显属于某位专家的范围时，
+ * 在回答下方建议“请 @某专家 看看”，健管师点了才调用（Q6），不自动请专家
+ */
+export const expertSuggestionEventSchema = z.object({
+  type: z.literal('expert_suggestion'),
+  expertId: expertIdSchema,
 });
 
 /** SSE：一次专家调用结束 */

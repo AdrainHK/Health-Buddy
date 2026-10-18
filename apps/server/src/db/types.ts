@@ -182,6 +182,7 @@ export interface TaskStepsTable extends ManagerScoped {
   label_key: string;
   expert_ids: ColumnType<string[], string[] | undefined, never>;
   label_date: ColumnType<string | null, string | null | undefined, string | null>;
+  label_time: ColumnType<Date | null, Date | null | undefined, never>;
   status: 'running' | 'done' | 'failed';
   started_at: Timestamp;
   finished_at: Date | null;
@@ -424,6 +425,16 @@ export interface ExpertConsultationsTable extends ManagerScoped {
   crisis_signal: Generated<boolean>;
   emergency_signal: Generated<boolean>;
   reused_from: ColumnType<string | null, string | null | undefined, never>;
+  /** 由哪次调用派生：重新请专家、补请专家（迁移 0015） */
+  origin_id: ColumnType<string | null, string | null | undefined, never>;
+  origin_kind: ColumnType<
+    'reconsult' | 'add_expert' | null,
+    'reconsult' | 'add_expert' | null | undefined,
+    never
+  >;
+  /** 这次调用回答的健管师消息；请求里和专家有关的部分（只有专家 id） */
+  request_message_id: ColumnType<string | null, string | null | undefined, never>;
+  request_key: ColumnType<string | null, string | null | undefined, never>;
   created_at: Timestamp;
   finished_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
 }
