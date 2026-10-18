@@ -219,6 +219,15 @@ describe('专家数据表的行级安全和约束', () => {
         .execute(),
     );
     expect(Number(updated[0]?.numUpdatedRows)).toBe(0);
+    // 0013 新授权的信号列同样受行级安全约束
+    const signalled = await withTenant(app, managerA2(), (trx) =>
+      trx
+        .updateTable('expert_consultations')
+        .set({ status: 'failed', crisis_signal: true })
+        .where('id', '=', consultationId)
+        .execute(),
+    );
+    expect(Number(signalled[0]?.numUpdatedRows)).toBe(0);
   });
 
   it('结束后的调用和意见不能再改；路由结果不能改', async () => {
