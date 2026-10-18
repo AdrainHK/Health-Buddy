@@ -118,7 +118,8 @@ export interface ReportIndicatorsTable extends ClientScoped {
   created_at: Timestamp;
 }
 
-export interface MonitoringReadingsTable {
+/** 租户列由触发器从客户行填写（M4 迁移 0016） */
+export interface MonitoringReadingsTable extends ClientScoped {
   id: Generated<string>;
   client_id: string;
   metric: string;
@@ -126,6 +127,8 @@ export interface MonitoringReadingsTable {
   unit: string;
   measured_at: Timestamp;
   source: 'synthetic' | 'device' | 'manual' | 'companion';
+  /** 手动录入的健管师（Q29）；其余来源为空 */
+  created_by: Nullable<string>;
 }
 
 type Json<T> = ColumnType<T, string, string>;
@@ -485,6 +488,129 @@ export interface ExpertAvailabilityEventsTable {
   created_at: Timestamp;
 }
 
+// ---------- M4 客户数字孪生（0016） ----------
+
+/** 只能追加的列：插入后不能修改 */
+type Insertable<T> = ColumnType<T, T, never>;
+type InsertableNullable<T> = ColumnType<T | null, T | null | undefined, never>;
+
+export interface TwinStatusRulesTable {
+  id: Generated<string>;
+  domain: 'metabolic' | 'cardiovascular' | 'sleep' | 'weight';
+  metric: string;
+  source: 'report' | 'monitoring';
+  method: 'critical' | 'out_of_reference' | 'threshold';
+  comparator: 'gte' | 'gt' | 'lte' | 'lt' | null;
+  value: NullableNumeric;
+  unit: string | null;
+  window_days: number | null;
+  level: 'red' | 'yellow';
+  enabled: Generated<boolean>;
+  updated_by: string | null;
+  updated_at: Timestamp;
+}
+
+export interface TwinRulesVersionTable {
+  id: Generated<boolean>;
+  version: number;
+  updated_at: Date;
+}
+
+export interface TwinStatusRuleEventsTable {
+  id: Generated<string>;
+  rule_id: string;
+  actor_id: string | null;
+  action: 'created' | 'updated' | 'deleted' | 'reset';
+  before: unknown;
+  after: unknown;
+  rules_version: number;
+  created_at: Timestamp;
+}
+
+/** 状态历史：只能追加 */
+export interface TwinStatusHistoryTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: Insertable<string>;
+  domain: Insertable<'metabolic' | 'cardiovascular' | 'sleep' | 'weight'>;
+  level: Insertable<'red' | 'yellow' | 'green' | 'unknown'>;
+  origin: Insertable<'computed' | 'manual' | 'manual_cleared'>;
+  basis: ColumnType<unknown, string, never>;
+  rules_version: Insertable<number>;
+  reason: InsertableNullable<string>;
+  manual_expires: InsertableNullable<'next_data' | 'never'>;
+  trigger: Insertable<
+    | 'report_verified'
+    | 'correction'
+    | 'monitoring'
+    | 'rules_changed'
+    | 'thresholds_changed'
+    | 'manual'
+    | 'seed'
+  >;
+  set_by: InsertableNullable<string>;
+  created_at: ColumnType<Date, Date | string | undefined, never>;
+}
+
+/** 预测：只能追加，只放行 superseded_at 从空变为有值 */
+export interface TwinForecastsTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: Insertable<string>;
+  metric: Insertable<string>;
+  source: Insertable<'report' | 'monitoring'>;
+  method_version: Insertable<string>;
+  horizon_months: InsertableNullable<3 | 6>;
+  points: ColumnType<unknown, string, never>;
+  basis: ColumnType<unknown, string | null | undefined, never>;
+  fit: ColumnType<unknown, string | null | undefined, never>;
+  interval_level: ColumnType<string, number | string | undefined, never>;
+  n_points: Insertable<number>;
+  span_days: Insertable<number>;
+  uncertainty: InsertableNullable<'normal' | 'high'>;
+  status: Insertable<'ok' | 'insufficient_data'>;
+  insufficient_reason: InsertableNullable<'not_forecastable' | 'too_few_points' | 'span_too_short'>;
+  points_needed: InsertableNullable<number>;
+  computed_at: ColumnType<Date, Date | string | undefined, never>;
+  superseded_at: ColumnType<Date | null, undefined, Date | string>;
+}
+
+export interface FollowUpItemsTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: Insertable<string>;
+  kind: Insertable<'critical' | 'status_red' | 'status_worsened' | 'forecast_deviation'>;
+  severity: 1 | 2 | 3 | 4;
+  domain: InsertableNullable<'metabolic' | 'cardiovascular' | 'sleep' | 'weight'>;
+  metric: InsertableNullable<string>;
+  basis: Json<unknown>;
+  source_ref: Json<unknown>;
+  dedupe_key: Insertable<string>;
+  status: ColumnType<
+    'open' | 'done' | 'snoozed' | 'dismissed',
+    'open' | undefined,
+    'open' | 'done' | 'snoozed' | 'dismissed'
+  >;
+  snooze_until: Nullable<Date>;
+  resolution: Nullable<'called' | 'recheck_arranged' | 'referred' | 'plan_adjusted' | 'other'>;
+  dismiss_reason: Nullable<'data_error' | 'known' | 'under_care' | 'other'>;
+  note: Nullable<string>;
+  first_triggered_at: ColumnType<Date, undefined, never>;
+  last_triggered_at: ColumnType<Date, undefined, Date | string>;
+  resolved_by: Nullable<string>;
+  resolved_at: Nullable<Date>;
+  created_at: ColumnType<Date, undefined, never>;
+}
+
+/** 跟进项的处理记录：只能追加；应用只能直接写 consulted */
+export interface FollowUpEventsTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: Insertable<string>;
+  item_id: Insertable<string>;
+  actor_id: InsertableNullable<string>;
+  action: Insertable<
+    'created' | 'retriggered' | 'done' | 'snoozed' | 'dismissed' | 'reopened' | 'consulted'
+  >;
+  created_at: ColumnType<Date, undefined, never>;
+}
+
 export interface Database {
   operators: OperatorsTable;
   organizations: OrganizationsTable;
@@ -514,4 +640,11 @@ export interface Database {
   expert_feedback: ExpertFeedbackTable;
   expert_availability: ExpertAvailabilityTable;
   expert_availability_events: ExpertAvailabilityEventsTable;
+  twin_status_rules: TwinStatusRulesTable;
+  twin_rules_version: TwinRulesVersionTable;
+  twin_status_rule_events: TwinStatusRuleEventsTable;
+  twin_status_history: TwinStatusHistoryTable;
+  twin_forecasts: TwinForecastsTable;
+  follow_up_items: FollowUpItemsTable;
+  follow_up_events: FollowUpEventsTable;
 }

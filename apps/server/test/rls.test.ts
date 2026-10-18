@@ -212,13 +212,15 @@ describe('数据库行级安全', () => {
   });
 
   it('只有服务该客户的健管师能写入报告和监测数据', async () => {
-    const reading = (clientId: string) => ({
+    // 手动录入要记录录入人（M4 Q29），这里都以当前用户名义录入，只看行级安全是否拦住
+    const reading = (clientId: string, createdBy: string) => ({
       client_id: clientId,
       metric: 'weight',
       value: 60,
       unit: 'kg',
       measured_at: new Date(),
       source: 'manual' as const,
+      created_by: createdBy,
     });
     const orgAdmin = ctxOf(f.users.orgAdminA.id, 'org_admin', f.operatorA, f.orgA);
     for (const [ctx, clientId] of [
@@ -228,7 +230,7 @@ describe('数据库行级安全', () => {
     ] as const) {
       await expect(
         withTenant(app, ctx, (trx) =>
-          trx.insertInto('monitoring_readings').values(reading(clientId)).execute(),
+          trx.insertInto('monitoring_readings').values(reading(clientId, ctx.userId)).execute(),
         ),
       ).rejects.toMatchObject({ code: '42501' });
     }
@@ -237,7 +239,10 @@ describe('数据库行级安全', () => {
     );
     expect(deleted.numDeletedRows).toBe(0n);
     await withTenant(app, managerA1(), (trx) =>
-      trx.insertInto('monitoring_readings').values(reading(f.clients.a1[0])).execute(),
+      trx
+        .insertInto('monitoring_readings')
+        .values(reading(f.clients.a1[0], f.users.managerA1.id))
+        .execute(),
     );
   });
 
@@ -328,17 +333,32 @@ describe('数据库行级安全', () => {
     const orgAdmin = ctxOf(f.users.orgAdminA.id, 'org_admin', f.operatorA, f.orgA);
     const result = await withTenant(app, orgAdmin, async (trx) => ({
       updated: await trx
-        .updateTable('monitoring_readings')
-        .set({ value: 1 })
+        .updateTable('health_reports')
+        .set({ title: 'x' })
         .where('client_id', '=', f.clients.a1[0])
         .executeTakeFirst(),
       deleted: await trx
         .deleteFrom('health_reports')
         .where('client_id', '=', f.clients.a1[0])
         .executeTakeFirst(),
+      deletedReadings: await trx
+        .deleteFrom('monitoring_readings')
+        .where('client_id', '=', f.clients.a1[0])
+        .executeTakeFirst(),
     }));
     expect(result.updated.numUpdatedRows).toBe(0n);
     expect(result.deleted.numDeletedRows).toBe(0n);
+    expect(result.deletedReadings.numDeletedRows).toBe(0n);
+    // 监测读数（M4 起）对应用角色整体不可修改，录错了删掉重录
+    await expect(
+      withTenant(app, orgAdmin, (trx) =>
+        trx
+          .updateTable('monitoring_readings')
+          .set({ value: 1 })
+          .where('client_id', '=', f.clients.a1[0])
+          .execute(),
+      ),
+    ).rejects.toMatchObject({ code: '42501' });
   });
 
   it('健管师改不了、删不了别人的客户', async () => {
