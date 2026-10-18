@@ -765,6 +765,28 @@ export function ChatPane({
     inputRef.current?.focus();
   };
 
+  /**
+   * 回答下方的“请 @某专家 看看”（M3 Q6）：把这条回答对应的问题原样交给这位专家，在问一问里直接请。
+   * 健管师点了才调用；不影响输入框里正在写的内容。
+   */
+  const onAskExpert = (expertId: string, answerId: string) => {
+    if (readOnly || generatingRef.current) return;
+    const index = conversation.messages.findIndex((m) => m.id === answerId);
+    const question = conversation.messages
+      .slice(0, Math.max(index, 0))
+      .reverse()
+      .find((m) => m.role === 'manager');
+    if (!question?.content.trim()) return;
+    void submit({
+      text: question.content,
+      mode: 'ask',
+      skill: null,
+      client: null,
+      expertRefs: [expertId],
+      auto: true,
+    });
+  };
+
   const onClientChange = (next: ClientSummary | null) => {
     if (next && task?.clientId && next.id !== task.clientId) {
       // 每个任务只关联一位客户（Q6）：提示并提供一键为该客户新建任务
@@ -1056,6 +1078,7 @@ export function ChatPane({
                   onConfirmPlan={onConfirmPlan}
                   onUseSkill={onUseSkill}
                   {...(onOpenExperts ? { onOpenExperts } : {})}
+                  {...(!readOnly && !generating ? { onAskExpert } : {})}
                 />
                 {uploads.length > 0 && (
                   <ul className={reportStyles.chatUploads} aria-label={t('chat.uploads')}>

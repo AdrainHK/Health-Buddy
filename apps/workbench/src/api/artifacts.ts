@@ -62,13 +62,20 @@ export function reviseArtifact(id: string): Promise<ArtifactDetailResponse> {
   return apiRequest(`/artifacts/${id}/revise`, artifactDetailResponseSchema, { method: 'POST' });
 }
 
-/** 退回重写：SSE，推送新版本的生成过程 */
+/**
+ * 退回重写：SSE，推送新版本的生成过程。
+ * reconsult 为 true 时重新请专家，不沿用这份草稿生成时的专家意见（M3 Q21）
+ */
 export function returnArtifact(
   id: string,
   reason: string,
   options: Omit<StreamOptions, 'body'>,
+  extra: { reconsult?: boolean } = {},
 ): Promise<void> {
-  return streamRequest(`/artifacts/${id}/return`, { ...options, body: { reason } });
+  return streamRequest(`/artifacts/${id}/return`, {
+    ...options,
+    body: { reason, ...(extra.reconsult ? { reconsult: true } : {}) },
+  });
 }
 
 /** 取已审核产物的通俗版文本（后端拼好免责声明和产品名称，并记复制记录） */

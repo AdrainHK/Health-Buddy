@@ -139,6 +139,7 @@ function step(overrides: Partial<TaskStep>): TaskStep {
     labelKey: 'steps.consultExperts',
     expertIds: [],
     labelDate: null,
+    labelTime: null,
     status: 'done',
     startedAt: NOW,
     finishedAt: NOW,
@@ -150,20 +151,23 @@ const sse = (events: TaskStreamEvent[]) =>
   events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join('');
 
 /** 专家标签用的调用：心理专家标出危机信号，两位专家有一处分歧 */
-function consultationFor(taskId: string): ExpertConsultation {
+function consultationFor(taskId: string, followUp = false): ExpertConsultation {
   return {
     id: ids.consultation,
     taskId,
     messageId: ids.assistant1,
     trigger: 'mention',
     status: 'done',
+    origin: null,
+    // 重新请专家的场景：报告在这次调用之后被更正过，营养专家因数量上限没请
+    reportCorrectedSince: followUp,
     routing: {
       selected: [
         { expertId: endo.id, selectedReason: 'manager', reasons: [{ kind: 'manager' }] },
         { expertId: mental.id, selectedReason: 'manager', reasons: [{ kind: 'manager' }] },
       ],
       excluded: [],
-      overCap: [],
+      overCap: followUp ? [nutrition.id] : [],
       ruleOnly: false,
     },
     synthesisStatus: 'done',
@@ -236,7 +240,7 @@ interface Mock {
   posted: { path: string; body: unknown }[];
 }
 
-async function mockApi(page: Page): Promise<Mock> {
+async function mockApi(page: Page, { followUp = false } = {}): Promise<Mock> {
   const mock: Mock = { unknown: [], posted: [] };
   let tasks: Task[] = [task];
   const json = (route: Route, body: unknown, status = 200) =>
@@ -291,7 +295,7 @@ async function mockApi(page: Page): Promise<Mock> {
           // 发送 @专家 之前还没有调用
           return json(route, {
             consultations: mock.posted.some((p) => p.path.endsWith('/messages'))
-              ? [consultationFor(ids.task)]
+              ? [consultationFor(ids.task, followUp)]
               : [],
           });
         case key.endsWith('/messages') && req.method() === 'POST': {
@@ -332,6 +336,13 @@ async function mockApi(page: Page): Promise<Mock> {
             ]),
           });
         }
+        case key === `POST /api/expert-consultations/${ids.consultation}/add-expert` ||
+          key === `POST /api/expert-consultations/${ids.consultation}/reconsult`:
+          return route.fulfill({
+            status: 200,
+            contentType: 'text/event-stream',
+            body: sse([{ type: 'done', messageId: ids.assistant1, reason: 'complete' }]),
+          });
         default:
           mock.unknown.push(key);
           return json(route, { error: 'not_found' }, 404);
@@ -469,4 +480,42 @@ test('专家标签：危机提示在最前面（375px）', async ({ page }) => {
     '来源待确认',
   );
   await expectNoHorizontalScroll(page, 'experts tab');
+});
+
+test('专家标签：报告更正提示、补请专家、重新请专家（375px）', async ({ page }) => {
+  const mock = await mockApi(page, { followUp: true });
+  await page.goto('/');
+  await page.getByRole('button', { name: '打开菜单' }).click();
+  await page
+    .getByRole('button', { name: /合成客户甲的随访/ })
+    .first()
+    .click();
+  const box = page.getByRole('textbox');
+  await box.fill('@心理');
+  await page.getByRole('option', { name: /心理专家/ }).click();
+  await page.getByRole('radio', { name: '问一问' }).click();
+  await box.fill('合成问题');
+  await page.getByRole('button', { name: '发送' }).click();
+  await page.getByRole('button', { name: '查看专家意见' }).click();
+
+  const panel = page.getByRole('tabpanel');
+  await expect(panel.getByTestId('report-corrected')).toContainText('基于更正前的数值');
+  const followUp = panel.getByTestId('consultation-follow-up');
+  await followUp.getByRole('button', { name: '也请营养专家' }).click();
+  await expect(followUp.getByRole('status')).toContainText('已重新请专家');
+  expect(mock.posted.find((p) => p.path.endsWith('/add-expert'))?.body).toEqual({
+    expertId: nutrition.id,
+  });
+
+  await followUp.getByRole('button', { name: '重新请专家' }).click();
+  const form = followUp.getByRole('group', { name: '重新请专家' });
+  await expect(form.getByRole('checkbox', { name: '心理专家' })).toBeChecked();
+  await expectNoHorizontalScroll(page, 'reconsult form');
+  await form.getByRole('checkbox', { name: '内分泌与代谢专家' }).uncheck();
+  await form.getByRole('button', { name: '重新请专家' }).click();
+  await expect(followUp.getByRole('status')).toContainText('已重新请专家');
+  expect(mock.posted.find((p) => p.path.endsWith('/reconsult'))?.body).toEqual({
+    forced: [mental.id],
+  });
+  expect(mock.unknown).toEqual([]);
 });

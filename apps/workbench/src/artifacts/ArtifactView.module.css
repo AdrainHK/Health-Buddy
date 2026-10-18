@@ -418,3 +418,22 @@
   font-size: var(--hb-text-sm);
   overflow-wrap: anywhere;
 }
+
+/* 退回重写时“重新请专家”（M3 Q21） */
+.checkLine {
+  display: flex;
+  gap: var(--hb-space-2);
+  align-items: flex-start;
+  font-size: var(--hb-text-sm);
+  cursor: pointer;
+}
+
+.checkLine input {
+  margin-top: var(--hb-space-1);
+}
+
+.checkLine > span {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-1);
+}

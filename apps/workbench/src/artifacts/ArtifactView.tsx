@@ -146,6 +146,8 @@ export function ArtifactView({
   const [returnOpen, setReturnOpen] = useState(false);
   const [reason, setReason] = useState('');
   const [reasonTouched, setReasonTouched] = useState(false);
+  /** 退回重写时重新请专家（M3 Q21），默认沿用这份草稿生成时的专家意见 */
+  const [reconsult, setReconsult] = useState(false);
   const [progress, setProgress] = useState<ReturnProgress | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -388,27 +390,33 @@ export function ArtifactView({
       setProgress({ steps: [] });
       let opened = false;
       try {
-        await returnArtifact(artifact.id, trimmed, {
-          signal: controller.signal,
-          onOpen: () => {
-            opened = true;
-            setReturnOpen(false);
-            setReason('');
-            setReasonTouched(false);
+        await returnArtifact(
+          artifact.id,
+          trimmed,
+          {
+            signal: controller.signal,
+            onOpen: () => {
+              opened = true;
+              setReturnOpen(false);
+              setReason('');
+              setReasonTouched(false);
+              setReconsult(false);
+            },
+            onEvent: (event) => {
+              if (event.type === 'step') {
+                setProgress((p) => ({
+                  ...p,
+                  steps: [...(p?.steps ?? []).filter((s) => s.id !== event.step.id), event.step],
+                }));
+              } else if (event.type === 'artifact') {
+                result.created = event.artifact.id;
+              } else if (event.type === 'error') {
+                result.error = event.kind;
+              }
+            },
           },
-          onEvent: (event) => {
-            if (event.type === 'step') {
-              setProgress((p) => ({
-                ...p,
-                steps: [...(p?.steps ?? []).filter((s) => s.id !== event.step.id), event.step],
-              }));
-            } else if (event.type === 'artifact') {
-              result.created = event.artifact.id;
-            } else if (event.type === 'error') {
-              result.error = event.kind;
-            }
-          },
-        });
+          { reconsult },
+        );
       } catch (err) {
         setProgress(null);
         // 流打开后断开：后端可能已经保存了这一轮的部分内容
@@ -688,6 +696,27 @@ export function ArtifactView({
                 {t('results.artifacts.returnDialog.required')}
               </p>
             )}
+            {artifact.consultationId &&
+              (consultation?.reportCorrectedSince ? (
+                <p className={styles.statusNote} role="note">
+                  {t('results.artifacts.returnDialog.reportCorrected')}
+                </p>
+              ) : (
+                <label className={styles.checkLine}>
+                  <input
+                    type="checkbox"
+                    checked={reconsult}
+                    disabled={working}
+                    onChange={(e) => setReconsult(e.target.checked)}
+                  />
+                  <span>
+                    {t('results.artifacts.returnDialog.reconsult')}
+                    <span className={styles.statusNote}>
+                      {t('results.artifacts.returnDialog.reconsultNote')}
+                    </span>
+                  </span>
+                </label>
+              ))}
             <div className={styles.actions}>
               <Button variant="primary" disabled={working || !reason.trim()} onClick={submitReturn}>
                 {t('results.artifacts.returnDialog.submit')}

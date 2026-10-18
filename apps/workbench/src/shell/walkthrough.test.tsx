@@ -307,7 +307,7 @@ describe('验收反馈 6：用已经上传过的报告', () => {
           },
         }),
       [`GET /report-uploads/${UPLOAD_ID}/events`]: () =>
-        sseResponse([{ type: 'done', upload: summary() }]),
+        sseResponse([{ type: 'done', upload: summary() } as Record<string, unknown>]),
       [`POST ${MSG_PATH}`]: () => sseResponse([]),
     });
     const onReviewUpload = vi.fn();

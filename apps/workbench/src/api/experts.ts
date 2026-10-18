@@ -7,9 +7,11 @@ import {
   type ExpertDetail,
   type ExpertFeedbackRequest,
   type ExpertSummary,
+  type ReconsultRequest,
 } from '@health-buddy/shared';
 import { z } from 'zod';
 import { apiRequest } from './http';
+import { streamRequest, type StreamOptions } from './stream';
 
 /**
  * 专家中心接口（M3 规格 6.4）。专家意见只给健管师看，这里没有任何发给客户的入口（Q9）。
@@ -69,5 +71,32 @@ export function setExpertFeedback(callId: string, body: ExpertFeedbackRequest): 
   return apiRequest(`/expert-calls/${encodeURIComponent(callId)}/feedback`, null, {
     method: 'PUT',
     body,
+  });
+}
+
+/**
+ * 重新请专家（SSE）：按原来的问题和报告再请一次，生成新的调用记录，计入今天的专家调用次数。
+ * 不传 forced、excluded 时沿用原来的选择
+ */
+export function reconsultExperts(
+  consultationId: string,
+  body: ReconsultRequest,
+  options: Omit<StreamOptions, 'body'>,
+): Promise<void> {
+  return streamRequest(`/expert-consultations/${encodeURIComponent(consultationId)}/reconsult`, {
+    ...options,
+    body,
+  });
+}
+
+/** 补请因数量上限没请的专家（SSE，规格 2.6） */
+export function addConsultationExpert(
+  consultationId: string,
+  expertId: string,
+  options: Omit<StreamOptions, 'body'>,
+): Promise<void> {
+  return streamRequest(`/expert-consultations/${encodeURIComponent(consultationId)}/add-expert`, {
+    ...options,
+    body: { expertId },
   });
 }

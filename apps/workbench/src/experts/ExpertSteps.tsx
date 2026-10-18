@@ -23,8 +23,13 @@ const EXPERT_KINDS: readonly TaskStep['kind'][] = [
 
 export const isExpertStep = (step: TaskStep): boolean => EXPERT_KINDS.includes(step.kind);
 
-/** “退回重写沿用上一版的专家意见”也是 consult_experts，但用自己的文案 */
-const isReuse = (step: TaskStep) => step.labelKey === 'steps.reuseExperts';
+/** 10 分钟内同样的请求沿用上次的专家意见（规格 3.7）：“沿用 10:32 的专家意见” */
+export const isRecentReuseStep = (step: TaskStep): boolean =>
+  step.labelKey === 'steps.reuseRecentExperts';
+
+/** “退回重写沿用上一版的专家意见”、10 分钟内沿用上次的意见也是专家步骤，但用自己的文案 */
+const isReuse = (step: TaskStep) =>
+  step.labelKey === 'steps.reuseExperts' || isRecentReuseStep(step);
 
 export const isConsultStep = (step: TaskStep): boolean =>
   (step.kind === 'consult_expert' || step.kind === 'consult_experts') && !isReuse(step);
@@ -37,10 +42,18 @@ export function useExpertStepLabel(): (
   step: TaskStep,
   consultation: ExpertConsultation | undefined,
 ) => string | null {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const names = useExpertNames();
   return useCallback(
     (step: TaskStep, consultation: ExpertConsultation | undefined) => {
+      if (isRecentReuseStep(step)) {
+        if (!step.labelTime) return null;
+        const time = new Date(step.labelTime).toLocaleTimeString(i18n.language, {
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        return t('experts.steps.reusedAt', { time });
+      }
       switch (step.kind) {
         case 'route_experts':
           if (step.status === 'running') return t('experts.steps.routing');
@@ -67,7 +80,7 @@ export function useExpertStepLabel(): (
           return null;
       }
     },
-    [t, names],
+    [t, i18n.language, names],
   );
 }
 

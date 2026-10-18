@@ -32,6 +32,7 @@ function step(seq: number, labelKey: string, status: TaskStep['status']): TaskSt
     kind: labelKey === 'steps.readClient' ? 'read_client' : 'answer',
     labelKey,
     labelDate: null,
+    labelTime: null,
     expertIds: [],
     status,
     startedAt: NOW,
