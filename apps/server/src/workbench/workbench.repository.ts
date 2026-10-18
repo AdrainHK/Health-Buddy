@@ -705,6 +705,7 @@ export class WorkbenchRepository {
     labelDate: string | null = null,
     expertIds: string[] = [],
     labelTime: Date | null = null,
+    consultationId: string | null = null,
   ): Promise<TaskStep> {
     return withTenant(this.db, ctx, async (trx) => {
       const row = await trx
@@ -717,6 +718,7 @@ export class WorkbenchRepository {
           label_key: labelKey,
           label_date: labelDate,
           label_time: labelTime,
+          consultation_id: consultationId,
           expert_ids: expertIds,
           status: 'running',
         })
@@ -728,6 +730,7 @@ export class WorkbenchRepository {
           'label_key',
           'label_date',
           'label_time',
+          'consultation_id',
           'expert_ids',
           'status',
           'started_at',
@@ -762,6 +765,7 @@ export class WorkbenchRepository {
           'label_key',
           'label_date',
           'label_time',
+          'consultation_id',
           'expert_ids',
           'status',
           'started_at',
@@ -938,6 +942,7 @@ function toStep(row: {
   label_key: string;
   label_date: string | null;
   label_time: Date | null;
+  consultation_id: string | null;
   expert_ids: string[];
   status: TaskStep['status'];
   started_at: Date;
@@ -951,6 +956,7 @@ function toStep(row: {
     labelKey: row.label_key,
     labelDate: row.label_date,
     labelTime: row.label_time?.toISOString() ?? null,
+    consultationId: row.consultation_id,
     expertIds: row.expert_ids,
     status: row.status,
     startedAt: row.started_at.toISOString(),

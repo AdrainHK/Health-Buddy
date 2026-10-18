@@ -568,6 +568,42 @@ describe('专家数据表的行级安全和约束', () => {
     });
   });
 
+  it('跨租户访问被拒绝：沿用意见的步骤只能指向同一任务的调用（迁移 0015）', async () => {
+    const mine = await seedConsultation();
+    const other = await seedConsultation();
+    const theirs = await seedForA2();
+    let seq = 40;
+    const insertStep = (consultationId: string) =>
+      withTenant(app, managerA1(), (trx) =>
+        trx
+          .insertInto('task_steps')
+          .values({
+            ...scopeA1(),
+            message_id: mine.messageId,
+            seq: seq++,
+            kind: 'consult_expert',
+            label_key: 'steps.reuseRecentExperts',
+            consultation_id: consultationId,
+            status: 'done',
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow(),
+      );
+    await expect(insertStep(theirs)).rejects.toThrow();
+    await expect(insertStep(other.consultationId)).rejects.toThrow();
+    const ok = await insertStep(mine.consultationId);
+    // 插入后不能改指向
+    await expect(
+      withTenant(app, managerA1(), (trx) =>
+        trx
+          .updateTable('task_steps')
+          .set({ consultation_id: other.consultationId } as never)
+          .where('id', '=', ok.id)
+          .execute(),
+      ),
+    ).rejects.toThrow();
+  });
+
   it('每日上限：并发请求在配额锁下重新计数，不会一起越过上限', async () => {
     const { taskId, messageId } = await seedConsultation();
     const repo = new ExpertsRepository(app);

@@ -53,6 +53,7 @@ function step(overrides: Partial<TaskStep>): TaskStep {
     expertIds: [],
     labelDate: null,
     labelTime: null,
+    consultationId: null,
     status: 'running',
     startedAt: NOW,
     finishedAt: null,
@@ -1082,6 +1083,99 @@ describe('主对话的专家建议和 10 分钟内沿用（规格 2.5、3.7、Q6
     expect(await screen.findByTestId('answered-by')).toHaveTextContent(
       '专家意见：内分泌与代谢专家AI',
     );
+  });
+});
+
+describe('沿用意见的回答也置顶危机提示（规格 7.2 第 5 条）', () => {
+  const answer = (id: string, content: string) => ({
+    id,
+    role: 'assistant' as const,
+    mode: 'ask' as const,
+    content,
+    skillId: null,
+    clientRefs: [],
+    reportRefs: [],
+    expertRefs: [],
+    excludedExperts: [],
+    status: 'complete' as const,
+    createdAt: NOW,
+  });
+
+  it('刷新后：沿用步骤指向的那次调用有危机信号，沿用的回答最前面仍有危机提示', async () => {
+    mockApi({
+      [`GET /tasks/${ids.task}`]: () =>
+        json(200, {
+          ...emptyDetail(),
+          messages: [
+            answer(ids.assistantMsg, '合成回答'),
+            answer(ids.assistantMsg2, '合成沿用的回答'),
+          ],
+          steps: [
+            step({
+              id: ids.step2,
+              messageId: ids.assistantMsg2,
+              kind: 'consult_expert',
+              labelKey: 'steps.reuseRecentExperts',
+              expertIds: [MENTAL.id],
+              labelTime: NOW,
+              consultationId: expertIds.consultation,
+              status: 'done',
+              finishedAt: NOW,
+            }),
+          ],
+        }),
+      [`GET /tasks/${ids.task}/expert-consultations`]: () =>
+        json(200, {
+          consultations: [
+            consultation({
+              messageId: ids.assistantMsg,
+              crisisSignal: true,
+              calls: [call({ expertId: MENTAL.id })],
+            }),
+          ],
+        }),
+    });
+    renderPane({ task: makeTask() });
+    await screen.findByText('合成沿用的回答');
+    const reusedAnswer = screen.getByText('合成沿用的回答').closest('li')!;
+    expect(await within(reusedAnswer).findByRole('alert')).toHaveTextContent('心理危机提示');
+    expect(within(reusedAnswer).getByTestId('answered-by')).toHaveTextContent('心理专家');
+  });
+
+  it('SSE：有危机提示的回答不显示“请 @专家 看看”', async () => {
+    let sse!: ReturnType<typeof controlledSse>;
+    mockApi({
+      [`GET /tasks/${ids.task}`]: () => json(200, emptyDetail(makeTask())),
+      [`POST ${MSG_PATH}`]: (_c, init) => {
+        sse = controlledSse(init?.signal);
+        return sse.response;
+      },
+      [`GET /tasks/${ids.task}/expert-consultations`]: () => json(200, { consultations: [] }),
+    });
+    const user = userEvent.setup();
+    renderPane({ onOpenExperts: vi.fn() });
+    await screen.findByRole('textbox');
+    await user.click(screen.getByRole('radio', { name: '问一问' }));
+    await user.type(screen.getByRole('textbox'), '合成问题');
+    await user.click(screen.getByRole('button', { name: '发送' }));
+    await waitFor(() => expect(sse).toBeDefined());
+    act(() => {
+      sse.send({ type: 'text', messageId: ids.assistantMsg, delta: '合成回答' });
+      sse.send({
+        type: 'consultation',
+        consultationId: expertIds.consultation,
+        status: 'done',
+        crisisSignal: true,
+        emergencySignal: false,
+      });
+      sse.send({ type: 'expert_suggestion', expertId: MENTAL.id });
+      sse.send({ type: 'done', messageId: ids.assistantMsg, reason: 'complete' });
+      sse.close();
+    });
+    const body = await screen.findByText('合成回答');
+    const li = body.closest('li')!;
+    expect(await within(li).findByRole('alert')).toHaveTextContent('心理危机提示');
+    expect(screen.queryByRole('button', { name: /请 @心理专家 看看/ })).not.toBeInTheDocument();
   });
 });
 

@@ -1,6 +1,7 @@
 import type { TaskStreamEvent } from '@health-buddy/shared';
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expertRequestKey } from '../src/experts/consultation.service.js';
 import { ExpertProvider, parseSse } from './expert-fixtures.js';
 import { createTestApp, loginAs } from './http.js';
 import { ownerDb, seedFixtures, type Fixtures } from './fixtures.js';
@@ -541,6 +542,105 @@ describe('重新请专家、补请专家和复用意见', () => {
       expect(expertRoutes()).toEqual(['expert:nutrition']);
     });
 
+    it('沿用的回答同样置顶危机提示：SSE 带 consultation 事件，步骤记下被沿用的调用，刷新后能恢复', async () => {
+      const agent = await as(f.users.managerA1.email);
+      const question = '客户说最近有轻生的念头，怎么沟通？';
+      const { taskId, consultation } = await ask(agent, ['mental-health'], question);
+      expect(consultation.crisis_signal).toBe(true);
+      provider.calls.length = 0;
+      const res = await send(agent, taskId, {
+        mode: 'ask',
+        content: question,
+        expertRefs: ['mental-health'],
+      }).expect(200);
+      expect(provider.calls).toEqual([]);
+      const events = parseSse(res.text);
+      expect(events).toContainEqual({
+        type: 'consultation',
+        consultationId: consultation.id,
+        status: consultation.status,
+        crisisSignal: true,
+        emergencySignal: false,
+      });
+      const reused = steps(events).find((s) => s.labelKey === 'steps.reuseRecentExperts');
+      expect(reused?.consultationId).toBe(consultation.id);
+      const detail = (await agent.get(`/api/tasks/${taskId}`).expect(200)).body;
+      const step = detail.steps.find(
+        (s: { labelKey: string }) => s.labelKey === 'steps.reuseRecentExperts',
+      );
+      expect(step.consultationId).toBe(consultation.id);
+      // 刷新后对话区按这个 id 在本任务的调用列表里找到那次调用的信号
+      const list = (await agent.get(`/api/tasks/${taskId}/expert-consultations`).expect(200)).body;
+      expect(
+        list.consultations.find((c: { id: string }) => c.id === step.consultationId)?.crisisSignal,
+      ).toBe(true);
+    });
+
+    it('这次识别出上次调用没有的危机信号时不沿用，重新请专家', async () => {
+      const agent = await as(f.users.managerA1.email);
+      const { taskId, consultation } = await ask(agent, ['nutrition'], '晚饭怎么吃？');
+      expect(consultation.crisis_signal).toBe(false);
+      // 中间健管师提到了危机说法（不请专家的问一问）
+      await send(agent, taskId, { mode: 'ask', content: '客户说活着没意思' }).expect(200);
+      provider.calls.length = 0;
+      const res = await send(agent, taskId, {
+        mode: 'ask',
+        content: '晚饭怎么吃？',
+        expertRefs: ['nutrition'],
+      }).expect(200);
+      expect(expertRoutes()).toEqual(['expert:nutrition']);
+      const all = await consultationsOf(taskId);
+      expect(all).toHaveLength(2);
+      expect(all[1]?.crisis_signal).toBe(true);
+      expect(parseSse(res.text)).toContainEqual(
+        expect.objectContaining({ type: 'consultation', crisisSignal: true }),
+      );
+    });
+
+    it('不跨任务、不跨健管师复用：同一客户的另一个任务、同机构的另一位健管师都重新调用', async () => {
+      const a1 = await as(f.users.managerA1.email);
+      const body = { mode: 'ask', content: '晚饭怎么吃？', expertRefs: ['nutrition'] };
+      const t1 = await newTask(a1, { clientId: f.clients.a1[0] });
+      await send(a1, t1, body).expect(200);
+      expect(await consultationsOf(t1)).toHaveLength(1);
+      provider.calls.length = 0;
+      const t2 = await newTask(a1, { clientId: f.clients.a1[0] });
+      await send(a1, t2, body).expect(200);
+      expect(expertRoutes()).toEqual(['expert:nutrition']);
+      expect(await consultationsOf(t2)).toHaveLength(1);
+
+      provider.calls.length = 0;
+      const a2 = await as(f.users.managerA2.email);
+      const t3 = await newTask(a2);
+      await send(a2, t3, body).expect(200);
+      expect(expertRoutes()).toEqual(['expert:nutrition']);
+      expect(await consultationsOf(t3)).toHaveLength(1);
+    });
+
+    it('请求键包含触发方式和技能：计划或别的技能的调用不会被当成同样的请求', () => {
+      const base = { mode: 'route' as const, forced: [], excluded: [], bound: null };
+      const skill = expertRequestKey({
+        ...base,
+        trigger: 'skill_auto',
+        skillId: 'report-interpretation',
+      });
+      expect(
+        expertRequestKey({ ...base, trigger: 'plan', skillId: 'report-interpretation' }),
+      ).not.toBe(skill);
+      expect(expertRequestKey({ ...base, trigger: 'skill_auto', skillId: 'other-skill' })).not.toBe(
+        skill,
+      );
+      expect(expertRequestKey({ ...base, mode: 'direct', trigger: 'mention' })).not.toBe(
+        expertRequestKey({ ...base, mode: 'direct', trigger: 'expert_center' }),
+      );
+      // 专家顺序不影响
+      expect(
+        expertRequestKey({ ...base, trigger: 'mention', forced: ['nutrition', 'cardiovascular'] }),
+      ).toBe(
+        expertRequestKey({ ...base, trigger: 'mention', forced: ['cardiovascular', 'nutrition'] }),
+      );
+    });
+
     it('/体检解读：同样的要求沿用上次的意见，草稿指向那次调用；报告更正后不再沿用', async () => {
       const agent = await as(f.users.managerA1.email);
       const first = await interpret(agent);
@@ -690,6 +790,22 @@ describe('重新请专家、补请专家和复用意见', () => {
         content: '空腹血糖偏高要注意什么？',
       }).expect(200);
       expect(parseSse(prodRes.text).some((e) => e.type === 'expert_suggestion')).toBe(false);
+    });
+
+    it('有危机或急症说法时不建议（先按置顶提示处理）', async () => {
+      const agent = await as(f.users.managerA1.email);
+      const taskId = await newTask(agent);
+      const crisis = await send(agent, taskId, {
+        mode: 'ask',
+        content: '客户最近情绪低落，说有轻生的念头',
+      }).expect(200);
+      expect(parseSse(crisis.text).some((e) => e.type === 'expert_suggestion')).toBe(false);
+      const t2 = await newTask(agent);
+      const emergency = await send(agent, t2, {
+        mode: 'ask',
+        content: '客户血压偏高，今天说胸痛',
+      }).expect(200);
+      expect(parseSse(emergency.text).some((e) => e.type === 'expert_suggestion')).toBe(false);
     });
 
     it('被平台暂停的专家不建议', async () => {

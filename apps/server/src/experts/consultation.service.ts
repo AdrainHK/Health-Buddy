@@ -41,6 +41,8 @@ export interface ConsultRun {
   clientId: string | null;
   reportId: string | null;
   trigger: ConsultationTrigger;
+  /** 技能自动调用、计划时是哪个技能（只用于 10 分钟内复用的请求键） */
+  skillId?: string | null;
   /** direct：@专家、专家中心；route：/体检解读 自动选择 */
   mode: 'direct' | 'route';
   forced: string[];
@@ -60,9 +62,12 @@ export interface ConsultRun {
  * 只有专家 id，不含客户资料和问题原文，存进调用记录，10 分钟内复用意见时比较。
  */
 export function expertRequestKey(
-  run: Pick<ConsultRun, 'mode' | 'forced' | 'excluded' | 'bound'>,
+  run: Pick<ConsultRun, 'trigger' | 'mode' | 'forced' | 'excluded' | 'bound' | 'skillId'>,
 ): string {
   return JSON.stringify({
+    // 触发方式和技能也算在内：计划或另一个技能的调用不会被当成同样的请求复用
+    trigger: run.trigger,
+    skillId: run.skillId ?? null,
     mode: run.mode,
     forced: [...new Set(run.forced)].sort(),
     excluded: [...new Set(run.excluded)].sort(),

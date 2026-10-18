@@ -304,19 +304,35 @@ export class GenerationService {
       };
 
       // 10 分钟内同样的请求：沿用上次的意见，不再调用模型（规格 3.7）
-      const recent = plan.reuse
+      // 这次关键词识别出、上次调用没有记下的危机或急症信号：不沿用，重新请专家（提示要跟着调用记录走）
+      const found = plan.reuse
         ? await this.recentConsultation(ctx, { ...run, question: plan.question })
         : undefined;
+      const recent =
+        found &&
+        (!signals.crisis || consultationCrisis(found)) &&
+        (!signals.emergency || consultationEmergency(found))
+          ? found
+          : undefined;
       if (recent) {
         const answered = answeredCalls(recent.calls);
         await steps.reuseRecent(
           answered.map((a) => a.expertId),
           recent.createdAt,
+          recent.id,
         );
         signals = {
-          crisis: signals.crisis || recent.crisisSignal,
-          emergency: signals.emergency || recent.emergencySignal,
+          crisis: signals.crisis || consultationCrisis(recent),
+          emergency: signals.emergency || consultationEmergency(recent),
         };
+        // 危机、急症提示不依赖回答正文（规格 7.2 第 5 条）：和新调用一样通过 consultation 事件置顶
+        io.emit({
+          type: 'consultation',
+          consultationId: recent.id,
+          status: recent.status,
+          crisisSignal: signals.crisis,
+          emergencySignal: signals.emergency,
+        });
         const text = renderExpertAnswer(
           answered,
           recent.calls.length,
@@ -382,7 +398,10 @@ export class GenerationService {
    */
   private async recentConsultation(
     ctx: TenantContext,
-    q: Pick<ConsultRun, 'taskId' | 'clientId' | 'reportId' | 'mode' | 'forced' | 'excluded'> & {
+    q: Pick<
+      ConsultRun,
+      'taskId' | 'clientId' | 'reportId' | 'trigger' | 'skillId' | 'mode' | 'forced' | 'excluded'
+    > & {
       bound?: string | null;
       question: string;
     },
@@ -442,10 +461,8 @@ export class GenerationService {
       const userContent = buildAskUserContent(client?.snapshot, question);
 
       // 固定的提醒由后端拼在开头，不依赖模型；模型拒答时也保留
-      const crisis = detectCrisisKeywords([
-        request.content,
-        ...(await this.repo.managerTexts(ctx, turn.taskId)),
-      ]);
+      const signalTexts = [request.content, ...(await this.repo.managerTexts(ctx, turn.taskId))];
+      const crisis = detectCrisisKeywords(signalTexts);
       const notices =
         (crisis ? CRISIS_HEADER : '') +
         (client ? criticalNotice(client.snapshot.criticalFlags) : '');
@@ -486,8 +503,14 @@ export class GenerationService {
       await steps.finish(step, 'done');
       const suggestion = suggestSkill(request.content);
       if (suggestion) io.emit({ type: 'suggestion', skillId: suggestion });
-      // 主对话的问一问不自动请专家，问题明显属于某位专家时只建议“请 @某专家 看看”（Q6）
-      if (request.mode === 'ask' && this.consultation.preview) {
+      // 主对话的问一问不自动请专家，问题明显属于某位专家时只建议“请 @某专家 看看”（Q6）。
+      // 有危机或急症信号时不建议：健管师应先按提示处理，不把它当成一般的专业问题（M3 合规审查）
+      if (
+        request.mode === 'ask' &&
+        this.consultation.preview &&
+        !crisis &&
+        !detectEmergencyKeywords(signalTexts)
+      ) {
         const expertId = suggestExpert(request.content, await this.consultation.availableIds(ctx));
         if (expertId) io.emit({ type: 'expert_suggestion', expertId });
       }
@@ -580,7 +603,7 @@ export class GenerationService {
         // M3：接入专家的技能（/体检解读）先请专家，预览开关关闭时和 M2 完全一样
         const used =
           skill.experts === 'auto' && this.consultation.preview
-            ? await this.skillConsultation(ctx, run, client, steps, io)
+            ? await this.skillConsultation(ctx, run, skill.id, client, steps, io)
             : undefined;
         if (io.signal.aborted) throw new GatewayError('aborted');
         const skillInput = used
@@ -733,6 +756,7 @@ export class GenerationService {
       experts?: SkillExpertOptions;
       reconsult?: boolean;
     },
+    skillId: string,
     client: ClientContext,
     steps: StepRunner,
     io: TurnIo,
@@ -752,6 +776,7 @@ export class GenerationService {
         labelKey,
         opinions.map((o) => o.expertId),
         labelTime,
+        previous.id,
       );
       await steps.finish(step, 'done');
       const signals = expertSignals(opinions, previous.synthesis);
@@ -787,6 +812,8 @@ export class GenerationService {
         taskId: run.taskId,
         clientId: run.clientId,
         reportId: client.report?.id ?? null,
+        trigger: options.trigger,
+        skillId,
         mode: 'route',
         forced: options.forced,
         excluded: options.excluded,
@@ -808,6 +835,7 @@ export class GenerationService {
           clientId: run.clientId,
           reportId: client.report?.id ?? null,
           trigger: options.trigger,
+          skillId,
           mode: 'route',
           forced: options.forced,
           excluded: options.excluded,
@@ -1000,6 +1028,7 @@ class StepRunner {
     labelKey: string,
     expertIds?: string[],
     labelTime: Date | null = null,
+    consultationId: string | null = null,
   ): Promise<TaskStep> {
     const step = await this.repo.startStep(
       this.ctx,
@@ -1010,6 +1039,7 @@ class StepRunner {
       null,
       expertIds,
       labelTime,
+      consultationId,
     );
     this.running.add(step);
     this.emit({ type: 'step', step });
@@ -1023,13 +1053,14 @@ class StepRunner {
     this.emit({ type: 'step', step: done });
   }
 
-  /** “沿用 10:32 的专家意见”（规格 3.7）：一步就完成 */
-  async reuseRecent(expertIds: string[], createdAt: string): Promise<void> {
+  /** “沿用 10:32 的专家意见”（规格 3.7）：一步就完成，步骤记下被沿用的调用（刷新后恢复危机、急症提示） */
+  async reuseRecent(expertIds: string[], createdAt: string, consultationId: string): Promise<void> {
     const step = await this.start(
       expertIds.length === 1 ? 'consult_expert' : 'consult_experts',
       'steps.reuseRecentExperts',
       expertIds,
       new Date(createdAt),
+      consultationId,
     );
     await this.finish(step, 'done');
   }
@@ -1046,4 +1077,22 @@ class StepRunner {
       await this.finish(step, 'failed').catch(() => undefined);
     }
   }
+}
+
+/** 调用记录上的危机信号：记录本身、汇总或任何一位专家的意见（和工作台 consultationSignals 一致） */
+function consultationCrisis(c: ExpertConsultation): boolean {
+  return (
+    c.crisisSignal ||
+    Boolean(c.synthesis?.crisisSignal) ||
+    c.calls.some((call) => Boolean(call.opinion?.crisisSignal))
+  );
+}
+
+/** 调用记录上的急症信号 */
+function consultationEmergency(c: ExpertConsultation): boolean {
+  return (
+    c.emergencySignal ||
+    Boolean(c.synthesis?.emergencySignal) ||
+    c.calls.some((call) => Boolean(call.opinion?.emergencySignal))
+  );
 }

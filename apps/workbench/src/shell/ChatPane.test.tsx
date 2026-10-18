@@ -33,6 +33,7 @@ function step(seq: number, labelKey: string, status: TaskStep['status']): TaskSt
     labelKey,
     labelDate: null,
     labelTime: null,
+    consultationId: null,
     expertIds: [],
     status,
     startedAt: NOW,

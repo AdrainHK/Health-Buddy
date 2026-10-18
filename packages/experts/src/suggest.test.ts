@@ -24,4 +24,14 @@ describe('主对话问一问的专家建议（Q6）', () => {
   it('同时命中多位时按注册表顺序只建议一位', () => {
     expect(suggestExpert('血糖高，饮食怎么调整', ALL)).toBe('endocrine-metabolism');
   });
+
+  it('有危机或急症说法时不建议（先按置顶提示处理）', () => {
+    // 不带危机说法时会建议心理专家、心血管专家
+    expect(suggestExpert('客户最近情绪低落', ALL)).toBe('mental-health');
+    expect(suggestExpert('客户心率偏快', ALL)).toBe('cardiovascular');
+    expect(suggestExpert('客户最近情绪低落，说有轻生的念头', ALL)).toBeUndefined();
+    expect(suggestExpert('压力很大，不想活了', ALL)).toBeUndefined();
+    expect(suggestExpert('血压偏高，今天胸痛', ALL)).toBeUndefined();
+    expect(suggestExpert('心率偏快，胸痛还出了一身大汗', ALL)).toBeUndefined();
+  });
 });

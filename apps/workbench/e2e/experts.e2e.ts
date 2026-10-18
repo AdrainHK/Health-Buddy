@@ -140,6 +140,7 @@ function step(overrides: Partial<TaskStep>): TaskStep {
     expertIds: [],
     labelDate: null,
     labelTime: null,
+    consultationId: null,
     status: 'done',
     startedAt: NOW,
     finishedAt: NOW,

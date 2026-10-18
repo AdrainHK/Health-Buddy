@@ -457,6 +457,7 @@ describe('review bar on a draft', () => {
               expertIds: [],
               labelDate: null,
               labelTime: null,
+              consultationId: null,
               status: 'done',
               startedAt: NOW,
               finishedAt: NOW,

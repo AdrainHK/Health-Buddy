@@ -1,3 +1,5 @@
+import { detectCrisisKeywords } from '@health-buddy/skills';
+import { detectEmergencyKeywords } from './input.js';
 import { EXPERTS } from './registry.js';
 
 /**
@@ -17,8 +19,10 @@ const EXPERT_KEYWORDS: Record<string, RegExp> = {
 /**
  * 返回建议请的专家 id：按注册表顺序取第一位命中、且对当前账号可用的专家；没有命中返回 undefined。
  * available 由后端按预览开关和平台暂停算好（被暂停的专家不建议）。
+ * 有危机或急症说法时不建议（如“轻生”“胸痛”）：健管师应先按置顶提示处理，不当成一般的专业问题。
  */
 export function suggestExpert(text: string, available: ReadonlySet<string>): string | undefined {
+  if (detectCrisisKeywords([text]) || detectEmergencyKeywords([text])) return undefined;
   return EXPERTS.find((e) => available.has(e.meta.id) && EXPERT_KEYWORDS[e.meta.id]?.test(text))
     ?.meta.id;
 }

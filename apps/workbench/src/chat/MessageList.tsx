@@ -1,5 +1,5 @@
 import { Button } from '@health-buddy/ui';
-import type { ClientSummary, TaskPlan, TaskStep } from '@health-buddy/shared';
+import type { ClientSummary, ExpertConsultation, TaskPlan, TaskStep } from '@health-buddy/shared';
 import {
   AtSign,
   Check,
@@ -59,6 +59,10 @@ export function MessageList({
   onAskExpert,
 }: MessageListProps) {
   const { t } = useTranslation();
+  // 沿用意见的步骤指向被沿用的调用（规格 3.7）：按 id 找，刷新后据此恢复危机、急症提示
+  const consultationsById = new Map(
+    Object.values(conversation.consultations).map((c) => [c.id, c]),
+  );
   return (
     <ol className={styles.list} aria-label={t('chat.messages')}>
       {conversation.messages.map((message) =>
@@ -74,6 +78,10 @@ export function MessageList({
             key={message.id}
             message={message}
             steps={conversation.steps.filter((s) => s.messageId === message.id)}
+            reused={reusedConsultations(
+              conversation.steps.filter((s) => s.messageId === message.id),
+              consultationsById,
+            )}
             plans={conversation.plans.filter((p) => p.messageId === message.id)}
             expert={{
               calls: conversation.expertCalls[message.id],
@@ -90,6 +98,17 @@ export function MessageList({
       )}
     </ol>
   );
+}
+
+/** 这条回答的步骤沿用的调用记录（10 分钟内沿用、退回重写沿用上一版） */
+function reusedConsultations(
+  steps: readonly TaskStep[],
+  byId: ReadonlyMap<string, ExpertConsultation>,
+): ExpertConsultation[] {
+  return steps.flatMap((s) => {
+    const c = s.consultationId ? byId.get(s.consultationId) : undefined;
+    return c ? [c] : [];
+  });
 }
 
 function ManagerMessage({
@@ -162,9 +181,11 @@ function AssistantMessage({
   onConfirmPlan,
   onUseSkill,
   onAskExpert,
+  reused,
 }: {
   message: ViewMessage;
   steps: TaskStep[];
+  reused: ExpertConsultation[];
   plans: TaskPlan[];
   expert: ExpertStepContext;
   /** SSE consultation 事件带来的危机、急症信号（接口取到调用记录前先用它） */
@@ -181,9 +202,11 @@ function AssistantMessage({
   const streaming = message.status === 'streaming';
   const consultation = expert.consultation;
   // 危机、急症提示置顶，不依赖回答正文里的标记（合规审查第 2 条）
+  // 沿用上次意见的回答没有自己的调用记录：信号取自被沿用的那次调用（规格 7.2 第 5 条）
   const alerts = mergeSignals([
     signals ?? { crisis: false, emergency: false },
     ...(consultation ? [consultationSignals(consultation)] : []),
+    ...reused.map(consultationSignals),
   ]);
   // 请了专家的回答：在正文上方写明是哪几位专家的意见，并标 AI（Q24）
   // 10 分钟内沿用上次意见的回答没有自己的调用记录，专家取自“沿用”那一步
@@ -244,7 +267,8 @@ function AssistantMessage({
         </Button>
       )}
 
-      {message.expertSuggestion && onAskExpert && (
+      {/* 有危机或急症提示时不建议请专家：先按置顶提示处理 */}
+      {message.expertSuggestion && onAskExpert && !alerts.crisis && !alerts.emergency && (
         <Button
           className={styles.suggestion}
           icon={<Stethoscope size={14} />}

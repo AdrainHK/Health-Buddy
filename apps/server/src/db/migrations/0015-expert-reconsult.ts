@@ -12,6 +12,9 @@ import { sql, type Kysely } from 'kysely';
  * - request_key：请求里和专家有关的部分（直接请还是自动选择、指定、排除、绑定的专家），只有专家 id，
  *   不含任何客户资料和问题原文。
  * - task_steps.label_time：步骤文案里的时间（“沿用 10:32 的专家意见”）。
+ * - task_steps.consultation_id：10 分钟内沿用上次意见的步骤指向被沿用的调用记录，刷新后对话区据此
+ *   恢复危机、急症的置顶提示（规格 7.2 第 5 条：提示不依赖回答正文）。触发器（调用者权限，受行级安全约束）
+ *   保证被引用的调用和这一步属于同一任务。
  *
  * 新列都在插入时写好，之后和其他列一样不可修改（0012、0013 的触发器按整行比较，新列自动包含在内）。
  * 行级安全、授权不变：expert_consultations 和 task_steps 的 insert 是整表授权，update 没有开放新列。
@@ -28,6 +31,25 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       add foreign key (request_message_id, task_id) references task_messages (id, task_id);
     create index expert_consultations_origin_idx on expert_consultations (origin_id);
 
-    alter table task_steps add column label_time timestamptz;
+    alter table task_steps
+      add column label_time timestamptz,
+      add column consultation_id uuid references expert_consultations (id);
+
+    create function task_steps_consultation_guard() returns trigger language plpgsql as $$
+    begin
+      if new.consultation_id is not null and not exists (
+        select 1
+        from expert_consultations c
+        join task_messages m on m.task_id = c.task_id
+        where c.id = new.consultation_id and m.id = new.message_id
+      ) then
+        raise exception 'step can only reference a consultation of the same task'
+          using errcode = 'check_violation';
+      end if;
+      return new;
+    end
+    $$;
+    create trigger task_steps_consultation_guard before insert or update on task_steps
+      for each row execute function task_steps_consultation_guard();
   `.execute(db);
 }

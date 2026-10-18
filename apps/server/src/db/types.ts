@@ -183,6 +183,7 @@ export interface TaskStepsTable extends ManagerScoped {
   expert_ids: ColumnType<string[], string[] | undefined, never>;
   label_date: ColumnType<string | null, string | null | undefined, string | null>;
   label_time: ColumnType<Date | null, Date | null | undefined, never>;
+  consultation_id: ColumnType<string | null, string | null | undefined, never>;
   status: 'running' | 'done' | 'failed';
   started_at: Timestamp;
   finished_at: Date | null;
