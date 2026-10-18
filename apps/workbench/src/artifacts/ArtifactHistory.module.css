@@ -24,6 +24,7 @@
 
 .version {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--hb-space-2);
   width: 100%;
@@ -47,8 +48,19 @@
   box-shadow: var(--hb-focus-ring);
 }
 
-.versionName {
+.title {
+  margin: 0;
+  font-size: var(--hb-text-md);
   font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* 版本标题带客户称呼和报告文件名：占满一行，时间和状态换到下一行 */
+.versionName {
+  flex: 1 1 100%;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .time {

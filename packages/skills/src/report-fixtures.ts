@@ -343,4 +343,25 @@ export const REPORT_SNAPSHOTS = {
       ],
     },
   },
+  /**
+   * 还没有已核对的体检报告（/面谈提纲 报告可选，验收反馈）：只有健康史和最近 30 天日常监测
+   */
+  noReport: {
+    ...base,
+    ageBand: '60-69',
+    gender: 'female',
+    monitoring: [
+      {
+        metric: 'sbp',
+        unit: 'mmHg',
+        readings: steps([138, 142, 136]),
+      },
+      { metric: 'steps', unit: 'steps', readings: steps([3200, 2900, 4100]) },
+    ],
+    healthHistory: [
+      { category: 'family_history', content: '母亲有血压偏高的情况（客户口述）。' },
+      { category: 'lifestyle', content: '退休在家，口味偏咸，很少运动。' },
+    ],
+    reportDetail: null,
+  },
 } satisfies Record<string, ClientSnapshot>;

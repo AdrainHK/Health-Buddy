@@ -5,7 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { getClientRecord } from '../api/clients';
 import { isAbortError } from '../api/http';
 import { StatusBadge } from '../artifacts/ArtifactView';
-import { useDynamicT, useSkillName } from '../i18n/dynamic';
+import { useArtifactTitle } from '../artifacts/artifactTitle';
+import { useDynamicT } from '../i18n/dynamic';
 import { ReportsSection } from '../reports/ReportsSection';
 import { AbnormalBadge } from '../reports/ReviewView';
 import { ClientForm } from './ClientForm';
@@ -258,7 +259,7 @@ function Monitoring({ record }: { record: RecordData }) {
 
 function Artifacts({ record }: { record: RecordData }) {
   const { t } = useTranslation();
-  const skillName = useSkillName();
+  const title = useArtifactTitle();
   if (record.readOnly) return null;
   return (
     <Section title={t('record.sections.artifacts')}>
@@ -269,7 +270,8 @@ function Artifacts({ record }: { record: RecordData }) {
           {record.artifacts.map((a) => (
             <li key={a.id} className={styles.item}>
               <span className={styles.itemMain}>
-                {t('results.artifacts.item', { name: skillName(a.skillId), version: a.version })}
+                {/* 档案就是这位客户的，标题里不再重复称呼 */}
+                {title(a)}
               </span>
               <span className={styles.meta}>
                 {t('record.artifacts.meta', { date: displayDate(a.createdAt) })}

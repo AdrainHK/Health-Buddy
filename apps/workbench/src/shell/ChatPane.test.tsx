@@ -176,6 +176,8 @@ describe('ChatPane sending and streaming', () => {
         status: 'draft',
         hasCriticalFlags: false,
         createdAt: NOW,
+        sourceReportDate: null,
+        sourceFileName: null,
       },
     });
     sse.send({ type: 'suggestion', skillId: SKILL.id });

@@ -52,6 +52,7 @@ export const SKILL: SkillSummary = {
   clientFacing: true,
   involvesHealthJudgment: true,
   requiresReport: false,
+  usesReport: false,
   allowsEmptyRequest: false,
   planSkills: [],
 };
@@ -202,6 +203,8 @@ export function makeArtifactSummary(overrides: Partial<ArtifactSummary> = {}): A
     status: 'draft',
     hasCriticalFlags: false,
     createdAt: NOW,
+    sourceReportDate: null,
+    sourceFileName: null,
     ...overrides,
   };
 }
@@ -228,12 +231,34 @@ export function makeArtifactDetail(
     clientFacing: true,
     ...overrides,
   };
-  const { id, taskId, skillId, version, status, hasCriticalFlags, createdAt } = artifact;
+  const {
+    id,
+    taskId,
+    skillId,
+    version,
+    status,
+    hasCriticalFlags,
+    createdAt,
+    sourceReportDate,
+    sourceFileName,
+  } = artifact;
   return {
     artifact,
     sourceReport: null,
     hints: { judgementHints: [], criticalValueMentions: [], riskTierMentions: [] },
-    versions: [{ id, taskId, skillId, version, status, hasCriticalFlags, createdAt }],
+    versions: [
+      {
+        id,
+        taskId,
+        skillId,
+        version,
+        status,
+        hasCriticalFlags,
+        createdAt,
+        sourceReportDate,
+        sourceFileName,
+      },
+    ],
     events: [
       {
         id: ids.event1,

@@ -1,11 +1,13 @@
 import type { ClientSummary, SkillSummary, Task } from '@health-buddy/shared';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { listClients, listSkills, listTasks, updateTask } from '../api/workbench';
+import { isAbortError } from '../api/http';
+import { getTask, listClients, listSkills, listTasks, updateTask } from '../api/workbench';
 import styles from './AppShell.module.css';
 import { ChatPane } from './ChatPane';
 import { ResultsPanel } from './ResultsPanel';
 import { Sidebar, type SidebarAccount, type TaskListState, type TaskListView } from './Sidebar';
+import { readUrlId, writeUrlId } from './urlState';
 import { NARROW_QUERY, useMediaQuery } from './useMediaQuery';
 
 /**
@@ -43,6 +45,34 @@ export function AppShell({ account }: AppShellProps = {}) {
   );
   /** 识别记录有变化（对话里上传、识别结束、核对确认），对话区和结果区据此刷新 */
   const [uploadsVersion, setUploadsVersion] = useState(0);
+
+  // 刷新页面后恢复当前任务（验收反馈：刷新后产物和记录都空了）。任务 id 记在地址栏，
+  // 恢复时按 id 重新取任务，后端按行级安全判断；取不到（别人的、已删除）就回到欢迎页
+  const restoringTaskRef = useRef<string | null>(readUrlId('task'));
+  useEffect(() => {
+    const id = restoringTaskRef.current;
+    if (!id) return;
+    const controller = new AbortController();
+    getTask(id, controller.signal)
+      .then(({ task }) => {
+        restoringTaskRef.current = null;
+        // 恢复期间健管师已经点了别的任务或新建了任务：以健管师的操作为准
+        setActiveTask((current) => current ?? task);
+      })
+      .catch((err: unknown) => {
+        if (isAbortError(err)) return;
+        restoringTaskRef.current = null;
+        writeUrlId('task', null);
+        writeUrlId('artifact', null);
+      });
+    return () => controller.abort();
+  }, []);
+  const activeTaskId = activeTask?.id ?? null;
+  useEffect(() => {
+    if (restoringTaskRef.current !== null && activeTaskId === null) return;
+    restoringTaskRef.current = null;
+    writeUrlId('task', activeTaskId);
+  }, [activeTaskId]);
 
   // 技能和客户列表：/ 和 @ 补全、任务按客户分组都要用
   useEffect(() => {

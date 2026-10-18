@@ -428,6 +428,13 @@ describe('M2 验收补齐', () => {
         );
         expect(parseSse(outline.text).some((e) => e.type === 'artifact')).toBe(true);
         outlineCall = provider.calls.filter((c) => c.route === 'skill').at(-1);
+        // 验收反馈 4：产物摘要带上依据报告的日期和原件文件名，健管师界面拼标题用
+        const summaries = (await agent.get(`/api/tasks/${taskId}`).expect(200)).body.artifacts;
+        for (const skillId of ['report-interpretation', 'interview-outline']) {
+          expect(
+            summaries.find((a: { skillId: string; status: string }) => a.skillId === skillId),
+          ).toMatchObject({ sourceReportDate: REPORT_DATE, sourceFileName: fileName });
+        }
 
         // 想一想“新客户完整评估”：先出计划，确认后依次生成解读和提纲
         const proposed = await track(

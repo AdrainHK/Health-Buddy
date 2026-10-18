@@ -62,6 +62,7 @@ describe('skill metadata', () => {
       clientFacing: true,
       involvesHealthJudgment: true,
       requiresReport: false,
+      usesReport: false,
       allowsEmptyRequest: true,
       planSkills: [],
     });

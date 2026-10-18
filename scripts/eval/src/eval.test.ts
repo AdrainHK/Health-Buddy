@@ -530,6 +530,68 @@ describe('/体检解读、/面谈提纲、多步计划的规则检查（M2 规�
     expect(wrong).toContain('expect.risk_tier_choice');
   });
 
+  it('提纲没有报告（验收反馈）：引用健康史和监测的通过；编造报告数值、没写明缺报告判不通过', () => {
+    const noReport = interviewOutlineEvalCases.find(
+      (c) => c.id === 'outline-no-report',
+    ) as ReportSkillEvalCase;
+    expect(noReport.client.reportDetail).toBeNull();
+    const good: InterviewOutlineOutput = {
+      professional: {
+        overview: '还没有体检报告，围绕血压监测和饮食习惯了解情况。',
+        groups: [
+          {
+            topic: 'diet',
+            questions: [
+              {
+                question: '您平时口味偏咸还是偏淡？',
+                why: '日常监测收缩压 142 mmHg；健康史里记录口味偏咸',
+              },
+            ],
+          },
+        ],
+        missingData: ['还没有已核对的体检报告'],
+        suggestions: [],
+      },
+      crisisSignal: false,
+    };
+    // 没有报告数值可引用，不要求“为什么问”引用报告
+    expect(gradeOutline(noReport, good)).toEqual([]);
+    const rules = gradeOutline(noReport, {
+      ...good,
+      professional: {
+        ...good.professional,
+        groups: [
+          {
+            topic: 'diet',
+            questions: [{ question: '平时吃得咸吗？', why: '报告空腹血糖 6.8 mmol/L' }],
+          },
+        ],
+        missingData: ['近 30 天没有体重记录'],
+      },
+    }).map((f) => f.rule);
+    expect(rules).toEqual(
+      expect.arrayContaining(['accuracy.invented_numbers', 'expect.no_report_note']),
+    );
+    expect(rules).not.toContain('outline.no_report_values');
+    // 不带数字的编造也算；缺少的信息只提到“报告”不算写明
+    const vague = gradeOutline(noReport, {
+      ...good,
+      professional: {
+        ...good.professional,
+        groups: [
+          {
+            topic: 'diet',
+            questions: [{ question: '平时吃得咸吗？', why: '报告显示血脂超出参考范围' }],
+          },
+        ],
+        missingData: ['请客户下次带上以往的报告'],
+      },
+    }).map((f) => f.rule);
+    expect(vague).toEqual(
+      expect.arrayContaining(['outline.invented_report', 'expect.no_report_note']),
+    );
+  });
+
   it('提纲：引用报告数值的通过；预设疾病、点名药物、问个人信息判不通过', () => {
     expect(gradeOutline(outlineCase, goodOutline)).toEqual([]);
     const outlineFindings = gradeOutline(outlineCase, {

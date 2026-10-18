@@ -38,6 +38,12 @@ export const artifactSummarySchema = z.object({
   status: artifactStatusSchema,
   hasCriticalFlags: z.boolean(),
   createdAt: z.iso.datetime(),
+  /**
+   * 依据的已核对报告的日期和第一个原件的文件名，只用于健管师界面上的产物标题
+   * （验收反馈：“体检报告（文件名）解读 · 第 1 版”）；没有依据报告、报告不是上传的或已看不到时为空
+   */
+  sourceReportDate: z.iso.date().nullable().default(null),
+  sourceFileName: z.string().nullable().default(null),
 });
 export type ArtifactSummary = z.infer<typeof artifactSummarySchema>;
 

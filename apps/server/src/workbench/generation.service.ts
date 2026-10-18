@@ -13,6 +13,7 @@ import {
   greetClient,
   redactClientIdentity,
   wordingCategories,
+  skillUsesReport,
   suggestSkill,
   withAskNotice,
   type SkillDefinition,
@@ -195,7 +196,7 @@ export class GenerationService {
     try {
       if (!run.clientId || !run.skills.length)
         return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
-      const usesReport = run.skills.some((s) => s.requiresReport);
+      const usesReport = run.skills.some(skillUsesReport);
       const client = usesReport
         ? await this.readReport(ctx, run.clientId, steps, run.reportId ?? null, run.skills)
         : await this.readClient(ctx, run.clientId, steps, run.reportId ?? null);
@@ -291,7 +292,7 @@ export class GenerationService {
           criticalFlags: client.snapshot.criticalFlags,
           // 多步计划里只有第一步是“基于这一版修改”，其余都是新的产物
           parent: run.skills.length === 1 ? run.parent : undefined,
-          sourceReportId: skill.requiresReport ? (client.report?.id ?? null) : null,
+          sourceReportId: skillUsesReport(skill) ? (client.report?.id ?? null) : null,
           riskTierSuggestion: rendered.riskTierSuggestion ?? null,
         });
         if (!artifact) {
@@ -319,6 +320,8 @@ export class GenerationService {
   /**
    * 用报告的技能读资料（规格 2.5 第 4 条）：正在读取报告（日期）→ 正在对比历次报告
    * →（/体检解读）正在识别危急指标。报告不见了（并发转出等）时失败，不退回到别的报告。
+   * reportId 已在发消息、确认计划或退回时定好；为空只可能是报告可选的技能（/面谈提纲）
+   * 而客户还没有已核对报告，这时只读档案（健康史、日常监测、分层）。
    */
   private async readReport(
     ctx: TenantContext,
@@ -327,8 +330,27 @@ export class GenerationService {
     reportId: string | null,
     skills: SkillDefinition[],
   ): Promise<ClientContext | undefined> {
+    const required = skills.some((s) => s.requiresReport);
+    if (reportId === null && !required) {
+      const read = await steps.start('read_client', 'steps.readClient');
+      const client = await this.repo.clientContext(ctx, clientId, null, {
+        detail: true,
+        latestReport: false,
+      });
+      if (!client) {
+        await steps.finish(read, 'failed');
+        return undefined;
+      }
+      await steps.finish(read, 'done');
+      const detect = await steps.start('detect_critical', 'steps.detectCritical');
+      await steps.finish(detect, 'done');
+      return client;
+    }
     const read = await steps.start('read_report', 'steps.readReport');
-    const client = await this.repo.clientContext(ctx, clientId, reportId, { detail: true });
+    const client = await this.repo.clientContext(ctx, clientId, reportId, {
+      detail: true,
+      latestReport: false,
+    });
     if (!client?.report || !client.snapshot.reportDetail) {
       await steps.finish(read, 'failed');
       return undefined;

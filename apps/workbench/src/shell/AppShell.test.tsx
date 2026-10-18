@@ -326,3 +326,84 @@ describe('AppShell client tab and switching clients', () => {
     ).toBeInTheDocument();
   });
 });
+
+describe('刷新页面后恢复产物和记录（验收反馈 3）', () => {
+  const REPORT_ARTIFACT = makeArtifactSummary({
+    skillId: 'report-interpretation',
+    sourceReportDate: '2026-09-12',
+    sourceFileName: 'synthetic-scan.pdf',
+  });
+  const detail = makeArtifactDetail({
+    skillId: 'report-interpretation',
+    sourceReportDate: '2026-09-12',
+    sourceFileName: 'synthetic-scan.pdf',
+  });
+  const TITLE = '合成客户甲 体检报告（2026-09-12 · synthetic-scan.pdf）解读 · 第 1 版';
+  // 列表按钮的名称后面还带状态（草稿）
+  const item = (name: string) => name.startsWith(TITLE);
+
+  function mockReload() {
+    return mockApi({
+      'GET /tasks': () => json(200, { tasks: TASKS }),
+      'GET /tasks?archived=true': () => json(200, { tasks: ARCHIVED }),
+      'GET /clients': () => json(200, { clients: CLIENTS }),
+      'GET /skills': () => json(200, { skills: [SKILL] }),
+      [`GET /tasks/${ids.task}`]: () =>
+        json(200, { ...emptyDetail(TASKS[0]), artifacts: [REPORT_ARTIFACT] }),
+      [`GET /artifacts/${ids.artifact}`]: () => json(200, detail),
+    });
+  }
+
+  beforeEach(() => setViewport(false));
+
+  it('打开的任务和产物记在地址栏，刷新后重新打开，记录标签也有内容', async () => {
+    mockReload();
+    const user = userEvent.setup();
+    const first = render(<AppShell />);
+    await user.click(await screen.findByRole('button', { name: '甲的小结' }));
+    const results = screen.getByRole('complementary', { name: '结果' });
+    await user.click(await within(results).findByRole('button', { name: item }));
+    await within(results).findByRole('heading', { name: TITLE });
+    expect(new URLSearchParams(window.location.search).get('task')).toBe(ids.task);
+    expect(new URLSearchParams(window.location.search).get('artifact')).toBe(ids.artifact);
+
+    // 模拟刷新：组件全部卸载，内存里的状态都没了，只剩地址栏
+    first.unmount();
+    const api = mockReload();
+    render(<AppShell />);
+    expect(await screen.findByRole('heading', { level: 1, name: '甲的小结' })).toBeInTheDocument();
+    const again = screen.getByRole('complementary', { name: '结果' });
+    expect(await within(again).findByRole('heading', { name: TITLE })).toBeInTheDocument();
+    await user.click(within(again).getByRole('tab', { name: '记录' }));
+    const panel = within(again).getByRole('tabpanel');
+    expect(within(panel).getByRole('heading', { name: '版本' })).toBeInTheDocument();
+    expect(within(panel).getByRole('button', { name: '查看第 1 版' })).toHaveTextContent(TITLE);
+    expect(within(panel).getByText('系统 · 生成')).toBeInTheDocument();
+    expect(api.callsTo('GET', `/artifacts/${ids.artifact}`).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('只记了任务：刷新后列出产物；记录标签列出产物供选择', async () => {
+    window.history.replaceState(null, '', `/?task=${ids.task}`);
+    mockReload();
+    const user = userEvent.setup();
+    render(<AppShell />);
+    const results = screen.getByRole('complementary', { name: '结果' });
+    const list = await within(results).findByRole('list', { name: '本任务的产物' });
+    expect(within(list).getByRole('button', { name: item })).toBeInTheDocument();
+
+    await user.click(within(results).getByRole('tab', { name: '记录' }));
+    const pick = await within(results).findByRole('list', { name: '选择要查看记录的产物' });
+    await user.click(within(pick).getByRole('button', { name: item }));
+    expect(await within(results).findByRole('button', { name: '查看第 1 版' })).toBeInTheDocument();
+    expect(new URLSearchParams(window.location.search).get('artifact')).toBe(ids.artifact);
+  });
+
+  it('地址栏里的任务看不到（别人的或不存在）：回到欢迎页并清掉地址栏', async () => {
+    window.history.replaceState(null, '', `/?task=${ids.task2}&artifact=${ids.artifact}`);
+    // 没有登记 GET /tasks/{task2}：模拟后端按行级安全返回 404
+    mockReload();
+    render(<AppShell />);
+    expect(await screen.findByText('今天想让我帮你做什么？')).toBeInTheDocument();
+    await waitFor(() => expect(window.location.search).toBe(''));
+  });
+});

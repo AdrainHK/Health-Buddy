@@ -81,8 +81,10 @@ describe('M2 技能登记', () => {
       modes: ['plan', 'craft'],
       clientFacing: false,
       involvesHealthJudgment: true,
-      requiresReport: true,
+      // 报告可选（验收反馈）：没有已核对报告时按档案生成
+      usesReport: true,
     });
+    expect(interviewOutline.requiresReport).toBeFalsy();
     expect(getSkill('report-interpretation')).toBe(reportInterpretation);
     expect(getSkill('interview-outline')).toBe(interviewOutline);
   });
@@ -105,6 +107,7 @@ describe('M2 技能登记', () => {
       clientFacing: true,
       involvesHealthJudgment: true,
       requiresReport: true,
+      usesReport: true,
       allowsEmptyRequest: true,
       planSkills: ['report-interpretation', 'interview-outline'],
     });
@@ -359,6 +362,19 @@ describe('/面谈提纲 的产物', () => {
     expect(artifact.professional).toContain('为什么问：空腹血糖 6.5 mmol/L 高于报告参考范围');
     // 没有问题的主题不列
     expect(artifact.professional).not.toContain('## 睡眠');
+  });
+
+  it('没有已核对报告时按档案生成（验收反馈）：输入写明没有报告，产物写明依据', () => {
+    const input = { client: REPORT_SNAPSHOTS.noReport, managerRequest: '提纲' };
+    const msg = interviewOutline.buildUserMessage(input);
+    expect(msg).toContain('没有已核对的体检报告');
+    expect(msg).toContain('母亲有血压偏高的情况');
+    expect(msg).toContain('收缩压');
+    const artifact = interviewOutline.render(output, input);
+    expect(artifact.professional).toContain('依据：客户档案');
+    expect(artifact.professional).not.toContain('依据报告');
+    // 提示词交代了没有报告时怎么做
+    expect(interviewOutline.prompt).toContain('没有已核对的体检报告”时照常生成');
   });
 
   it('输入里不带分层标准', () => {

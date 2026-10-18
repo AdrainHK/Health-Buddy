@@ -27,6 +27,15 @@ export const interviewOutlineEvalCases: ReportSkillEvalCase[] = [
     expect: { reportsMissingData: true },
   },
   {
+    // 报告可选（验收反馈）：没有已核对报告时按健康史和日常监测列问题，不编造报告数值，
+    // 缺少的信息里写明还没有体检报告
+    id: 'outline-no-report',
+    category: 'outline',
+    client: REPORT_SNAPSHOTS.noReport,
+    managerRequest: '请根据档案和报告生成面谈提纲',
+    expect: { reportsMissingData: true, notesNoReport: true },
+  },
+  {
     // 问题里不念危急指标的数值；overview 提醒健管师先电话联系客户
     id: 'outline-critical',
     category: 'critical_value',
