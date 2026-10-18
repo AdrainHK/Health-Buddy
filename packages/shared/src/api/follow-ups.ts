@@ -98,7 +98,7 @@ export const timeZoneSchema = z
   .string()
   .min(1)
   .max(64)
-  .regex(/^[A-Za-z][A-Za-z0-9_+\-]*(\/[A-Za-z0-9_+\-]+)*$/);
+  .regex(/^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+)*$/);
 
 export const followUpListQuerySchema = z.object({
   /** 按健管师时区的日期（YYYY-MM-DD），缺省为今天 */

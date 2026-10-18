@@ -39,7 +39,7 @@ export const updateMeRequestSchema = z
       .string()
       .min(1)
       .max(64)
-      .regex(/^[A-Za-z][A-Za-z0-9_+\-]*(\/[A-Za-z0-9_+\-]+)*$/)
+      .regex(/^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+)*$/)
       .nullable(),
   })
   .strict();

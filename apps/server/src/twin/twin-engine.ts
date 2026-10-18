@@ -9,7 +9,6 @@ import {
   type TwinLevel,
   type TwinStatusRule,
 } from '@health-buddy/shared';
-import { sql } from 'kysely';
 import { withTenant, type Db, type TenantContext, type TenantTransaction } from '../db/database.js';
 import { lockTwinCompute } from '../db/locks.js';
 import { dbClock, twinComputeContext } from '../db/twin-functions.js';
@@ -166,7 +165,7 @@ export class TwinEngine {
 
     const criticalRefs = await trx
       .selectFrom('follow_up_items')
-      .select(sql<string | null>`source_ref ->> 'dataRef'`.as('data_ref'))
+      .select('source_ref')
       .where('client_id', '=', clientId)
       .where('kind', '=', 'critical')
       .execute();
@@ -236,7 +235,7 @@ export class TwinEngine {
         result: forecastFromRow(f),
       })),
       handledDataRefs: new Set(
-        criticalRefs.map((r) => r.data_ref).filter((r): r is string => typeof r === 'string'),
+        criticalRefs.map((r) => dataRefOf(r.source_ref)).filter((r): r is string => r !== null),
       ),
     };
     return { input, computedAt: state?.computed_at ?? null, loadAt };
@@ -409,4 +408,11 @@ export function forecastFromRow(f: {
     fit: (f.fit as ForecastResult['fit']) ?? null,
     points: (f.points as ForecastResult['points']) ?? [],
   };
+}
+
+/** 跟进项 source_ref 里的 dataRef（危急指标引用的那个数值） */
+function dataRefOf(sourceRef: unknown): string | null {
+  if (!sourceRef || typeof sourceRef !== 'object' || !('dataRef' in sourceRef)) return null;
+  const ref = (sourceRef as { dataRef: unknown }).dataRef;
+  return typeof ref === 'string' ? ref : null;
 }

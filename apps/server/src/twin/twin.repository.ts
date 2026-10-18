@@ -25,7 +25,6 @@ import {
   type TwinTimelineResponse,
   type TwinTimelineType,
 } from '@health-buddy/shared';
-import { sql } from 'kysely';
 import { selectTiers, toTier } from '../clients/client-record.repository.js';
 import { selectClientSummary, toClientSummary } from '../clients/clients.repository.js';
 import { DB } from '../db/db.provider.js';
@@ -145,7 +144,8 @@ export function buildDomainViews(
 type ForecastRow = Parameters<typeof forecastFromRow>[0] & { id: string; computed_at: Date };
 
 function toTwinForecast(row: ForecastRow): TwinForecast {
-  const { fit: _fit, ...rest } = forecastFromRow(row);
+  const { fit, ...rest } = forecastFromRow(row);
+  void fit; // 拟合参数只在后端用，不返回
   return { ...rest, id: row.id, computedAt: row.computed_at.toISOString() };
 }
 
@@ -233,13 +233,6 @@ export class TwinRepository {
       .execute();
     const latest = await this.latestDataAt(trx, clientId);
     const tier = await selectTiers(trx, clientId).limit(1).executeTakeFirst();
-    const role = (
-      await trx
-        .selectFrom('users')
-        .select('role')
-        .where('id', '=', sql<string>`app_user_id()`)
-        .executeTakeFirst()
-    )?.role;
     return {
       client: toClientSummary(client),
       domains: buildDomainViews(rows as StatusRow[], latest.byDomain),
@@ -518,7 +511,7 @@ export class TwinRepository {
               .as('abnormal_count'),
           ])
           .where('r.client_id', '=', clientId)
-          .where(sql<boolean>`coalesce(r.verified_at, r.created_at) < ${before}`)
+          .where((eb) => eb(eb.fn.coalesce('r.verified_at', 'r.created_at'), '<', before))
           .orderBy('at', 'desc')
           .limit(n)
           .execute();
@@ -743,7 +736,9 @@ export class TwinRepository {
             'c.created_at',
             eb
               .selectFrom('expert_calls as x')
-              .select(sql<string[]>`coalesce(array_agg(distinct x.expert_id), '{}')`.as('ids'))
+              .select((e) =>
+                e.fn.agg<string[] | null>('array_agg', ['x.expert_id']).distinct().as('ids'),
+              )
               .whereRef('x.consultation_id', '=', 'c.id')
               .as('expert_ids'),
           ])
