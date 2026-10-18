@@ -2,6 +2,15 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import {
   ABNORMAL_FLAGS,
+  CONSULTATION_STATUSES,
+  CRISIS_NOTICE,
+  EMERGENCY_NOTICE,
+  EXPERT_DISCLAIMER,
+  findBannedTerms,
+  CONSULTATION_TRIGGERS,
+  EXPERT_CALL_STATUSES,
+  EXPERT_FAILURE_CATEGORIES,
+  SUGGESTION_CATEGORIES,
   SOURCE_PRIORITIES,
   SOURCE_SCOPES,
   SOURCE_STATUSES,
@@ -53,7 +62,7 @@ describe('界面文字走 i18n（验收标准 25）', () => {
   it('组件和逻辑代码里没有写死的中文', () => {
     const files = sourceFiles(SRC);
     // 确实扫到了各个界面目录（档案、核对、对话、结果区）
-    for (const dir of ['record', 'reports', 'chat', 'artifacts', 'shell'])
+    for (const dir of ['record', 'reports', 'chat', 'artifacts', 'shell', 'experts'])
       expect(
         files.some((f) => relative(SRC, f).startsWith(dir)),
         dir,
@@ -87,6 +96,11 @@ describe('界面文字走 i18n（验收标准 25）', () => {
       'steps.generateInterpretation',
       'steps.generateOutline',
       'steps.answer',
+      'steps.routeExperts',
+      'steps.consultExpert',
+      'steps.consultExperts',
+      'steps.reuseExperts',
+      'steps.synthesizeExperts',
       'skills.client-recent-summary.name',
       'skills.report-interpretation.name',
       'skills.interview-outline.name',
@@ -105,6 +119,12 @@ describe('界面文字走 i18n（验收标准 25）', () => {
       ['record.tier.levels', RISK_TIERS],
       ['record.history.categories', HEALTH_HISTORY_CATEGORIES],
       ['chat.streamErrors', streamErrorKindSchema.options],
+      // M3：专家调用状态、失败类别、触发方式、建议类别
+      ['experts.call.status', EXPERT_CALL_STATUSES],
+      ['experts.call.failure', EXPERT_FAILURE_CATEGORIES],
+      ['experts.trigger', CONSULTATION_TRIGGERS],
+      ['experts.tab.status', CONSULTATION_STATUSES],
+      ['experts.tab.suggestionCategory', SUGGESTION_CATEGORIES],
     ];
     for (const [prefix, values] of groups) {
       for (const v of values) {
@@ -113,5 +133,49 @@ describe('界面文字走 i18n（验收标准 25）', () => {
         expect(String(text).length, `${prefix}.${v}`).toBeGreaterThan(0);
       }
     }
+  });
+
+  it('专家相关的词条里没有禁用词（合规审查第 4 条）', () => {
+    const strings = (node: unknown, path: string): [string, string][] =>
+      typeof node === 'string'
+        ? [[path, node]]
+        : node && typeof node === 'object'
+          ? Object.entries(node).flatMap(([k, v]) => strings(v, `${path}.${k}`))
+          : [];
+    const roots = [
+      'experts',
+      'chat.experts',
+      'results.artifacts.experts',
+      'results.artifacts.signals',
+      'signals',
+    ];
+    const all = roots.flatMap((root) => strings(lookup(root), root));
+    expect(all.length).toBeGreaterThan(50);
+    const issues = all.flatMap(([path, text]) =>
+      findBannedTerms(text).map((issue) => `${path}: ${issue.term}`),
+    );
+    expect(issues).toEqual([]);
+  });
+
+  it('专家意见的提示语和后端拼接的 EXPERT_DISCLAIMER 一字不差', () => {
+    expect(lookup('experts.bound.note')).toBe(EXPERT_DISCLAIMER);
+    expect(lookup('experts.tab.note')).toBe(EXPERT_DISCLAIMER);
+  });
+
+  it('危机、急症提示只有一组词条，和后端的 CRISIS_NOTICE、EMERGENCY_NOTICE 一字不差（合规审查第 5 条）', () => {
+    expect(lookup('signals.crisisText')).toBe(CRISIS_NOTICE);
+    expect(lookup('signals.emergencyText')).toBe(EMERGENCY_NOTICE);
+    // 不再有重复的副本
+    for (const key of [
+      'experts.tab.crisis',
+      'experts.tab.crisisText',
+      'experts.tab.emergency',
+      'experts.tab.emergencyText',
+      'results.artifacts.signals.crisis',
+      'results.artifacts.signals.crisisText',
+      'results.artifacts.signals.emergency',
+      'results.artifacts.signals.emergencyText',
+    ])
+      expect(lookup(key), key).toBeUndefined();
   });
 });

@@ -82,3 +82,71 @@ describe('conversationReducer', () => {
     expect(s).toEqual(emptyConversation);
   });
 });
+
+describe('conversationReducer：专家调用（M3 规格 2.6）', () => {
+  const ev = (expertId: string, status: 'running' | 'done' | 'timeout') =>
+    ({
+      type: 'event',
+      event: {
+        type: 'expert_call',
+        consultationId: '90000000-0000-4000-8000-0000000000c1',
+        expertId,
+        status,
+        failureCategory: status === 'timeout' ? 'timeout' : null,
+      },
+    }) as const;
+
+  it('每位专家的状态单独记在正在接收的回答上，换成真实 id 时一起搬过去', () => {
+    let s = started();
+    s = conversationReducer(s, ev('nutrition', 'running'));
+    expect(s.expertCalls['local:1']).toEqual({
+      nutrition: { status: 'running', failureCategory: null },
+    });
+    s = conversationReducer(s, {
+      type: 'event',
+      event: { type: 'text', messageId: ids.assistantMsg, delta: '甲' },
+    });
+    s = conversationReducer(s, ev('endocrine-metabolism', 'done'));
+    s = conversationReducer(s, ev('nutrition', 'timeout'));
+    expect(s.expertCalls['local:1']).toBeUndefined();
+    expect(s.expertCalls[ids.assistantMsg]).toEqual({
+      nutrition: { status: 'timeout', failureCategory: 'timeout' },
+      'endocrine-metabolism': { status: 'done', failureCategory: null },
+    });
+  });
+
+  it('本地停止时还在进行的专家标为已停止，已回复的保留', () => {
+    let s = started();
+    s = conversationReducer(s, ev('nutrition', 'running'));
+    s = conversationReducer(s, ev('endocrine-metabolism', 'done'));
+    s = conversationReducer(s, { type: 'end', stopped: true });
+    expect(s.expertCalls['local:1']).toEqual({
+      nutrition: { status: 'stopped', failureCategory: null },
+      'endocrine-metabolism': { status: 'done', failureCategory: null },
+    });
+  });
+
+  it('consultation 事件的危机、急症信号记在回答上（换成真实 id 时一起搬过去），没有信号时不记', () => {
+    const consultationEvent = (crisisSignal: boolean, emergencySignal: boolean) =>
+      ({
+        type: 'event',
+        event: {
+          type: 'consultation',
+          consultationId: '90000000-0000-4000-8000-0000000000c1',
+          status: 'failed',
+          crisisSignal,
+          emergencySignal,
+        },
+      }) as const;
+    let s = conversationReducer(started(), consultationEvent(false, false));
+    expect(s.expertSignals).toEqual({});
+    s = conversationReducer(s, consultationEvent(false, true));
+    expect(s.expertSignals['local:1']).toEqual({ crisis: false, emergency: true });
+    s = conversationReducer(s, {
+      type: 'event',
+      event: { type: 'text', messageId: ids.assistantMsg, delta: '甲' },
+    });
+    s = conversationReducer(s, consultationEvent(true, false));
+    expect(s.expertSignals).toEqual({ [ids.assistantMsg]: { crisis: true, emergency: true } });
+  });
+});

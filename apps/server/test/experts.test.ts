@@ -11,7 +11,13 @@ import { createTestApp, loginAs } from './http.js';
 import { ownerDb, seedFixtures, type Fixtures } from './fixtures.js';
 
 type Agent = Awaited<ReturnType<typeof loginAs>>;
-type Reply = { json: unknown } | { text: string } | { fail: true } | { refused: true };
+type Reply =
+  | { json: unknown }
+  | { text: string }
+  | { fail: true }
+  | { refused: true }
+  /** 一直等到被中止（模拟健管师点停止时专家还在回复） */
+  | { hang: true };
 
 /**
  * 按用途和专家 id 回答的模拟厂商（全部是合成数据）：专家并行调用，不能按调用次序排脚本。
@@ -30,7 +36,11 @@ class ExpertProvider implements Provider {
     this.used.clear();
   }
 
-  async *stream(req: GatewayRequest, route: ResolvedRoute): AsyncIterable<GatewayEvent> {
+  async *stream(
+    req: GatewayRequest,
+    route: ResolvedRoute,
+    signal?: AbortSignal,
+  ): AsyncIterable<GatewayEvent> {
     this.calls.push(req);
     const key = req.expertId ? `expert:${req.expertId}` : req.route;
     const script = this.scripts[key];
@@ -41,6 +51,13 @@ class ExpertProvider implements Provider {
       DEFAULTS[req.route] ??
       ({ text: '{}' } as Reply);
     await Promise.resolve();
+    if ('hang' in reply) {
+      await new Promise<void>((resolve) => {
+        if (signal?.aborted) resolve();
+        signal?.addEventListener('abort', () => resolve(), { once: true });
+      });
+      throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+    }
     if ('fail' in reply) throw Object.assign(new Error('boom'), { status: 500 });
     const usage = { inputTokens: 10, outputTokens: 10 };
     if ('refused' in reply) {
@@ -357,6 +374,8 @@ describe('专家中心接口和专家调用', () => {
         type: 'consultation',
         consultationId: consultation.id,
         status: 'done',
+        crisisSignal: false,
+        emergencySignal: false,
       });
       expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'complete' });
 
@@ -815,6 +834,62 @@ describe('专家中心接口和专家调用', () => {
       const answer = await answerOf(taskId);
       expect(answer.startsWith('**心理危机提示**')).toBe(true);
       expect(answer.endsWith('专家暂时无法回复，请稍后再试。')).toBe(true);
+    });
+
+    it('专家都拒答、没有汇总时，关键词识别的危机信号存进调用记录并推送给专家标签', async () => {
+      provider.scripts['expert:endocrine-metabolism'] = { refused: true };
+      const agent = await as(f.users.managerA1.email);
+      const taskId = await newTask(agent, { expertId: 'endocrine-metabolism' });
+      const res = await send(agent, taskId, {
+        mode: 'ask',
+        content: '客户说最近不想活了，血糖怎么办？',
+      }).expect(200);
+      const event = parseSse(res.text).find((e) => e.type === 'consultation');
+      expect(event).toMatchObject({ status: 'failed', crisisSignal: true, emergencySignal: false });
+      const { consultations } = (
+        await agent.get(`/api/tasks/${taskId}/expert-consultations`).expect(200)
+      ).body;
+      expect(consultations).toHaveLength(1);
+      expect(consultations[0]).toMatchObject({
+        status: 'failed',
+        synthesis: null,
+        crisisSignal: true,
+        emergencySignal: false,
+      });
+    });
+
+    it('健管师停止时，急症关键词的信号仍然保留在调用记录里', async () => {
+      provider.scripts['expert:endocrine-metabolism'] = { hang: true };
+      const agent = await as(f.users.managerA1.email);
+      const taskId = await newTask(agent, { expertId: 'endocrine-metabolism' });
+      const pending = send(agent, taskId, {
+        mode: 'ask',
+        content: '客户刚才说胸痛，血糖怎么办？',
+      }).then((r) => r);
+      for (let i = 0; i < 50 && !provider.routes().includes('expert:endocrine-metabolism'); i++)
+        await new Promise((r) => setTimeout(r, 20));
+      await agent.post(`/api/tasks/${taskId}/stop`).expect(200);
+      await pending;
+      const { consultations } = (
+        await agent.get(`/api/tasks/${taskId}/expert-consultations`).expect(200)
+      ).body;
+      expect(consultations[0]).toMatchObject({
+        status: 'stopped',
+        synthesis: null,
+        crisisSignal: false,
+        emergencySignal: true,
+      });
+    });
+
+    it('意见没通过校验时，专家标出的危机信号也存进调用记录', async () => {
+      provider.scripts['expert:endocrine-metabolism'] = {
+        json: { ...opinion(), summary: '该客户患有糖尿病。', crisisSignal: true },
+      };
+      const agent = await as(f.users.managerA1.email);
+      const taskId = await newTask(agent, { expertId: 'endocrine-metabolism' });
+      await send(agent, taskId, { mode: 'ask', content: '血糖怎么看？' }).expect(200);
+      const [row] = await consultationsOf(taskId);
+      expect(row).toMatchObject({ status: 'failed', crisis_signal: true, emergency_signal: false });
     });
 
     it('专家意见整份不合格时，模型标出的危机信号仍然提示健管师', async () => {

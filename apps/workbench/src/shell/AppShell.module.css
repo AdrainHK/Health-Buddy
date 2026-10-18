@@ -29,3 +29,31 @@
   padding: 0;
   cursor: default;
 }
+
+/* 中间区域：对话区或专家库（M3 规格 2.1） */
+.center {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.center > * {
+  flex: 1;
+  min-height: 0;
+}
+
+.slot {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.slot > * {
+  flex: 1;
+  min-height: 0;
+}
+
+.slot[hidden] {
+  display: none;
+}

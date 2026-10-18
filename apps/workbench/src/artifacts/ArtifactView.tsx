@@ -2,6 +2,7 @@ import {
   approveRejectionSchema,
   type ArtifactDetailResponse,
   type CriticalFlag,
+  type ExpertConsultation,
   type ExportFormat,
   type RiskTierSuggestion,
   type TaskStep,
@@ -21,6 +22,7 @@ import {
   updateArtifact,
 } from '../api/artifacts';
 import { isAbortError } from '../api/http';
+import { ExpertReviewNotes } from '../experts/ExpertReviewNotes';
 import { useDynamicT, useStepLabel } from '../i18n/dynamic';
 import { useArtifactTitle } from './artifactTitle';
 import styles from './ArtifactView.module.css';
@@ -96,6 +98,10 @@ export interface ArtifactViewProps {
   onRegenerated?: () => void;
   /** 客户称呼，放进标题（验收反馈） */
   clientName?: string | null;
+  /** 产物用到的专家调用（M3 规格 2.7）：审核栏显示调用了几位专家、几处分歧 */
+  consultation?: ExpertConsultation | null;
+  /** 审核栏里点了“查看专家标签” */
+  onOpenExperts?: (consultationId: string) => void;
 }
 
 /** 产物预览和审核栏（M1 规格 3.6） */
@@ -112,6 +118,8 @@ export function ArtifactView({
   onDirtyChange,
   onRegenerated,
   clientName = null,
+  consultation = null,
+  onOpenExperts,
 }: ArtifactViewProps) {
   const { t } = useTranslation();
   const title = useArtifactTitle();
@@ -585,6 +593,14 @@ export function ArtifactView({
         role="region"
         aria-label={t('results.artifacts.review.label')}
       >
+        <ExpertReviewNotes
+          crisisSignal={artifact.crisisSignal}
+          emergencySignal={artifact.emergencySignal}
+          consultation={artifact.consultationId ? consultation : null}
+          professional={artifact.content.professional}
+          {...(onOpenExperts ? { onOpenExperts } : {})}
+        />
+
         {hasCritical && (
           <CriticalPanel
             flags={artifact.criticalFlags}

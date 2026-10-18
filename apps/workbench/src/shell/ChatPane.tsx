@@ -1,17 +1,20 @@
 import { Button, IconButton } from '@health-buddy/ui';
-import type {
-  ArtifactSummary,
-  ClientSummary,
-  DuplicateUpload,
-  ReportUploadSummary,
-  SkillSummary,
-  Task,
-  TaskMode,
-  TaskPlan,
+import {
+  EXPERTS_PER_CALL_MAX,
+  type ArtifactSummary,
+  type ClientSummary,
+  type DuplicateUpload,
+  type ExpertSummary,
+  type ReportUploadSummary,
+  type SkillSummary,
+  type Task,
+  type TaskMode,
+  type TaskPlan,
 } from '@health-buddy/shared';
 import { FileText, Menu, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { type ReactNode, useEffect, useReducer, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { listTaskConsultations } from '../api/experts';
 import { ApiError, isAbortError } from '../api/http';
 import { confirmPlan, sendMessage, type StreamOptions } from '../api/stream';
 import { DuplicateFileError, listReports, listUploads, uploadReport } from '../api/reports';
@@ -24,6 +27,11 @@ import {
   type ViewMessage,
 } from '../chat/conversation';
 import { MessageList } from '../chat/MessageList';
+import { AiBadge, ExpertAvatar } from '../experts/ExpertBadges';
+import { useExpertName, useExperts } from '../experts/ExpertsContext';
+import expertStyles from '../experts/Experts.module.css';
+import { ExpertSelector } from '../experts/ExpertSelector';
+import { isExpertStep } from '../experts/ExpertSteps';
 import { useSkillName } from '../i18n/dynamic';
 import { uploadErrorKey, type UploadErrorKey } from '../reports/errors';
 import reportStyles from '../reports/Reports.module.css';
@@ -70,6 +78,15 @@ export interface ChatPaneProps {
    * 对话区据此刷新识别卡片（验收反馈 3）。
    */
   uploadsVersion?: number;
+  /**
+   * 在专家中心点了“向 TA 提问”、任务还没建：发送第一条消息时新建绑定这位专家的任务，
+   * 模式固定为问一问（M3 规格 2.3、Q9）
+   */
+  pendingExpert?: ExpertSummary | null;
+  /** 点了“查看专家意见”：结果区打开专家标签 */
+  onOpenExperts?: (consultationId: string | null) => void;
+  /** 一次专家调用结束：结果区的专家标签需要刷新 */
+  onConsultation?: () => void;
 }
 
 interface Draft {
@@ -78,6 +95,10 @@ interface Draft {
   skill: SkillSummary | null;
   client: ClientSummary | null;
   report?: ReportOption | null;
+  /** @ 的专家和“一定要请”的专家（M3 规格 2.4、2.5） */
+  expertRefs?: string[];
+  /** “不要请”的专家，只对这一条消息生效（Q22） */
+  excludedExperts?: string[];
   /**
    * 不是从输入框发出的（识别卡片上的“生成解读”、核对后自动解读）：
    * 发送时不清空、失败时也不恢复输入框，健管师正在输入的内容不受影响。
@@ -103,6 +124,20 @@ type Notice =
   | { kind: 'otherClient'; client: ClientSummary }
   | { kind: 'duplicate'; status: ReportUploadSummary['status']; uploadId: string; date: string }
   | { kind: 'error'; key: ErrorKey };
+
+/**
+ * @专家 不能用在这里（M3 规格 2.4）：技能不接入专家时提示“这个技能暂不调用专家”；
+ * 没有技能时只能在问一问里直接请专家（专家中心的任务本来就是问一问）。
+ */
+function expertConflict(
+  refs: readonly string[],
+  skill: SkillSummary | null,
+  mode: TaskMode,
+): 'skillNoExperts' | 'needAsk' | null {
+  if (refs.length === 0) return null;
+  if (skill) return skill.experts === 'auto' ? null : 'skillNoExperts';
+  return mode === 'ask' ? null : 'needAsk';
+}
 
 function errorKey(err: unknown): ErrorKey {
   if (!(err instanceof ApiError)) return 'unknown';
@@ -148,9 +183,14 @@ export function ChatPane({
   onReviewUpload,
   onUploadsChanged,
   uploadsVersion = 0,
+  pendingExpert = null,
+  onOpenExperts,
+  onConsultation,
 }: ChatPaneProps) {
   const { t } = useTranslation();
   const skillName = useSkillName();
+  const experts = useExperts();
+  const expertName = useExpertName();
   const [conversation, dispatch] = useReducer(conversationReducer, emptyConversation);
   const [loadState, setLoadState] = useState<'idle' | 'loading' | 'error'>('idle');
   const [reloadKey, setReloadKey] = useState(0);
@@ -161,6 +201,9 @@ export function ChatPane({
   const [client, setClient] = useState<ClientSummary | null>(null);
   /** @ 引用的已核对报告（规格 2.6） */
   const [report, setReport] = useState<ReportOption | null>(null);
+  /** @ 的专家（也是专家选择条里的“一定要请”）和“不要请”的专家，只对这一条消息生效 */
+  const [expertRefs, setExpertRefs] = useState<string[]>([]);
+  const [excludedExperts, setExcludedExperts] = useState<string[]>([]);
   /** 当前客户的报告：已核对的可以 @，还没核对完的列出来但不能选 */
   const [reportOptions, setReportOptions] = useState<ReportOption[]>([]);
   /** 本任务里上传的报告（识别进度卡片） */
@@ -198,6 +241,26 @@ export function ChatPane({
 
   const taskId = task?.id ?? null;
   const readOnly = task !== null && (isReadOnlyTask(task) || readOnlyTaskId === task.id);
+  /** 专家中心发起的任务绑定的专家（已建的任务，或还没建、从专家中心过来的） */
+  const boundExpertId = task ? task.expertId : (pendingExpert?.id ?? null);
+  const taskIdRef = useRef<string | null>(taskId);
+  taskIdRef.current = taskId;
+
+  // 专家中心的任务固定为问一问（Q9）
+  useEffect(() => {
+    if (boundExpertId) setMode('ask');
+  }, [boundExpertId]);
+
+  /** 取任务里的专家调用（路由原因、每位专家的最终状态、汇总），刷新后也能完整显示（规格 2.6） */
+  const loadConsultations = (id: string, signal?: AbortSignal) => {
+    listTaskConsultations(id, signal)
+      .then((consultations) => {
+        if (taskIdRef.current === id) dispatch({ type: 'consultations', consultations });
+      })
+      .catch(() => {
+        // 取不到时步骤仍按 step 事件显示，只是少了每位专家的最终状态
+      });
+  };
 
   // 切换任务：停止上一个任务的流（后端把断开当作停止），加载新任务的历史
   useEffect(() => {
@@ -216,6 +279,8 @@ export function ChatPane({
     setSkill(null);
     setClient(null);
     setReport(null);
+    setExpertRefs([]);
+    setExcludedExperts([]);
     setUploads([]);
     setSentClient(null);
     setInterpretIntent(new Set());
@@ -242,6 +307,7 @@ export function ChatPane({
         dispatch({ type: 'load', detail });
         setUploads(detail.uploads);
         setLoadState('idle');
+        if (detail.steps.some(isExpertStep)) loadConsultations(taskId, controller.signal);
       })
       .catch((err: unknown) => {
         if (!isAbortError(err)) setLoadState('error');
@@ -262,6 +328,7 @@ export function ChatPane({
         if (generatingRef.current || detail.task.id !== taskId) return;
         dispatch({ type: 'load', detail });
         setLoadState('idle');
+        if (detail.steps.some(isExpertStep)) loadConsultations(taskId, controller.signal);
       })
       .catch(() => {
         // 静默刷新失败时保留当前内容，切换任务或刷新页面后可以看到
@@ -318,6 +385,8 @@ export function ChatPane({
     setSkill(null);
     setClient(null);
     setReport(null);
+    setExpertRefs([]);
+    setExcludedExperts([]);
   };
 
   const restoreComposer = (draft: Draft) => {
@@ -325,6 +394,8 @@ export function ChatPane({
     setSkill(draft.skill);
     setClient(draft.client);
     setReport(draft.report ?? null);
+    setExpertRefs(draft.expertRefs ?? []);
+    setExcludedExperts(draft.excludedExperts ?? []);
   };
 
   const nextLocalId = () => `${LOCAL_PREFIX}${++localSeq.current}`;
@@ -361,6 +432,11 @@ export function ChatPane({
           if (event.type === 'done' && event.reason === 'refused') refusedId = event.messageId;
           if (event.type === 'artifact') onArtifact?.(event.artifact);
           dispatch({ type: 'event', event });
+          if (event.type === 'consultation') {
+            // 一次专家调用结束：取回路由原因、最终状态和汇总，结果区的专家标签也刷新
+            loadConsultations(target.id);
+            onConsultation?.();
+          }
         },
       });
       if (current()) dispatch({ type: 'end' });
@@ -430,6 +506,11 @@ export function ChatPane({
     if (!content && !canSendEmpty(draft)) return;
     // 问一问不能用技能（Q4）、多步计划只能在想一想下用：提示切换模式，不发送
     if (modeConflict(draft.skill, draft.mode)) return;
+    const refs = draft.expertRefs ?? [];
+    // @专家 只能在问一问或接入专家的技能里用（M3 规格 2.4），提示已显示在输入框上方
+    if (expertConflict(refs, draft.skill, draft.mode)) return;
+    // “不要请”只对会自动请专家的技能有效
+    const excluded = draft.skill?.experts === 'auto' ? (draft.excludedExperts ?? []) : [];
     const linkedClientId = task?.clientId ?? null;
     if (draft.client && linkedClientId && draft.client.id !== linkedClientId) {
       setNotice({ kind: 'otherClient', client: draft.client });
@@ -452,7 +533,15 @@ export function ChatPane({
     let target = task;
     if (!target) {
       try {
-        target = await createTask();
+        // 从专家中心过来：新建绑定这位专家的任务（M3 规格 2.3）
+        target = await createTask(
+          pendingExpert
+            ? {
+                expertId: pendingExpert.id,
+                title: t('experts.askTaskTitle', { name: pendingExpert.name }),
+              }
+            : {},
+        );
       } catch (err) {
         if (fromComposer) restoreComposer(draft);
         setNotice({ kind: 'error', key: errorKey(err) });
@@ -470,6 +559,8 @@ export function ChatPane({
       skillId: draft.skill?.id ?? null,
       clientRefs: draft.client ? [draft.client.id] : [],
       ...(draft.report ? { reportRefs: [draft.report.id] } : {}),
+      ...(refs.length ? { expertRefs: refs } : {}),
+      ...(excluded.length ? { excludedExperts: excluded } : {}),
       status: 'complete',
     };
     const assistant: ViewMessage = {
@@ -494,6 +585,8 @@ export function ChatPane({
             ...(draft.skill ? { skillId: draft.skill.id } : {}),
             clientRefs: draft.client ? [draft.client.id] : [],
             ...(draft.report ? { reportRefs: [draft.report.id] } : {}),
+            ...(refs.length ? { expertRefs: refs } : {}),
+            ...(excluded.length ? { excludedExperts: excluded } : {}),
           },
           options,
         ),
@@ -690,8 +783,20 @@ export function ChatPane({
   };
 
   const conflict = modeConflict(skill, mode);
+  const expertIssue = expertConflict(expertRefs, skill, mode);
   let noticeNode: ReactNode = null;
-  if (conflict === 'ask') {
+  if (conflict === null && expertIssue === 'skillNoExperts') {
+    noticeNode = <span role="alert">{t('chat.experts.skillNoExperts')}</span>;
+  } else if (conflict === null && expertIssue === 'needAsk') {
+    noticeNode = (
+      <>
+        <span role="alert">{t('chat.experts.needAsk')}</span>
+        <Button variant="ghost" onClick={() => setMode('ask')}>
+          {t('chat.experts.switchToAsk')}
+        </Button>
+      </>
+    );
+  } else if (conflict === 'ask') {
     noticeNode = (
       <>
         <span>{t('chat.hints.askSkill')}</span>
@@ -821,6 +926,43 @@ export function ChatPane({
     );
   }
 
+  // @ 列表里的专家：不列绑定的专家本身；一条消息连同绑定的专家最多 3 位（Q5）
+  const mentionable = experts.filter((e) => e.available && e.id !== boundExpertId);
+  const maxExperts = EXPERTS_PER_CALL_MAX - (boundExpertId ? 1 : 0);
+  const changeExpertRefs = (ids: string[]) => {
+    setExpertRefs(ids);
+    setExcludedExperts((list) => list.filter((id) => !ids.includes(id)));
+  };
+  // 运行会自动请专家的技能（/体检解读）时，输入框上方显示专家选择条（规格 2.5）
+  const expertBar =
+    skill?.experts === 'auto' && conflict === null && mentionable.length > 0 && !readOnly ? (
+      <ExpertSelector
+        experts={mentionable}
+        included={expertRefs}
+        excluded={excludedExperts}
+        maxIncluded={maxExperts}
+        disabled={loadState !== 'idle'}
+        onChange={(inc, exc) => {
+          setExpertRefs(inc);
+          setExcludedExperts(exc);
+        }}
+      />
+    ) : null;
+
+  const boundBar = boundExpertId ? (
+    <div className={expertStyles.boundBar} role="note" aria-label={t('experts.bound.label')}>
+      <ExpertAvatar name={expertName(boundExpertId)} />
+      <div className={expertStyles.boundText}>
+        <span className={expertStyles.boundName}>
+          {expertName(boundExpertId)}
+          <AiBadge />
+        </span>
+        <span>{t('experts.bound.askOnly')}</span>
+        <span className={expertStyles.forwardNote}>{t('experts.bound.note')}</span>
+      </div>
+    </div>
+  ) : null;
+
   const composer = (
     <Composer
       inputRef={inputRef}
@@ -832,11 +974,14 @@ export function ChatPane({
       onSkillChange={onSkillChange}
       client={client}
       onClientChange={onClientChange}
-      skills={skills}
+      // 专家中心的任务不能用技能（Q9）
+      skills={boundExpertId ? EMPTY : skills}
       clients={clients}
       disabled={readOnly || loadState !== 'idle'}
       generating={generating}
-      onSubmit={() => void submit({ text, mode, skill, client, report })}
+      onSubmit={() =>
+        void submit({ text, mode, skill, client, report, expertRefs, excludedExperts })
+      }
       canSendEmpty={canSendEmpty({ text, mode, skill, client, report })}
       onStop={onStop}
       notice={noticeNode}
@@ -844,6 +989,12 @@ export function ChatPane({
       report={report}
       onReportChange={setReport}
       onAttachFiles={(files) => void onAttachFiles(files)}
+      experts={mentionable}
+      expertRefs={expertRefs}
+      {...(mentionable.length > 0 && !readOnly ? { onExpertRefsChange: changeExpertRefs } : {})}
+      maxExperts={maxExperts}
+      {...(boundExpertId ? { lockedMode: 'ask' as const } : {})}
+      expertBar={expertBar}
     />
   );
 
@@ -861,7 +1012,12 @@ export function ChatPane({
             onClick={onOpenMenu}
           />
         )}
-        <h1 className={styles.title}>{task?.title || t('chat.untitled')}</h1>
+        <h1 className={styles.title}>
+          {task?.title ||
+            (pendingExpert
+              ? t('experts.askTaskTitle', { name: pendingExpert.name })
+              : t('chat.untitled'))}
+        </h1>
         <IconButton
           label={resultsOpen ? t('results.close') : t('results.open')}
           icon={resultsOpen ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
@@ -891,6 +1047,7 @@ export function ChatPane({
           <>
             <div className={styles.thread}>
               <div className={styles.column}>
+                {boundBar}
                 <MessageList
                   conversation={conversation}
                   clients={clients}
@@ -898,6 +1055,7 @@ export function ChatPane({
                   canConfirm={!readOnly && !generating}
                   onConfirmPlan={onConfirmPlan}
                   onUseSkill={onUseSkill}
+                  {...(onOpenExperts ? { onOpenExperts } : {})}
                 />
                 {uploads.length > 0 && (
                   <ul className={reportStyles.chatUploads} aria-label={t('chat.uploads')}>
@@ -930,8 +1088,20 @@ export function ChatPane({
         ) : (
           <div className={styles.body}>
             <div className={styles.welcome}>
-              <p className={styles.greeting}>{t('chat.greeting')}</p>
-              <p className={styles.subtitle}>{t('chat.subtitle')}</p>
+              {boundExpertId ? (
+                <>
+                  <p className={styles.greeting}>
+                    {t('experts.bound.greeting', { name: expertName(boundExpertId) })}
+                  </p>
+                  <p className={styles.subtitle}>{t('experts.bound.subtitle')}</p>
+                  {boundBar}
+                </>
+              ) : (
+                <>
+                  <p className={styles.greeting}>{t('chat.greeting')}</p>
+                  <p className={styles.subtitle}>{t('chat.subtitle')}</p>
+                </>
+              )}
               {composer}
             </div>
           </div>

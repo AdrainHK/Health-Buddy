@@ -34,6 +34,20 @@ export interface PlannedCall {
   selectedReason: SelectedReason;
 }
 
+/** 心理危机 / 疑似急症信号（合规审查第 1 条） */
+export interface ConsultationSignals {
+  crisis: boolean;
+  emergency: boolean;
+}
+
+/** 只写为 true 的信号：插入时已有的信号不会被清除（数据库触发器也拦着） */
+function raisedSignals(signals: ConsultationSignals) {
+  return {
+    ...(signals.crisis ? { crisis_signal: true } : {}),
+    ...(signals.emergency ? { emergency_signal: true } : {}),
+  };
+}
+
 function tenantScope(ctx: TenantContext) {
   return { operator_id: ctx.operatorId ?? '', org_id: ctx.orgId, manager_id: ctx.userId };
 }
@@ -106,6 +120,8 @@ export class ExpertsRepository {
       reportId: string | null;
       trigger: ConsultationTrigger;
       routing: RoutingDecision;
+      /** 关键词识别出的信号：插入时就写好，调用中途出错也不会丢 */
+      signals: ConsultationSignals;
     },
     calls: readonly PlannedCall[],
     dailyLimit: number,
@@ -126,6 +142,8 @@ export class ExpertsRepository {
           trigger: input.trigger,
           routing: JSON.stringify(input.routing),
           status: 'running',
+          crisis_signal: input.signals.crisis,
+          emergency_signal: input.signals.emergency,
         })
         .returning('id')
         .executeTakeFirstOrThrow();
@@ -187,6 +205,7 @@ export class ExpertsRepository {
     status: Exclude<ConsultationStatus, 'running'>,
     synthesis: Synthesis | null,
     synthesisStatus: SynthesisStatus | null,
+    signals: ConsultationSignals,
   ): Promise<void> {
     const write = (s: typeof status, withSynthesis: boolean) =>
       withTenant(this.db, ctx, (trx) =>
@@ -196,6 +215,7 @@ export class ExpertsRepository {
             status: s,
             synthesis: withSynthesis && synthesis ? JSON.stringify(synthesis) : null,
             synthesis_status: withSynthesis ? synthesisStatus : null,
+            ...raisedSignals(signals),
           })
           .where('id', '=', id)
           .where('status', '=', 'running')
@@ -209,7 +229,11 @@ export class ExpertsRepository {
   }
 
   /** 收尾：把还在进行的专家调用标为已停止（出错、停止时） */
-  async stopRunning(ctx: TenantContext, consultationId: string): Promise<void> {
+  async stopRunning(
+    ctx: TenantContext,
+    consultationId: string,
+    signals: ConsultationSignals,
+  ): Promise<void> {
     await withTenant(this.db, ctx, async (trx) => {
       await trx
         .updateTable('expert_calls')
@@ -219,7 +243,7 @@ export class ExpertsRepository {
         .execute();
       await trx
         .updateTable('expert_consultations')
-        .set({ status: 'stopped' })
+        .set({ status: 'stopped', ...raisedSignals(signals) })
         .where('id', '=', consultationId)
         .where('status', '=', 'running')
         .execute();
@@ -311,6 +335,8 @@ function selectConsultation(trx: TenantTransaction) {
       'routing',
       'synthesis',
       'synthesis_status',
+      'crisis_signal',
+      'emergency_signal',
       'created_at',
       'finished_at',
     ]);
@@ -360,6 +386,8 @@ async function withCalls(
     routing: routingDecisionSchema.parse(r.routing),
     synthesis: r.synthesis === null ? null : synthesisSchema.parse(r.synthesis),
     synthesisStatus: r.synthesis_status,
+    crisisSignal: r.crisis_signal,
+    emergencySignal: r.emergency_signal,
     calls: calls
       .filter((c) => c.consultation_id === r.id)
       .map((c): ExpertCall => ({
