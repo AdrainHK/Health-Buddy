@@ -6,6 +6,7 @@
  *   pnpm eval --runs 5 --case crisis-signal --no-judge
  *   pnpm eval --suite ask          只跑问一问（summary 只跑近况小结，extraction 只跑报告识别，
  *                                  interpretation 只跑体检解读，outline 只跑面谈提纲，plan 只跑多步计划；默认都跑）
+ *   pnpm eval --suite interpretation,outline  逗号分隔可同时跑多组
  *   pnpm eval --suite expert --expert nutrition
  *                                  M3：只跑专家评测（expert-routing 只跑路由，expert-synthesis 只跑汇总；
  *                                  --expert 限定一位专家）。改专家的 expert.md、sources.md、共用规则后必须跑
@@ -60,9 +61,12 @@ if (!providers.length) {
 
 const runs = Number(arg('runs') ?? 3);
 const onlyCase = arg('case');
-const suite = arg('suite');
+// --suite 可用逗号写多个，CI 按组并行跑，单组不超时
+const suites = arg('suite')?.split(',').filter(Boolean);
 const pick = <T extends { id: string }>(name: string, list: T[]) =>
-  (!suite || suite === name ? list : []).filter((c) => !onlyCase || c.id === onlyCase);
+  (!suites?.length || suites.includes(name) ? list : []).filter(
+    (c) => !onlyCase || c.id === onlyCase,
+  );
 const cases = pick('summary', recentSummaryEvalCases);
 // 报告识别：合成报告样本由 scripts/seed 渲染，需要中文字体（CI 装 fonts-noto-cjk）
 const extractionCases = pick('extraction', reportExtractionEvalCases);

@@ -193,7 +193,8 @@ export async function runExpertEval(options: {
       (_, i) => () => runExpertOnce(options.gateway, EVAL_CTX, options.provider, c, i + 1),
     ),
   );
-  return runPool(jobs, options.concurrency ?? 3);
+  // 专家用例多、单次调用长，CI 单组 60 分钟内跑完需要更高并发
+  return runPool(jobs, options.concurrency ?? 6);
 }
 
 /** 路由评测（M3 规格 8.2） */
