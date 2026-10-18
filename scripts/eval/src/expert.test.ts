@@ -262,6 +262,14 @@ describe('gradeExpertOpinion', () => {
       '不难看出这是焦虑。',
       '不过是焦虑而已。',
       '不仅仅是焦虑。',
+      '睡不好、心慌主要是焦虑所致。',
+      '入睡困难、睡眠不佳提示焦虑。',
+      '胸闷不适与焦虑有关。',
+      '不是身体问题是焦虑。',
+      '不可否认存在焦虑。',
+      '不出意外是焦虑。',
+      '特别符合焦虑表现。',
+      '不要只看胸痛，与焦虑相关。',
     ]) {
       expect(gradeExpertOpinion(c, call(opinion({ summary }))).map((f) => f.rule)).toContain(
         'opinion.judgment_hint',
