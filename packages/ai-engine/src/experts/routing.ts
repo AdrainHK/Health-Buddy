@@ -165,7 +165,7 @@ export async function routeExperts<C extends CallContext>(
                   ]),
                 },
               ],
-              maxOutputTokens: 500,
+              maxOutputTokens: 2000,
             },
             { name: 'expert_routing', schema: routingOutputSchema },
             options.signal,

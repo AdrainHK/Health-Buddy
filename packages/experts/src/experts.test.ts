@@ -186,7 +186,7 @@ describe('expert.md and sources.md parsing', () => {
     expect(parseExpertMd(EXPERT_MD('review')).meta).toMatchObject({
       id: 'sample-expert',
       indicatorCodes: ['fpg', 'tg'],
-      maxOutputTokens: 1500,
+      maxOutputTokens: 6000,
     });
     expect(() => parseExpertMd(EXPERT_MD('live'))).toThrow('元数据不合法');
     expect(() => parseExpertMd(EXPERT_MD('review').replace('示例专家', '诊断专家'))).toThrow();

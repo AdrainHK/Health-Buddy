@@ -6,7 +6,7 @@ version: 0.1.0
 status: review
 indicatorCodes: fpg, hba1c, tc, tg, ldl_c, hdl_c, uric_acid, bmi, waist
 historyCategories: past_history, family_history, medication, lifestyle
-maxOutputTokens: 1500
+maxOutputTokens: 6000
 ---
 
 ## 角色

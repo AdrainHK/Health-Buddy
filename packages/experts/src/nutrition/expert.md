@@ -6,7 +6,7 @@ version: 0.1.0
 status: review
 indicatorCodes: weight, bmi, waist, fpg, hba1c, tc, tg, ldl_c, hdl_c, uric_acid
 historyCategories: allergy, lifestyle, past_history
-maxOutputTokens: 1500
+maxOutputTokens: 6000
 ---
 
 ## 角色

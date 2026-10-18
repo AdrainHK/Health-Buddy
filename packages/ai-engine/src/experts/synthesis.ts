@@ -133,7 +133,7 @@ export async function callSynthesis<C extends CallContext>(
         route: 'expert_synthesis',
         system: SYNTHESIS_SYSTEM_PROMPT,
         messages: [{ role: 'user', content }],
-        maxOutputTokens: 3000,
+        maxOutputTokens: 6000,
       },
       { name: 'expert_synthesis', schema: synthesisOutputSchema },
       signal,

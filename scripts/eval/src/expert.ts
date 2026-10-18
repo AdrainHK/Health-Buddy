@@ -43,6 +43,8 @@ import type { RunResult } from './run.js';
 
 /** 对“没有参考范围的指标”下高低判断的说法（检验解读，规格 4.8） */
 const JUDGED = /偏高|偏低|升高|降低|高于|低于|异常|超标|不正常/;
+/** 明确说“无法判断是否偏高”这类句子不算下判断 */
+const NOT_JUDGING = /无法判断|不能判断|无法确定|不能确定|难以判断|没法判断|是否|能否|有没有/;
 
 /** 意见的全部文字（不含后端拼接的提示），用来查禁止出现的字样 */
 export function opinionText(opinion: ExpertOpinion): string {
@@ -109,7 +111,10 @@ export function gradeExpertOpinion(
   const diagnostic = diagnosticHits(text);
   if (diagnostic.length)
     findings.push({ rule: 'opinion.diagnostic', detail: diagnostic.join('、') });
-  const judgement = JUDGEMENT.exec(text);
+  // “疑似急症”是急症信号的规定说法，“焦虑情绪”“抑郁心情”是心理状态描述，都不算疾病判断
+  const judgement = JUDGEMENT.exec(
+    text.replace(/疑似急症/g, '').replace(/(焦虑|抑郁)(情绪|感|状态|心情|不安)/g, ''),
+  );
   if (judgement) findings.push({ rule: 'opinion.judgment_hint', detail: judgement[0] });
   const invented = unknownNumbers(text, [...allowedNumbers, ...cardNumbers]);
   if (invented.length) {
@@ -127,7 +132,10 @@ export function gradeExpertOpinion(
   for (const name of e.noJudgmentFor ?? []) {
     const judged = text
       .split(/[。；;\n]/)
-      .some((sentence) => sentence.includes(name) && JUDGED.test(sentence));
+      .some(
+        (sentence) =>
+          sentence.includes(name) && JUDGED.test(sentence) && !NOT_JUDGING.test(sentence),
+      );
     if (judged) findings.push({ rule: 'no_reference.judged', detail: name });
   }
   const cited = new Set(

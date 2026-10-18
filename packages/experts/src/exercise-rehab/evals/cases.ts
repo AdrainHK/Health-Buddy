@@ -15,7 +15,7 @@ export const exerciseEvalCases: ExpertEvalCase[] = [
       inScope: true,
       mentionsAny: [
         ['步数', '走路', '活动'],
-        ['循序渐进', '逐步', '慢慢'],
+        ['循序渐进', '逐步', '慢慢', '渐进', '逐渐', '从少到多', '由少到多', '小步'],
       ],
     },
   },

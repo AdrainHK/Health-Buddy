@@ -73,7 +73,7 @@ export const expertMetaSchema = z.object({
       (cats) => cats.every((c) => (HEALTH_HISTORY_CATEGORIES as readonly string[]).includes(c)),
       'historyCategories 只能是健康史类别',
     ),
-  maxOutputTokens: z.coerce.number().int().min(500).max(4000).default(1500),
+  maxOutputTokens: z.coerce.number().int().min(500).max(16000).default(6000),
 });
 export type ExpertMeta = z.output<typeof expertMetaSchema>;
 
