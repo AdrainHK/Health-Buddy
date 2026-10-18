@@ -159,7 +159,9 @@ export function ExpertsPage({ user }: { user: CurrentUser }) {
                   </td>
                   <td data-label={t('experts.columns.status')}>
                     <div className={styles.stack}>
-                      <span>{t(`experts.status.${expert.status}`)}</span>
+                      <span>
+                        {t(`experts.status.${expert.status}`, { defaultValue: expert.status })}
+                      </span>
                       {!expert.statusAllowed && (
                         <span className={styles.hint}>{t('experts.statusNotAllowed')}</span>
                       )}

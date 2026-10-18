@@ -37,7 +37,7 @@ describe('专家管理（平台管理员）', () => {
     window.location.hash = '';
   });
 
-  it('列出每位专家的版本、知识来源版本、状态、评测用例、上下架、调用次数和有用/没用', async () => {
+  it('列出每位专家的版本、知识来源版本、状态、评测用例、启用状态、调用次数和有用/没用', async () => {
     renderAt('#experts', USERS.platform_admin);
     expect(await screen.findByRole('heading', { name: '专家管理' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '专家管理' })).toHaveAttribute('aria-current', 'page');

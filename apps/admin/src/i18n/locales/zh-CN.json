@@ -135,7 +135,7 @@
       "sourcesVersion": "知识来源版本",
       "status": "状态",
       "evals": "评测用例",
-      "enabled": "上下架",
+      "enabled": "启用状态",
       "calls": "调用次数",
       "feedback": "有用 / 没用",
       "actions": "操作"
