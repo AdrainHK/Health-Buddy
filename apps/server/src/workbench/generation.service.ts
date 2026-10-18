@@ -463,8 +463,10 @@ export class GenerationService {
       // 固定的提醒由后端拼在开头，不依赖模型；模型拒答时也保留
       const signalTexts = [request.content, ...(await this.repo.managerTexts(ctx, turn.taskId))];
       const crisis = detectCrisisKeywords(signalTexts);
+      const emergency = detectEmergencyKeywords(signalTexts);
       const notices =
         (crisis ? CRISIS_HEADER : '') +
+        (emergency ? EMERGENCY_HEADER : '') +
         (client ? criticalNotice(client.snapshot.criticalFlags) : '');
       push(notices);
 

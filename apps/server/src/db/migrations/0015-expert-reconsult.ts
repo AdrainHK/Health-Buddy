@@ -35,7 +35,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       add column label_time timestamptz,
       add column consultation_id uuid references expert_consultations (id);
 
-    create function task_steps_consultation_guard() returns trigger language plpgsql as $$
+    create function task_steps_consultation_guard() returns trigger language plpgsql
+      set search_path = pg_catalog, public, pg_temp as $$
     begin
       if new.consultation_id is not null and not exists (
         select 1
@@ -49,7 +50,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       return new;
     end
     $$;
-    create trigger task_steps_consultation_guard before insert or update on task_steps
+    create trigger task_steps_consultation_guard before insert or update of consultation_id on task_steps
       for each row execute function task_steps_consultation_guard();
   `.execute(db);
 }
