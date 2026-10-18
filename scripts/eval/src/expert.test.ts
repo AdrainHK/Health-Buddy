@@ -177,6 +177,7 @@ describe('gradeExpertOpinion', () => {
     for (const summary of [
       '谷丙转氨酶 52，报告没有参考范围，无法判断是否偏高。',
       '报告未提供谷丙转氨酶参考范围，不能据此判断 52 是否高于参考范围。',
+      '报告未提供谷丙转氨酶参考范围，因此不能判断该客户的52 U/L是否高于参考范围。',
     ]) {
       expect(gradeExpertOpinion(c, call(opinion({ summary })), [52])).toEqual([]);
     }
@@ -258,6 +259,9 @@ describe('gradeExpertOpinion', () => {
       '并非一般紧张而是焦虑。',
       '不是单纯压力大，是焦虑导致的。',
       '不要担心，这些表现就是焦虑。',
+      '不难看出这是焦虑。',
+      '不过是焦虑而已。',
+      '不仅仅是焦虑。',
     ]) {
       expect(gradeExpertOpinion(c, call(opinion({ summary }))).map((f) => f.rule)).toContain(
         'opinion.judgment_hint',
@@ -271,6 +275,8 @@ describe('gradeExpertOpinion', () => {
     expect(gradeExpertOpinion(c, call(ok4))).toEqual([]);
     const ok5 = opinion({ summary: '不争辩其感受，也不保证“只是焦虑、没有危险”。' });
     expect(gradeExpertOpinion(c, call(ok5))).toEqual([]);
+    const ok6 = opinion({ summary: '保持平稳沟通，不以“只是焦虑”解释当前表现。' });
+    expect(gradeExpertOpinion(c, call(ok6))).toEqual([]);
   });
 
   it('期望引用的卡片没引用到时记下', () => {
