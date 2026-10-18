@@ -464,3 +464,18 @@ export type TwinOrgAdminResponse = z.infer<typeof twinOrgAdminResponseSchema>;
 /** 手动调整、取消调整后返回这个方面的最新状态 */
 export const twinDomainResponseSchema = z.object({ domain: twinDomainViewSchema });
 export type TwinDomainResponse = z.infer<typeof twinDomainResponseSchema>;
+
+// ---------- 左侧栏客户列表的状态圆点（2.1） ----------
+
+/**
+ * 当前健管师每位客户的整体状态：四个方面里最严重的那个（红 > 黄 > 绿 > 灰，worstTwinLevel），
+ * 有效的手动调整优先。只有颜色等级，不含依据和数值。只给健管师。
+ */
+export const twinClientLevelSchema = z.object({
+  clientId: z.uuid(),
+  level: twinLevelSchema,
+});
+export type TwinClientLevel = z.infer<typeof twinClientLevelSchema>;
+
+export const twinLevelsResponseSchema = z.object({ clients: z.array(twinClientLevelSchema) });
+export type TwinLevelsResponse = z.infer<typeof twinLevelsResponseSchema>;

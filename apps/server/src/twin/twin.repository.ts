@@ -2,16 +2,19 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   FORECAST_METRICS,
   TWIN_DOMAINS,
+  MANUAL_READINGS_LIST_LIMIT,
   TWIN_TIMELINE_ORG_ADMIN_TYPES,
   domainMetrics,
   indicatorUnit,
   matchesRule,
+  worstTwinLevel,
   type CreateMonitoringReadingRequest,
   type CriticalComparator,
   type IndicatorCode,
   type MonitoringReading,
   type SetTwinStatusRequest,
   type TwinBasisItem,
+  type TwinClientLevel,
   type TwinDomain,
   type TwinDomainView,
   type TwinForecast,
@@ -795,6 +798,119 @@ export class TwinRepository {
         events: page,
         nextBefore: events.length > query.limit ? page[page.length - 1]!.at : null,
       };
+    });
+  }
+
+  /**
+   * 左侧栏客户列表的状态圆点（2.1）：当前健管师每位客户四个方面里最严重的状态，
+   * 有效的手动调整优先（和孪生主视图同一套 buildDomainViews）。
+   * 每个方面每种来源只取最近一行，不读全部历史。
+   * 不记孪生打开次数（这不是打开孪生）。只给健管师，其他角色返回空列表（接口按 404 处理）。
+   */
+  clientLevels(ctx: TenantContext): Promise<TwinClientLevel[]> {
+    return withTenant(this.db, ctx, async (trx) => {
+      if (ctx.role !== 'manager') return [];
+      const clients = await trx
+        .selectFrom('clients')
+        .select('id')
+        .where('manager_id', '=', ctx.userId)
+        .orderBy('id')
+        .execute();
+      if (clients.length === 0) return [];
+      const clientIds = clients.map((c) => c.id);
+      const rows = await trx
+        .selectFrom('twin_status_history as h')
+        .leftJoin('users as u', 'u.id', 'h.set_by')
+        // 每位客户、每个方面、每种来源（系统计算、手动调整、取消调整）只取最近一行
+        .distinctOn(['h.client_id', 'h.domain', 'h.origin'])
+        .select([
+          'h.client_id',
+          'h.id',
+          'h.domain',
+          'h.level',
+          'h.origin',
+          'h.basis',
+          'h.rules_version',
+          'h.reason',
+          'h.manual_expires',
+          'h.trigger',
+          'h.set_by',
+          'u.display_name as set_by_name',
+          'h.created_at',
+        ])
+        .where('h.client_id', 'in', clientIds)
+        .orderBy('h.client_id')
+        .orderBy('h.domain')
+        .orderBy('h.origin')
+        .orderBy('h.created_at', 'desc')
+        .orderBy('h.id', 'desc')
+        .execute();
+      const report = await trx
+        .selectFrom('report_indicators')
+        .select(['client_id', 'code', (eb) => eb.fn.max('created_at').as('at')])
+        .where('client_id', 'in', clientIds)
+        .where('code', 'is not', null)
+        .where('value', 'is not', null)
+        .groupBy(['client_id', 'code'])
+        .execute();
+      const readings = await trx
+        .selectFrom('monitoring_readings')
+        .select(['client_id', 'metric', (eb) => eb.fn.max('created_at').as('at')])
+        .where('client_id', 'in', clientIds)
+        .groupBy(['client_id', 'metric'])
+        .execute();
+      return clientIds.map((clientId) => {
+        const mine = (rows as (StatusRow & { client_id: string })[])
+          .filter((r) => r.client_id === clientId)
+          .sort(
+            (a, b) => b.created_at.getTime() - a.created_at.getTime() || (a.id < b.id ? 1 : -1),
+          );
+        const reportAt = new Map(
+          report
+            .filter((r) => r.client_id === clientId)
+            .map((r) => [r.code!, new Date(r.at).getTime()]),
+        );
+        const readingAt = new Map(
+          readings
+            .filter((r) => r.client_id === clientId)
+            .map((r) => [r.metric, new Date(r.at).getTime()]),
+        );
+        const views = buildDomainViews(
+          mine,
+          latestDomainDataAt(reportAt, readingAt, domainMetrics),
+        );
+        return { clientId, level: worstTwinLevel(views.map((v) => v.level)) };
+      });
+    });
+  }
+
+  /**
+   * 当前健管师自己给这位客户手动录入的读数（Q29），按测量时间从新到旧，最多 50 条。
+   * 只有服务这位客户的健管师能看；别人的客户、机构管理员返回 undefined（404）。
+   */
+  manualReadings(ctx: TenantContext, clientId: string): Promise<MonitoringReading[] | undefined> {
+    return withTenant(this.db, ctx, async (trx) => {
+      if (ctx.role !== 'manager' || !(await clientVisible(trx, clientId))) return undefined;
+      const rows = await trx
+        .selectFrom('monitoring_readings')
+        .select([
+          'id',
+          'client_id',
+          'metric',
+          'value',
+          'unit',
+          'measured_at',
+          'source',
+          'created_by',
+        ])
+        .where('client_id', '=', clientId)
+        .where('source', '=', 'manual')
+        .where('created_by', '=', ctx.userId)
+        .orderBy('measured_at', 'desc')
+        .orderBy('id', 'desc')
+        .limit(MANUAL_READINGS_LIST_LIMIT)
+        .execute();
+      return rows.map((r) => toReading(r, ctx.userId));
     });
   }
 

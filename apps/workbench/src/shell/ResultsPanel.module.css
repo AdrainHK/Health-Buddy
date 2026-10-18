@@ -116,3 +116,43 @@
   font-size: var(--hb-text-xs);
   font-weight: 600;
 }
+
+/* 客户标签上的提示点：第一次 @客户 时正打开着产物，不抢焦点（M4 Q27） */
+.hintDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: var(--hb-space-1);
+  border-radius: var(--hb-radius-full);
+  background: var(--hb-brand);
+  vertical-align: super;
+}
+
+/* 客户标签的子视图：孪生、档案 */
+.subViews {
+  display: flex;
+  gap: var(--hb-space-1);
+  margin: var(--hb-space-3) var(--hb-space-4) 0;
+  padding: 2px;
+  border-radius: var(--hb-radius-md);
+  background: var(--hb-surface-2);
+}
+
+.subView {
+  flex: 1;
+  padding: var(--hb-space-1) var(--hb-space-2);
+  border: 0;
+  border-radius: var(--hb-radius-sm);
+  background: transparent;
+  color: var(--hb-text-2);
+  font: inherit;
+  font-size: var(--hb-text-sm);
+  cursor: pointer;
+}
+
+.subView[aria-pressed='true'] {
+  background: var(--hb-surface);
+  color: var(--hb-text);
+  font-weight: 600;
+  box-shadow: var(--hb-shadow-sm);
+}

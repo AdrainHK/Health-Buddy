@@ -30,6 +30,21 @@
   --hb-danger: #c0392b;
   --hb-info: #2f6fbf;
 
+  /* 数字孪生红黄绿灰（M4）：圆点和边框用主色，卡片底色用 -bg，文字用 -text。
+     颜色从不单独表达状态，界面上同时有文字和图形标记 */
+  --hb-twin-red: #c0392b;
+  --hb-twin-red-bg: #fbebe9;
+  --hb-twin-red-text: #9b2c20;
+  --hb-twin-yellow: #b7791f;
+  --hb-twin-yellow-bg: #fcf3e2;
+  --hb-twin-yellow-text: #7a5212;
+  --hb-twin-green: #1e8a4c;
+  --hb-twin-green-bg: #e7f4ec;
+  --hb-twin-green-text: #17673a;
+  --hb-twin-unknown: #87918d;
+  --hb-twin-unknown-bg: #eef0ef;
+  --hb-twin-unknown-text: #55615c;
+
   /* 字体：中文优先用系统字体 */
   --hb-font-sans:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
@@ -88,6 +103,18 @@
     --hb-warning: #e0a43a;
     --hb-danger: #e5675a;
     --hb-info: #5c9be3;
+    --hb-twin-red: #e5675a;
+    --hb-twin-red-bg: #3a1d1a;
+    --hb-twin-red-text: #f3a79f;
+    --hb-twin-yellow: #e0a43a;
+    --hb-twin-yellow-bg: #382b12;
+    --hb-twin-yellow-text: #f0cb85;
+    --hb-twin-green: #3cbf73;
+    --hb-twin-green-bg: #12301f;
+    --hb-twin-green-text: #8fdcae;
+    --hb-twin-unknown: #74807b;
+    --hb-twin-unknown-bg: #232c28;
+    --hb-twin-unknown-text: #a7b2ad;
     --hb-shadow-md: 0 4px 16px rgb(0 0 0 / 35%);
     --hb-shadow-lg: 0 12px 40px rgb(0 0 0 / 50%);
     color-scheme: dark;
@@ -111,6 +138,18 @@
   --hb-warning: #e0a43a;
   --hb-danger: #e5675a;
   --hb-info: #5c9be3;
+  --hb-twin-red: #e5675a;
+  --hb-twin-red-bg: #3a1d1a;
+  --hb-twin-red-text: #f3a79f;
+  --hb-twin-yellow: #e0a43a;
+  --hb-twin-yellow-bg: #382b12;
+  --hb-twin-yellow-text: #f0cb85;
+  --hb-twin-green: #3cbf73;
+  --hb-twin-green-bg: #12301f;
+  --hb-twin-green-text: #8fdcae;
+  --hb-twin-unknown: #74807b;
+  --hb-twin-unknown-bg: #232c28;
+  --hb-twin-unknown-text: #a7b2ad;
   --hb-shadow-md: 0 4px 16px rgb(0 0 0 / 35%);
   --hb-shadow-lg: 0 12px 40px rgb(0 0 0 / 50%);
   color-scheme: dark;

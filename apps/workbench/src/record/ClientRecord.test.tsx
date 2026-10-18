@@ -346,7 +346,7 @@ describe('creating a client from the record tab', () => {
         }),
     });
     render(<AppShell />);
-    await user.click(screen.getByRole('tab', { name: '档案' }));
+    await user.click(screen.getByRole('tab', { name: '客户' }));
     await user.click(screen.getByRole('button', { name: '新建客户' }));
     await user.type(screen.getByRole('textbox', { name: '称呼（必填）' }), '合成客户丙');
     await user.type(screen.getByRole('textbox', { name: '出生年份' }), '1985');
@@ -356,6 +356,8 @@ describe('creating a client from the record tab', () => {
     expect(await within(panel).findByRole('heading', { name: '合成客户丙' })).toBeInTheDocument();
     // 空状态里有“新建客户”；选中客户后档案右上角不再有
     expect(within(panel).queryByRole('button', { name: '新建客户' })).not.toBeInTheDocument();
+    // 客户标签默认是孪生，档案在第二个子视图（M4 规格 2.1）
+    await user.click(within(panel).getByRole('button', { name: '档案' }));
     expect(await within(panel).findByText('还没有已核对的报告')).toBeInTheDocument();
     expect(api.callsTo('POST', '/clients')[0]?.body).toEqual({
       displayName: '合成客户丙',
