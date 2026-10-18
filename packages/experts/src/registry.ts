@@ -83,7 +83,12 @@ export function toProfile(
     maxOutputTokens: def.meta.maxOutputTokens,
     systemPrompt: `${EXPERT_RULES}\n\n---\n\n${def.prompt}\n\n---\n\n${cardsBlock(cards)}`,
     catalog: { tagline: def.meta.tagline, strengths: def.strengths, outOfScope: def.outOfScope },
-    cards: cards.map((c) => ({ cardId: c.cardId, sourceId: c.sourceId, numbers: c.numbers })),
+    cards: cards.map((c) => ({
+      cardId: c.cardId,
+      sourceId: c.sourceId,
+      scope: c.scope,
+      numbers: c.numbers,
+    })),
   };
 }
 
@@ -115,7 +120,7 @@ export function expertSummary(def: ExpertDefinition, env: Availability): ExpertS
   };
 }
 
-/** 专家详情。未确认来源的版本年份不显示（规格 5.2 第 4 条） */
+/** 专家详情。未确认来源的颁布机构和版本不显示（规格 5.2 第 4 条）；分组、优先级和使用范围照常显示 */
 export function expertDetail(
   def: ExpertDefinition,
   env: Availability,
@@ -131,8 +136,11 @@ export function expertDetail(
       .map((s) => ({
         sourceId: s.sourceId,
         name: s.name,
+        section: s.section,
         publisher: s.status === 'confirmed' ? s.publisher : null,
         version: s.status === 'confirmed' ? s.version : null,
+        priority: s.priority,
+        scope: s.scope,
         status: s.status,
       })),
     cards: visibleCards.map((c) => ({
@@ -140,6 +148,7 @@ export function expertDetail(
       sourceId: c.sourceId,
       section: c.section,
       point: c.point,
+      scope: c.scope,
       confirmed: c.confirmed,
     })),
     myUsageCount,

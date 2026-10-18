@@ -33,6 +33,11 @@ export interface ExpertProfile {
 export interface CitableCard {
   cardId: string;
   sourceId: string;
+  /**
+   * 来源的使用范围（规格 5.1）：referral_only 的卡片只用来判断是否需要转介，
+   * 要点和建议引用它一律算无效引用。
+   */
+  scope: 'advice' | 'referral_only';
   /** 卡片“可引用数值”里的数字（规格 5.2 第 2 条） */
   numbers: readonly number[];
 }

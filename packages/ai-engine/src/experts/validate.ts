@@ -1,7 +1,7 @@
 /**
  * 每份专家意见的确定性校验（M3 规格 3.4），在后端执行，不依赖模型自觉：
  * 1. 结构（网关 completeStructured 已按 zod 校验）
- * 2. 引用：只能引用这位专家当前版本、当前环境允许的条目卡片
+ * 2. 引用：只能引用这位专家当前版本、当前环境允许的、使用范围为 advice 的条目卡片
  * 3. 数值：阈值、界值、参考范围只能来自输入资料或被引用卡片的“可引用数值”
  * 4. 措辞：不出现禁用词和诊断性表述
  *
@@ -201,9 +201,11 @@ export function validateOpinion(
 ): OpinionCheck {
   const issues = new Set<OpinionIssue>();
   const cards = new Map(profile.cards.map((c) => [c.cardId, c]));
+  // 只能引用 advice 范围的卡片：referral_only 的来源（诊断、治疗、用药、操作、急救类）
+  // 只用来识别什么时候该转介，不能作为要点和建议的依据（规格 5.1、5.2 第 1 条）
   const validCitation = (c: Citation): CitableCard | undefined => {
     const card = cards.get(c.cardId);
-    return card && card.sourceId === c.sourceId ? card : undefined;
+    return card && card.sourceId === c.sourceId && card.scope === 'advice' ? card : undefined;
   };
 
   /** 检查一条要点，返回是否合格；问题类别记进 issues */
@@ -332,7 +334,7 @@ function normalizeReferral(r: ExpertOpinion['referral']): ExpertOpinion['referra
 
 const ISSUE_NOTES: Record<OpinionIssue, string> = {
   bad_citation:
-    '有引用不在你的条目卡片清单里，或标为 cited 的要点没有引用。只能引用清单里列出的卡片编号；没有卡片支撑的要点标 data_only。',
+    '有引用不在你的条目卡片清单里、引用了“只用于判断是否需要转介的卡片”，或标为 cited 的要点没有引用。只能引用“可以引用的条目卡片”里列出的卡片编号；没有卡片支撑的要点标 data_only。',
   invented_number:
     '有数值既不在客户资料里，也不在被引用卡片的“可引用数值”里。删掉这些数值，不要凭常识写阈值、界值或目标值。',
   banned_wording:

@@ -27,6 +27,29 @@ export const EXPERTS_PER_CALL_MAX = 3;
 export const SOURCE_STATUSES = ['candidate', 'confirmed', 'retired'] as const;
 export const sourceStatusSchema = z.enum(SOURCE_STATUSES);
 
+/**
+ * 来源的使用范围（规格 5.1）：
+ * - advice：健康管理内容（生活方式、监测、随访），摘成卡片并确认后可以作为要点和建议的依据；
+ * - referral_only：诊断、治疗、用药、手术操作、急救类文件，只用来识别什么时候该转介，不能作为建议的依据。
+ * 拿不准时一律标 referral_only。
+ */
+export const SOURCE_SCOPES = ['advice', 'referral_only'] as const;
+export const sourceScopeSchema = z.enum(SOURCE_SCOPES);
+export type SourceScope = z.infer<typeof sourceScopeSchema>;
+
+/**
+ * 来源优先级（规格 5.1）：1 国内官方指南 > 2 国内专家共识 > 3 国际学会指南 > 4 兜底细则。
+ * 数字越小优先级越高；两张卡片说法冲突时采用优先级高的，同级时国内优先于国际。
+ */
+export const SOURCE_PRIORITIES = [1, 2, 3, 4] as const;
+export const sourcePrioritySchema = z.union([
+  z.literal(1),
+  z.literal(2),
+  z.literal(3),
+  z.literal(4),
+]);
+export type SourcePriority = z.infer<typeof sourcePrioritySchema>;
+
 export const SOURCE_ID_PATTERN = /^S\d{1,3}$/;
 export const CARD_ID_PATTERN = /^S\d{1,3}-\d{2,3}$/;
 
@@ -122,12 +145,18 @@ export type ExpertSummary = z.infer<typeof expertSummarySchema>;
 export const expertListResponseSchema = z.object({ experts: z.array(expertSummarySchema) });
 export type ExpertListResponse = z.infer<typeof expertListResponseSchema>;
 
-/** 来源清单的一行。未确认的版本年份不显示（规格 5.2 第 4 条） */
+/**
+ * 来源清单的一行。未确认的颁布机构和版本不显示（规格 5.2 第 4 条）；
+ * section 是清单里的病种分组标题，priority 和 scope 见上。
+ */
 export const expertSourceSchema = z.object({
   sourceId: z.string(),
   name: z.string(),
+  section: z.string().nullable(),
   publisher: z.string().nullable(),
   version: z.string().nullable(),
+  priority: sourcePrioritySchema,
+  scope: sourceScopeSchema,
   status: sourceStatusSchema,
 });
 export type ExpertSource = z.infer<typeof expertSourceSchema>;
@@ -138,6 +167,8 @@ export const expertCardSchema = z.object({
   sourceId: z.string(),
   section: z.string(),
   point: z.string(),
+  /** 来源的使用范围：referral_only 的卡片只用来判断是否转介，不能被引用为建议依据 */
+  scope: sourceScopeSchema,
   confirmed: z.boolean(),
 });
 export type ExpertCard = z.infer<typeof expertCardSchema>;

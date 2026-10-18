@@ -72,9 +72,14 @@ class ScriptedProvider implements Provider {
   }
 }
 
-const card = (cardId: string, numbers: number[] = []) => ({
+const card = (
+  cardId: string,
+  numbers: number[] = [],
+  scope: 'advice' | 'referral_only' = 'advice',
+) => ({
   cardId,
   sourceId: cardId.split('-')[0] ?? '',
+  scope,
   numbers,
 });
 
@@ -677,6 +682,64 @@ describe('validateOpinion', () => {
     expect(check.issues.sort()).toEqual(['bad_citation', 'banned_wording', 'unsupported_claim']);
   });
 
+  it('never accepts a referral_only card as the basis of a finding, suggestion or summary', () => {
+    const withReferralOnly = {
+      cards: [card('S1-01', [150]), card('S3-01', [140], 'referral_only')],
+    };
+    const check = validateOpinion(
+      opinion({
+        summary: '来源中的说法是超过 140 mmHg 需要关注。',
+        findings: [
+          {
+            point: '来源中的说法是超过 140 mmHg 需要关注。',
+            basis: 'cited',
+            dataRefs: [],
+            citations: [{ sourceId: 'S3', cardId: 'S3-01' }],
+          },
+          {
+            point: '来源建议每周 150 分钟中等强度身体活动。',
+            basis: 'cited',
+            dataRefs: [],
+            citations: [
+              { sourceId: 'S1', cardId: 'S1-01' },
+              { sourceId: 'S3', cardId: 'S3-01' },
+            ],
+          },
+        ],
+        suggestions: [
+          {
+            text: '按来源建议安排复查。',
+            category: 'follow_up',
+            citations: [{ sourceId: 'S3', cardId: 'S3-01' }],
+          },
+        ],
+      }),
+      withReferralOnly,
+      INPUT.allowedNumbers,
+    );
+    // 两条要点、一条建议都引用了 referral_only 卡片，全部移除；结论用了只有那张卡片里才有的数值，整份不可用
+    expect(check.issues).toContain('bad_citation');
+    expect(check.removed).toBe(3);
+    expect(check.fatal).toBe(true);
+
+    const adviceOnly = validateOpinion(
+      opinion({
+        findings: [
+          {
+            point: '来源建议每周 150 分钟中等强度身体活动。',
+            basis: 'cited',
+            dataRefs: [],
+            citations: [{ sourceId: 'S1', cardId: 'S1-01' }],
+          },
+        ],
+      }),
+      withReferralOnly,
+      INPUT.allowedNumbers,
+    );
+    expect(adviceOnly.issues).toEqual([]);
+    expect(adviceOnly.opinion?.findings).toHaveLength(1);
+  });
+
   it('keeps the referral when its text fails, and requires a note when out of scope', () => {
     const referral = opinion({
       referral: { needed: true, urgency: null, to: '内分泌科', reason: '超过 8.0 需要就医' },
@@ -768,7 +831,7 @@ describe('validateOpinion', () => {
 
   it('writes correction notes by category only', () => {
     const note = correctionNote(['bad_citation', 'invented_number']);
-    expect(note).toContain('只能引用清单里列出的卡片编号');
+    expect(note).toContain('只能引用“可以引用的条目卡片”里列出的卡片编号');
     expect(note).toContain('不要凭常识写阈值');
   });
 });

@@ -156,13 +156,18 @@ ${extra}---
 示例。
 `;
 
-const SOURCES_MD = (signOff: string, status: string, cardConfirm: string) => `# 示例
+const SOURCES_MD = (
+  signOff: string,
+  status: string,
+  cardConfirm: string,
+  scope: 'advice' | 'referral_only' = 'advice',
+) => `# 示例
 
 > 顾问签字：${signOff}
 
-| sourceId | 名称 | 发布机构 | 版本或年份 | 适用范围 | 确认状态 | 确认人 | 确认日期 |
-|---|---|---|---|---|---|---|---|
-| S1 | 示例来源 | 示例机构 | 示例版本 | 成人 | ${status} | ${status === '已确认' ? '顾问A' : '—'} | ${status === '已确认' ? '2026-10-20' : '—'} |
+| sourceId | 文件名 | 颁布机构 | 版本 | 优先级 | 使用范围 | 确认状态 | 确认人 | 确认日期 |
+|---|---|---|---|---|---|---|---|---|
+| S1 | 示例来源 | 示例机构 | 示例版本 | 1级 | ${scope} | ${status} | ${status === '已确认' ? '顾问A' : '—'} | ${status === '已确认' ? '2026-10-20' : '—'} |
 
 ## 条目卡片
 
@@ -243,11 +248,43 @@ describe('expert.md and sources.md parsing', () => {
     };
     expect(toProfile(def, { preview: false }).cards).toEqual([]);
     const preview = toProfile(def, { preview: true });
-    expect(preview.cards).toEqual([{ cardId: 'S1-01', sourceId: 'S1', numbers: [7] }]);
+    expect(preview.cards).toEqual([
+      { cardId: 'S1-01', sourceId: 'S1', scope: 'advice', numbers: [7] },
+    ]);
     expect(preview.systemPrompt).toContain('S1-01（来源待确认）');
+    expect(preview.systemPrompt).toContain('来源：S1（1级）');
   });
 
-  it('rejects banned terms in strengths, out-of-scope items and source names shown on the expert page', () => {
+  it('lists referral_only cards apart from citable ones and keeps their scope on the profile', () => {
+    const md = parseExpertMd(EXPERT_MD('review'));
+    const def: ExpertDefinition = {
+      meta: md.meta,
+      prompt: md.body,
+      strengths: [],
+      outOfScope: [],
+      sources: parseSourcesMd(
+        SOURCES_MD('顾问A，2026-10-20', '已确认', '顾问A，2026-10-20', 'referral_only'),
+      ),
+    };
+    const profile = toProfile(def, { preview: false });
+    expect(profile.cards).toEqual([
+      { cardId: 'S1-01', sourceId: 'S1', scope: 'referral_only', numbers: [7] },
+    ]);
+    const prompt = profile.systemPrompt;
+    // 没有可以引用的卡片：要点只能描述数据；referral_only 的卡片单独列在后面
+    expect(prompt).toContain('目前没有可以引用的条目卡片');
+    expect(prompt.indexOf('## 只用于判断是否需要转介的卡片')).toBeLessThan(
+      prompt.indexOf('### S1-01'),
+    );
+    // 共用规则写明优先级和冲突处理顺序
+    expect(prompt).toContain('1级 国内官方指南＞2级 国内专家共识＞3级 国际学会指南＞4级 兜底细则');
+    expect(prompt).toContain('同级冲突时国内来源优先于国际来源');
+    const detail = expertDetail(def, { preview: false, paused: new Set() }, 0);
+    expect(detail.sources[0]).toMatchObject({ priority: 1, scope: 'referral_only', section: null });
+    expect(detail.cards[0]).toMatchObject({ cardId: 'S1-01', scope: 'referral_only' });
+  });
+
+  it('rejects banned terms in strengths and out-of-scope items shown on the expert page', () => {
     const root = mkdtempSync(join(tmpdir(), 'hb-expert-'));
     try {
       const dir = join(root, 'nutrition');
@@ -274,12 +311,115 @@ describe('expert.md and sources.md parsing', () => {
     expect(expertDetail(def, { preview: true, paused: new Set() }, 0).cards).toEqual([]);
   });
 
-  it('ships sources.md files that parse and mark every candidate as unverified', () => {
+  it("ships the product owner's lists, unverified and unsigned, with no cards yet", () => {
     for (const id of IDS) {
       const text = readFileSync(new URL(`./${id}/sources.md`, import.meta.url), 'utf8');
-      expect(text).toContain('待核实');
+      const doc = parseSourcesMd(text);
       expect(text).toContain('顾问签字：未签字');
+      expect(text).toContain('> 状态：待医学顾问核实');
+      expect(doc.signOff).toBeNull();
+      expect(doc.provenance).toMatch(/^产品负责人提供 2026-10-18/);
+      expect(doc.cards).toEqual([]);
+      expect(doc.sources.length).toBeGreaterThan(0);
+      for (const src of doc.sources) {
+        expect(src.status).toBe('candidate');
+        expect(src.confirmedBy).toBeNull();
+        expect(src.section).toMatch(/^[一二三四五六七八九十]+、/);
+        expect(src.publisher).not.toBeNull();
+        expect(src.version).not.toBeNull();
+      }
+      // 每份清单都同时有可以作为建议依据的来源和只用于转介判断的来源
+      expect(doc.sources.some((s) => s.scope === 'advice')).toBe(true);
+      expect(doc.sources.some((s) => s.scope === 'referral_only')).toBe(true);
     }
+    // 抽查原样抄录：跨行折断的文件名、颁布机构和版本已经接回整行
+    const endocrine = parseSourcesMd(
+      readFileSync(new URL('./endocrine-metabolism/sources.md', import.meta.url), 'utf8'),
+    );
+    expect(endocrine.sources).toHaveLength(67);
+    expect(endocrine.sources.find((s) => s.name === '中国高尿酸血症与痛风诊疗指南')).toMatchObject({
+      section: '三、高尿酸血症与痛风（CSE）',
+      publisher: 'CSE',
+      version: '2019主指南+2024合并症补充版',
+      priority: 1,
+    });
+    expect(
+      endocrine.sources.find((s) => s.name === '经皮冠状动脉介入治疗（PCI）指南'),
+    ).toBeUndefined();
+    const nutrition = parseSourcesMd(
+      readFileSync(new URL('./nutrition/sources.md', import.meta.url), 'utf8'),
+    );
+    // 文件名和颁布机构都折行的一行、跨页折断的颁布机构
+    expect(nutrition.sources[0]).toMatchObject({
+      name: '中国成人患者肠外肠内营养临床应用指南',
+      publisher: '中华医学会肠外肠内营养学分会（CSPEN）',
+      version: '2023版',
+      priority: 1,
+    });
+    expect(nutrition.sources.find((s) => s.name === '中国肿瘤患者营养治疗指南')?.publisher).toBe(
+      'CSPEN肿瘤营养分会',
+    );
+    const cardio = parseSourcesMd(
+      readFileSync(new URL('./cardiovascular/sources.md', import.meta.url), 'utf8'),
+    );
+    expect(cardio.sources.find((s) => s.name.includes('PCI'))).toMatchObject({
+      scope: 'referral_only',
+      priority: 1,
+    });
+    expect(cardio.sources.find((s) => s.name === '中国高血压防治指南')).toMatchObject({
+      publisher: '中华医学会心血管病学分会（CSC）+国家卫健委',
+      version: '2024修订版',
+      scope: 'advice',
+    });
+  });
+
+  it('parses priority, scope and section, and rejects rows without them', () => {
+    const md = `# 示例
+
+> 顾问签字：未签字
+> 来源清单出处：产品负责人提供 2026-10-18
+
+## 来源清单
+
+### 一、糖尿病及并发症（CDS，核心模块）
+
+| sourceId | 文件名 | 颁布机构 | 版本 | 优先级 | 使用范围 | 确认状态 | 确认人 | 确认日期 |
+|---|---|---|---|---|---|---|---|---|
+| S1 | 中国示例指南 | 示例学会（CDS） | 2024版 | 1级 | advice | 待医学顾问核实 | — | — |
+| S2 | 示例用药共识 | 示例学会 | 2019主指南+2024补充版 | 2 级 | referral_only | 候选 | — | — |
+
+### 二、急症
+
+| sourceId | 文件名 | 颁布机构 | 版本 | 优先级 | 使用范围 | 确认状态 | 确认人 | 确认日期 |
+|---|---|---|---|---|---|---|---|---|
+| S3 | 示例急症共识 | 示例学会 | 2023版 | 4 | referral_only | 已停用 | — | — |
+`;
+    const doc = parseSourcesMd(md);
+    expect(doc.provenance).toBe('产品负责人提供 2026-10-18');
+    expect(doc.sources.map((s) => [s.sourceId, s.priority, s.scope, s.status, s.section])).toEqual([
+      ['S1', 1, 'advice', 'candidate', '一、糖尿病及并发症（CDS，核心模块）'],
+      ['S2', 2, 'referral_only', 'candidate', '一、糖尿病及并发症（CDS，核心模块）'],
+      ['S3', 4, 'referral_only', 'retired', '二、急症'],
+    ]);
+    expect(doc.sources[1]?.version).toBe('2019主指南+2024补充版');
+    // 分组标题不算卡片，也不计入卡片长度
+    expect(doc.cards).toEqual([]);
+    expect(() => parseSourcesMd(md.replace('| 1级 | advice |', '| 5级 | advice |'))).toThrow(
+      '优先级只能是',
+    );
+    expect(() => parseSourcesMd(md.replace('| 1级 | advice |', '| 1级 | 建议 |'))).toThrow(
+      '使用范围只能是',
+    );
+    expect(() => parseSourcesMd(md.replace('| 1级 | advice |', '| advice |'))).toThrow('列数不对');
+    // 卡片跟随来源的优先级和使用范围
+    const withCard = parseSourcesMd(
+      `${md}\n## 条目卡片\n\n### S2-01\n- 来源：S2，第 1 章\n- 要点：示例。\n- 可引用数值：无\n- 确认：待确认\n`,
+    );
+    expect(withCard.cards[0]).toMatchObject({
+      priority: 2,
+      scope: 'referral_only',
+      section: '第 1 章',
+    });
   });
 });
 

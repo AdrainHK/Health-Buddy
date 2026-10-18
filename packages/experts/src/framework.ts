@@ -17,8 +17,11 @@ import {
   EXPERT_STATUSES,
   INDICATOR_CODES,
   SOURCE_ID_PATTERN,
+  SOURCE_SCOPES,
   findBannedTerms,
   type ExpertStatus,
+  type SourcePriority,
+  type SourceScope,
 } from '@health-buddy/shared';
 import { HEALTH_HISTORY_CATEGORIES } from '@health-buddy/skills';
 import { z } from 'zod';
@@ -114,10 +117,18 @@ export type SourceStatus = 'candidate' | 'confirmed' | 'retired';
 
 export interface SourceEntry {
   sourceId: string;
+  /** 文件名，照清单原样 */
   name: string;
+  /** 清单里的病种分组标题（来源清单下的 ### 标题）；没有分组为空 */
+  section: string | null;
+  /** 颁布机构（issuer），照清单原样 */
   publisher: string | null;
+  /** 版本，照清单原样（如“2024版”“2019主指南+2024合并症补充版”） */
   version: string | null;
-  scope: string | null;
+  /** 1 国内官方指南 > 2 国内专家共识 > 3 国际学会指南 > 4 兜底细则 */
+  priority: SourcePriority;
+  /** advice 可以作为建议依据；referral_only 只用来识别什么时候该转介（规格 5.1） */
+  scope: SourceScope;
   status: SourceStatus;
   confirmedBy: string | null;
   confirmedOn: string | null;
@@ -133,6 +144,9 @@ export interface SourceCard {
   /** 从“可引用数值”里取出的数字 */
   numbers: number[];
   population: string | null;
+  /** 来源的优先级和使用范围（卡片跟随来源） */
+  priority: SourcePriority;
+  scope: SourceScope;
   /** 卡片有确认人和日期，并且来源已确认 */
   confirmed: boolean;
 }
@@ -140,6 +154,8 @@ export interface SourceCard {
 export interface SourcesDoc {
   /** 医学顾问在 sources.md 顶部的签字（姓名或代号、日期）；没签为空 */
   signOff: string | null;
+  /** 来源清单的出处（如“产品负责人提供 2026-10-18”）；没写为空 */
+  provenance: string | null;
   sources: SourceEntry[];
   cards: SourceCard[];
   /** sources.md 内容指纹 */
@@ -148,6 +164,7 @@ export interface SourcesDoc {
 
 const STATUS_ZH: Record<string, SourceStatus> = {
   候选: 'candidate',
+  待医学顾问核实: 'candidate',
   已确认: 'confirmed',
   已停用: 'retired',
 };
@@ -161,6 +178,25 @@ const orNull = (v: string | undefined) => {
 
 const DATE = /\d{4}-\d{2}-\d{2}/;
 
+/** 来源清单表格的列（规格 5.1），顺序固定 */
+export const SOURCE_COLUMNS = [
+  'sourceId',
+  '文件名',
+  '颁布机构',
+  '版本',
+  '优先级',
+  '使用范围',
+  '确认状态',
+  '确认人',
+  '确认日期',
+] as const;
+
+/** “1级”“1 级”“1” → 1；其余为空 */
+function parsePriority(v: string | undefined): SourcePriority | null {
+  const m = /^([1-4])\s*级?$/.exec((v ?? '').trim());
+  return m ? (Number(m[1]) as SourcePriority) : null;
+}
+
 /**
  * 读 sources.md（规格 5.1）：顶部签字、来源清单表格、条目卡片。
  * 卡片“可引用数值”不为空时必须有确认人和日期，否则只能在预览环境引用。
@@ -170,18 +206,39 @@ export function parseSourcesMd(raw: string): SourcesDoc {
   const text = raw.replace(/^```[\s\S]*?^```/gm, '');
   const signLine = /^>\s*顾问签字[：:]\s*(.*)$/m.exec(text)?.[1]?.trim() ?? '';
   const signOff = orNull(signLine) && DATE.test(signLine) ? signLine : null;
+  const provenance = orNull(/^>\s*来源清单出处[：:]\s*(.*)$/m.exec(text)?.[1]);
 
   const sources: SourceEntry[] = [];
+  // 病种分组：来源清单里的 ### 标题（卡片编号形式的 ### 是卡片，不算分组）；遇到 ## 标题清空
+  let section: string | null = null;
   for (const line of text.split('\n')) {
+    if (/^## /.test(line)) section = null;
+    const heading = /^### (.+)$/.exec(line)?.[1]?.trim();
+    if (heading && !CARD_ID_PATTERN.test(heading)) section = heading;
     if (!/^\|\s*S\d/.test(line)) continue;
     const cells = line
       .split('|')
       .slice(1, -1)
       .map((c) => c.trim());
-    const [id, name, publisher, version, scope, status, by, on] = cells;
+    const [id, name, publisher, version, priorityCell, scopeCell, status, by, on] = cells;
     if (!id || !SOURCE_ID_PATTERN.test(id)) throw new Error(`sources.md 来源编号不合法：${id}`);
+    if (cells.length !== SOURCE_COLUMNS.length) {
+      throw new Error(
+        `sources.md 来源 ${id} 的列数不对：应为 ${SOURCE_COLUMNS.join('、')} 共 ${SOURCE_COLUMNS.length} 列`,
+      );
+    }
+    const priority = parsePriority(priorityCell);
+    if (!priority) throw new Error(`sources.md 来源 ${id} 的优先级只能是 1级 到 4级`);
+    const scope = (SOURCE_SCOPES as readonly string[]).includes(scopeCell ?? '')
+      ? (scopeCell as SourceScope)
+      : null;
+    if (!scope) throw new Error(`sources.md 来源 ${id} 的使用范围只能是 advice 或 referral_only`);
     const mapped = STATUS_ZH[status ?? ''];
-    if (!mapped) throw new Error(`sources.md 来源 ${id} 的确认状态只能是候选、已确认、已停用`);
+    if (!mapped) {
+      throw new Error(
+        `sources.md 来源 ${id} 的确认状态只能是候选（待医学顾问核实）、已确认、已停用`,
+      );
+    }
     if (!name) throw new Error(`sources.md 来源 ${id} 缺少名称`);
     const confirmedBy = orNull(by);
     const confirmedOn = orNull(on);
@@ -192,9 +249,11 @@ export function parseSourcesMd(raw: string): SourcesDoc {
     sources.push({
       sourceId: id,
       name,
+      section,
       publisher: orNull(publisher),
       version: orNull(version),
-      scope: orNull(scope),
+      priority,
+      scope,
       status: mapped,
       confirmedBy,
       confirmedOn,
@@ -202,11 +261,14 @@ export function parseSourcesMd(raw: string): SourcesDoc {
   }
 
   const cards: SourceCard[] = [];
-  const blocks = text.split(/^### /m).slice(1);
+  // 只有标题是卡片编号的 ### 块才是卡片（来源清单的病种分组也用 ###）
+  const blocks = text
+    .split(/^### /m)
+    .slice(1)
+    .filter((b) => CARD_ID_PATTERN.test((b.split('\n')[0] ?? '').trim()));
   for (const block of blocks) {
     const [heading = '', ...lines] = block.split('\n');
     const cardId = heading.trim();
-    if (!CARD_ID_PATTERN.test(cardId)) continue;
     const field = (key: string) =>
       lines
         .find((l) => l.startsWith(`- ${key}：`) || l.startsWith(`- ${key}:`))
@@ -233,6 +295,8 @@ export function parseSourcesMd(raw: string): SourcesDoc {
       citableValues,
       numbers: (citableValues?.match(/\d+(?:\.\d+)?/g) ?? []).map(Number),
       population: orNull(field('适用人群')),
+      priority: source.priority,
+      scope: source.scope,
       confirmed,
     });
   }
@@ -247,6 +311,7 @@ export function parseSourcesMd(raw: string): SourcesDoc {
   }
   return {
     signOff,
+    provenance,
     sources,
     cards,
     version: createHash('sha256').update(raw).digest('hex').slice(0, 12),
@@ -278,11 +343,12 @@ export function loadExpert(dir: URL, evalCardRefs: readonly string[] = []): Expe
     outOfScope: sectionItems(expert.body, '不负责的问题和转介去向'),
     sources,
   };
-  // 专家库卡片和详情页会显示擅长、不负责的问题和来源名称，同样不能含禁用词（合规审查第 13 条）
+  // 专家库卡片和详情页会显示擅长、不负责的问题，同样不能含禁用词（合规审查第 13 条）。
+  // 来源的文件名是正式发布文件的原名（如“……诊断与治疗专家共识”），照原样保留、不改写，
+  // 所以不在这里检查；文件名只出现在健管师端的专家详情页，不进提示词，也不会出现在给客户的文字里（规格 5.1）。
   const shown = [
     ...def.strengths.map((t) => ['擅长的问题', t]),
     ...def.outOfScope.map((t) => ['不负责的问题', t]),
-    ...sources.sources.map((src) => [`来源 ${src.sourceId} 的名称`, src.name]),
   ];
   for (const [field, text] of shown) {
     if (findBannedTerms(text ?? '').length)
