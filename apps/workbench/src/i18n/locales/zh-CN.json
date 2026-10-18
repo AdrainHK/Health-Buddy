@@ -24,7 +24,13 @@
     "groups": {
       "unlinked": "未关联客户",
       "detached": "已转出或删除的客户"
-    }
+    },
+    "followUps": "今日跟进",
+    "followUpsBadge": "{{count}} 项未处理",
+    "clients": "客户",
+    "noClients": "还没有客户",
+    "loadingClients": "正在加载客户…",
+    "clientLabel": "{{name}}，孪生状态：{{level}}"
   },
   "chat": {
     "untitled": "新任务",
@@ -194,10 +200,11 @@
     "close": "关闭结果区",
     "tabs": {
       "artifacts": "产物",
-      "client": "档案",
+      "client": "客户",
       "review": "核对",
       "history": "记录",
-      "experts": "专家"
+      "experts": "专家",
+      "clientHint": "客户的孪生有更新，点开查看"
     },
     "empty": {
       "artifacts": "还没有产物",
@@ -987,5 +994,367 @@
     "crisisText": "客户可能存在心理危机信号，请按危机流程处理：立即联系客户本人和家属，必要时拨打当地急救电话。",
     "emergency": "疑似急症提示",
     "emergencyText": "健管师转述的情况里有疑似急症，请建议客户及时就医，必要时拨打当地急救电话。"
+  },
+  "twin": {
+    "views": {
+      "label": "客户视图",
+      "twin": "孪生",
+      "record": "档案"
+    },
+    "disclaimer": "仅供参考，非医疗诊断",
+    "criticalBanner": "有危急指标，请先电话联系客户",
+    "loading": "正在加载孪生…",
+    "loadFailed": "孪生加载失败",
+    "retry": "重试",
+    "notFound": "客户不存在或已不可见",
+    "computing": "正在更新：新数据还在计算，先显示上一次的结果",
+    "empty": {
+      "title": "还没有可用的数据：请上传并核对体检报告",
+      "hint": "四个方面都显示“数据不足”。核对报告或录入监测数据后会自动计算。"
+    },
+    "levels": {
+      "red": "需要尽快关注",
+      "yellow": "需要留意",
+      "green": "平稳",
+      "unknown": "数据不足"
+    },
+    "colors": {
+      "red": "红",
+      "yellow": "黄",
+      "green": "绿",
+      "unknown": "灰"
+    },
+    "domains": {
+      "metabolic": "代谢",
+      "cardiovascular": "心血管",
+      "sleep": "睡眠",
+      "weight": "体重"
+    },
+    "domainLevel": "{{domain}}：{{level}}",
+    "portrait": {
+      "title": "画像",
+      "note": "状态由系统按平台规则计算，只给健管师看，不会发给客户。"
+    },
+    "body": {
+      "label": "人体轮廓：点一个区域查看对应方面",
+      "region": "{{domain}}：{{level}}，查看状态卡片"
+    },
+    "riskTier": {
+      "label": "风险分层（只读）：{{tier}}",
+      "none": "未分层",
+      "note": "分层和红黄绿相互独立，修改请到档案。"
+    },
+    "card": {
+      "basis": "依据",
+      "noBasis": "没有参与判断的数值",
+      "openRecord": "在档案中查看",
+      "computed": "系统按规则计算（规则版本 v{{version}}，{{date}} 更新）",
+      "notComputed": "还没有计算结果",
+      "manualBy": "健管师 {{name}} 手动调整：{{reason}}",
+      "manualByOther": "健管师手动调整：{{reason}}",
+      "both": "系统计算：{{computed}}；健管师调整为：{{manual}}",
+      "expired": "新数据进来后已恢复系统计算",
+      "changed": "由{{from}}变{{to}}（{{date}}）",
+      "adjust": "调整状态",
+      "adjustLabel": "调整状态：{{domain}}",
+      "cancelAdjust": "取消调整",
+      "cancelAdjustLabel": "取消调整：{{domain}}（恢复系统计算）",
+      "cancelled": "已恢复系统计算"
+    },
+    "basis": {
+      "report": "{{metric}} {{value}} {{unit}}（{{date}} 报告）",
+      "monitoring": "{{metric}} 近 {{days}} 天平均 {{value}} {{unit}}（{{count}} 条，{{from}} 至 {{date}} 监测）",
+      "critical": "达到危急阈值 {{comparator}} {{value}} {{unit}}",
+      "outOfReference": {
+        "high": "高于报告上的参考范围 {{range}}",
+        "low": "低于报告上的参考范围 {{range}}"
+      },
+      "threshold": "近 {{days}} 天平均超出设定阈值 {{comparator}} {{value}} {{unit}}",
+      "noReference": "报告未提供参考范围",
+      "noHit": "未命中规则",
+      "separator": "；"
+    },
+    "comparators": {
+      "gte": "≥",
+      "gt": ">",
+      "lte": "≤",
+      "lt": "<"
+    },
+    "range": {
+      "both": "{{low}}–{{high}}",
+      "low": "≥ {{low}}",
+      "high": "≤ {{high}}"
+    },
+    "adjust": {
+      "title": "调整{{domain}}的状态",
+      "level": "调整为",
+      "reason": "理由（必填，不少于 {{min}} 个字）",
+      "reasonPlaceholder": "如：客户已复查，结果在参考范围内",
+      "reasonTooShort": "请填写理由，不少于 {{min}} 个字",
+      "reasonTooLong": "理由不能超过 {{max}} 个字",
+      "note": "调整到这个方面下次有新数据时失效，之后恢复系统计算。调整记入状态历史。",
+      "submit": "保存调整",
+      "saving": "正在保存…",
+      "cancel": "取消",
+      "saved": "已调整"
+    },
+    "forecast": {
+      "title": "趋势预测",
+      "empty": "还没有可预测的指标",
+      "source": {
+        "report": "体检报告",
+        "monitoring": "日常监测"
+      },
+      "cardTitle": "{{metric}} · {{source}}",
+      "open": "查看{{metric}}（{{source}}）的大图和依据",
+      "loading": "正在加载数值…",
+      "loadFailed": "数值加载失败",
+      "chartLabel": "{{metric}}趋势图：实线是实际数值，虚线是预测中间值，阴影是 80% 区间",
+      "chartLabelNoForecast": "{{metric}}趋势图：只有实际数值，暂不预测",
+      "insufficient": {
+        "report": "数据不足，暂不预测：还需要 {{count}} 次已核对报告的数值",
+        "monitoring": "数据不足，暂不预测：还需要 {{count}} 个有效周的数据（每周至少 3 条读数）",
+        "span": "数据不足，暂不预测：数据的时间跨度还不够",
+        "notForecastable": "这个指标不做预测"
+      },
+      "uncertainty": {
+        "normal": "不确定性：一般",
+        "high": "不确定性：高"
+      },
+      "legend": {
+        "actual": "实际数值",
+        "median": "预测中间值",
+        "band": "80% 区间",
+        "reference": "报告参考范围"
+      },
+      "crossing": {
+        "high": "按当前走势，约 {{months}} 个月后可能高于报告参考范围上限",
+        "low": "按当前走势，约 {{months}} 个月后可能低于报告参考范围下限"
+      },
+      "crossingNote": "只是给健管师的提醒，不生成跟进项，也不改变状态。",
+      "detail": {
+        "close": "关闭",
+        "basisReport": "依据：根据 {{from}} 至 {{to}} 共 {{count}} 次已核对报告的数值推算",
+        "basisMonitoring": "依据：根据 {{from}} 至 {{to}} 共 {{count}} 个有效周的监测周平均推算",
+        "method": "方法：按过去的变化速度直线外推（方法版本 {{version}}）",
+        "interval": "不确定性：阴影为 {{level}}% 区间：如果按过去的变化规律，大约 10 次里有 8 次会落在这个范围内。数据次数少、波动大时区间更宽",
+        "limitation": "局限：只根据过去的数值推算，没有考虑用药、生活方式变化和其他因素；不是对任何疾病的预测",
+        "uncertaintyHigh": "不确定性等级：高（数据次数少或区间较宽，图上的虚线改为浅色）",
+        "uncertaintyNormal": "不确定性等级：一般",
+        "point": "{{months}} 个月后（{{date}}）：中间值 {{mid}} {{unit}}，80% 区间 {{low}}–{{high}} {{unit}}",
+        "clipped": "（区间已截在合理范围内）",
+        "reference": "参考范围取自最近一份报告：{{range}} {{unit}}",
+        "computedAt": "计算时间：{{date}}"
+      }
+    },
+    "followUps": {
+      "title": "待跟进",
+      "empty": "这位客户没有未处理的跟进项"
+    },
+    "timeline": {
+      "title": "时间轴",
+      "filter": "按类型筛选",
+      "all": "全部",
+      "types": {
+        "report": "体检报告",
+        "monitoring_alert": "监测异常",
+        "correction": "报告更正",
+        "health_history": "健康史",
+        "risk_tier": "风险分层",
+        "status_change": "状态变化",
+        "follow_up": "跟进项",
+        "expert": "专家意见",
+        "artifact": "产物"
+      },
+      "month": "{{year}} 年 {{month}} 月",
+      "loadMore": "加载更早的",
+      "loading": "正在加载时间轴…",
+      "loadFailed": "时间轴加载失败",
+      "empty": "没有符合条件的事件",
+      "report": "体检报告（{{date}}）：{{count}} 项超出参考范围",
+      "reportCritical": "含危急指标",
+      "monitoringAlert": "{{metric}}（{{date}}）{{rule}}",
+      "alertRule": {
+        "critical": "达到危急阈值",
+        "out_of_reference": "超出参考范围",
+        "threshold": "近期平均超出设定阈值"
+      },
+      "correction": "报告更正：{{metric}}（{{actor}}）",
+      "correctionUnknown": "某一项",
+      "someone": "其他健管师",
+      "healthHistory": "健康史 · {{category}}（{{action}}）：{{summary}}",
+      "historyAction": {
+        "created": "新增",
+        "updated": "修改"
+      },
+      "riskTier": "风险分层设为“{{tier}}”（{{actor}}）：{{reason}}",
+      "statusChange": "{{domain}}：{{from}} → {{to}}（{{origin}}）",
+      "statusFirst": "{{domain}}：{{to}}（{{origin}}）",
+      "origin": {
+        "computed": "系统计算",
+        "manual": "健管师手动调整",
+        "manual_cleared": "取消手动调整"
+      },
+      "trigger": {
+        "rules_changed": "规则更新后重新计算",
+        "thresholds_changed": "危急阈值更新后重新计算",
+        "backfill": "首次计算",
+        "seed": "合成数据计算"
+      },
+      "followUp": "跟进项 · {{kind}}：{{action}}",
+      "followUpAction": {
+        "created": "生成",
+        "done": "已处理",
+        "snoozed": "暂缓",
+        "dismissed": "忽略",
+        "reopened": "重新打开"
+      },
+      "expert": "请专家看看：{{experts}}",
+      "expertUnknown": "专家",
+      "artifact": "产物 · {{kind}}：{{action}}",
+      "artifactAction": {
+        "approved": "确认",
+        "copied": "复制通俗版",
+        "exported": "导出"
+      }
+    },
+    "readings": {
+      "title": "手动录入监测数据",
+      "show": "录入监测数据",
+      "hide": "收起",
+      "note": "录入后标“手动”，进入孪生的状态和预测。只能删除自己录入的。",
+      "metric": "指标",
+      "value": "数值（{{unit}}）",
+      "measuredAt": "测量时间",
+      "add": "录入",
+      "adding": "正在录入…",
+      "added": "已录入，孪生正在更新",
+      "valueRequired": "请填写数值",
+      "valueRange": "请填写 {{min}} 到 {{max}} 之间的数值",
+      "timeRequired": "请填写测量时间",
+      "futureTime": "测量时间不能晚于现在",
+      "mine": "我录入的",
+      "empty": "还没有手动录入的数据",
+      "item": "{{metric}} {{value}} {{unit}}",
+      "meta": "{{time}} · 手动录入",
+      "delete": "删除",
+      "deleteLabel": "删除 {{time}} 的{{metric}}读数",
+      "deleted": "已删除，孪生正在更新",
+      "errors": {
+        "tooMany": "录入太频繁（每分钟最多 60 条），请稍后再试",
+        "badRequest": "填写的内容不符合要求，请检查后重试",
+        "notFound": "客户或读数不存在或已不可见",
+        "conflict": "这条不是你手动录入的，不能删除",
+        "network": "网络连接失败，请检查网络后重试",
+        "unknown": "出错了，请稍后再试"
+      }
+    },
+    "errors": {
+      "badRequest": "填写的内容不符合要求，请检查后重试",
+      "notFound": "客户不存在或已不可见",
+      "conflict": "状态已变化，已刷新",
+      "tooMany": "操作太频繁，请稍后再试",
+      "network": "网络连接失败，请检查网络后重试",
+      "unknown": "出错了，请稍后再试"
+    }
+  },
+  "followUps": {
+    "title": "今日跟进",
+    "intro": "按严重程度排序，同级按最近触发时间从新到旧。“今日”按 {{timeZone}} 时区计算。",
+    "loading": "正在加载跟进清单…",
+    "loadFailed": "跟进清单加载失败",
+    "retry": "重试",
+    "empty": "今天没有需要跟进的项目",
+    "list": "跟进项",
+    "severity": "{{level}} 级",
+    "severityLabel": "严重程度 {{level}} 级（1 级最严重）",
+    "kinds": {
+      "critical": "危急指标",
+      "status_red": "状态变红",
+      "status_worsened": "状态变差",
+      "forecast_deviation": "偏离预测"
+    },
+    "carried": "已延续 {{count}} 天",
+    "today": "今天新增",
+    "triggeredAt": "最近触发 {{time}}",
+    "consulted": "已请专家（{{time}}）",
+    "basis": {
+      "value": "{{metric}} {{value}} {{unit}}（{{date}} {{source}}）",
+      "critical": "{{value}}达到危急阈值 {{comparator}} {{threshold}}",
+      "status": "{{domain}}由{{from}}变{{to}}",
+      "statusFirst": "{{domain}}变为{{to}}",
+      "statusItems": "{{status}}：{{items}}",
+      "deviation": "{{value}}{{side}}之前预测的 80% 区间 {{low}}–{{high}}",
+      "side": {
+        "above": "高于",
+        "below": "低于"
+      },
+      "direction": {
+        "worse": "（偏向变差）",
+        "better": "（偏向变好）",
+        "unknown": ""
+      },
+      "separator": "、",
+      "unknown": "依据见孪生"
+    },
+    "source": {
+      "report": "报告",
+      "monitoring": "监测"
+    },
+    "openClient": "打开客户",
+    "openClientLabel": "打开 {{name}} 的孪生",
+    "handle": "处理",
+    "handleLabel": "处理 {{name}} 的{{kind}}",
+    "form": {
+      "mode": "处理方式",
+      "modes": {
+        "done": "已处理",
+        "snooze": "暂缓",
+        "dismiss": "忽略"
+      },
+      "resolution": "处理方式类别（可选）",
+      "resolutionNone": "不选",
+      "resolutions": {
+        "called": "已电话联系",
+        "recheck_arranged": "已安排复查",
+        "referred": "已建议就医",
+        "plan_adjusted": "已调整方案",
+        "other": "其他"
+      },
+      "note": "备注（可选，最多 {{max}} 字）",
+      "snooze": "到哪天再出现",
+      "snoozeDays": {
+        "1": "明天",
+        "3": "3 天后",
+        "7": "7 天后"
+      },
+      "dismissReason": "忽略原因（必选）",
+      "dismissReasons": {
+        "data_error": "数据误差",
+        "known": "已知情况",
+        "under_care": "客户已在就医",
+        "other": "其他"
+      },
+      "dismissRequired": "请选择忽略原因",
+      "criticalNoDismiss": "危急指标类的项目不能忽略，只能标为已处理或暂缓。",
+      "noteTooLong": "备注不能超过 {{max}} 字",
+      "submit": "确定",
+      "submitting": "正在提交…",
+      "cancel": "取消"
+    },
+    "done": {
+      "done": "已标为已处理",
+      "snooze": "已暂缓",
+      "dismiss": "已忽略"
+    },
+    "errors": {
+      "critical": "危急指标类的项目不能忽略，请标为已处理或暂缓",
+      "notFound": "这一项已不存在或已不可见，已刷新",
+      "conflict": "这一项的状态已变化，已刷新",
+      "badRequest": "填写的内容不符合要求，请检查后重试",
+      "tooMany": "操作太频繁，请稍后再试",
+      "network": "网络连接失败，请检查网络后重试",
+      "unknown": "出错了，请稍后再试"
+    }
   }
 }
