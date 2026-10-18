@@ -122,6 +122,7 @@ const DETAIL_RULES = new Set([
   'outline.drug_names',
   'outline.drug_advice',
   'no_reference.judged',
+  'outline.invented_report',
   'outline.judgment',
   'client.banned_terms',
   'client.disease_terms',

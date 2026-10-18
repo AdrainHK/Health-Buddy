@@ -493,15 +493,7 @@ export function gradeInterpretation(
   return findings;
 }
 
-const NO_REPORT_CLAIMS = [
-  '报告显示',
-  '报告中',
-  '报告上',
-  '报告里',
-  '参考范围',
-  '超出范围',
-  '体检结果',
-];
+const NO_REPORT_CLAIMS = ['报告显示', '报告提示', '报告中的', '参考范围', '超出范围'];
 
 const PERSONAL_INFO = /姓名|电话|手机号|身份证|证件号|住址|地址/;
 
@@ -602,9 +594,9 @@ export function gradeOutline(c: ReportSkillEvalCase, output: InterviewOutlineOut
     !p.missingData.some((m) => /体检报告/.test(m) && /没有|未|缺/.test(m))
   )
     add('expect.no_report_note', '客户还没有已核对的体检报告，但缺少的信息里没有写明');
-  // 没有报告时，重点、问题和为什么问里不能说“报告显示”“参考范围”这类话（缺少的信息除外）
+  // 没有报告时，重点和“为什么问”里不能声称报告说了什么；问题本身可以问客户以往的体检（缺少的信息除外）
   if (!c.client.reportDetail) {
-    const claims = [p.overview, ...questions.map((q) => `${q.question} ${q.why}`)].join('\n');
+    const claims = [p.overview, ...questions.map((q) => q.why)].join('\n');
     const said = hits(claims, NO_REPORT_CLAIMS);
     if (said.length) add('outline.invented_report', `invented_report：${said.join('、')}`);
   }
