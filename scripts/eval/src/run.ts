@@ -193,8 +193,8 @@ export async function runExpertEval(options: {
       (_, i) => () => runExpertOnce(options.gateway, EVAL_CTX, options.provider, c, i + 1),
     ),
   );
-  // 专家用例多、单次调用长，CI 单组 60 分钟内跑完需要更高并发
-  return runPool(jobs, options.concurrency ?? 6);
+  // 专家用例多、单次调用长，CI 单组 60 分钟内跑完需要更高并发；太高会让单次调用变慢、超过 60 秒
+  return runPool(jobs, options.concurrency ?? 4);
 }
 
 /** 路由评测（M3 规格 8.2） */
@@ -229,10 +229,12 @@ export async function runSynthesisEval(options: {
   return runPool(jobs, 2);
 }
 
-/** 厂商或中转临时故障（5xx、限流、超时）：重试，不算模型答错 */
+/** 厂商或中转临时故障（5xx、限流、超时，含专家调用超过 60 秒）：重试，不算模型答错 */
 export function isTransientFailure(result: RunResult): boolean {
   return result.findings.some(
-    (f) => f.rule === 'output.error' && /\b(5\d\d|rate_limited|timeout)\b/.test(f.detail),
+    (f) =>
+      (f.rule === 'output.error' && /\b(5\d\d|rate_limited|timeout)\b/.test(f.detail)) ||
+      (f.rule === 'opinion.missing' && /^timeout\b/.test(f.detail)),
   );
 }
 

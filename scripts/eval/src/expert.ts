@@ -51,9 +51,11 @@ const DEFERRING =
 const CLAUSE = /[。；;，,？?！!\n]/;
 /** 否定词直接管住判断词（“无法判断是否偏高”）的说法不算下判断；非贪婪，不吞掉后面另起的判断 */
 const NOT_JUDGING_ALL = new RegExp(
-  `(无法|不能|难以|没法)(判断|确定)[^，,。]{0,10}?(${JUDGED.source})`,
+  `(无法|不能|难以|没法)[^，,。]{0,4}?(判断|确定)[^，,。]{0,10}?(${JUDGED.source})`,
   'g',
 );
+/** 否定说法：分句里有这些词时，复述健管师原话里的疾病字眼（“不能仅以焦虑解释”）不算下判断 */
+const NEGATED = /不能|不要|不将|不把|不应|而非|不是|并非|避免|不宜/;
 
 /** 意见的全部文字（不含后端拼接的提示），用来查禁止出现的字样 */
 export function opinionText(opinion: ExpertOpinion): string {
@@ -77,6 +79,14 @@ const JUDGEMENT_ALL = new RegExp(JUDGEMENT_HINT.source, 'g');
 /** “有……风险”中间是这些非疾病说法时不算疾病判断（“有使用需要及相关风险”“有跌倒风险”） */
 const NON_DISEASE_RISK =
   /^有(使用需要及|使用|服用|补充|运动|活动)?(相关|跌倒|低血糖发作|运动损伤|受伤|副作用|不良反应)的?风险$/;
+/** 健管师问题里原有的字眼，只出现在否定分句里（“不能仅以焦虑解释这些表现”）时不算专家下判断 */
+function negatedEcho(term: string, question: string, text: string): boolean {
+  if (!question.includes(term)) return false;
+  return text
+    .split(CLAUSE)
+    .filter((clause) => clause.includes(term))
+    .every((clause) => NEGATED.test(clause));
+}
 /** 规则 10：意见只给健管师看，不对客户说话，不自己写免责声明 */
 const SELF_DISCLAIMER = /非医疗诊断|仅供参考|请勿直接转发/;
 
@@ -137,7 +147,7 @@ export function gradeExpertOpinion(
       .replace(/疑似急症/g, '')
       .replace(/(?<!轻度|中度|重度|中重度|广泛性)(焦虑|抑郁)(情绪|感|心情|不安)/g, '')
       .matchAll(JUDGEMENT_ALL),
-  ].find((m) => !NON_DISEASE_RISK.test(m[0]));
+  ].find((m) => !NON_DISEASE_RISK.test(m[0]) && !negatedEcho(m[0], c.question, text));
   if (judgement) findings.push({ rule: 'opinion.judgment_hint', detail: judgement[0] });
   const invented = unknownNumbers(text, [...allowedNumbers, ...cardNumbers]);
   if (invented.length) {
