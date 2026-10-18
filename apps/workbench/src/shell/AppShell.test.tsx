@@ -111,7 +111,7 @@ describe('AppShell (wide screen)', () => {
     const artifacts = screen.getByRole('tab', { name: '产物' });
     artifacts.focus();
     await user.keyboard('{ArrowRight}');
-    const client = screen.getByRole('tab', { name: '档案' });
+    const client = screen.getByRole('tab', { name: '客户' });
     expect(client).toHaveAttribute('aria-selected', 'true');
     expect(client).toHaveFocus();
     expect(within(screen.getByRole('tabpanel')).getByText('未选择客户')).toBeInTheDocument();
@@ -292,7 +292,7 @@ describe('AppShell client tab and switching clients', () => {
     await user.click(await screen.findByRole('button', { name: '甲的小结' }));
     // 打开已关联客户的任务时停在产物标签，点“客户”标签查看资料
     expect(screen.getByRole('tab', { name: '产物' })).toHaveAttribute('aria-selected', 'true');
-    await user.click(screen.getByRole('tab', { name: '档案' }));
+    await user.click(screen.getByRole('tab', { name: '客户' }));
     const panel = screen.getByRole('tabpanel');
     expect(within(panel).getByRole('heading', { name: /合成客户甲/ })).toBeInTheDocument();
     expect(within(panel).getByText('测试数据')).toBeInTheDocument();
@@ -303,7 +303,7 @@ describe('AppShell client tab and switching clients', () => {
     render(<AppShell />);
     await user.type(screen.getByRole('textbox'), '@乙');
     await user.keyboard('{Enter}');
-    expect(screen.getByRole('tab', { name: '档案' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: '客户' })).toHaveAttribute('aria-selected', 'true');
     expect(
       await within(screen.getByRole('tabpanel')).findByRole('heading', { name: /合成客户乙/ }),
     ).toBeInTheDocument();

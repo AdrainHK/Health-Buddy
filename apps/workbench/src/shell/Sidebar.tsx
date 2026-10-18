@@ -1,7 +1,8 @@
 import { Button, IconButton } from '@health-buddy/ui';
-import { PRODUCT_NAME, type ClientSummary, type Task } from '@health-buddy/shared';
+import { PRODUCT_NAME, type ClientSummary, type Task, type TwinLevel } from '@health-buddy/shared';
 import {
   Archive,
+  BellRing,
   ArchiveRestore,
   ArrowLeft,
   Heart,
@@ -20,6 +21,7 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ExpertAvatar } from '../experts/ExpertBadges';
 import { useExpertName } from '../experts/ExpertsContext';
+import { LevelDot } from '../twin/levels';
 import styles from './Sidebar.module.css';
 import { groupTasks, isReadOnlyTask, type TaskGroup } from './taskGroups';
 
@@ -59,6 +61,18 @@ export interface SidebarProps {
   tasks?: SidebarTasks;
   /** 专家中心入口（M3 规格 2.1）：点击后中间区域显示专家库 */
   experts?: { active: boolean; onOpen: () => void };
+  /** 今日跟进入口（M4 规格 2.1，Q12）：带未处理数量角标，点开后中间区域显示清单 */
+  followUps?: { active: boolean; count: number | null; onOpen: () => void };
+  /** 客户列表（M4 规格 2.1）：名字旁的小圆点是四个方面里最严重的状态，点客户打开孪生 */
+  clientList?: SidebarClients;
+}
+
+export interface SidebarClients {
+  clients: ClientSummary[] | null;
+  /** 每位客户的整体状态；还没加载出来时为空 */
+  levels: ReadonlyMap<string, TwinLevel>;
+  activeClientId: string | null;
+  onSelect: (client: ClientSummary) => void;
 }
 
 export function Sidebar({
@@ -70,6 +84,8 @@ export function Sidebar({
   account,
   tasks,
   experts,
+  followUps,
+  clientList,
 }: SidebarProps) {
   const { t } = useTranslation();
   const classes = [
@@ -123,6 +139,22 @@ export function Sidebar({
       )}
 
       <nav className={styles.nav}>
+        {followUps && (
+          <NavItem
+            icon={<BellRing size={18} />}
+            label={t('nav.followUps')}
+            onClick={followUps.onOpen}
+            current={followUps.active}
+            badge={
+              followUps.count
+                ? {
+                    text: followUps.count > 99 ? '99+' : String(followUps.count),
+                    label: t('nav.followUpsBadge', { count: followUps.count }),
+                  }
+                : null
+            }
+          />
+        )}
         <NavItem icon={<Sparkles size={18} />} label={t('nav.skills')} />
         <NavItem
           icon={<Stethoscope size={18} />}
@@ -132,6 +164,7 @@ export function Sidebar({
         <NavItem icon={<Timer size={18} />} label={t('nav.automations')} />
       </nav>
 
+      {!collapsed && clientList && <ClientSection list={clientList} />}
       {collapsed ? <div className={styles.spacer} /> : <TaskSection tasks={tasks} />}
 
       <div className={styles.footer}>
@@ -152,6 +185,53 @@ export function Sidebar({
         )}
       </div>
     </aside>
+  );
+}
+
+function ClientSection({ list }: { list: SidebarClients }) {
+  const { t } = useTranslation();
+  const clients = [...(list.clients ?? [])].sort((a, b) =>
+    a.displayName.localeCompare(b.displayName, 'zh-CN'),
+  );
+  return (
+    <section className={styles.clientSection} aria-labelledby="hb-clients-title">
+      <h2 id="hb-clients-title" className={styles.sectionTitle}>
+        {t('nav.clients')}
+      </h2>
+      {list.clients === null && <p className={styles.empty}>{t('nav.loadingClients')}</p>}
+      {list.clients !== null && clients.length === 0 && (
+        <p className={styles.empty}>{t('nav.noClients')}</p>
+      )}
+      {clients.length > 0 && (
+        <ul className={styles.clientList}>
+          {clients.map((client) => {
+            const level = list.levels.get(client.id) ?? null;
+            const levelText = level ? t(`twin.levels.${level}`) : null;
+            return (
+              <li key={client.id}>
+                <button
+                  type="button"
+                  className={styles.task}
+                  aria-current={list.activeClientId === client.id ? 'true' : undefined}
+                  title={client.displayName}
+                  onClick={() => list.onSelect(client)}
+                >
+                  {level && levelText ? (
+                    <LevelDot
+                      level={level}
+                      label={t('nav.clientLabel', { name: client.displayName, level: levelText })}
+                    />
+                  ) : (
+                    <span className={styles.dotPlaceholder} aria-hidden />
+                  )}
+                  <span className={styles.taskTitle}>{client.displayName}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -271,11 +351,14 @@ function NavItem({
   label,
   onClick,
   current,
+  badge,
 }: {
   icon: ReactNode;
   label: string;
   onClick?: () => void;
   current?: boolean;
+  /** 数字角标：text 是显示的数字，label 是读屏读出的完整说法 */
+  badge?: { text: string; label: string } | null;
 }) {
   return (
     <button
@@ -287,6 +370,12 @@ function NavItem({
     >
       {icon}
       <span className={styles.label}>{label}</span>
+      {badge && (
+        <span className={styles.navBadge}>
+          <span aria-hidden>{badge.text}</span>
+          <span className={styles.visuallyHidden}>{badge.label}</span>
+        </span>
+      )}
     </button>
   );
 }

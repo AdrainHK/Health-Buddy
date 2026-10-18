@@ -283,3 +283,61 @@
   text-decoration: underline;
   cursor: pointer;
 }
+
+/* 今日跟进入口的未处理数量角标（M4） */
+.navBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5em;
+  margin-left: auto;
+  padding: 0 var(--hb-space-1);
+  border-radius: var(--hb-radius-full);
+  background: var(--hb-brand);
+  color: var(--hb-brand-contrast);
+  font-size: var(--hb-text-xs);
+  font-weight: 600;
+}
+
+.collapsed .navItem {
+  position: relative;
+}
+
+.collapsed .navBadge {
+  position: absolute;
+  margin: -18px -22px 0 0;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* 客户列表（M4）：名字旁的小圆点是孪生状态 */
+.clientSection {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  max-height: 30vh;
+  min-height: 0;
+}
+
+.clientList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.dotPlaceholder {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}

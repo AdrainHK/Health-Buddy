@@ -1,15 +1,24 @@
-import type { ClientSummary, ExpertSummary, SkillSummary, Task } from '@health-buddy/shared';
+import type {
+  ClientSummary,
+  ExpertSummary,
+  SkillSummary,
+  Task,
+  TwinLevel,
+} from '@health-buddy/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { listExperts } from '../api/experts';
 import { isAbortError } from '../api/http';
 import { ExpertCenter, type ExpertListState } from '../experts/ExpertCenter';
 import { ExpertsContext } from '../experts/ExpertsContext';
+import { getTwinLevels, listFollowUps } from '../api/twin';
 import { getTask, listClients, listSkills, listTasks, updateTask } from '../api/workbench';
+import { FollowUpCenter, type FollowUpListState } from '../twin/FollowUpCenter';
 import styles from './AppShell.module.css';
 import { ChatPane } from './ChatPane';
 import { ResultsPanel } from './ResultsPanel';
 import { Sidebar, type SidebarAccount, type TaskListState, type TaskListView } from './Sidebar';
+import { isReadOnlyTask } from './taskGroups';
 import { readUrlId, writeUrlId } from './urlState';
 import { NARROW_QUERY, useMediaQuery } from './useMediaQuery';
 
@@ -40,16 +49,32 @@ export function AppShell({ account }: AppShellProps = {}) {
   const [conversationVersion, setConversationVersion] = useState(0);
   /** 对话区里 @ 的客户（任务还没关联客户时用来在结果区显示资料） */
   const [draftClient, setDraftClient] = useState<ClientSummary | null>(null);
-  /** 刚在档案标签里新建的客户：结果区先显示它，换任务或 @ 了别的客户后恢复 */
-  const [createdClientId, setCreatedClientId] = useState<string | null>(null);
+  /**
+   * 结果区先显示的客户：刚在档案标签里新建的，或在左侧栏客户列表里点的（M4）。
+   * 换任务或 @ 了别的客户后恢复为任务关联的客户。
+   */
+  const [focusClientId, setFocusClientId] = useState<string | null>(null);
   /** 对话区里点了“去核对”的识别记录 */
   const [reviewRequest, setReviewRequest] = useState<{ uploadId: string; key: number } | null>(
     null,
   );
   /** 识别记录有变化（对话里上传、识别结束、核对确认），对话区和结果区据此刷新 */
   const [uploadsVersion, setUploadsVersion] = useState(0);
-  /** 中间区域显示对话还是专家库（M3 规格 2.1：左侧栏的专家中心入口） */
-  const [centerView, setCenterView] = useState<'chat' | 'experts'>('chat');
+  /** 中间区域显示对话、专家库（M3 规格 2.1）还是今日跟进清单（M4 规格 2.6，Q12） */
+  const [centerView, setCenterView] = useState<'chat' | 'experts' | 'followUps'>('chat');
+  /** 今日跟进清单（所有客户的未处理项目），左侧栏角标也用它 */
+  const [followUpList, setFollowUpList] = useState<FollowUpListState>({
+    status: 'loading',
+    data: null,
+  });
+  /** 每位客户的孪生整体状态（左侧栏客户列表的小圆点） */
+  const [twinLevels, setTwinLevels] = useState<ReadonlyMap<string, TwinLevel>>(new Map());
+  /** 跟进、状态有变化：角标、清单和圆点重新加载 */
+  const [twinSummaryVersion, setTwinSummaryVersion] = useState(0);
+  /** 在中间的清单里处理了跟进项：结果区的孪生重新加载 */
+  const [twinPanelVersion, setTwinPanelVersion] = useState(0);
+  /** 在左侧栏点了客户：结果区切到“客户 · 孪生” */
+  const [clientTabRequest, setClientTabRequest] = useState<{ key: number } | null>(null);
   /** 当前账号可用的专家：专家库、@ 列表、步骤和专家标签里的名称都用它 */
   const [expertList, setExpertList] = useState<ExpertListState>({
     status: 'loading',
@@ -108,6 +133,27 @@ export function AppShell({ account }: AppShellProps = {}) {
     };
   }, []);
 
+  // 今日跟进清单和客户状态圆点（孪生不调用大模型，只读后端算好的结果）
+  useEffect(() => {
+    const controller = new AbortController();
+    setFollowUpList((list) => ({ status: 'loading', data: list.data }));
+    listFollowUps({}, controller.signal)
+      .then((data) => setFollowUpList({ status: 'ready', data }))
+      .catch((err: unknown) => {
+        if (!isAbortError(err)) setFollowUpList((list) => ({ status: 'error', data: list.data }));
+      });
+    getTwinLevels(controller.signal)
+      .then((levels) => setTwinLevels(new Map(levels.map((l) => [l.clientId, l.level]))))
+      .catch(() => {});
+    return () => controller.abort();
+  }, [twinSummaryVersion]);
+
+  const onTwinChanged = useCallback(() => setTwinSummaryVersion((v) => v + 1), []);
+  const onFollowUpsChanged = useCallback(() => {
+    setTwinSummaryVersion((v) => v + 1);
+    setTwinPanelVersion((v) => v + 1);
+  }, []);
+
   // 专家列表（专家预览没开时为空，所有专家入口都不显示内容）
   useEffect(() => {
     const controller = new AbortController();
@@ -154,7 +200,7 @@ export function AppShell({ account }: AppShellProps = {}) {
 
   const selectTask = (task: Task | null) => {
     setActiveTask(task);
-    setCreatedClientId(null);
+    setFocusClientId(null);
     setPendingExpert(null);
     setCenterView('chat');
     closeDrawerOnNarrow();
@@ -165,10 +211,43 @@ export function AppShell({ account }: AppShellProps = {}) {
     closeDrawerOnNarrow();
   };
 
+  const openFollowUps = () => {
+    setCenterView('followUps');
+    setTwinSummaryVersion((v) => v + 1);
+    closeDrawerOnNarrow();
+  };
+
+  /**
+   * 左侧栏点客户（M4 规格 2.2 第 1 条）：进入该客户的任务分组（打开这位客户最近的任务，
+   * 没有就回到欢迎页），右侧结果区打开“客户 · 孪生”。
+   */
+  const selectClient = (client: ClientSummary) => {
+    setPendingExpert(null);
+    setCenterView('chat');
+    if (activeTask?.clientId !== client.id) {
+      const latest =
+        view === 'active'
+          ? taskList.tasks
+              .filter((task) => task.clientId === client.id && !isReadOnlyTask(task))
+              .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
+          : undefined;
+      setActiveTask(latest ?? null);
+    }
+    setFocusClientId(client.id);
+    setClientTabRequest((r) => ({ key: (r?.key ?? 0) + 1 }));
+    setDrawerOpen(false);
+    setResultsOpen(true);
+  };
+
+  const openClientById = (clientId: string) => {
+    const client = clients?.find((c) => c.id === clientId);
+    if (client) selectClient(client);
+  };
+
   /** 专家详情里的“向 TA 提问”：回到对话区，发第一条消息时新建绑定这位专家的任务 */
   const askExpert = (expert: ExpertSummary) => {
     setActiveTask(null);
-    setCreatedClientId(null);
+    setFocusClientId(null);
     setPendingExpert(expert);
     setCenterView('chat');
   };
@@ -235,18 +314,18 @@ export function AppShell({ account }: AppShellProps = {}) {
   const onClientCreated = useCallback(
     (client: ClientSummary) => {
       upsertClient(client);
-      setCreatedClientId(client.id);
+      setFocusClientId(client.id);
     },
     [upsertClient],
   );
 
   const onDraftClientChange = useCallback((client: ClientSummary | null) => {
     setDraftClient(client);
-    if (client) setCreatedClientId(null);
+    if (client) setFocusClientId(null);
   }, []);
 
   const linkedClientId = activeTask?.clientId ?? null;
-  const panelClientId = createdClientId ?? linkedClientId;
+  const panelClientId = focusClientId ?? linkedClientId;
   const panelClient = panelClientId
     ? (clients?.find((c) => c.id === panelClientId) ?? null)
     : draftClient;
@@ -298,6 +377,17 @@ export function AppShell({ account }: AppShellProps = {}) {
             onRetry: refreshTasks,
           }}
           experts={{ active: centerView === 'experts', onOpen: openExpertCenter }}
+          followUps={{
+            active: centerView === 'followUps',
+            count: followUpList.data?.openCount ?? null,
+            onOpen: openFollowUps,
+          }}
+          clientList={{
+            clients,
+            levels: twinLevels,
+            activeClientId: panelClient?.id ?? null,
+            onSelect: selectClient,
+          }}
         />
         <div className={styles.center}>
           {centerView === 'experts' && (
@@ -310,6 +400,19 @@ export function AppShell({ account }: AppShellProps = {}) {
               state={expertList}
               onRetry={() => setExpertsReload((v) => v + 1)}
               onAsk={askExpert}
+            />
+          )}
+          {centerView === 'followUps' && (
+            <FollowUpCenter
+              narrow={narrow}
+              onOpenMenu={() => {
+                setResultsOpen(false);
+                setDrawerOpen(true);
+              }}
+              state={followUpList}
+              onRetry={() => setTwinSummaryVersion((v) => v + 1)}
+              onOpenClient={openClientById}
+              onChanged={onFollowUpsChanged}
             />
           )}
           {/* 看专家库时对话区仍保持挂载（只是隐藏），正在进行的生成不会被打断 */}
@@ -357,6 +460,9 @@ export function AppShell({ account }: AppShellProps = {}) {
           onUploadsChanged={onUploadsChanged}
           consultationsVersion={consultationsVersion}
           expertsTabRequest={expertsTabRequest}
+          clientTabRequest={clientTabRequest}
+          twinRefreshKey={twinPanelVersion}
+          onTwinChanged={onTwinChanged}
         />
         {overlayOpen && (
           <button

@@ -21,6 +21,7 @@ import { type ConsultationListState, ExpertsTab } from '../experts/ExpertsTab';
 import { ClientForm } from '../record/ClientForm';
 import { ClientRecord } from '../record/ClientRecord';
 import { ReviewTab } from '../reports/ReviewTab';
+import { TwinView } from '../twin/TwinView';
 import styles from './ResultsPanel.module.css';
 import { isReadOnlyTask } from './taskGroups';
 import { readUrlId, writeUrlId } from './urlState';
@@ -62,7 +63,15 @@ export interface ResultsPanelProps {
   consultationsVersion?: number;
   /** 要切到专家标签（对话区里点了“查看专家意见”）；key 变了就重新切 */
   expertsTabRequest?: { key: number; consultationId: string | null } | null;
+  /** 在左侧栏点了客户：切到“客户 · 孪生”；key 变了就重新切（M4 规格 2.2） */
+  clientTabRequest?: { key: number } | null;
+  /** 孪生里调整了状态、处理了跟进项、录入了数据：左侧栏的角标和状态圆点据此刷新 */
+  onTwinChanged?: () => void;
+  /** 在别处（中间的今日跟进清单）处理了跟进项时改变，孪生据此重新加载 */
+  twinRefreshKey?: number;
 }
+
+type ClientView = 'twin' | 'record';
 
 /** 右侧结果区：产物预览和审核、客户档案、修改记录（M1 规格 3.1、3.6；M2 规格 2.2） */
 export function ResultsPanel({
@@ -81,9 +90,23 @@ export function ResultsPanel({
   onUploadsChanged,
   consultationsVersion = 0,
   expertsTabRequest = null,
+  clientTabRequest = null,
+  onTwinChanged,
+  twinRefreshKey = 0,
 }: ResultsPanelProps) {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<Tab>('artifacts');
+  const [tab, setTabState] = useState<Tab>('artifacts');
+  /** 客户标签的两个子视图：孪生（默认）和档案（M2 原样，M4 规格 2.1） */
+  const [clientView, setClientView] = useState<ClientView>('twin');
+  /**
+   * 第一次 @客户 时结果区正打开着产物：不抢焦点，只在客户标签上显示提示点（Q27）。
+   * 打开客户标签后清除。
+   */
+  const [clientHint, setClientHint] = useState(false);
+  const setTab = useCallback((next: Tab) => {
+    setTabState(next);
+    if (next === 'client') setClientHint(false);
+  }, []);
   /** 档案标签里正在新建客户 */
   const [creatingClient, setCreatingClient] = useState(false);
   const tabRefs = useRef<Partial<Record<Tab, HTMLButtonElement | null>>>({});
@@ -142,16 +165,31 @@ export function ResultsPanel({
     dirtyRef.current = dirty;
   }, []);
 
-  // 在输入框里 @ 了一位客户（任务还没关联客户）：没有打开的产物时切到“客户”标签，
-  // 让健管师马上看到资料。打开已关联客户的任务时仍停在产物标签。
+  // 在输入框里 @ 了一位客户（任务还没关联客户，即任务里第一次 @客户）：没有打开的产物时
+  // 切到“客户 · 孪生”（M4 规格 2.2）；正打开着产物时不抢焦点，只在客户标签上显示提示点（Q27）。
+  // 打开已关联客户的任务时仍停在产物标签。
   const clientId = client?.id ?? null;
   const fromDraft = task?.clientId == null;
   const seenClientRef = useRef<string | null>(null);
   useEffect(() => {
     if (seenClientRef.current === clientId) return;
     seenClientRef.current = clientId;
-    if (clientId !== null && fromDraft && selectedRef.current === null) setTab('client');
-  }, [clientId, fromDraft]);
+    setClientView('twin');
+    if (clientId === null || !fromDraft) {
+      setClientHint(false);
+      return;
+    }
+    if (selectedRef.current === null) setTab('client');
+    else setClientHint(true);
+  }, [clientId, fromDraft, setTab]);
+
+  // 左侧栏点了客户：打开“客户 · 孪生”
+  const clientRequestKey = clientTabRequest?.key ?? null;
+  useEffect(() => {
+    if (clientRequestKey === null) return;
+    setClientView('twin');
+    setTab('client');
+  }, [clientRequestKey, setTab]);
 
   const readOnly = task !== null && (isReadOnlyTask(task) || readOnlyTaskId === task.id);
 
@@ -178,7 +216,7 @@ export function ResultsPanel({
     if (reviewUploadId === null) return;
     setReviewId(reviewUploadId);
     setTab('review');
-  }, [reviewUploadId, reviewKey]);
+  }, [reviewUploadId, reviewKey, setTab]);
 
   const uploadsChanged = useCallback(() => {
     setUploadsReload((v) => v + 1);
@@ -211,12 +249,15 @@ export function ResultsPanel({
     if (expertsRequestKey === null) return;
     setFocusConsultation(expertsRequestId);
     setTab('experts');
-  }, [expertsRequestKey, expertsRequestId]);
+  }, [expertsRequestKey, expertsRequestId, setTab]);
 
-  const openExpertsTab = useCallback((consultationId: string | null) => {
-    setFocusConsultation(consultationId);
-    setTab('experts');
-  }, []);
+  const openExpertsTab = useCallback(
+    (consultationId: string | null) => {
+      setFocusConsultation(consultationId);
+      setTab('experts');
+    },
+    [setTab],
+  );
 
   // 产物列表：来自任务详情。换任务时回到列表；同一任务里刷新时打开最新的产物。
   useEffect(() => {
@@ -265,7 +306,7 @@ export function ResultsPanel({
         if (!isAbortError(err)) setListState('error');
       });
     return () => controller.abort();
-  }, [taskId, refreshKey, listVersion]);
+  }, [taskId, refreshKey, listVersion, setTab]);
 
   // 产物详情
   useEffect(() => {
@@ -470,6 +511,15 @@ export function ResultsPanel({
             onKeyDown={onTabKeyDown}
           >
             {t(`results.tabs.${id}`)}
+            {id === 'client' && clientHint && shownTab !== 'client' && (
+              <span
+                className={styles.hintDot}
+                data-testid="client-tab-hint"
+                role="img"
+                aria-label={t('results.tabs.clientHint')}
+                title={t('results.tabs.clientHint')}
+              />
+            )}
             {id === 'review' && reviewCount > 0 && (
               <span
                 className={styles.badge}
@@ -516,16 +566,41 @@ export function ResultsPanel({
           </div>
         )}
         {tab === 'client' && !creatingClient && client && (
-          <ClientRecord
-            client={client}
-            refreshKey={`${refreshKey ?? ''}:${recordVersion}`}
-            onClientSaved={(saved) => onClientSaved?.(saved)}
-            onReportUploaded={() => {
-              uploadsChanged();
-              setReviewId(null);
-              setTab('review');
-            }}
-          />
+          <>
+            <div className={styles.subViews} role="group" aria-label={t('twin.views.label')}>
+              {(['twin', 'record'] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  className={styles.subView}
+                  aria-pressed={clientView === v}
+                  onClick={() => setClientView(v)}
+                >
+                  {t(`twin.views.${v}`)}
+                </button>
+              ))}
+            </div>
+            {clientView === 'twin' ? (
+              <TwinView
+                client={client}
+                narrow={mode === 'sheet'}
+                refreshKey={`${refreshKey ?? ''}:${recordVersion}:${twinRefreshKey}`}
+                onOpenRecord={() => setClientView('record')}
+                {...(onTwinChanged ? { onTwinChanged } : {})}
+              />
+            ) : (
+              <ClientRecord
+                client={client}
+                refreshKey={`${refreshKey ?? ''}:${recordVersion}`}
+                onClientSaved={(saved) => onClientSaved?.(saved)}
+                onReportUploaded={() => {
+                  uploadsChanged();
+                  setReviewId(null);
+                  setTab('review');
+                }}
+              />
+            )}
+          </>
         )}
         {tab === 'client' && !creatingClient && !client && (
           <EmptyState
