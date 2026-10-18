@@ -65,22 +65,23 @@ export class TwinComputeService implements OnModuleInit, OnApplicationShutdown {
    * 下次数据变化或打开孪生时会补算。
    */
   async request(ctx: TenantContext, clientId: string, trigger: TwinComputeTrigger): Promise<void> {
+    // 只有健管师写客户数据；其他角色不排任务（没有归属校验就不入队）
+    if (ctx.role !== 'manager') return;
     try {
-      if (ctx.role === 'manager') {
-        await withTenant(this.db, ctx, (trx) =>
-          trx
-            .insertInto('twin_compute_state')
-            .values({
-              operator_id: ctx.operatorId ?? '',
-              org_id: ctx.orgId,
-              manager_id: ctx.userId,
-              client_id: clientId,
-              requested_at: new Date(),
-            })
-            .onConflict((oc) => oc.column('client_id').doUpdateSet({ requested_at: new Date() }))
-            .execute(),
-        );
-      }
+      // 行级安全兼作归属校验：不是自己的客户时写入失败，不会入队
+      await withTenant(this.db, ctx, (trx) =>
+        trx
+          .insertInto('twin_compute_state')
+          .values({
+            operator_id: ctx.operatorId ?? '',
+            org_id: ctx.orgId,
+            manager_id: ctx.userId,
+            client_id: clientId,
+            requested_at: new Date(),
+          })
+          .onConflict((oc) => oc.column('client_id').doUpdateSet({ requested_at: new Date() }))
+          .execute(),
+      );
       await this.queue.enqueue({ type: 'client', clientId, trigger });
     } catch (err) {
       this.logger.error(

@@ -301,6 +301,8 @@ describe('孪生接口', () => {
         f.users.managerB1,
         f.users.managerA2,
         f.users.orgAdminA2,
+        f.users.operatorAdminA,
+        f.users.operatorAdminB,
         f.users.platform,
       ]) {
         const agent = await as(u);
@@ -543,6 +545,21 @@ describe('孪生接口', () => {
     it('“今日”按账号设置的时区（优先于浏览器时区）', async () => {
       const a1 = await as(f.users.managerA1);
       await a1.patch('/api/auth/me').send({ timeZone: 'Mars/Olympus' }).expect(400);
+      // 只能改自己的时区：请求体里带 userId 或其他字段一律 400，任何人的时区都不变
+      await a1
+        .patch('/api/auth/me')
+        .send({ timeZone: 'Asia/Tokyo', userId: f.users.managerA2.id })
+        .expect(400);
+      await a1
+        .patch('/api/auth/me')
+        .send({ timeZone: 'Asia/Tokyo', role: 'platform_admin' })
+        .expect(400);
+      const zones = await owner
+        .selectFrom('users')
+        .select(['id', 'timezone'])
+        .where('id', 'in', [f.users.managerA1.id, f.users.managerA2.id])
+        .execute();
+      expect(zones.map((z) => z.timezone)).toEqual([null, null]);
       await a1.patch('/api/auth/me').send({ timeZone: 'Pacific/Kiritimati' }).expect(204);
       const res = await a1.get('/api/follow-ups?tz=America%2FLos_Angeles').expect(200);
       expect(res.body).toMatchObject({
@@ -664,6 +681,8 @@ describe('孪生接口', () => {
         f.users.managerA1,
         f.users.managerB1,
         f.users.orgAdminA2,
+        f.users.operatorAdminA,
+        f.users.operatorAdminB,
         f.users.platform,
       ]) {
         const agent = await as(u);

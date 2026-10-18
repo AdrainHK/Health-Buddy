@@ -135,10 +135,21 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       if app_role() is not null or app_user_id() is not null then
         raise exception 'twin compute is a system task' using errcode = 'insufficient_privilege';
       end if;
+      -- 只算健管师在职、协会正常的客户（和 twin_compute_context 的条件一致）；
+      -- 否则任务会被拒绝，客户会一直显示“正在更新”
       insert into twin_compute_state (client_id, operator_id, org_id, manager_id, requested_at)
-        select c.id, c.operator_id, c.org_id, c.manager_id, now() from clients c
+        select c.id, c.operator_id, c.org_id, c.manager_id, now()
+        from clients c
+        join users u on u.id = c.manager_id
+        left join operators o on o.id = u.operator_id
+        where u.role = 'manager' and u.status = 'active' and coalesce(o.status = 'active', true)
         on conflict (client_id) do update set requested_at = excluded.requested_at;
-      return query select c.id from clients c order by c.id;
+      return query
+        select c.id from clients c
+        join users u on u.id = c.manager_id
+        left join operators o on o.id = u.operator_id
+        where u.role = 'manager' and u.status = 'active' and coalesce(o.status = 'active', true)
+        order by c.id;
     end
     $$;
 
