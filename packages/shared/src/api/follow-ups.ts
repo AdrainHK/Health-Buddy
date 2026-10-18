@@ -93,11 +93,24 @@ export const followUpItemSchema = z.object({
 });
 export type FollowUpItem = z.infer<typeof followUpItemSchema>;
 
+/** IANA 时区名（如 Asia/Shanghai、America/Los_Angeles）；是否真实存在由后端再校验 */
+export const timeZoneSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[A-Za-z][A-Za-z0-9_+\-]*(\/[A-Za-z0-9_+\-]+)*$/);
+
 export const followUpListQuerySchema = z.object({
   /** 按健管师时区的日期（YYYY-MM-DD），缺省为今天 */
   date: z.iso.date().optional(),
+  /**
+   * active：未处理的项目（open，以及暂缓到期、重新出现的 snoozed）；
+   * 其余按状态筛选
+   */
   status: z.enum(['active', ...FOLLOW_UP_STATUSES]).default('active'),
   clientId: z.uuid().optional(),
+  /** 账号没有设置时区时用浏览器时区（Q13）；账号设置了时区时忽略 */
+  tz: timeZoneSchema.optional(),
 });
 export type FollowUpListQuery = z.infer<typeof followUpListQuerySchema>;
 
@@ -106,6 +119,9 @@ export const followUpListResponseSchema = z.object({
   items: z.array(followUpItemSchema),
   /** 未处理数量（左侧栏角标） */
   openCount: z.number().int().nonnegative(),
+  /** 这份清单按哪一天、哪个时区算的“今日” */
+  date: z.iso.date(),
+  timeZone: z.string(),
 });
 export type FollowUpListResponse = z.infer<typeof followUpListResponseSchema>;
 

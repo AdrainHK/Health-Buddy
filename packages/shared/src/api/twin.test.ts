@@ -5,11 +5,16 @@ import { DEFAULT_TWIN_STATUS_RULES, evaluateTwinStatus } from '../health/twin.js
 import {
   FOLLOW_UP_KIND_SEVERITIES,
   compareFollowUps,
+  timeZoneSchema,
   updateFollowUpRequestSchema,
 } from './follow-ups.js';
-import { createMonitoringReadingRequestSchema } from './monitoring.js';
+import { updateMeRequestSchema } from './auth.js';
+import { createMonitoringReadingRequestSchema, monitoringReadingSchema } from './monitoring.js';
+import { twinStatsQuerySchema, twinUsageStatsSchema } from './twin-stats.js';
 import { createTwinStatusRuleRequestSchema } from './twin-rules.js';
 import {
+  TWIN_COMPUTE_TRIGGERS,
+  isBatchTwinTrigger,
   forecastResultSchema,
   setTwinStatusRequestSchema,
   twinBasisItemSchema,
@@ -172,5 +177,48 @@ describe('规则和手动录入契约', () => {
       },
     ])
       expect(createMonitoringReadingRequestSchema.safeParse(bad).success).toBe(false);
+  });
+});
+
+describe('第 2 步新增契约', () => {
+  it('批量触发（规则、阈值修改和补算）不生成跟进项', () => {
+    expect(TWIN_COMPUTE_TRIGGERS.filter(isBatchTwinTrigger)).toEqual([
+      'rules_changed',
+      'thresholds_changed',
+      'backfill',
+    ]);
+  });
+
+  it('孪生统计：查询只接受日期和协会 id；行里没有健管师和客户 id', () => {
+    expect(twinStatsQuerySchema.safeParse({ from: '2026-10-01', to: '2026-10-18' }).success).toBe(
+      true,
+    );
+    expect(twinStatsQuerySchema.safeParse({ managerId: crypto.randomUUID() }).success).toBe(false);
+    expect(Object.keys(twinUsageStatsSchema.shape)).not.toContain('managerId');
+    expect(Object.keys(twinUsageStatsSchema.shape)).not.toContain('clientId');
+  });
+
+  it('时区：只接受 IANA 名称的形状', () => {
+    for (const ok of ['Asia/Shanghai', 'UTC', 'America/Argentina/Buenos_Aires', 'Etc/GMT+8'])
+      expect(timeZoneSchema.safeParse(ok).success, ok).toBe(true);
+    for (const bad of ['', '../etc', 'Asia/Shang hai', "x';drop"])
+      expect(timeZoneSchema.safeParse(bad).success, bad).toBe(false);
+    expect(updateMeRequestSchema.safeParse({ timeZone: null }).success).toBe(true);
+    expect(updateMeRequestSchema.safeParse({ timeZone: 'UTC', role: 'x' }).success).toBe(false);
+  });
+
+  it('监测读数：id 是数字字符串', () => {
+    const base = {
+      id: '42',
+      clientId: crypto.randomUUID(),
+      metric: 'sbp',
+      value: 128,
+      unit: 'mmHg',
+      measuredAt: new Date().toISOString(),
+      source: 'manual',
+      deletable: true,
+    };
+    expect(monitoringReadingSchema.safeParse(base).success).toBe(true);
+    expect(monitoringReadingSchema.safeParse({ ...base, id: 'abc' }).success).toBe(false);
   });
 });

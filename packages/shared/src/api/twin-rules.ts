@@ -65,3 +65,6 @@ export const twinRulesResponseSchema = z.object({
   rules: z.array(twinStatusRuleSchema),
 });
 export type TwinRulesResponse = z.infer<typeof twinRulesResponseSchema>;
+
+export const twinStatusRuleResponseSchema = z.object({ rule: twinStatusRuleSchema });
+export type TwinStatusRuleResponse = z.infer<typeof twinStatusRuleResponseSchema>;
