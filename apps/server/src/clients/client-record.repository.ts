@@ -317,7 +317,7 @@ function toHistoryItem(row: {
 }
 
 /** 分层历史从新到旧。设定人的姓名只在当前账号看得到那位用户时才有 */
-function selectTiers(trx: TenantTransaction, clientId: string) {
+export function selectTiers(trx: TenantTransaction, clientId: string) {
   return trx
     .selectFrom('client_risk_tiers as t')
     .leftJoin('users as u', 'u.id', 't.set_by')
@@ -340,7 +340,7 @@ function selectTiers(trx: TenantTransaction, clientId: string) {
  * 来源产物只告诉健管师本人；机构管理员看不到产物（Q14），只知道来源是“采用建议分层”。
  * 客户转出后来源产物的引用已置空（见迁移 0010），来源仍显示“采用建议分层”。
  */
-function toTier(
+export function toTier(
   row: {
     id: string;
     tier: RiskTierRecord['tier'];

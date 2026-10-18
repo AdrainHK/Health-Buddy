@@ -1,6 +1,6 @@
 import type { CurrentUser } from '@health-buddy/shared';
 import { applyBrandColor } from '@health-buddy/ui';
-import { BarChart3, Bot, ShieldAlert } from 'lucide-react';
+import { Activity, BarChart3, Bot, HeartPulse, ShieldAlert } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AuthProvider, useAuth } from './auth/AuthContext';
@@ -11,23 +11,30 @@ import { ExpertsPage } from './experts/ExpertsPage';
 import { AdminShell, type AdminSection } from './shell/AdminShell';
 import { ManagerNotice } from './shell/ManagerNotice';
 import { ThresholdsPage } from './thresholds/ThresholdsPage';
+import { TwinRulesPage } from './twin-rules/TwinRulesPage';
+import { TwinStatsPage } from './twin-rules/TwinStatsPage';
 
-type SectionId = 'critical-thresholds' | 'experts' | 'expert-stats';
+type SectionId = 'critical-thresholds' | 'twin-rules' | 'experts' | 'expert-stats' | 'twin-stats';
 
 /**
- * 各角色能看到的版块。危急指标：所有后台角色；专家管理：只有平台管理员（Q11）；
- * 专家统计：平台和协会管理员（规格 1.3）。界面只决定显示什么，权限在后端。
+ * 各角色能看到的版块。危急指标、孪生状态规则：所有后台角色（只有平台能改，M4 规格 2.10）；
+ * 专家管理：只有平台管理员（Q11）；专家统计、孪生统计：平台和协会管理员（M3 规格 1.3、M4 规格 7.2）。
+ * 界面只决定显示什么，权限在后端。
  */
 function sectionsFor(role: CurrentUser['role']): SectionId[] {
-  if (role === 'platform_admin') return ['critical-thresholds', 'experts', 'expert-stats'];
-  if (role === 'operator_admin') return ['critical-thresholds', 'expert-stats'];
-  return ['critical-thresholds'];
+  if (role === 'platform_admin')
+    return ['critical-thresholds', 'twin-rules', 'experts', 'expert-stats', 'twin-stats'];
+  if (role === 'operator_admin')
+    return ['critical-thresholds', 'twin-rules', 'expert-stats', 'twin-stats'];
+  return ['critical-thresholds', 'twin-rules'];
 }
 
 const ICONS: Record<SectionId, ReactNode> = {
   'critical-thresholds': <ShieldAlert size={16} aria-hidden />,
+  'twin-rules': <HeartPulse size={16} aria-hidden />,
   experts: <Bot size={16} aria-hidden />,
   'expert-stats': <BarChart3 size={16} aria-hidden />,
+  'twin-stats': <Activity size={16} aria-hidden />,
 };
 
 function hashSection(): string {
@@ -88,8 +95,10 @@ function Console({ user, onLogout }: { user: CurrentUser; onLogout: () => void }
   const current = useSection(allowed);
   const label: Record<SectionId, string> = {
     'critical-thresholds': t('thresholds.nav'),
+    'twin-rules': t('twinRules.nav'),
     experts: t('experts.nav'),
     'expert-stats': t('expertStats.nav'),
+    'twin-stats': t('twinStats.nav'),
   };
   const sections: AdminSection[] = allowed.map((id) => ({
     id,
@@ -99,8 +108,10 @@ function Console({ user, onLogout }: { user: CurrentUser; onLogout: () => void }
   return (
     <AdminShell user={user} onLogout={onLogout} sections={sections} current={current}>
       {current === 'critical-thresholds' && <ThresholdsPage user={user} />}
+      {current === 'twin-rules' && <TwinRulesPage user={user} />}
       {current === 'experts' && <ExpertsPage user={user} />}
       {current === 'expert-stats' && <ExpertStatsPage user={user} />}
+      {current === 'twin-stats' && <TwinStatsPage user={user} />}
     </AdminShell>
   );
 }

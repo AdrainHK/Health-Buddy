@@ -32,6 +32,8 @@ export interface UsersTable {
   status: Generated<'active' | 'disabled'>;
   created_at: Timestamp;
   last_login_at: Date | null;
+  /** 健管师的时区（M4 Q13）；只能经 user_set_timezone 修改 */
+  timezone: ColumnType<string | null, string | null | undefined, never>;
 }
 
 export interface ClientsTable {
@@ -129,6 +131,8 @@ export interface MonitoringReadingsTable extends ClientScoped {
   source: 'synthetic' | 'device' | 'manual' | 'companion';
   /** 手动录入的健管师（Q29）；其余来源为空 */
   created_by: Nullable<string>;
+  /** 写入时间（0017），由触发器填写 */
+  created_at: ColumnType<Date, undefined, never>;
 }
 
 type Json<T> = ColumnType<T, string, string>;
@@ -546,6 +550,7 @@ export interface TwinStatusHistoryTable extends ClientScoped {
     | 'thresholds_changed'
     | 'manual'
     | 'seed'
+    | 'backfill'
   >;
   set_by: InsertableNullable<string>;
   created_at: ColumnType<Date, Date | string | undefined, never>;
@@ -611,6 +616,13 @@ export interface FollowUpEventsTable extends ClientScoped {
   created_at: ColumnType<Date, undefined, never>;
 }
 
+/** 每位客户的计算状态（0017）：请求重算和算完的时间 */
+export interface TwinComputeStateTable extends ClientScoped {
+  client_id: Insertable<string>;
+  requested_at: Nullable<Date>;
+  computed_at: Nullable<Date>;
+}
+
 export interface Database {
   operators: OperatorsTable;
   organizations: OrganizationsTable;
@@ -647,4 +659,5 @@ export interface Database {
   twin_forecasts: TwinForecastsTable;
   follow_up_items: FollowUpItemsTable;
   follow_up_events: FollowUpEventsTable;
+  twin_compute_state: TwinComputeStateTable;
 }

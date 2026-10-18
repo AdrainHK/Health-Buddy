@@ -20,3 +20,15 @@ export async function lockExpertQuota(trx: TenantTransaction, managerId: string)
     trx,
   );
 }
+
+const LOCK_CLASS_TWIN_COMPUTE = 4_001;
+
+/**
+ * 同一位客户的孪生计算写入串行（M4 规格 3.2）：两个并发的计算任务先拿这把锁，
+ * 再检查对方是否已经写过（computed_at 变了就重算），不会重复写预测和跟进项。
+ */
+export async function lockTwinCompute(trx: TenantTransaction, clientId: string): Promise<void> {
+  await sql`select pg_advisory_xact_lock(${LOCK_CLASS_TWIN_COMPUTE}::int, hashtext(${clientId}))`.execute(
+    trx,
+  );
+}

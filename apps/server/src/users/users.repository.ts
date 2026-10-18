@@ -1,7 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { CurrentUser } from '@health-buddy/shared';
 import { DB } from '../db/db.provider.js';
+import { dbErrorCode } from '../common/db-error.js';
 import { withTenant, type Db, type TenantContext } from '../db/database.js';
+import { userSetTimezone } from '../db/twin-functions.js';
 
 @Injectable()
 export class UsersRepository {
@@ -38,5 +40,16 @@ export class UsersRepository {
           : null,
       orgId: row.org_id,
     };
+  }
+
+  /** 改自己的时区（null 为不设置）。时区名数据库不认识时返回 false */
+  async setTimeZone(ctx: TenantContext, tz: string | null): Promise<boolean> {
+    try {
+      await withTenant(this.db, ctx, (trx) => userSetTimezone(trx, tz));
+      return true;
+    } catch (err) {
+      if (dbErrorCode(err) === '22023') return false;
+      throw err;
+    }
   }
 }

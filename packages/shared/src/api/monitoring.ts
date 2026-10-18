@@ -35,3 +35,22 @@ export type CreateMonitoringReadingRequest = z.infer<typeof createMonitoringRead
 
 /** 每位健管师每分钟最多手动录入 60 条（防误操作） */
 export const MONITORING_MANUAL_PER_MINUTE = 60;
+
+export const MONITORING_SOURCES = ['synthetic', 'device', 'manual', 'companion'] as const;
+
+/** 一条监测读数。id 是数据库自增编号（字符串） */
+export const monitoringReadingSchema = z.object({
+  id: z.string().regex(/^\d{1,19}$/),
+  clientId: z.uuid(),
+  metric: z.string(),
+  value: z.number(),
+  unit: z.string(),
+  measuredAt: z.iso.datetime(),
+  source: z.enum(MONITORING_SOURCES),
+  /** 当前健管师自己手动录入的，可以删除 */
+  deletable: z.boolean(),
+});
+export type MonitoringReading = z.infer<typeof monitoringReadingSchema>;
+
+export const monitoringReadingResponseSchema = z.object({ reading: monitoringReadingSchema });
+export type MonitoringReadingResponse = z.infer<typeof monitoringReadingResponseSchema>;

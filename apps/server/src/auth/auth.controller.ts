@@ -5,11 +5,12 @@ import {
   HttpCode,
   HttpStatus,
   Inject,
+  Patch,
   Post,
   Req,
   Res,
 } from '@nestjs/common';
-import { loginRequestSchema, type MeResponse } from '@health-buddy/shared';
+import { loginRequestSchema, updateMeRequestSchema, type MeResponse } from '@health-buddy/shared';
 import type { CookieOptions, Response } from 'express';
 import { ApiException, badRequest, unauthenticated } from '../common/api-error.js';
 import { APP_CONFIG, type AppConfig } from '../config.js';
@@ -91,6 +92,15 @@ export class AuthController {
   @Get('me')
   async me(@CurrentSession() session: ResolvedSession): Promise<MeResponse> {
     return { user: await this.loadUser(session) };
+  }
+
+  /** 改自己的账号设置：时区（M4 Q13，跟进清单的“今日”按它算）。时区名不存在 → 400 */
+  @Patch('me')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async updateMe(@CurrentSession() session: ResolvedSession, @Body() body: unknown): Promise<void> {
+    const parsed = updateMeRequestSchema.safeParse(body);
+    if (!parsed.success) throw badRequest();
+    if (!(await this.users.setTimeZone(session, parsed.data.timeZone))) throw badRequest();
   }
 
   private async loadUser(ctx: TenantContext) {

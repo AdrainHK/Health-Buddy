@@ -123,7 +123,10 @@ export type TwinStatusOrigin = z.infer<typeof twinStatusOriginSchema>;
  */
 export const TWIN_MANUAL_EXPIRES = ['next_data', 'never'] as const;
 
-/** 状态历史是因为什么写入的 */
+/**
+ * 状态历史是因为什么写入的。backfill：M4 上线前已有数据的客户第一次打开孪生时补算
+ * （和规则修改一样按批量处理，不生成跟进项）。
+ */
 export const TWIN_STATUS_TRIGGERS = [
   'report_verified',
   'correction',
@@ -132,9 +135,30 @@ export const TWIN_STATUS_TRIGGERS = [
   'thresholds_changed',
   'manual',
   'seed',
+  'backfill',
 ] as const;
 export const twinStatusTriggerSchema = z.enum(TWIN_STATUS_TRIGGERS);
 export type TwinStatusTrigger = z.infer<typeof twinStatusTriggerSchema>;
+
+/** 计算任务的触发原因（不含手动调整）。批量触发（规则、阈值修改和补算）不生成跟进项（Q22） */
+export const TWIN_COMPUTE_TRIGGERS = [
+  'report_verified',
+  'correction',
+  'monitoring',
+  'rules_changed',
+  'thresholds_changed',
+  'seed',
+  'backfill',
+] as const satisfies readonly TwinStatusTrigger[];
+export type TwinComputeTrigger = (typeof TWIN_COMPUTE_TRIGGERS)[number];
+export const TWIN_BATCH_TRIGGERS = [
+  'rules_changed',
+  'thresholds_changed',
+  'backfill',
+] as const satisfies readonly TwinComputeTrigger[];
+export function isBatchTwinTrigger(t: TwinComputeTrigger): boolean {
+  return (TWIN_BATCH_TRIGGERS as readonly string[]).includes(t);
+}
 
 /** 状态历史的一行（只在状态变化时插入；最新一行就是当前状态） */
 export const twinStatusRecordSchema = z.object({
@@ -436,3 +460,7 @@ export const twinOrgAdminResponseSchema = z.object({
   hasData: z.boolean(),
 });
 export type TwinOrgAdminResponse = z.infer<typeof twinOrgAdminResponseSchema>;
+
+/** 手动调整、取消调整后返回这个方面的最新状态 */
+export const twinDomainResponseSchema = z.object({ domain: twinDomainViewSchema });
+export type TwinDomainResponse = z.infer<typeof twinDomainResponseSchema>;

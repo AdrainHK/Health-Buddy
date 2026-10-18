@@ -1,0 +1,23 @@
+/* 孪生状态规则：表格、弹窗等沿用危急指标设置的样式，这里只放红黄两种状态和版本号 */
+.red {
+  color: var(--hb-danger);
+  background: color-mix(in oklab, var(--hb-danger) 12%, var(--hb-surface));
+}
+
+.yellow {
+  color: var(--hb-warning);
+  background: color-mix(in oklab, var(--hb-warning) 14%, var(--hb-surface));
+}
+
+.version {
+  margin: var(--hb-space-1) 0 0;
+  font-size: var(--hb-text-xs);
+  color: var(--hb-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.window {
+  display: block;
+  font-size: var(--hb-text-xs);
+  color: var(--hb-text-3);
+}

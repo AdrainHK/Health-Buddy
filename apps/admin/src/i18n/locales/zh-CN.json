@@ -120,6 +120,142 @@
       "unknown": "操作失败，请稍后再试"
     }
   },
+  "twinRules": {
+    "nav": "孪生状态规则",
+    "title": "孪生状态规则",
+    "disclaimer": "默认规则是通用的初步做法，不是医学标准，请由医学顾问审定。",
+    "readOnlyHint": "规则由平台统一设置，全平台只有一套。你可以查看，不能修改。",
+    "editHint": "全平台只有一套规则。修改后所有客户的状态会在后台按新规则重新计算，不会因此生成跟进项。",
+    "version": "规则版本 {{version}}",
+    "loading": "正在加载规则…",
+    "loadFailed": "规则加载失败",
+    "retry": "重试",
+    "empty": "还没有任何规则",
+    "add": "新增规则",
+    "reset": "恢复为默认值",
+    "columns": {
+      "domain": "方面",
+      "metric": "指标",
+      "source": "数据来源",
+      "method": "判断方式",
+      "threshold": "阈值",
+      "level": "得出的状态",
+      "enabled": "是否启用",
+      "updated": "最后修改",
+      "actions": "操作"
+    },
+    "domains": {
+      "metabolic": "代谢",
+      "cardiovascular": "心血管",
+      "sleep": "睡眠",
+      "weight": "体重"
+    },
+    "sources": {
+      "report": "报告",
+      "monitoring": "监测"
+    },
+    "methods": {
+      "critical": "命中危急阈值",
+      "out_of_reference": "超出报告参考范围",
+      "threshold": "平均值超出固定阈值"
+    },
+    "window": "最近 {{days}} 天",
+    "noThreshold": "—",
+    "levels": {
+      "red": "红",
+      "yellow": "黄"
+    },
+    "status": {
+      "enabled": "启用",
+      "disabled": "已停用"
+    },
+    "updatedBy": {
+      "self": "我",
+      "platform": "平台管理员",
+      "system": "系统默认"
+    },
+    "actions": {
+      "edit": "修改",
+      "disable": "停用",
+      "enable": "启用",
+      "editRule": "修改{{domain}}·{{metric}}（{{source}}，{{method}}）",
+      "disableRule": "停用{{domain}}·{{metric}}（{{source}}，{{method}}）",
+      "enableRule": "启用{{domain}}·{{metric}}（{{source}}，{{method}}）"
+    },
+    "form": {
+      "createTitle": "新增规则",
+      "editTitle": "修改规则",
+      "domain": "方面",
+      "source": "数据来源",
+      "metric": "指标",
+      "method": "判断方式",
+      "comparator": "方向",
+      "value": "阈值",
+      "unit": "单位",
+      "unitHint": "单位跟随指标目录，不能修改",
+      "range": "合理范围 {{min}}–{{max}} {{unit}}",
+      "windowDays": "时间窗口（天）",
+      "windowHint": "取最近几天的数据，1–90 天",
+      "level": "得出的状态",
+      "enabled": "启用这条规则",
+      "locked": "修改时不能更换方面、指标、来源和判断方式；需要请新增规则",
+      "noMetric": "这个方面没有这个来源的指标",
+      "save": "保存",
+      "saving": "正在保存…",
+      "cancel": "取消"
+    },
+    "resetConfirm": {
+      "title": "恢复为默认值？",
+      "body": "当前全部规则（包括新增和修改过的）都会被删除，按默认规则重新写入，规则版本加一。修改记录会保留；所有客户的状态会在后台重新计算。",
+      "confirm": "确定恢复",
+      "cancel": "取消",
+      "working": "正在恢复…"
+    },
+    "saved": "已保存，所有客户的状态会在后台按新规则重新计算",
+    "resetDone": "已恢复为默认值，所有客户的状态会在后台重新计算",
+    "errors": {
+      "invalid_value": "请填写数字阈值",
+      "invalid_window": "时间窗口请填写 1–90 的整数",
+      "out_of_range": "阈值超出该指标的合理范围（{{min}}–{{max}} {{unit}}），请检查后再保存",
+      "bad_request": "填写的内容不符合要求，请检查后再保存",
+      "duplicate": "已有一条相同的规则，请直接修改已有的规则",
+      "not_found": "规则不存在，请刷新页面后再试",
+      "forbidden": "只有平台管理员可以修改规则",
+      "network": "网络连接失败，请检查网络后重试",
+      "unknown": "操作失败，请稍后再试"
+    }
+  },
+  "twinStats": {
+    "nav": "孪生统计",
+    "title": "孪生使用统计",
+    "subtitleOperator": "本协会孪生的打开次数、跟进项的生成和处理数量、孪生小结次数。不含健管师和客户信息。",
+    "subtitlePlatform": "全平台各协会孪生的打开次数、跟进项的生成和处理数量、孪生小结次数。不含健管师和客户信息。",
+    "dateNote": "日期按 UTC 计算。",
+    "from": "开始日期",
+    "to": "结束日期",
+    "operator": "协会",
+    "allOperators": "全部协会",
+    "apply": "查询",
+    "loading": "正在加载统计…",
+    "loadFailed": "统计加载失败",
+    "invalidRange": "日期范围不正确：开始日期不能晚于结束日期，范围最长 366 天",
+    "retry": "重试",
+    "empty": "这段时间没有孪生使用记录",
+    "totalsTitle": "合计",
+    "dailyTitle": "按日明细",
+    "columns": {
+      "date": "日期",
+      "operator": "协会",
+      "opens": "打开次数",
+      "followUpsCreated": "新跟进项",
+      "done": "已处理",
+      "snoozed": "暂缓",
+      "dismissed": "忽略",
+      "reopened": "重新打开",
+      "summaries": "孪生小结"
+    },
+    "none": "—"
+  },
   "experts": {
     "nav": "专家管理",
     "title": "专家管理",

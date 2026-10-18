@@ -3,6 +3,7 @@ import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, loginAs } from './http.js';
+import { TWIN_QUEUE, type InProcessTwinQueue } from '../src/twin/twin-queue.js';
 import { ownerDb, seedFixtures, type Fixtures } from './fixtures.js';
 
 /** 危急指标阈值接口：全平台一套，所有后台角色和健管师能读，只有平台管理员能改（Q12）。 */
@@ -16,6 +17,8 @@ describe('危急指标阈值接口', () => {
   });
 
   beforeEach(async () => {
+    // 修改阈值会排批量孪生计算，清空数据前先等它们执行完
+    await app.get<InProcessTwinQueue>(TWIN_QUEUE).idle();
     f = await seedFixtures(owner);
   });
 

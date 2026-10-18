@@ -3,6 +3,8 @@ import type {
   CriticalThreshold,
   CurrentUser,
   ExpertStatsResponse,
+  TwinRulesResponse,
+  TwinStatsResponse,
 } from '@health-buddy/shared';
 
 /** 测试用的合成数据和后端模拟。只用合成数据，不含真实账号或客户信息。 */
@@ -18,6 +20,9 @@ export const ids = {
   fpgLow: '80000000-0000-4000-8000-000000000002',
   uricHigh: '80000000-0000-4000-8000-000000000003',
   created: '80000000-0000-4000-8000-000000000009',
+  ruleSbpCritical: '81000000-0000-4000-8000-000000000001',
+  ruleSbpHigh: '81000000-0000-4000-8000-000000000002',
+  ruleFpgRef: '81000000-0000-4000-8000-000000000003',
 };
 
 const OPERATOR = { id: ids.operator, name: '合成协会', brandColor: null };
@@ -223,5 +228,89 @@ export function makeStats(platform: boolean): ExpertStatsResponse {
       },
     ],
     totals: [{ expertId: 'nutrition', expertName: '营养专家', ...counts }],
+  };
+}
+
+/** 孪生状态规则：心血管监测的危急和固定阈值规则、代谢报告的参考范围规则（停用） */
+export function makeTwinRules(): TwinRulesResponse {
+  return {
+    version: 3,
+    updatedAt: NOW,
+    rules: [
+      {
+        id: ids.ruleFpgRef,
+        domain: 'metabolic',
+        metric: 'fpg',
+        source: 'report',
+        method: 'out_of_reference',
+        comparator: null,
+        value: null,
+        unit: null,
+        windowDays: null,
+        level: 'yellow',
+        enabled: false,
+        updatedBy: ids.platformAdmin,
+        updatedAt: NOW,
+      },
+      {
+        id: ids.ruleSbpHigh,
+        domain: 'cardiovascular',
+        metric: 'sbp',
+        source: 'monitoring',
+        method: 'threshold',
+        comparator: 'gt',
+        value: 135,
+        unit: 'mmHg',
+        windowDays: 7,
+        level: 'yellow',
+        enabled: true,
+        updatedBy: ids.otherAdmin,
+        updatedAt: NOW,
+      },
+      {
+        id: ids.ruleSbpCritical,
+        domain: 'cardiovascular',
+        metric: 'sbp',
+        source: 'monitoring',
+        method: 'critical',
+        comparator: null,
+        value: null,
+        unit: null,
+        windowDays: 7,
+        level: 'red',
+        enabled: true,
+        updatedBy: null,
+        updatedAt: NOW,
+      },
+    ],
+  };
+}
+
+/** 孪生统计。platform 为 true 时带协会；否则协会字段为空 */
+export function makeTwinStats(platform: boolean): TwinStatsResponse {
+  const counts = {
+    opens: 12,
+    followUpsCreated: 5,
+    done: 3,
+    snoozed: 1,
+    dismissed: 1,
+    reopened: 0,
+    summaries: 2,
+  };
+  return {
+    scope: platform ? 'platform' : 'operator',
+    from: '2026-09-16',
+    to: '2026-10-15',
+    operatorId: null,
+    operators: platform ? [{ id: ids.operator, name: '合成协会' }] : [],
+    rows: [
+      {
+        operatorId: platform ? ids.operator : null,
+        operatorName: platform ? '合成协会' : null,
+        date: '2026-10-14',
+        ...counts,
+      },
+    ],
+    totals: counts,
   };
 }
