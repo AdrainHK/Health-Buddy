@@ -18,6 +18,9 @@ on:
       provider:
         description: openai、anthropic 或 all（有密钥的都跑）；留空用仓库变量 EVAL_PROVIDER，默认 openai
         default: ''
+      show_failures:
+        description: 把未通过用例的模型输出（合成数据）打进日志，填 true 开启
+        default: 'false'
 
 concurrency:
   group: eval-${{ github.ref }}
@@ -76,12 +79,13 @@ jobs:
           # Claude 中转暂停使用（2026-10-16 产品决定），默认只跑 OpenAI；恢复后把仓库变量 EVAL_PROVIDER 设为 all
           PROVIDER: ${{ inputs.provider || vars.EVAL_PROVIDER || 'openai' }}
           SUITE: ${{ matrix.suite }}
+          SHOW: ${{ inputs.show_failures == 'true' && '--show-failures' || '' }}
         run: |
           case "$RUNS" in ''|*[!0-9]*) echo "runs 必须是数字"; exit 1;; esac
           if [ "$PROVIDER" != all ]; then
-            pnpm eval --runs "$RUNS" --provider "$PROVIDER" --suite "$SUITE"
+            pnpm eval --runs "$RUNS" --provider "$PROVIDER" --suite "$SUITE" $SHOW
           else
-            pnpm eval --runs "$RUNS" --suite "$SUITE"
+            pnpm eval --runs "$RUNS" --suite "$SUITE" $SHOW
           fi
       - name: 上传报告
         if: always() && steps.keys.outputs.ready == 'true'

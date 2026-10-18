@@ -11,6 +11,8 @@
  *                                  M3：只跑专家评测（expert-routing 只跑路由，expert-synthesis 只跑汇总；
  *                                  --expert 限定一位专家）。改专家的 expert.md、sources.md、共用规则后必须跑
  *
+ *   pnpm eval --suite expert --show-failures  未通过用例的模型输出打进日志（合成数据）
+ *
  * 密钥从环境变量读取（OPENAI_API_KEY、ANTHROPIC_API_KEY），不会打印。
  * 结果写到 eval-results/，全部是合成数据。有用例没通过时退出码为 1。
  */
@@ -198,6 +200,18 @@ if (process.env.GITHUB_ACTIONS && failed.length) {
     );
   });
   console.log(`::error title=eval 未通过 ${failed.length} 项::${lines.join('%0A')}`);
+  // --show-failures：把未通过的专家意见原文打进日志（评测只用合成数据，不含真实客户信息），
+  // 下载不了报告时也能看到模型实际写了什么；默认不打
+  if (process.argv.includes('--show-failures')) {
+    for (const r of all) {
+      if (!r.findings.length || typeof r.output !== 'string') continue;
+      console.log(
+        `::group::${r.provider} ${r.caseId} 第${r.run}次：${r.findings.map((f) => f.rule).join(' ')}`,
+      );
+      console.log(r.output);
+      console.log('::endgroup::');
+    }
+  }
 }
 console.log(`\n报告：${file}`);
 console.log(failed.length ? `未通过：${failed.length} 项` : '全部通过');
