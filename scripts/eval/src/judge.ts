@@ -73,8 +73,9 @@ export async function judgeTwinText(
     },
     { name: 'twin_text_verdict', schema: twinVerdictSchema },
   );
-  // 评审拒答记为“未评”，不当作被测文字的问题
-  if (result.status !== 'ok') return [];
+  // 评审拒答记为“未评”（judge.twin.unavailable，计数但不算被测文字的问题，见 INFO_RULES）
+  if (result.status !== 'ok')
+    return [{ rule: 'judge.twin.unavailable', detail: '评审模型拒答，未评' }];
   return Object.entries(result.data)
     .filter(([, flagged]) => flagged)
     .map(([key]) => ({ rule: `judge.twin.${key}`, detail: '大模型评审判定有此问题' }));

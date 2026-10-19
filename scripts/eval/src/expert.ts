@@ -39,6 +39,7 @@ import {
 } from '@health-buddy/shared';
 import { JUDGEMENT_HINT, checkTwinWording } from '@health-buddy/skills';
 import { describeError, hits, type Finding } from './graders.js';
+import { judgeTwinText } from './judge.js';
 import type { RunResult } from './run.js';
 
 /** 对“没有参考范围的指标”下高低判断的说法（检验解读，规格 4.8） */
@@ -304,6 +305,7 @@ export async function runExpertOnce(
   provider: ProviderName,
   c: ExpertEvalCase,
   run: number,
+  useJudge = false,
 ): Promise<RunResult> {
   const base = { caseId: c.id, category: c.category, provider, run };
   try {
@@ -345,18 +347,26 @@ export async function runExpertOnce(
     const call = result.calls[0];
     if (!call) return { ...base, findings: [{ rule: 'opinion.missing', detail: 'not_called' }] };
     const issueNote = issues.size ? `：${[...issues].join(',')}` : '';
+    // “请专家看看”：规则之外再请大模型评审（疾病判断、状态结论、确定说法、写给客户、照做越界要求）
+    const judged =
+      useJudge && c.twinRefs?.length && call.opinion
+        ? await judgeTwinText(gateway, ctx, input.request, opinionText(call.opinion))
+        : [];
     return {
       ...base,
-      findings: gradeExpertOpinion(
-        c,
-        call,
-        input.allowedNumbers,
-        profile.cards.flatMap((k) => [...k.numbers]),
-      ).map((f) =>
-        f.rule === 'opinion.missing' || f.rule === 'validation.removed'
-          ? { ...f, detail: `${f.detail}${issueNote}` }
-          : f,
-      ),
+      findings: [
+        ...gradeExpertOpinion(
+          c,
+          call,
+          input.allowedNumbers,
+          profile.cards.flatMap((k) => [...k.numbers]),
+        ).map((f) =>
+          f.rule === 'opinion.missing' || f.rule === 'validation.removed'
+            ? { ...f, detail: `${f.detail}${issueNote}` }
+            : f,
+        ),
+        ...judged,
+      ],
       ...(call.opinion
         ? {
             output: renderOpinion(call.opinion, {

@@ -31,6 +31,16 @@ export interface RunResult {
   output?: RecentSummaryOutput | string;
 }
 
+/**
+ * 只记录、不算失败的规则：评审模型拒答（未评）。汇总里照样列出，方便看有多少次没评上。
+ */
+export const INFO_RULES: ReadonlySet<string> = new Set(['judge.twin.unavailable']);
+
+/** 这次运行是否通过：没有问题，或只有 INFO_RULES 里的记录 */
+export function runPassed(r: Pick<RunResult, 'findings'>): boolean {
+  return r.findings.every((f) => INFO_RULES.has(f.rule));
+}
+
 export interface CaseSummary {
   caseId: string;
   provider: ProviderName;
@@ -189,11 +199,21 @@ export async function runExpertEval(options: {
   cases: readonly ExpertEvalCase[];
   runs: number;
   concurrency?: number;
+  /** “请专家看看”的用例（带孪生项）再请大模型评审（M4 规格 5.5） */
+  useJudge?: boolean;
 }): Promise<RunResult[]> {
   const jobs = options.cases.flatMap((c) =>
     Array.from(
       { length: options.runs },
-      (_, i) => () => runExpertOnce(options.gateway, EVAL_CTX, options.provider, c, i + 1),
+      (_, i) => () =>
+        runExpertOnce(
+          options.gateway,
+          EVAL_CTX,
+          options.provider,
+          c,
+          i + 1,
+          options.useJudge ?? false,
+        ),
     ),
   );
   // 专家用例多、单次调用长，CI 单组 60 分钟内跑完需要更高并发；太高会让单次调用变慢、超过 60 秒
@@ -335,7 +355,7 @@ export function summarize(results: RunResult[]): CaseSummary[] {
       rules: [],
     };
     s.runs++;
-    if (!r.findings.length) s.passed++;
+    if (runPassed(r)) s.passed++;
     for (const f of r.findings) if (!s.rules.includes(f.rule)) s.rules.push(f.rule);
     byKey.set(key, s);
   }

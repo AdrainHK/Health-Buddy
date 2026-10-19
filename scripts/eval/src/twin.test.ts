@@ -12,7 +12,13 @@ import {
 } from '@health-buddy/skills';
 import { describe, expect, it } from 'vitest';
 import { gradeRouting, gradeTwinOpinionText } from './expert.js';
-import { runRoutingEval, runTwinAskEval, runTwinSummaryEval, summarize } from './run.js';
+import {
+  runExpertEval,
+  runRoutingEval,
+  runTwinAskEval,
+  runTwinSummaryEval,
+  summarize,
+} from './run.js';
 import { gradeTwinAsk, gradeTwinSummary, maskRefusals } from './twin.js';
 
 const summaryCase = (id: string) =>
@@ -360,5 +366,89 @@ describe('合规审核补充：评分（M4 PR #46）', () => {
     expect(byId['twin-status-all-green']).not.toContain('judge.twin.diseaseJudgment');
     const judged = provider.calls.filter((c) => String(c.request.system).includes('合规审查员'));
     expect(judged).toHaveLength(1);
+  });
+});
+
+describe('评审未评、请专家看看的评审（M4 PR #46 复审）', () => {
+  /** 评审请求按 judge 回，其他请求按 other 回；judge 为 null 时评审拒答 */
+  function splitGateway(judge: unknown, other: unknown) {
+    class SplitMock extends MockProvider {
+      override async *stream(
+        ...args: Parameters<MockProvider['stream']>
+      ): ReturnType<MockProvider['stream']> {
+        const [request, route, signal] = args;
+        this.calls.push({ request, route });
+        const isJudge = String(request.system).includes('合规审查员');
+        const inner = new MockProvider(
+          'openai',
+          isJudge && judge === null
+            ? { chunks: [], finishReason: 'refused' }
+            : { chunks: [JSON.stringify(isJudge ? judge : other)] },
+        );
+        yield* inner.stream(request, route, signal);
+      }
+    }
+    const provider = new SplitMock('openai');
+    const gateway = new LlmGateway({
+      config: loadGatewayConfig({}),
+      providers: { openai: provider },
+    });
+    return { provider, gateway };
+  }
+
+  it('评审拒答记为 judge.twin.unavailable，计数但不算失败', async () => {
+    const { gateway } = splitGateway(null, good);
+    const results = await runTwinSummaryEval({
+      gateway,
+      provider: 'openai',
+      cases: [summaryCase('twin-no-disease-worsening')],
+      runs: 1,
+      useJudge: true,
+    });
+    expect(results[0]!.findings.map((f) => f.rule)).toContain('judge.twin.unavailable');
+    const [s] = summarize(results);
+    expect(s).toMatchObject({ passed: 1, runs: 1 });
+    expect(s!.rules).toContain('judge.twin.unavailable');
+  });
+
+  it('请专家看看的用例开了评审时同样请大模型评审', async () => {
+    const opinion = {
+      inScope: true,
+      outOfScopeNote: null,
+      summary: '收缩压高于报告参考范围，建议关注。',
+      findings: [],
+      suggestions: [{ text: '建议了解家庭血压测量情况。', category: 'follow_up', citations: [] }],
+      referral: { needed: false, urgency: null, to: null, reason: null },
+      questionsToAsk: [],
+      dataGaps: [],
+      crisisSignal: false,
+      emergencySignal: false,
+    };
+    const verdict = {
+      diseaseJudgment: false,
+      statusConclusion: true,
+      forecastCertainty: false,
+      clientMessage: false,
+      followedOverride: false,
+    };
+    const { provider, gateway } = splitGateway(verdict, opinion);
+    const c = twinConsultEvalCases.find((x) => x.id === 'twin-consult-cardio-rising')!;
+    const results = await runExpertEval({
+      gateway,
+      provider: 'openai',
+      cases: [c],
+      runs: 1,
+      useJudge: true,
+    });
+    expect(results[0]!.findings.map((f) => f.rule)).toContain('judge.twin.statusConclusion');
+    expect(
+      provider.calls.filter((x) => String(x.request.system).includes('合规审查员')),
+    ).toHaveLength(1);
+    // 不开评审时不请
+    const off = splitGateway(verdict, opinion);
+    await runExpertEval({ gateway: off.gateway, provider: 'openai', cases: [c], runs: 1 });
+    expect(
+      off.provider.calls.filter((x) => String(x.request.system).includes('合规审查员')),
+    ).toHaveLength(0);
   });
 });

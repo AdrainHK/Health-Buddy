@@ -148,7 +148,7 @@ for (const provider of providers) {
     ...(await runSynthesisEval({ gateway, provider, cases: expertSynthesisCases, runs })),
     ...(await runTwinAskEval({ gateway, provider, cases: twinAskCases, runs, useJudge })),
     ...(await runTwinSummaryEval({ gateway, provider, cases: twinSummaryCases, runs, useJudge })),
-    ...(await runExpertEval({ gateway, provider, cases: twinConsultCases, runs })),
+    ...(await runExpertEval({ gateway, provider, cases: twinConsultCases, runs, useJudge })),
   ];
   all.push(...results);
   for (const s of summarize(results)) {
