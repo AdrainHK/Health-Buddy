@@ -14,6 +14,7 @@ import {
   type SelectedReason,
   type Synthesis,
   type SynthesisStatus,
+  type TwinRef,
 } from '@health-buddy/shared';
 import { DB } from '../db/db.provider.js';
 import { withTenant, type Db, type TenantContext, type TenantTransaction } from '../db/database.js';
@@ -174,6 +175,12 @@ export class ExpertsRepository {
       /** 这次调用回答的健管师消息，和请求里与专家有关的部分（10 分钟内复用意见时比较） */
       requestMessageId?: string | null;
       requestKey?: string | null;
+      /**
+       * “请专家看看”（M4 规格 2.6 之二）：针对的孪生项和发起的跟进项。跟进项必须是这位客户、
+       * 这位健管师的（触发器和复合外键再确认）；有专家被请时在同一事务里记一条“已请专家”事件
+       */
+      twinRefs?: readonly TwinRef[];
+      followUpItemId?: string | null;
     },
     calls: readonly PlannedCall[],
     dailyLimit: number,
@@ -200,9 +207,23 @@ export class ExpertsRepository {
           origin_kind: input.origin?.kind ?? null,
           request_message_id: input.requestMessageId ?? null,
           request_key: input.requestKey ?? null,
+          follow_up_item_id: input.followUpItemId ?? null,
+          twin_refs: input.twinRefs?.length ? JSON.stringify(input.twinRefs) : null,
         })
         .returning('id')
         .executeTakeFirstOrThrow();
+      // 跟进项显示“已请专家（时间）”，状态不变（2.6 之二第 8 条）；没有专家被请时不记
+      if (input.followUpItemId && input.clientId && calls.length) {
+        await trx
+          .insertInto('follow_up_events')
+          .values({
+            client_id: input.clientId,
+            item_id: input.followUpItemId,
+            actor_id: ctx.userId,
+            action: 'consulted',
+          })
+          .execute();
+      }
       const callIds = new Map<string, string>();
       for (const call of calls) {
         const inserted = await trx
@@ -440,6 +461,8 @@ function selectConsultation(trx: TenantTransaction) {
       'expert_consultations.report_id',
       'expert_consultations.origin_id',
       'expert_consultations.origin_kind',
+      'expert_consultations.follow_up_item_id',
+      'expert_consultations.twin_refs',
       'expert_consultations.created_at',
       'expert_consultations.finished_at',
     ]);
@@ -508,6 +531,8 @@ async function withCalls(
     status: r.status,
     origin:
       r.origin_id && r.origin_kind ? { kind: r.origin_kind, consultationId: r.origin_id } : null,
+    followUpItemId: r.follow_up_item_id,
+    twinRefs: Array.isArray(r.twin_refs) ? (r.twin_refs as TwinRef[]) : [],
     reportCorrectedSince: Boolean(
       r.report_id && (indicatorsAt.get(r.report_id)?.getTime() ?? 0) > r.created_at.getTime(),
     ),

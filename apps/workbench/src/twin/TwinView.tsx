@@ -6,6 +6,7 @@ import {
   type TwinDomainView,
   type TwinForecast,
   type TwinForecastDetailResponse,
+  type TwinRef,
   type TwinResponse,
 } from '@health-buddy/shared';
 import { Button, EmptyState } from '@health-buddy/ui';
@@ -22,6 +23,7 @@ import { ManualReadings } from './ManualReadings';
 import { StatusCard } from './StatusCard';
 import styles from './Twin.module.css';
 import { TwinTimeline } from './TwinTimeline';
+import { followUpTwinRef, useCanAskExpert, useTwinActions } from './TwinActions';
 
 /** 队列还没算完时，隔一会儿重新读一次（先显示上一次的结果） */
 export const TWIN_POLL_MS = 3000;
@@ -47,7 +49,8 @@ export interface TwinViewProps {
  * 结果区“客户 · 孪生”（规格 2.2）。从上到下：固定提示条、画像（人体轮廓 + 四个方面的状态卡片）、
  * 趋势预测、待跟进、时间轴，以及手动录入监测数据（Q29）。
  * 状态、依据、预测全部由后端确定性计算，这里只按模板显示，不调用大模型。
- * “生成孪生小结”和“请专家看看”在第 4 步加。
+ * “生成孪生小结”和“请专家看看”（专家预览打开时）都回到对话区，在这位客户的任务里预先填好，
+ * 由健管师发送（M4 规格 2.6 之二、2.7）。
  */
 export function TwinView({
   client,
@@ -67,6 +70,17 @@ export function TwinView({
   // 危急阈值：读不到时只是少一条提醒，不影响其他内容
   const [thresholds, setThresholds] = useState<ForecastThreshold[] | null>(null);
   const cardRefs = useRef<Partial<Record<TwinDomain, HTMLElement | null>>>({});
+  const actions = useTwinActions();
+  const canAskExpert = useCanAskExpert();
+  const askExpert = (ref: TwinRef, followUpItemId?: string) =>
+    canAskExpert
+      ? () =>
+          actions.askExpert?.({
+            client,
+            ref,
+            ...(followUpItemId ? { followUpItemId } : {}),
+          })
+      : undefined;
 
   useEffect(() => {
     setTwin((current) => (current?.client.id === clientId ? current : null));
@@ -201,6 +215,12 @@ export function TwinView({
     <div className={styles.twin} data-layout={narrow ? 'narrow' : 'wide'}>
       <ClientHeading client={shown.client} />
       <Banner critical={shown.hasOpenCritical} />
+      {actions.summarize && shown.hasData && (
+        <div className={styles.cardActions}>
+          <Button onClick={() => actions.summarize?.(client)}>{t('twin.ai.summarize')}</Button>
+          <span className={styles.muted}>{t('twin.ai.summarizeNote')}</span>
+        </div>
+      )}
       {shown.computing && (
         <p className={styles.computing} role="status" data-testid="twin-computing">
           <span className={styles.spinner} aria-hidden />
@@ -237,6 +257,7 @@ export function TwinView({
                 view={view}
                 onChanged={updateDomain}
                 onOpenRecord={onOpenRecord}
+                {...optional('onAskExpert', askExpert({ kind: 'domain', code: view.domain }))}
               />
             ))}
           </div>
@@ -274,9 +295,18 @@ export function TwinView({
         )}
         {sortedFollowUps.length > 0 && (
           <ul className={styles.followUpList}>
-            {sortedFollowUps.map((item) => (
-              <FollowUpCard key={item.id} item={item} showClient={false} onChanged={changed} />
-            ))}
+            {sortedFollowUps.map((item) => {
+              const ref = followUpTwinRef(item);
+              return (
+                <FollowUpCard
+                  key={item.id}
+                  item={item}
+                  showClient={false}
+                  onChanged={changed}
+                  {...optional('onAskExpert', ref ? askExpert(ref, item.id) : undefined)}
+                />
+              );
+            })}
           </ul>
         )}
       </Section>
@@ -293,10 +323,16 @@ export function TwinView({
           detail={detailFor(openForecast).detail}
           thresholds={thresholds}
           onClose={() => setOpenForecast(null)}
+          {...optional('onAskExpert', askExpert({ kind: 'metric', code: openForecast.metric }))}
         />
       )}
     </div>
   );
+}
+
+/** exactOptionalPropertyTypes：没有值时不传这个属性 */
+function optional<K extends string, V>(key: K, value: V | undefined): Partial<Record<K, V>> {
+  return value === undefined ? {} : ({ [key]: value } as Record<K, V>);
 }
 
 function ClientHeading({ client }: { client: ClientSummary }) {

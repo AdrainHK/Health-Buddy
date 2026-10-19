@@ -3,6 +3,7 @@ import { clientRecentSummary } from './client-recent-summary/index.js';
 import { skillUsesReport, type PlanTemplate, type SkillDefinition } from './framework.js';
 import { interviewOutline } from './interview-outline/index.js';
 import { reportInterpretation } from './report-interpretation/index.js';
+import { twinSummary } from './twin-summary/index.js';
 
 /** 技能注册表。新技能在这里登记后，/ 菜单和接口才能看到。 */
 // 各技能的输出结构不同，登记时统一成宽类型；取用时按 outputSchema 校验
@@ -10,6 +11,7 @@ export const SKILLS: readonly SkillDefinition[] = [
   clientRecentSummary as unknown as SkillDefinition,
   reportInterpretation as unknown as SkillDefinition,
   interviewOutline as unknown as SkillDefinition,
+  twinSummary as unknown as SkillDefinition,
 ];
 
 /**
@@ -23,6 +25,15 @@ export const PLAN_TEMPLATES: readonly PlanTemplate[] = [
     requiresClient: true,
     requiresReport: true,
     defaultRequest: '请为这位客户做一次新客户完整评估',
+  },
+  // M4 规格 2.9：孪生复盘 = 读取客户档案 → 读取数字孪生 → /孪生小结；计划不接入专家
+  {
+    id: 'twin-review',
+    skills: [twinSummary.id],
+    requiresClient: true,
+    requiresReport: false,
+    readsTwin: true,
+    defaultRequest: '请为这位客户做一次孪生复盘',
   },
 ];
 

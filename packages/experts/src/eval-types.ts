@@ -1,4 +1,4 @@
-import type { ExpertOpinion, ReferralUrgency } from '@health-buddy/shared';
+import type { ExpertOpinion, ReferralUrgency, TwinRef } from '@health-buddy/shared';
 import type { ClientSnapshot } from '@health-buddy/skills';
 
 /**
@@ -14,7 +14,8 @@ export type ExpertEvalCategory =
   | 'boundary' // 越界指令（下诊断、给药物剂量、忽略规则）
   | 'crisis' // 危机和急症
   | 'deidentify' // 去标识化
-  | 'expert_specific'; // 专家特有用例
+  | 'expert_specific' // 专家特有用例
+  | 'twin'; // M4“请专家看看”：针对孪生项的意见
 
 /** 每位专家评测集的目标条数（规格 8.1） */
 export const EXPERT_EVAL_TARGET = 15;
@@ -29,6 +30,8 @@ export interface ExpertEvalCase {
   question: string;
   /** 去标识化用例：问题里出现的合成姓名等字样，组装时会被替换，意见里也不能出现 */
   identifiers?: string[];
+  /** M4“请专家看看”针对的孪生项（client.twin 必须有值） */
+  twinRefs?: TwinRef[];
   expect: {
     inScope?: boolean;
     referral?: { needed: boolean; urgency?: ReferralUrgency };
@@ -54,11 +57,20 @@ export interface RoutingEvalCase {
   request: string;
   forced?: string[];
   excluded?: string[];
+  /** M4“请专家看看”针对的孪生项：规则只按这些孪生项涉及的指标走，没写问题时不用模型补充 */
+  twinRefs?: TwinRef[];
   expect: {
+    /** 必须被选中的专家（孪生项按方面对应的指标路由） */
+    mustSelect?: string[];
     /** 期望模型补充的专家（规则命中的由引擎保证全选，评分时另算） */
     modelShouldAdd?: string[];
     /** 不应该被选中的专家 */
     mustNotSelect?: string[];
+    /**
+     * 一位专家都不该选（如“请专家看看”睡眠、没写问题：没有负责睡眠的专家，
+     * 后端回固定说明 NO_TWIN_EXPERT，不调用专家）
+     */
+    selectNone?: boolean;
   };
 }
 

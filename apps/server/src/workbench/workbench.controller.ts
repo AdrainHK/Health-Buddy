@@ -2,6 +2,7 @@ import { Body, Controller, HttpCode, Inject, Param, Post, Req, Res } from '@nest
 import { getExpert } from '@health-buddy/experts';
 import {
   EXPERTS_PER_CALL_MAX,
+  TWIN_CONSULT_DEFAULT_REQUEST,
   addExpertRequestSchema,
   reconsultRequestSchema,
   returnArtifactRequestSchema,
@@ -93,13 +94,33 @@ export class WorkbenchController {
       // 问一问带技能已被契约拦截；技能还必须支持当前模式
       if (!plan && (!skill || !(skill.modes as string[]).includes(input.mode))) throw badRequest();
     }
+    // “请专家看看”（M4 规格 2.6 之二）：专家预览关闭时没有这个入口，按不存在处理；
+    // 健管师补充了问题文字时才用模型补充路由
+    const typed = input.content.trim().length > 0;
+    if (input.twinConsult) {
+      if (!this.consultation.preview) throw notFound();
+      if (!input.content) input.content = TWIN_CONSULT_DEFAULT_REQUEST;
+    }
     // 输入框为空：只有不需要再写要求的技能可以，用技能的默认要求（验收反馈 8）
     if (!input.content) {
       const fallback = (plan ?? skill)?.defaultRequest ?? null;
       if (fallback === null) throw badRequest();
       input.content = fallback;
     }
+    // 引用的归属先核对（只读）：别人的任务、客户、孪生项、跟进项返回 404，不会因为次数用完返回 429
+    await this.repo.checkTurnRefs(session, {
+      taskId,
+      clientRefs: input.clientRefs,
+      reportRefs: input.reportRefs,
+      twinRefs: input.twinRefs,
+      ...(input.followUpItemId ? { followUpItemId: input.followUpItemId } : {}),
+    });
     const direct = await this.checkExperts(session, taskId, input, skill, plan);
+    // “请专家看看”超出当天的专家调用次数时返回 429
+    if (input.twinConsult && (await this.consultation.remainingToday(session)) <= 0) {
+      throw tooManyRequests();
+    }
+    const usesTwin = Boolean(skill?.usesTwin || plan?.skills.some((id) => getSkill(id)?.usesTwin));
     this.acquire(session);
 
     const turn = await this.claim(session, (claim) =>
@@ -117,12 +138,27 @@ export class WorkbenchController {
           usesReport: plan ? true : skill ? skillUsesReport(skill) : false,
           expertRefs: input.expertRefs,
           excludedExperts: input.excludedExperts,
+          twinRefs: input.twinRefs,
+          ...(input.followUpItemId ? { followUpItemId: input.followUpItemId } : {}),
+          requiresTwinData: usesTwin,
         },
         claim,
       ),
     );
     await this.stream(turn, req, res, session, (io) => {
       if (plan) return this.generation.propose(session, turn.value, plan.skills, io);
+      if (input.twinConsult)
+        return this.generation.twinConsultAnswer(
+          session,
+          turn.value,
+          {
+            content: input.content,
+            expertRefs: input.expertRefs,
+            excludedExperts: input.excludedExperts,
+            typed,
+          },
+          io,
+        );
       if (direct)
         return this.generation.consultAnswer(
           session,
@@ -163,7 +199,12 @@ export class WorkbenchController {
   private async checkExperts(
     session: ResolvedSession,
     taskId: string,
-    input: { mode: string; expertRefs: string[]; excludedExperts: string[] },
+    input: {
+      mode: string;
+      expertRefs: string[];
+      excludedExperts: string[];
+      twinConsult?: boolean;
+    },
     skill: SkillDefinition | undefined,
     plan: PlanTemplate | undefined,
   ): Promise<boolean> {
@@ -171,7 +212,8 @@ export class WorkbenchController {
     if (expertRefs.length || excludedExperts.length) {
       if (plan) throw badRequest();
       if (skill && skill.experts !== 'auto') throw badRequest();
-      if (!skill && excludedExperts.length) throw badRequest();
+      // “不要请”只对自动选择有效：技能和“请专家看看”
+      if (!skill && !input.twinConsult && excludedExperts.length) throw badRequest();
       if (!this.consultation.preview) throw expertRefs.length ? notFound() : badRequest();
       if (!(await this.consultation.allAvailable(session, expertRefs))) throw notFound();
       if (excludedExperts.some((id) => !getExpert(id))) throw notFound();
@@ -179,10 +221,15 @@ export class WorkbenchController {
     const bound = await this.repo.taskExpert(session, taskId);
     if (bound === undefined) throw notFound();
     if (bound) {
-      if (input.mode !== 'ask' || skill || plan) throw badRequest();
+      if (input.mode !== 'ask' || skill || plan || input.twinConsult) throw badRequest();
       if (!(await this.consultation.allAvailable(session, [bound]))) throw notFound();
     }
-    const direct = input.mode === 'ask' && !skill && !plan && (expertRefs.length > 0 || !!bound);
+    const direct =
+      input.mode === 'ask' &&
+      !skill &&
+      !plan &&
+      !input.twinConsult &&
+      (expertRefs.length > 0 || !!bound);
     if (direct) {
       const count = new Set([...expertRefs, ...(bound ? [bound] : [])]).size;
       if ((await this.consultation.remainingToday(session)) < count) throw tooManyRequests();
@@ -204,11 +251,18 @@ export class WorkbenchController {
     const plan = parseId(planId);
     this.acquire(session);
     const run = await this.claim(session, (claim) =>
-      this.repo.confirmPlan(session, taskId, plan, claim, (id) => {
-        const skill = getSkill(id);
-        if (skill?.requiresReport) return 'required';
-        return skill && skillUsesReport(skill) ? 'optional' : 'none';
-      }),
+      this.repo.confirmPlan(
+        session,
+        taskId,
+        plan,
+        claim,
+        (id) => {
+          const skill = getSkill(id);
+          if (skill?.requiresReport) return 'required';
+          return skill && skillUsesReport(skill) ? 'optional' : 'none';
+        },
+        (id) => Boolean(getSkill(id)?.usesTwin),
+      ),
     );
     await this.regenerate(run, req, res, session, undefined, {
       trigger: 'plan',
@@ -287,8 +341,14 @@ export class WorkbenchController {
     const remaining = await this.consultation.remainingToday(session);
     if (direct ? remaining < forced.length : remaining <= 0) throw tooManyRequests();
     this.acquire(session);
+    // 带孪生项的调用（“请专家看看”，或问一问里同时 @专家 和 @孪生项）重新请时沿用原来的孪生项；
+    // “请专家看看”依据的是孪生，不要求报告，只按规则路由
+    const twinData = original.twinRefs.length > 0;
+    const twin = original.trigger === 'twin' && twinData;
     const turn = await this.claim(session, (claim) =>
-      this.repo.prepareFollowUp(session, original.id, claim, { requiresReport: !direct }),
+      this.repo.prepareFollowUp(session, original.id, claim, {
+        requiresReport: !direct && !twin,
+      }),
     );
     await this.stream(turn, req, res, session, (io) =>
       this.generation.followUpAnswer(
@@ -302,6 +362,9 @@ export class WorkbenchController {
           bound,
           origin: { kind: 'reconsult', consultationId: original.id },
           ...(direct ? {} : { maxExperts: Math.min(remaining, EXPERTS_PER_CALL_MAX) }),
+          ...(twinData
+            ? { twinRefs: original.twinRefs, ...(twin ? { modelRouting: false } : {}) }
+            : {}),
         },
         io,
       ),
@@ -346,6 +409,8 @@ export class WorkbenchController {
           bound: null,
           origin: { kind: 'add_expert', consultationId: original.id },
           maxExperts: 1,
+          // 补请带孪生项的调用里的专家：同样给孪生资料
+          ...(original.twinRefs.length ? { twinRefs: original.twinRefs } : {}),
         },
         io,
       ),

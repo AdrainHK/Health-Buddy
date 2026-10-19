@@ -237,6 +237,7 @@ export function validateOpinion(
   opinion: ExpertOpinion,
   profile: Pick<ExpertProfile, 'cards'>,
   allowedNumbers: readonly number[],
+  extraWordingCheck?: (text: string) => boolean,
 ): OpinionCheck {
   const issues = new Set<OpinionIssue>();
   const cards = new Map(profile.cards.map((c) => [c.cardId, c]));
@@ -261,7 +262,7 @@ export function validateOpinion(
       issues.add('invented_number');
       ok = false;
     }
-    if (hasBannedWording(text)) {
+    if (hasBannedWording(text) || extraWordingCheck?.(text)) {
       issues.add('banned_wording');
       ok = false;
     }

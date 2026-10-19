@@ -22,15 +22,17 @@ export interface StatusCardProps {
   onChanged: (view: TwinDomainView) => void;
   /** 点依据：切到档案查看对应的报告或监测数据 */
   onOpenRecord: () => void;
+  /** “请专家看看”（M4 规格 2.6 之二，专家预览打开时才有） */
+  onAskExpert?: () => void;
 }
 
 /**
  * 一个方面的状态卡片（规格 2.3）：状态（文字 + 图形标记）、依据、来源标记、和上次相比、
  * 调整状态。系统计算和手动调整同时显示。
- * “请专家看看”在第 4 步（专家预览）里加。
+ * “请专家看看”只在专家预览打开时显示（2.6 之二）。
  */
 export const StatusCard = forwardRef<HTMLElement, StatusCardProps>(function StatusCard(
-  { clientId, view, onChanged, onOpenRecord },
+  { clientId, view, onChanged, onOpenRecord, onAskExpert },
   ref,
 ) {
   const { t } = useTranslation();
@@ -168,6 +170,15 @@ export const StatusCard = forwardRef<HTMLElement, StatusCardProps>(function Stat
               aria-label={t('twin.card.cancelAdjustLabel', { domain: domainName })}
             >
               {t('twin.card.cancelAdjust')}
+            </Button>
+          )}
+          {onAskExpert && (
+            <Button
+              variant="ghost"
+              onClick={onAskExpert}
+              aria-label={t('twin.ai.askExpertLabel', { subject: domainName })}
+            >
+              {t('twin.ai.askExpert')}
             </Button>
           )}
         </div>

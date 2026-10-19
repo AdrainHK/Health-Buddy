@@ -6,6 +6,7 @@
  * 3. 模型补充：只能从专家目录里选，目录外、不可用、被排除的 id 直接丢弃。
  * 4. 上限：健管师指定 > 规则命中多的 > 模型补充的，取前 N 位；其余记为“因数量上限未调用”。
  * 5. 模型路由失败：只用规则结果，不报错。
+ * 6. M4“请专家看看”：健管师没补充问题文字时不用模型补充（modelRouting: false），只按规则命中。
  */
 import type { RoutingDecision, RoutingReason, SelectedReason } from '@health-buddy/shared';
 import { z } from 'zod';
@@ -48,7 +49,8 @@ export function ruleHits(
   for (const expert of request.available) {
     const reasons: RoutingReason[] = [];
     for (const f of request.input.flaggedIndicators) {
-      const any = expert.indicatorCodes.includes('*');
+      // 日常监测的指标（M4 孪生）不算“任何指标”：检验解读专家只看报告
+      const any = expert.indicatorCodes.includes('*') && f.source !== 'monitoring';
       // 没有参考范围的指标只交给“任何指标”的专家（检验解读）；未收录指标同理
       const hit =
         any ||
@@ -148,7 +150,7 @@ export async function routeExperts<C extends CallContext>(
         });
     }
     // 3. 模型补充：指定和规则已经填满上限时不调用
-    if (candidates.size < options.maxExperts) {
+    if (request.modelRouting !== false && candidates.size < options.maxExperts) {
       const remaining = request.available.filter((e) => !candidates.has(e.id) && !isExcluded(e.id));
       if (remaining.length) {
         try {

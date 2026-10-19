@@ -10,6 +10,7 @@ import type {
   TaskPlan,
   TaskStep,
   TaskStreamEvent,
+  TwinRef,
 } from '@health-buddy/shared';
 
 /** 流式事件里的错误类别，加上前端自己发现的断网 */
@@ -29,6 +30,8 @@ export interface ViewMessage {
   expertRefs?: string[];
   /** “不要请”的专家（M3 规格 2.5） */
   excludedExperts?: string[];
+  /** @ 的孪生项（M4 规格 2.8） */
+  twinRefs?: TwinRef[];
   status: MessageStatus;
   /** 技能建议（Q5），只建议不执行 */
   suggestion?: string;
@@ -254,6 +257,7 @@ function fromMessage(m: TaskMessage): ViewMessage {
     ...(m.reportRefs.length ? { reportRefs: m.reportRefs } : {}),
     ...(m.expertRefs.length ? { expertRefs: m.expertRefs } : {}),
     ...(m.excludedExperts.length ? { excludedExperts: m.excludedExperts } : {}),
+    ...(m.twinRefs.length ? { twinRefs: m.twinRefs } : {}),
     status: m.status,
     ...(m.status === 'refused' ? { refused: true } : {}),
   };

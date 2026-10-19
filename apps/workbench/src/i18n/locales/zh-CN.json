@@ -90,7 +90,8 @@
       "runSkill": "调用技能：{{name}}",
       "confirm": "确认执行",
       "confirmed": "已确认",
-      "revised": "已修改"
+      "revised": "已修改",
+      "readTwin": "读取数字孪生"
     },
     "suggestion": "使用 /{{name}}",
     "artifactDrafted": "已生成草稿，请在右侧结果区审核",
@@ -103,7 +104,8 @@
       "conflict": "任务状态已变化，请刷新后重试",
       "network": "网络连接失败，请检查网络后重试",
       "unknown": "出错了，请稍后再试",
-      "noVerifiedReport": "这位客户还没有已核对的报告，请先上传并核对报告"
+      "noVerifiedReport": "这位客户还没有已核对的报告，请先上传并核对报告",
+      "noTwinData": "这位客户的数字孪生还没有数据，请先录入监测或核对报告"
     },
     "streamErrors": {
       "not_configured": "AI 服务尚未配置，请联系管理员",
@@ -111,7 +113,7 @@
       "timeout": "AI 响应超时，请重试",
       "provider_error": "AI 服务暂时不可用，请稍后再试",
       "invalid_output": "AI 输出格式不合格，未生成草稿，请重试",
-      "wording_check_failed": "生成的内容两次都没通过措辞检查（出现了禁用词或疾病名称），未生成草稿，请重试或调整要求",
+      "wording_check_failed": "生成的内容两次都没通过检查（如禁用词、疾病判断、状态结论、确定的预测说法或资料以外的数字），未生成草稿，请重试或调整要求",
       "internal_error": "出错了，请稍后再试",
       "network": "连接中断，刷新后可查看已保存的内容"
     },
@@ -157,6 +159,17 @@
       },
       "answeredBy": "专家意见：{{names}}",
       "suggestion": "请 @{{name}} 看看"
+    },
+    "twin": {
+      "group": "孪生项",
+      "max": "一条消息最多引用 3 个孪生项",
+      "removeTwin": "移除孪生项 {{name}}",
+      "refDomain": "孪生 · {{domain}}",
+      "refMetric": "孪生 · {{metric}}趋势",
+      "needAsk": "@孪生项 需要在问一问模式下使用，请移除技能或切换模式",
+      "consultBar": "将请专家看看：{{items}}。可以补充想问的问题，也可以直接发送",
+      "separator": "、",
+      "cancelConsult": "不请专家"
     }
   },
   "steps": {
@@ -174,7 +187,10 @@
     "reuseExperts": "沿用上一版的专家意见",
     "synthesizeExperts": "汇总专家意见",
     "unknown": "处理中",
-    "reuseRecentExperts": "沿用之前的专家意见"
+    "reuseRecentExperts": "沿用之前的专家意见",
+    "readTwin": "读取数字孪生",
+    "computeForecast": "计算趋势",
+    "generateTwinSummary": "生成孪生小结"
   },
   "skills": {
     "client-recent-summary": {
@@ -192,6 +208,14 @@
     "new-client-assessment": {
       "name": "新客户完整评估",
       "description": "读取档案后依次生成体检解读和面谈提纲，各出一份草稿；只能在想一想模式下使用"
+    },
+    "twin-summary": {
+      "name": "孪生小结",
+      "description": "根据数字孪生的状态、变化和趋势起草专业版小结，只给健管师看，不发给客户"
+    },
+    "twin-review": {
+      "name": "孪生复盘",
+      "description": "先读取数字孪生和档案，确认计划后起草孪生小结，只给健管师看，不发给客户"
     }
   },
   "results": {
@@ -880,7 +904,8 @@
       "expert_center": "专家中心提问",
       "mention": "@专家",
       "skill_auto": "体检解读自动请专家",
-      "plan": "想一想计划"
+      "plan": "想一想计划",
+      "twin": "请专家看看"
     },
     "tab": {
       "loading": "正在加载专家意见…",
@@ -1260,6 +1285,14 @@
       "tooMany": "操作太频繁，请稍后再试",
       "network": "网络连接失败，请检查网络后重试",
       "unknown": "出错了，请稍后再试"
+    },
+    "ai": {
+      "askExpert": "请专家看看",
+      "askExpertLabel": "请专家看看 {{subject}}",
+      "summarize": "生成孪生小结",
+      "summarizeNote": "在对话区起草，只给健管师看",
+      "taskTitle": "{{subject}}（{{date}}）",
+      "summaryTaskTitle": "孪生小结（{{date}}）"
     }
   },
   "followUps": {

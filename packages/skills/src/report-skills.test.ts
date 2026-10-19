@@ -114,7 +114,12 @@ describe('M2 技能登记', () => {
     });
     // 验收反馈 8：三个技能都不需要再写要求，后端有默认要求
     for (const skill of SKILLS) expect(skill.defaultRequest).toBeTruthy();
-    expect(skillSummaries().map((s) => s.id)).toEqual([...SKILLS.map((s) => s.id), summary?.id]);
+    expect(skillSummaries().map((s) => s.id)).toEqual([
+      ...SKILLS.map((s) => s.id),
+      summary?.id,
+      // M4：孪生复盘
+      'twin-review',
+    ]);
   });
 
   it('自然语言里提到解读、面谈提纲时只建议对应的技能', () => {

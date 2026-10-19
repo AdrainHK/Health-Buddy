@@ -104,6 +104,7 @@ export class TasksRepository {
           'report_refs',
           'expert_refs',
           'excluded_experts',
+          'twin_refs',
           'status',
           'created_at',
         ])
@@ -163,6 +164,7 @@ export class TasksRepository {
           reportRefs: m.report_refs,
           expertRefs: m.expert_refs,
           excludedExperts: m.excluded_experts,
+          twinRefs: Array.isArray(m.twin_refs) ? (m.twin_refs as TaskMessage['twinRefs']) : [],
           status: m.status,
           createdAt: m.created_at.toISOString(),
         })),

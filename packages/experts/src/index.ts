@@ -7,4 +7,5 @@ export { EXPERT_RULES, cardsBlock } from './rules.js';
 export * from './eval-types.js';
 export { EXPERT_SNAPSHOTS } from './eval-fixtures.js';
 export { routingEvalCases, synthesisEvalCases } from './engine-evals.js';
+export { twinConsultEvalCases, twinRoutingEvalCases } from './twin-evals.js';
 export { interpretationExpertEvalCases } from './interpretation-evals.js';

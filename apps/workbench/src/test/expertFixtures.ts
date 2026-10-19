@@ -178,6 +178,8 @@ export function consultation(overrides: Partial<ExpertConsultation> = {}): Exper
     status: 'done',
     origin: null,
     reportCorrectedSince: false,
+    followUpItemId: null,
+    twinRefs: [],
     routing: {
       selected: [
         { expertId: ENDO.id, selectedReason: 'manager', reasons: [{ kind: 'manager' }] },

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { twinRefSchema } from './twin.js';
 
 /**
  * 专家智能体中心（M3 规格第四节、第六节）的接口契约。
@@ -311,7 +312,14 @@ export const expertCallSchema = z.object({
 });
 export type ExpertCall = z.infer<typeof expertCallSchema>;
 
-export const CONSULTATION_TRIGGERS = ['expert_center', 'mention', 'skill_auto', 'plan'] as const;
+/** twin：从孪生的状态卡片、趋势大图或跟进项点“请专家看看”（M4 规格 2.6 之二） */
+export const CONSULTATION_TRIGGERS = [
+  'expert_center',
+  'mention',
+  'skill_auto',
+  'plan',
+  'twin',
+] as const;
 export const consultationTriggerSchema = z.enum(CONSULTATION_TRIGGERS);
 export type ConsultationTrigger = z.infer<typeof consultationTriggerSchema>;
 
@@ -355,6 +363,10 @@ export const expertConsultationSchema = z.object({
    */
   crisisSignal: z.boolean(),
   emergencySignal: z.boolean(),
+  /** 从跟进项发起的“请专家看看”关联的跟进项（M4 规格 2.6 之二第 8 条）；其他为空 */
+  followUpItemId: z.uuid().nullable().default(null),
+  /** “请专家看看”针对的孪生项（只有方面或指标编码） */
+  twinRefs: z.array(twinRefSchema).default([]),
   calls: z.array(expertCallSchema),
   createdAt: z.iso.datetime(),
   finishedAt: z.iso.datetime().nullable(),

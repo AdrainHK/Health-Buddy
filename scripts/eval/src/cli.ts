@@ -11,6 +11,10 @@
  *                                  M3：只跑专家评测（expert-routing 只跑路由，expert-synthesis 只跑汇总；
  *                                  --expert 限定一位专家）。改专家的 expert.md、sources.md、共用规则后必须跑
  *
+ *   pnpm eval --suite twin-summary,twin-consult
+ *                                  M4：/孪生小结、“请专家看看”的意见；问一问 @孪生项 的用例在 ask 里，
+ *                                  “请专家看看”的路由用例在 expert-routing 里
+ *
  *   pnpm eval --suite expert --show-failures  未通过用例的模型输出打进日志（合成数据）
  *
  * 密钥从环境变量读取（OPENAI_API_KEY、ANTHROPIC_API_KEY），不会打印。
@@ -23,6 +27,8 @@ import {
   interpretationExpertEvalCases,
   routingEvalCases,
   synthesisEvalCases,
+  twinConsultEvalCases,
+  twinRoutingEvalCases,
 } from '@health-buddy/experts';
 import { sampleFontAvailable } from '@health-buddy/seed';
 import {
@@ -32,6 +38,8 @@ import {
   recentSummaryEvalCases,
   reportExtractionEvalCases,
   reportInterpretationEvalCases,
+  twinAskEvalCases,
+  twinSummaryEvalCases,
 } from '@health-buddy/skills';
 import {
   runAskEval,
@@ -42,6 +50,8 @@ import {
   runReportSkillEval,
   runRoutingEval,
   runSynthesisEval,
+  runTwinAskEval,
+  runTwinSummaryEval,
   summarize,
   type RunResult,
 } from './run.js';
@@ -92,7 +102,9 @@ const expertCases = pick(
     .flat()
     .filter((c) => !onlyExpert || c.expertId === onlyExpert),
 );
-const expertRoutingCases = pick('expert-routing', routingEvalCases);
+const expertRoutingCases = pick('expert-routing', [...routingEvalCases, ...twinRoutingEvalCases]);
+const twinSummaryCases = pick('twin-summary', twinSummaryEvalCases);
+const twinConsultCases = pick('twin-consult', twinConsultEvalCases);
 const expertSynthesisCases = pick('expert-synthesis', synthesisEvalCases);
 const useJudge = !process.argv.includes('--no-judge');
 // 越界类问一问主要靠大模型评审判断，不开评审时不跑，免得“全部通过”有误导
@@ -100,12 +112,15 @@ const askCases = pick('ask', askEvalCases).filter(
   (c) => useJudge || (c.category !== 'out_of_bounds' && c.category !== 'client_message'),
 );
 if (!useJudge) console.log('未开启大模型评审：问一问的越界类用例本次不跑。');
+// 问一问 @孪生项：规则检查（依据、不确定性、状态结论、确定说法、疾病风险、病名）都跑；
+// 开了评审时，疾病判断、越界、危急类用例再加大模型评审（规格 5.5）
+const twinAskCases = pick('ask', twinAskEvalCases);
 
 const all: RunResult[] = [];
 for (const provider of providers) {
   const gateway = createGateway({ ...config, defaultProvider: provider, routes: {} });
   console.log(
-    `\n${provider}（${config.defaultModels[provider]}）：${cases.length + askCases.length + extractionCases.length + interpretationCases.length + outlineCases.length + planCases.length + expertCases.length + expertRoutingCases.length + expertSynthesisCases.length} 个用例 × ${runs} 次`,
+    `\n${provider}（${config.defaultModels[provider]}）：${cases.length + askCases.length + extractionCases.length + interpretationCases.length + outlineCases.length + planCases.length + expertCases.length + expertRoutingCases.length + expertSynthesisCases.length + twinSummaryCases.length + twinConsultCases.length + twinAskCases.length} 个用例 × ${runs} 次`,
   );
   const results = [
     ...(await runEval({ gateway, provider, cases, runs, useJudge })),
@@ -131,6 +146,9 @@ for (const provider of providers) {
     ...(await runExpertEval({ gateway, provider, cases: expertCases, runs })),
     ...(await runRoutingEval({ gateway, provider, cases: expertRoutingCases, runs })),
     ...(await runSynthesisEval({ gateway, provider, cases: expertSynthesisCases, runs })),
+    ...(await runTwinAskEval({ gateway, provider, cases: twinAskCases, runs, useJudge })),
+    ...(await runTwinSummaryEval({ gateway, provider, cases: twinSummaryCases, runs, useJudge })),
+    ...(await runExpertEval({ gateway, provider, cases: twinConsultCases, runs, useJudge })),
   ];
   all.push(...results);
   for (const s of summarize(results)) {
@@ -175,6 +193,14 @@ const DETAIL_RULES = new Set([
   'opinion.missing_point',
   'routing.missed',
   'routing.model_failed',
+  // M4 孪生：命中的规则词（状态结论、确定说法、疾病风险）、期望的拒绝说明
+  'twin.status_change',
+  'twin.forecast_certainty',
+  'twin.disease_risk',
+  'twin.refusal',
+  'twin.color_mismatch',
+  'twin_ask.disease_name',
+  'twin_ask.banned_term',
 ]);
 /** GitHub 注解的转义：先 %，再回车和换行 */
 const escapeAnnotation = (t: string) =>

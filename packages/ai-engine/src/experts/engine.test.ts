@@ -272,6 +272,43 @@ describe('expert routing', () => {
     expect(openai.calls.filter((c) => c.route === 'expert')).toHaveLength(0);
   });
 
+  it('twin consult: monitoring indicators skip the any-indicator expert, no model without text', async () => {
+    const { gateway, openai } = setup({ 'expert:cardiovascular': [{ json: opinion() }] });
+    const result = await runConsultation(
+      gateway,
+      ctx,
+      request({
+        input: {
+          ...INPUT,
+          request: '',
+          flaggedIndicators: [{ code: 'sbp', direction: 'high', source: 'monitoring' }],
+        },
+        modelRouting: false,
+      }),
+    );
+    expect(result.routing.selected.map((s) => s.expertId)).toEqual(['cardiovascular']);
+    expect(openai.calls.some((c) => c.route === 'expert_routing')).toBe(false);
+    expect(openai.calls.some((c) => c.expertId === 'lab-interpretation')).toBe(false);
+  });
+
+  it('twin consult: a monitoring-only metric with no registered expert selects nobody', async () => {
+    const { gateway, openai } = setup({});
+    const result = await runConsultation(
+      gateway,
+      ctx,
+      request({
+        input: {
+          ...INPUT,
+          request: '',
+          flaggedIndicators: [{ code: 'sleep_hours', direction: 'low', source: 'monitoring' }],
+        },
+        modelRouting: false,
+      }),
+    );
+    expect(result.routing.selected).toEqual([]);
+    expect(openai.calls).toHaveLength(0);
+  });
+
   it('direct mode calls only the named experts without routing', async () => {
     const { gateway, openai } = setup({ 'expert:nutrition': [{ json: opinion() }] });
     const result = await runConsultation(
@@ -681,6 +718,22 @@ describe('validateOpinion', () => {
     const check = validateOpinion(bad, profileCards, INPUT.allowedNumbers);
     expect(check.removed).toBe(4);
     expect(check.issues.sort()).toEqual(['bad_citation', 'banned_wording', 'unsupported_claim']);
+  });
+
+  it('applies the extra wording check (twin judgments) and removes the finding like M3 does', () => {
+    const twinOpinion = opinion({
+      findings: [
+        { point: '收缩压将会继续升高。', basis: 'data_only', dataRefs: [], citations: [] },
+        { point: '建议了解家庭血压测量情况。', basis: 'data_only', dataRefs: [], citations: [] },
+      ],
+    });
+    const extra = (t: string) => t.includes('将会');
+    const check = validateOpinion(twinOpinion, profileCards, INPUT.allowedNumbers, extra);
+    expect(check.removed).toBe(1);
+    expect(check.issues).toEqual(['banned_wording']);
+    expect(check.opinion?.findings.map((f) => f.point)).toEqual(['建议了解家庭血压测量情况。']);
+    // 没有孪生资料（不传检查）时和 M3 一样
+    expect(validateOpinion(twinOpinion, profileCards, INPUT.allowedNumbers).removed).toBe(0);
   });
 
   it('never accepts a referral_only card as the basis of a finding, suggestion or summary', () => {

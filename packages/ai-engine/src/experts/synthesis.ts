@@ -59,6 +59,7 @@ export type SynthesisIssue =
 export function validateSynthesis(
   output: SynthesisOutput,
   responded: readonly Responded[],
+  extraWordingCheck?: (text: string) => boolean,
 ): { output: SynthesisOutput; issues: SynthesisIssue[] } {
   const issues = new Set<SynthesisIssue>();
   const byId = new Map(responded.map((r) => [r.expertId, r.opinion]));
@@ -69,7 +70,7 @@ export function validateSynthesis(
       issues.add('invented_number');
       ok = false;
     }
-    if (hasBannedWording(text)) {
+    if (hasBannedWording(text) || extraWordingCheck?.(text)) {
       issues.add('banned_wording');
       ok = false;
     }
@@ -124,6 +125,7 @@ export async function callSynthesis<C extends CallContext>(
   ctx: C,
   responded: readonly Responded[],
   signal?: AbortSignal,
+  extraWordingCheck?: (text: string) => boolean,
 ): Promise<SynthesisOutput | null> {
   const base = synthesisUserMessage(responded);
   const call = (content: string) =>
@@ -140,7 +142,7 @@ export async function callSynthesis<C extends CallContext>(
     );
   const first = await call(base);
   if (first.status === 'refused') return null;
-  const checked = validateSynthesis(first.data, responded);
+  const checked = validateSynthesis(first.data, responded, extraWordingCheck);
   if (!checked.issues.length) return checked.output;
   // 不合格：带着纠正说明（只说类别）重试一次，仍不合格的条目移除（规格 3.4 第 5 条）
   const note = [
@@ -150,7 +152,7 @@ export async function callSynthesis<C extends CallContext>(
   try {
     const second = await call(`${base}\n\n${note}`);
     if (second.status === 'refused') return checked.output;
-    return validateSynthesis(second.data, responded).output;
+    return validateSynthesis(second.data, responded, extraWordingCheck).output;
   } catch (err) {
     if (signal?.aborted) throw err;
     return checked.output;

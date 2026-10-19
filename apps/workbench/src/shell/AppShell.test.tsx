@@ -189,6 +189,7 @@ describe('AppShell return and rewrite', () => {
       reportRefs: [],
       expertRefs: [],
       excludedExperts: [],
+      twinRefs: [],
       status: 'complete',
       createdAt: NOW,
     });
