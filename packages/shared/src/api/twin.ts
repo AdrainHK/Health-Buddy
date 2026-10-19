@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { CRITICAL_COMPARATORS, CRITICAL_LEVELS } from '../health/critical.js';
+import { FORECAST_METRICS } from '../health/forecast.js';
 import {
   TWIN_DOMAINS,
   TWIN_LEVELS,
@@ -309,6 +310,27 @@ export const twinRefSchema = z.object({
 });
 export type TwinRef = z.infer<typeof twinRefSchema>;
 export const TWIN_REFS_MAX = 3;
+
+/**
+ * 孪生项的编码在目录里（2.8）：方面只能是四个方面之一，指标只能是做预测的指标（FORECAST_METRICS）。
+ * 客户归属由后端在发消息时重新校验，不在这里判断。
+ */
+export function isKnownTwinRef(ref: TwinRef): boolean {
+  return ref.kind === 'domain'
+    ? (TWIN_DOMAINS as readonly string[]).includes(ref.code)
+    : (FORECAST_METRICS as readonly string[]).includes(ref.code);
+}
+
+/** 同一个孪生项的键（去重用） */
+export function twinRefKey(ref: TwinRef): string {
+  return `${ref.kind}:${ref.code}`;
+}
+
+/**
+ * “请专家看看”（2.6 之二）没有补充问题时，后端用这句话当作健管师的问题。
+ * 健管师没补充问题文字时，路由只按规则命中（不用模型补充，2.6 之二第 4 条）。
+ */
+export const TWIN_CONSULT_DEFAULT_REQUEST = '请专家看看';
 
 // ---------- 时间轴（2.5） ----------
 

@@ -8,6 +8,7 @@ import {
   EXPERTS_PER_CALL_MAX,
 } from './experts.js';
 import { reportUploadSummarySchema } from './reports.js';
+import { TWIN_REFS_MAX, twinRefKey, twinRefSchema } from './twin.js';
 
 /** 三种工作模式：问一问、想一想、做一做（M1 规格 3.3） */
 export const TASK_MODES = ['ask', 'plan', 'craft'] as const;
@@ -78,6 +79,8 @@ export const taskMessageSchema = z.object({
   expertRefs: z.array(expertIdSchema).default([]),
   /** “不要请”的专家（M3 规格 2.5） */
   excludedExperts: z.array(expertIdSchema).default([]),
+  /** @ 引用的孪生项（M4 规格 2.8），最多 3 个 */
+  twinRefs: z.array(twinRefSchema).default([]),
   status: messageStatusSchema,
   createdAt: z.iso.datetime(),
 });
@@ -100,6 +103,9 @@ export const taskStepSchema = z.object({
     'consult_experts',
     'consult_expert',
     'synthesize_experts',
+    // M4 规格 2.7、2.9：正在读取数字孪生、正在计算趋势
+    'read_twin',
+    'compute_forecast',
   ]),
   labelKey: z.string(),
   /** 步骤文案参数：涉及的专家 id（如“已调用：内分泌与代谢专家、营养专家”） */
@@ -126,6 +132,8 @@ export const PLAN_STEPS_MAX = 6;
 
 export const planStepSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('read_client') }),
+  // M4“孪生复盘”：读取客户档案 → 读取数字孪生 → /孪生小结
+  z.object({ kind: z.literal('read_twin') }),
   z.object({ kind: z.literal('run_skill'), skillId: z.string().min(1) }),
 ]);
 export type PlanStep = z.infer<typeof planStepSchema>;
@@ -163,14 +171,26 @@ export const sendMessageRequestSchema = z
     expertRefs: z.array(expertIdSchema).max(EXPERTS_PER_CALL_MAX).default([]),
     /** “不要请”的专家，只对这一条消息生效（M3 Q22） */
     excludedExperts: z.array(expertIdSchema).max(20).default([]),
+    /**
+     * @ 引用的孪生项（M4 规格 2.8），最多 3 个，只能在问一问里用；后端重新校验任务关联的客户
+     * 属于当前健管师、编码在目录里，否则 404，不调用任何模型
+     */
+    twinRefs: z.array(twinRefSchema).max(TWIN_REFS_MAX).default([]),
+    /**
+     * “请专家看看”（M4 规格 2.6 之二）：按孪生项涉及的指标自动选专家。只能在问一问里、带孪生项；
+     * 内容可以为空（后端用 TWIN_CONSULT_DEFAULT_REQUEST）
+     */
+    twinConsult: z.boolean().default(false),
+    /** 从跟进项发起的“请专家看看”：必须是任务关联客户的跟进项，否则 404 */
+    followUpItemId: z.uuid().optional(),
   })
   // 问一问不能调用技能（Q4），前端会先提示切换模式
   .refine((v) => !(v.mode === 'ask' && v.skillId !== undefined), {
     message: 'skills are not available in ask mode',
     path: ['skillId'],
   })
-  // 没有技能时必须有内容
-  .refine((v) => v.content.length > 0 || v.skillId !== undefined, {
+  // 没有技能时必须有内容（“请专家看看”可以不写，后端用默认的问题）
+  .refine((v) => v.content.length > 0 || v.skillId !== undefined || v.twinConsult, {
     message: 'content is required without a skill',
     path: ['content'],
   })
@@ -182,6 +202,24 @@ export const sendMessageRequestSchema = z
   .refine((v) => !v.expertRefs.some((e) => v.excludedExperts.includes(e)), {
     message: 'expert both requested and excluded',
     path: ['excludedExperts'],
+  })
+  // 孪生项只能在问一问里引用（2.8、2.9），不能重复
+  .refine((v) => v.twinRefs.length === 0 || (v.mode === 'ask' && v.skillId === undefined), {
+    message: 'twin refs are only available in ask mode',
+    path: ['twinRefs'],
+  })
+  .refine((v) => new Set(v.twinRefs.map(twinRefKey)).size === v.twinRefs.length, {
+    message: 'duplicate twin ref',
+    path: ['twinRefs'],
+  })
+  // “请专家看看”必须带孪生项；跟进项只能随“请专家看看”一起
+  .refine((v) => !v.twinConsult || v.twinRefs.length > 0, {
+    message: 'twin consult needs a twin ref',
+    path: ['twinConsult'],
+  })
+  .refine((v) => v.followUpItemId === undefined || v.twinConsult, {
+    message: 'follow-up item only with twin consult',
+    path: ['followUpItemId'],
   });
 export type SendMessageRequest = z.input<typeof sendMessageRequestSchema>;
 
