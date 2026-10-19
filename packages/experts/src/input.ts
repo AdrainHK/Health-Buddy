@@ -7,6 +7,7 @@
 import type { ConsultationInput, FlaggedIndicator } from '@health-buddy/ai-engine';
 import type { TwinRef } from '@health-buddy/shared';
 import {
+  checkTwinJudgments,
   describeReportClient,
   describeTwin,
   detectCrisisKeywords,
@@ -15,6 +16,7 @@ import {
   redactTwin,
   TWIN_PROMPT_RULES,
   twinFlaggedIndicators,
+  twinFreeTexts,
   type ClientSnapshot,
 } from '@health-buddy/skills';
 
@@ -80,13 +82,22 @@ export function buildConsultationInput(source: ExpertInputSource): ConsultationI
             ? [{ code: i.code, direction: i.abnormal }]
             : [],
         );
-  const signalTexts = [source.question, ...(source.earlierTexts ?? [])];
+  // 危机和急症识别用原文（去标识之前）：手动调整理由、跟进备注里写的也算（M4 规格 5.4 第 7 条）
+  const signalTexts = [
+    source.question,
+    ...(source.earlierTexts ?? []),
+    ...twinFreeTexts(source.client?.twin),
+  ];
   return {
     userContent,
     request: question,
     flaggedIndicators,
     historyCategories: [...new Set((client?.healthHistory ?? []).map((h) => h.category))],
     allowedNumbers: knownNumbers(client, [question]),
+    // 有孪生资料时，专家意见同样不能下状态结论、把预测说成确定、说成疾病风险（M4 规格 5.4）
+    ...(client?.twin
+      ? { extraWordingCheck: (text: string) => checkTwinJudgments(text).length > 0 }
+      : {}),
     crisisDetected: detectCrisisKeywords(signalTexts),
     emergencyDetected: detectEmergencyKeywords(signalTexts),
   };

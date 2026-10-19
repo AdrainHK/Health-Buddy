@@ -720,6 +720,22 @@ describe('validateOpinion', () => {
     expect(check.issues.sort()).toEqual(['bad_citation', 'banned_wording', 'unsupported_claim']);
   });
 
+  it('applies the extra wording check (twin judgments) and removes the finding like M3 does', () => {
+    const twinOpinion = opinion({
+      findings: [
+        { point: '收缩压将会继续升高。', basis: 'data_only', dataRefs: [], citations: [] },
+        { point: '建议了解家庭血压测量情况。', basis: 'data_only', dataRefs: [], citations: [] },
+      ],
+    });
+    const extra = (t: string) => t.includes('将会');
+    const check = validateOpinion(twinOpinion, profileCards, INPUT.allowedNumbers, extra);
+    expect(check.removed).toBe(1);
+    expect(check.issues).toEqual(['banned_wording']);
+    expect(check.opinion?.findings.map((f) => f.point)).toEqual(['建议了解家庭血压测量情况。']);
+    // 没有孪生资料（不传检查）时和 M3 一样
+    expect(validateOpinion(twinOpinion, profileCards, INPUT.allowedNumbers).removed).toBe(0);
+  });
+
   it('never accepts a referral_only card as the basis of a finding, suggestion or summary', () => {
     const withReferralOnly = {
       cards: [card('S1-01', [150]), card('S3-01', [140], 'referral_only')],

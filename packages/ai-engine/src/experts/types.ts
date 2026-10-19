@@ -71,6 +71,11 @@ export interface ConsultationInput {
   /** 后端按关键词识别到心理危机信号、疑似急症（不依赖模型） */
   crisisDetected: boolean;
   emergencyDetected: boolean;
+  /**
+   * 额外的措辞检查（M4 规格 5.4：输入里有孪生资料时，不能下状态结论、把预测说成确定、说成疾病风险）。
+   * 返回 true 表示这段文字不合格，按 banned_wording 处理：和 M3 一样去掉这条要点。
+   */
+  extraWordingCheck?: (text: string) => boolean;
 }
 
 export interface ConsultationRequest {

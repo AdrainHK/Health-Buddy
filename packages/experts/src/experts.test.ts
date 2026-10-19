@@ -640,6 +640,51 @@ describe('twin consultation input (M4 spec 2.6之二, 5.4.6)', () => {
     const nums = twinInput().allowedNumbers;
     for (const n of [6.1, 4.4, 7.8, 1.9, 6.8]) expect(nums).toContain(n);
   });
+
+  it('detects crisis and emergency keywords in the raw reasons and notes (5.4 第 7 条)', () => {
+    const base = TWIN_SNAPSHOTS.manualAdjusted;
+    const withText = (reason: string, note: string) => ({
+      ...base,
+      twin: {
+        ...base.twin,
+        domains: base.twin.domains.map((d) =>
+          d.manual ? { ...d, manual: { ...d.manual, reason } } : d,
+        ),
+        followUps: base.twin.followUps.map((f) => ({ ...f, note })),
+      },
+    });
+    const crisis = buildConsultationInput({
+      client: withText('王测试说最近不想活了', '作息不规律'),
+      question: '',
+      identifiers: ['王测试'],
+      twinRefs: [{ kind: 'domain', code: 'metabolic' }],
+    });
+    expect(crisis.crisisDetected).toBe(true);
+    expect(crisis.userContent).not.toContain('王测试');
+    const emergency = buildConsultationInput({
+      client: withText('复测正常', '昨晚胸痛，出冷汗'),
+      question: '',
+      identifiers: [],
+      twinRefs: [{ kind: 'domain', code: 'metabolic' }],
+    });
+    expect(emergency.emergencyDetected).toBe(true);
+    expect(twinInput().crisisDetected).toBe(false);
+    expect(twinInput().emergencyDetected).toBe(false);
+  });
+
+  it('adds the twin judgment checks to opinion validation only when the twin is present', () => {
+    const check = twinInput().extraWordingCheck!;
+    expect(check('建议将代谢调整为红色。')).toBe(true);
+    expect(check('空腹血糖将会继续升高。')).toBe(true);
+    expect(check('心血管风险较高。')).toBe(true);
+    expect(check('建议了解近期饮食。')).toBe(false);
+    const plain = buildConsultationInput({
+      client: EXPERT_SNAPSHOTS.homeBpHigh,
+      question: '',
+      identifiers: [],
+    });
+    expect(plain.extraWordingCheck).toBeUndefined();
+  });
 });
 
 describe('rendering for managers only', () => {

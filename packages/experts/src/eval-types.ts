@@ -66,6 +66,11 @@ export interface RoutingEvalCase {
     modelShouldAdd?: string[];
     /** 不应该被选中的专家 */
     mustNotSelect?: string[];
+    /**
+     * 一位专家都不该选（如“请专家看看”睡眠、没写问题：没有负责睡眠的专家，
+     * 后端回固定说明 NO_TWIN_EXPERT，不调用专家）
+     */
+    selectNone?: boolean;
   };
 }
 

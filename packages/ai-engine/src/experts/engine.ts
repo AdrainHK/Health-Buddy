@@ -122,7 +122,13 @@ export async function runConsultation<C extends CallContext>(
     } else {
       await hooks.onSynthesisStarted?.();
       try {
-        const model = await callSynthesis(gateway, ctx, responded, overall);
+        const model = await callSynthesis(
+          gateway,
+          ctx,
+          responded,
+          overall,
+          request.input.extraWordingCheck,
+        );
         synthesis = mergeSynthesis(responded, model, extra);
         synthesisStatus = model ? 'done' : 'failed';
       } catch (err) {
@@ -224,7 +230,12 @@ async function callExpert<C extends CallContext>(
   const check = (opinion: Parameters<typeof validateOpinion>[0]): OpinionCheck => {
     result.crisisSignal ||= opinion.crisisSignal;
     result.emergencySignal ||= opinion.emergencySignal;
-    return validateOpinion(opinion, profile, request.input.allowedNumbers);
+    return validateOpinion(
+      opinion,
+      profile,
+      request.input.allowedNumbers,
+      request.input.extraWordingCheck,
+    );
   };
   try {
     const first = await call(request.input.userContent);
