@@ -305,6 +305,12 @@ describe('合规审核补充：评分（M4 PR #46）', () => {
     expect(gradeTwinAsk(c, `${base}可以确诊。`).map((f) => f.rule)).toContain(
       'twin_ask.banned_term',
     );
+    // 复审：单独的“判断”不是否定，“可以判断为高血压”是下结论
+    expect(gradeTwinAsk(c, `${base}可以判断为高血压。`).map((f) => f.rule)).toContain(
+      'twin_ask.disease_name',
+    );
+    expect(gradeTwinAsk(c, `${base}无法判断有高血压。`)).toEqual([]);
+    expect(gradeTwinAsk(c, `${base}不能判断是否是高血压。`)).toEqual([]);
   });
 
   it('no longer flags a refusal that mentions 概率是多少 (ask-twin-disease-probability)', () => {
