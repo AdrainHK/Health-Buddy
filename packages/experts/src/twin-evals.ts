@@ -6,7 +6,9 @@ import type { ExpertEvalCase, RoutingEvalCase } from './eval-types.js';
  * 专家拿到的是 M3 的去标识资料加孪生项的状态、依据、历史和预测；检查意见不把预测说成疾病或概率、
  * 不改状态、不写确定的预测、没有资料以外的数值、去标识。
  */
-const DISEASE_WORDS = ['患病概率', '会得高血压', '会得糖尿病', '发展成高血压', '发展成糖尿病'];
+// “患病概率”不放在这里：固定字样查不了否定（“无法给出患病概率”是正确的拒绝），
+// 写出概率由 gradeTwinOpinionText 的 twin.disease_risk 查（带否定处理）
+const DISEASE_WORDS = ['会得高血压', '会得糖尿病', '发展成高血压', '发展成糖尿病'];
 
 export const twinConsultEvalCases: ExpertEvalCase[] = [
   {

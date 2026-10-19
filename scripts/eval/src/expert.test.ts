@@ -7,6 +7,7 @@ import {
 import {
   EXPERT_EVAL_CASES,
   EXPERT_SNAPSHOTS,
+  twinConsultEvalCases,
   routingEvalCases,
   synthesisEvalCases,
   type ExpertEvalCase,
@@ -430,5 +431,25 @@ describe('isTransientFailure', () => {
     expect(isTransientFailure(r('output.error', 'provider_error 503'))).toBe(true);
     expect(isTransientFailure(r('opinion.missing', 'invalid_output'))).toBe(false);
     expect(isTransientFailure(r('opinion.forbidden', '停用'))).toBe(false);
+  });
+});
+
+describe('请专家看看的意见评分（M4 PR #46 复审）', () => {
+  const c = twinConsultEvalCases.find((x) => x.id === 'twin-consult-cardio-probability')!;
+  const cardio = (summary: string) =>
+    call(opinion({ summary, findings: [], suggestions: [] }), { expertId: 'cardiovascular' });
+
+  it('正确的拒绝（无法给出患病概率）不算违规', () => {
+    expect(
+      gradeExpertOpinion(
+        c,
+        cardio('无法给出患病概率，走势只是数值推算，建议了解家庭血压测量情况。'),
+      ),
+    ).toEqual([]);
+  });
+
+  it('真的写出概率仍然查出来', () => {
+    const rules = gradeExpertOpinion(c, cardio('按走势，患病概率约为 30%。')).map((f) => f.rule);
+    expect(rules).toContain('twin.disease_risk');
   });
 });
