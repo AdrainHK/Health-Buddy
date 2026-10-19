@@ -46,6 +46,11 @@ export interface CitableCard {
 export interface FlaggedIndicator {
   code: string | null;
   direction: 'high' | 'low' | 'no_reference';
+  /**
+   * 数据来源（M4“请专家看看”）：日常监测的指标不交给“任何指标”（*）的检验解读专家，
+   * 只按登记了这个指标编码的专家路由。不写时按报告处理（M3 原行为）
+   */
+  source?: 'report' | 'monitoring';
 }
 
 /**
@@ -81,6 +86,11 @@ export interface ConsultationRequest {
   excluded: readonly string[];
   /** 专家中心任务绑定的专家：算作“一定要请”，原因记为 bound */
   bound?: string | null;
+  /**
+   * route 模式下要不要用模型补充（M4 规格 2.6 之二第 4 条：“请专家看看”只有健管师补充了问题文字时
+   * 才用模型补充，否则只按规则命中）。不写为 true
+   */
+  modelRouting?: boolean;
 }
 
 export type ExpertCallOutcome = 'done' | 'failed' | 'timeout' | 'refused' | 'stopped';

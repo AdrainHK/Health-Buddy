@@ -5,10 +5,16 @@
  * 统一用 redactClientIdentity 去掉。组装好的内容有单元测试检查（验收 19）。
  */
 import type { ConsultationInput, FlaggedIndicator } from '@health-buddy/ai-engine';
+import type { TwinRef } from '@health-buddy/shared';
 import {
   describeReportClient,
+  describeTwin,
   detectCrisisKeywords,
+  knownNumbers,
   redactClientIdentity,
+  redactTwin,
+  TWIN_PROMPT_RULES,
+  twinFlaggedIndicators,
   type ClientSnapshot,
 } from '@health-buddy/skills';
 
@@ -20,48 +26,8 @@ export function detectEmergencyKeywords(texts: readonly string[]): boolean {
   return texts.some((t) => EMERGENCY_KEYWORDS.test(t.replace(/\s+/g, '')));
 }
 
-const round1 = (n: number) => Math.round(n * 10) / 10;
-
-/**
- * 输入资料里出现过的全部数值：报告数值、报告上印的参考范围、之前的数值、监测读数、危急指标数值和阈值、
- * 年龄段两端，以及同一指标两次数值的差（“比上次上升 0.6”），还有健管师问题里写的数字。
- */
-export function knownNumbers(
-  client: ClientSnapshot | null,
-  texts: readonly string[] = [],
-): number[] {
-  const nums = new Set<number>();
-  const pairDiffs = (values: number[]) => {
-    for (const a of values) for (const b of values) if (a > b) nums.add(round1(a - b));
-  };
-  for (const t of texts) for (const n of t.match(/\d+(?:\.\d+)?/g) ?? []) nums.add(Number(n));
-  if (client) {
-    for (const n of client.ageBand?.match(/\d+/g) ?? []) nums.add(Number(n));
-    for (const m of client.monitoring) {
-      for (const r of m.readings) nums.add(r.value);
-      pairDiffs(m.readings.map((r) => r.value));
-    }
-    for (const i of client.latestReport?.indicators ?? []) {
-      nums.add(i.value);
-      if (i.refLow !== undefined) nums.add(i.refLow);
-      if (i.refHigh !== undefined) nums.add(i.refHigh);
-    }
-    for (const i of client.reportDetail?.indicators ?? []) {
-      const values = [...(i.value !== null ? [i.value] : []), ...i.previous.map((p) => p.value)];
-      for (const v of values) nums.add(v);
-      pairDiffs(values);
-      if (i.refLow !== null) nums.add(i.refLow);
-      if (i.refHigh !== null) nums.add(i.refHigh);
-      for (const n of i.refText?.match(/\d+(?:\.\d+)?/g) ?? []) nums.add(Number(n));
-      for (const n of i.textValue?.match(/\d+(?:\.\d+)?/g) ?? []) nums.add(Number(n));
-    }
-    for (const f of client.criticalFlags) {
-      nums.add(f.value);
-      nums.add(f.rule.value);
-    }
-  }
-  return [...nums];
-}
+/** 输入资料里出现过的全部数值：实现在 packages/skills（/孪生小结 和专家共用） */
+export { knownNumbers };
 
 export interface ExpertInputSource {
   /** 没有 @客户 的一般性问题为空 */
@@ -72,6 +38,11 @@ export interface ExpertInputSource {
   identifiers: readonly string[];
   /** 本任务里健管师之前说过的话，只用来识别危机和急症信号，不进提示词 */
   earlierTexts?: readonly string[];
+  /**
+   * “请专家看看”（M4 规格 2.6 之二）：针对的孪生项。有值时规则路由只按这些孪生项涉及的指标走，
+   * 客户资料里要有孪生资料（client.twin）
+   */
+  twinRefs?: readonly TwinRef[];
 }
 
 /** 组装引擎输入。返回的 userContent 已去标识，可以直接发给模型 */
@@ -89,29 +60,33 @@ export function buildConsultationInput(source: ExpertInputSource): ConsultationI
               })),
             }
           : {}),
+        // 孪生里手动调整的理由、跟进备注同样去标识（M4 规格 5.4 第 6 条）
+        ...(source.client.twin ? { twin: redactTwin(source.client.twin, redact) } : {}),
       }
     : null;
   const clientPart = client
     ? describeReportClient({ client, managerRequest: '' }, { includeCriteria: false })
     : '## 客户资料\n没有关联客户：这是一个一般性的专业问题，没有客户资料。';
-  const userContent = `${clientPart}\n\n## 健管师的问题\n${question || '（没有额外的问题，请按你的分析流程给出意见）'}`;
+  // 孪生资料（M4 规格 5.2）：规则放在资料前面，资料里的数字都是后端算好的，专家只能引用
+  const twinPart = client?.twin ? `\n\n${TWIN_PROMPT_RULES}\n\n${describeTwin(client.twin)}` : '';
+  const userContent = `${clientPart}${twinPart}\n\n## 健管师的问题\n${question || '（没有额外的问题，请按你的分析流程给出意见）'}`;
 
-  const flaggedIndicators: FlaggedIndicator[] = (client?.reportDetail?.indicators ?? []).flatMap(
-    (i) =>
-      i.abnormal === 'high' || i.abnormal === 'low' || i.abnormal === 'no_reference'
-        ? [{ code: i.code, direction: i.abnormal }]
-        : [],
-  );
+  const twinRefs = source.twinRefs ?? [];
+  const flaggedIndicators: FlaggedIndicator[] =
+    twinRefs.length && client?.twin
+      ? twinFlaggedIndicators(client.twin, twinRefs)
+      : (client?.reportDetail?.indicators ?? []).flatMap((i) =>
+          i.abnormal === 'high' || i.abnormal === 'low' || i.abnormal === 'no_reference'
+            ? [{ code: i.code, direction: i.abnormal }]
+            : [],
+        );
   const signalTexts = [source.question, ...(source.earlierTexts ?? [])];
   return {
     userContent,
     request: question,
     flaggedIndicators,
     historyCategories: [...new Set((client?.healthHistory ?? []).map((h) => h.category))],
-    allowedNumbers: knownNumbers(client, [
-      question,
-      ...(client?.healthHistory ?? []).map((h) => h.content),
-    ]),
+    allowedNumbers: knownNumbers(client, [question]),
     crisisDetected: detectCrisisKeywords(signalTexts),
     emergencyDetected: detectEmergencyKeywords(signalTexts),
   };

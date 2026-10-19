@@ -272,6 +272,43 @@ describe('expert routing', () => {
     expect(openai.calls.filter((c) => c.route === 'expert')).toHaveLength(0);
   });
 
+  it('twin consult: monitoring indicators skip the any-indicator expert, no model without text', async () => {
+    const { gateway, openai } = setup({ 'expert:cardiovascular': [{ json: opinion() }] });
+    const result = await runConsultation(
+      gateway,
+      ctx,
+      request({
+        input: {
+          ...INPUT,
+          request: '',
+          flaggedIndicators: [{ code: 'sbp', direction: 'high', source: 'monitoring' }],
+        },
+        modelRouting: false,
+      }),
+    );
+    expect(result.routing.selected.map((s) => s.expertId)).toEqual(['cardiovascular']);
+    expect(openai.calls.some((c) => c.route === 'expert_routing')).toBe(false);
+    expect(openai.calls.some((c) => c.expertId === 'lab-interpretation')).toBe(false);
+  });
+
+  it('twin consult: a monitoring-only metric with no registered expert selects nobody', async () => {
+    const { gateway, openai } = setup({});
+    const result = await runConsultation(
+      gateway,
+      ctx,
+      request({
+        input: {
+          ...INPUT,
+          request: '',
+          flaggedIndicators: [{ code: 'sleep_hours', direction: 'low', source: 'monitoring' }],
+        },
+        modelRouting: false,
+      }),
+    );
+    expect(result.routing.selected).toEqual([]);
+    expect(openai.calls).toHaveLength(0);
+  });
+
   it('direct mode calls only the named experts without routing', async () => {
     const { gateway, openai } = setup({ 'expert:nutrition': [{ json: opinion() }] });
     const result = await runConsultation(
