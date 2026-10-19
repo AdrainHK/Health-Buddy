@@ -1,6 +1,7 @@
 import { Button } from '@health-buddy/ui';
 import type { ClientSummary, ExpertConsultation, TaskPlan, TaskStep } from '@health-buddy/shared';
 import {
+  Activity,
   AtSign,
   Check,
   CircleAlert,
@@ -26,6 +27,7 @@ import {
   useExpertStepLabel,
 } from '../experts/ExpertSteps';
 import { useSkillName, useStepLabel } from '../i18n/dynamic';
+import { useTwinRefLabel } from '../twin/TwinActions';
 import type { Conversation, ViewMessage } from './conversation';
 import styles from './MessageList.module.css';
 
@@ -128,10 +130,17 @@ function ManagerMessage({
   const reportDate = reportId ? reportDates?.get(reportId) : undefined;
   const experts = message.expertRefs ?? [];
   const excluded = message.excludedExperts ?? [];
+  const twinRefs = message.twinRefs ?? [];
+  const twinLabel = useTwinRefLabel();
   return (
     <li className={styles.manager} aria-label={t('chat.you')}>
       <div className={styles.bubble}>
-        {(message.skillId || client || reportId || experts.length > 0 || excluded.length > 0) && (
+        {(message.skillId ||
+          client ||
+          reportId ||
+          experts.length > 0 ||
+          excluded.length > 0 ||
+          twinRefs.length > 0) && (
           <div className={styles.tags}>
             {message.skillId && (
               <span className={styles.tag}>
@@ -155,6 +164,12 @@ function ManagerMessage({
               <span key={id} className={styles.tag}>
                 <Stethoscope size={12} aria-hidden />
                 {expertName(id)}
+              </span>
+            ))}
+            {twinRefs.map((ref) => (
+              <span key={`t-${ref.kind}-${ref.code}`} className={styles.tag}>
+                <Activity size={12} aria-hidden />
+                {twinLabel(ref)}
               </span>
             ))}
             {excluded.map((id) => (
@@ -373,7 +388,9 @@ function PlanCard({
           <li key={index}>
             {step.kind === 'read_client'
               ? t('chat.plan.readClient')
-              : t('chat.plan.runSkill', { name: skillName(step.skillId) })}
+              : step.kind === 'read_twin'
+                ? t('chat.plan.readTwin')
+                : t('chat.plan.runSkill', { name: skillName(step.skillId) })}
           </li>
         ))}
       </ol>

@@ -4,6 +4,7 @@ import { Button, EmptyState, IconButton } from '@health-buddy/ui';
 import { BellRing, Menu } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { FollowUpCard } from './FollowUpCard';
+import { followUpTwinRef, useCanAskExpert, useTwinActions } from './TwinActions';
 import styles from './Twin.module.css';
 
 export interface FollowUpListState {
@@ -34,6 +35,8 @@ export function FollowUpCenter({
 }: FollowUpCenterProps) {
   const { t } = useTranslation();
   const items = [...(state.data?.items ?? [])].sort(compareFollowUps);
+  const { askExpert } = useTwinActions();
+  const canAskExpert = useCanAskExpert();
   return (
     <main className={styles.center}>
       <header className={styles.topbar}>
@@ -70,15 +73,28 @@ export function FollowUpCenter({
           )}
           {items.length > 0 && (
             <ul className={styles.followUpList} aria-label={t('followUps.list')}>
-              {items.map((item) => (
-                <FollowUpCard
-                  key={item.id}
-                  item={item}
-                  showClient
-                  onOpenClient={onOpenClient}
-                  onChanged={onChanged}
-                />
-              ))}
+              {items.map((item) => {
+                const ref = canAskExpert ? followUpTwinRef(item) : null;
+                return (
+                  <FollowUpCard
+                    key={item.id}
+                    item={item}
+                    showClient
+                    onOpenClient={onOpenClient}
+                    onChanged={onChanged}
+                    {...(ref && askExpert
+                      ? {
+                          onAskExpert: () =>
+                            askExpert({
+                              client: { id: item.clientId, displayName: item.clientName },
+                              ref,
+                              followUpItemId: item.id,
+                            }),
+                        }
+                      : {})}
+                  />
+                );
+              })}
             </ul>
           )}
         </div>

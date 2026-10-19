@@ -60,6 +60,7 @@ describe('conversationReducer', () => {
         reportRefs: [],
         expertRefs: [],
         excludedExperts: [],
+        twinRefs: [],
         status: 'refused',
         createdAt: '2026-10-15T08:00:00.000Z',
       },

@@ -390,11 +390,14 @@ export function ForecastDialog({
   detail,
   thresholds = null,
   onClose,
+  onAskExpert,
 }: {
   forecast: TwinForecast;
   detail: TwinForecastDetailResponse | null;
   thresholds?: readonly ForecastThreshold[] | null;
   onClose: () => void;
+  /** “请专家看看”这个指标（M4 规格 2.6 之二，专家预览打开时才有） */
+  onAskExpert?: () => void;
 }) {
   const { t } = useTranslation();
   const metricName = useMetricName();
@@ -508,6 +511,16 @@ export function ForecastDialog({
             {t('twin.forecast.detail.computedAt', { date: displayDate(forecast.computedAt) })}
           </p>
         </div>
+        {onAskExpert && (
+          <div className={styles.cardActions}>
+            <Button
+              onClick={onAskExpert}
+              aria-label={t('twin.ai.askExpertLabel', { subject: metric })}
+            >
+              {t('twin.ai.askExpert')}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,6 +1,9 @@
 import { Button, IconButton } from '@health-buddy/ui';
 import {
   EXPERTS_PER_CALL_MAX,
+  TWIN_DOMAINS,
+  TWIN_REFS_MAX,
+  twinRefKey,
   type ArtifactSummary,
   type ClientSummary,
   type DuplicateUpload,
@@ -10,6 +13,7 @@ import {
   type Task,
   type TaskMode,
   type TaskPlan,
+  type TwinRef,
 } from '@health-buddy/shared';
 import { FileText, Menu, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { type ReactNode, useEffect, useReducer, useRef, useState } from 'react';
@@ -19,7 +23,8 @@ import { ApiError, isAbortError } from '../api/http';
 import { confirmPlan, sendMessage, type StreamOptions } from '../api/stream';
 import { DuplicateFileError, listReports, listUploads, uploadReport } from '../api/reports';
 import { createTask, getTask, stopTask } from '../api/workbench';
-import { Composer, type ReportOption } from '../chat/Composer';
+import { getTwin } from '../api/twin';
+import { Composer, type ReportOption, type TwinItemOption } from '../chat/Composer';
 import {
   conversationReducer,
   emptyConversation,
@@ -34,6 +39,7 @@ import { ExpertSelector } from '../experts/ExpertSelector';
 import { isExpertStep } from '../experts/ExpertSteps';
 import { useSkillName } from '../i18n/dynamic';
 import { uploadErrorKey, type UploadErrorKey } from '../reports/errors';
+import { useTwinRefLabel } from '../twin/TwinActions';
 import reportStyles from '../reports/Reports.module.css';
 import { UploadCard } from '../reports/UploadCard';
 import styles from './ChatPane.module.css';
@@ -44,6 +50,20 @@ const REPORT_PICKER_MAX = 5;
 
 /** 识别卡片上“生成解读”调用的技能 */
 const INTERPRETATION_SKILL_ID = 'report-interpretation';
+
+/**
+ * 孪生里点了“请专家看看”“生成孪生小结”（M4 规格 2.6 之二、2.7）：在这个任务里预先填好输入框，
+ * 由健管师补充问题后发送（也可以直接发送）。key 每次点击都变。
+ */
+export interface ComposerPrefill {
+  key: number;
+  taskId: string;
+  mode: TaskMode;
+  skillId?: string;
+  twinRefs?: TwinRef[];
+  twinConsult?: boolean;
+  followUpItemId?: string;
+}
 
 export interface ChatPaneProps {
   narrow: boolean;
@@ -87,6 +107,8 @@ export interface ChatPaneProps {
   onOpenExperts?: (consultationId: string | null) => void;
   /** 一次专家调用结束：结果区的专家标签需要刷新 */
   onConsultation?: () => void;
+  /** 孪生里的操作带过来的输入（只对 taskId 这个任务生效） */
+  prefill?: ComposerPrefill | null;
 }
 
 interface Draft {
@@ -99,6 +121,12 @@ interface Draft {
   expertRefs?: string[];
   /** “不要请”的专家，只对这一条消息生效（Q22） */
   excludedExperts?: string[];
+  /** @ 的孪生项（M4 规格 2.8），只能在问一问里用 */
+  twinRefs?: TwinRef[];
+  /** “请专家看看”（2.6 之二）：按孪生项请专家，可以不写问题 */
+  twinConsult?: boolean;
+  /** 从跟进项发起的“请专家看看” */
+  followUpItemId?: string | null;
   /**
    * 不是从输入框发出的（识别卡片上的“生成解读”、核对后自动解读）：
    * 发送时不清空、失败时也不恢复输入框，健管师正在输入的内容不受影响。
@@ -111,6 +139,7 @@ type ErrorKey =
   | 'tooMany'
   | 'readOnly'
   | 'noVerifiedReport'
+  | 'noTwinData'
   | 'badRequest'
   | 'notFound'
   | 'conflict'
@@ -148,6 +177,8 @@ function errorKey(err: unknown): ErrorKey {
     if (err.reasons.includes('busy')) return 'busy';
     // /体检解读、/面谈提纲：这位客户还没有已核对的报告（规格 2.6）
     if (err.reasons.includes('no_verified_report')) return 'noVerifiedReport';
+    // /孪生小结：这位客户还没有孪生数据（M4 规格 2.7）
+    if (err.reasons.includes('no_twin_data')) return 'noTwinData';
     return 'conflict';
   }
   if (err.status === 400) return 'badRequest';
@@ -186,8 +217,10 @@ export function ChatPane({
   pendingExpert = null,
   onOpenExperts,
   onConsultation,
+  prefill = null,
 }: ChatPaneProps) {
   const { t } = useTranslation();
+  const twinRefLabel = useTwinRefLabel();
   const skillName = useSkillName();
   const experts = useExperts();
   const expertName = useExpertName();
@@ -204,6 +237,12 @@ export function ChatPane({
   /** @ 的专家（也是专家选择条里的“一定要请”）和“不要请”的专家，只对这一条消息生效 */
   const [expertRefs, setExpertRefs] = useState<string[]>([]);
   const [excludedExperts, setExcludedExperts] = useState<string[]>([]);
+  /** @ 的孪生项、“请专家看看”和发起它的跟进项（M4），只对这一条消息生效 */
+  const [twinRefs, setTwinRefs] = useState<TwinRef[]>([]);
+  const [twinConsult, setTwinConsult] = useState(false);
+  const [followUpItemId, setFollowUpItemId] = useState<string | null>(null);
+  /** @ 列表里的孪生项：当前客户的四个方面，加上有预测的指标 */
+  const [twinMetrics, setTwinMetrics] = useState<string[]>([]);
   /** 当前客户的报告：已核对的可以 @，还没核对完的列出来但不能选 */
   const [reportOptions, setReportOptions] = useState<ReportOption[]>([]);
   /** 本任务里上传的报告（识别进度卡片） */
@@ -281,6 +320,9 @@ export function ChatPane({
     setReport(null);
     setExpertRefs([]);
     setExcludedExperts([]);
+    setTwinRefs([]);
+    setTwinConsult(false);
+    setFollowUpItemId(null);
     setUploads([]);
     setSentClient(null);
     setInterpretIntent(new Set());
@@ -366,6 +408,36 @@ export function ChatPane({
     return () => controller.abort();
   }, [reportClientId, uploadVersion]);
 
+  // @ 列表里的孪生项：只列当前客户的（四个方面 + 有预测的指标，M4 规格 2.8）
+  useEffect(() => {
+    setTwinRefs((refs) => (reportClientId === null ? [] : refs));
+    if (reportClientId === null) {
+      setTwinMetrics([]);
+      return;
+    }
+    const controller = new AbortController();
+    getTwin(reportClientId, controller.signal)
+      .then((twin) => setTwinMetrics([...new Set(twin.forecasts.map((f) => f.metric))]))
+      .catch(() => setTwinMetrics([]));
+    return () => controller.abort();
+  }, [reportClientId]);
+
+  // 孪生里点了“请专家看看”“生成孪生小结”：任务切换完成后预先填好输入框，每次点击只填一次
+  const appliedPrefill = useRef<number | null>(null);
+  useEffect(() => {
+    if (!prefill || prefill.taskId !== taskId || appliedPrefill.current === prefill.key) return;
+    appliedPrefill.current = prefill.key;
+    setNotice(null);
+    setMode(prefill.mode);
+    setSkill(prefill.skillId ? (skills.find((s) => s.id === prefill.skillId) ?? null) : null);
+    setTwinRefs(prefill.twinRefs ?? []);
+    setTwinConsult(Boolean(prefill.twinConsult));
+    setFollowUpItemId(prefill.followUpItemId ?? null);
+    setExpertRefs([]);
+    setExcludedExperts([]);
+    inputRef.current?.focus();
+  }, [prefill, taskId, skills]);
+
   const shownClient = client ?? sentClient;
   useEffect(() => {
     onDraftClientChange?.(shownClient);
@@ -387,6 +459,9 @@ export function ChatPane({
     setReport(null);
     setExpertRefs([]);
     setExcludedExperts([]);
+    setTwinRefs([]);
+    setTwinConsult(false);
+    setFollowUpItemId(null);
   };
 
   const restoreComposer = (draft: Draft) => {
@@ -396,6 +471,9 @@ export function ChatPane({
     setReport(draft.report ?? null);
     setExpertRefs(draft.expertRefs ?? []);
     setExcludedExperts(draft.excludedExperts ?? []);
+    setTwinRefs(draft.twinRefs ?? []);
+    setTwinConsult(Boolean(draft.twinConsult));
+    setFollowUpItemId(draft.followUpItemId ?? null);
   };
 
   const nextLocalId = () => `${LOCAL_PREFIX}${++localSeq.current}`;
@@ -492,6 +570,8 @@ export function ChatPane({
    * 要报告的技能已引用报告（验收反馈 8）。后端用技能的默认要求。
    */
   function canSendEmpty(draft: Draft): boolean {
+    // “请专家看看”可以不写问题（后端用默认的问题）
+    if (draft.twinConsult && draft.mode === 'ask' && (draft.twinRefs ?? []).length > 0) return true;
     const s = draft.skill;
     if (!s?.allowsEmptyRequest || modeConflict(s, draft.mode)) return false;
     if (s.requiresClient && !draft.client && !task?.clientId) return false;
@@ -511,7 +591,15 @@ export function ChatPane({
     if (expertConflict(refs, draft.skill, draft.mode)) return;
     // “不要请”只对会自动请专家的技能有效
     const excluded = draft.skill?.experts === 'auto' ? (draft.excludedExperts ?? []) : [];
+    // @孪生项 只能在问一问里用（M4 规格 2.8），提示已显示在输入框上方
+    const twin = draft.twinRefs ?? [];
+    if (twin.length && (draft.mode !== 'ask' || draft.skill)) return;
+    const consult = Boolean(draft.twinConsult) && twin.length > 0;
     const linkedClientId = task?.clientId ?? null;
+    if (twin.length && !draft.client && !linkedClientId) {
+      setNotice({ kind: 'needClient' });
+      return;
+    }
     if (draft.client && linkedClientId && draft.client.id !== linkedClientId) {
       setNotice({ kind: 'otherClient', client: draft.client });
       return;
@@ -561,6 +649,7 @@ export function ChatPane({
       ...(draft.report ? { reportRefs: [draft.report.id] } : {}),
       ...(refs.length ? { expertRefs: refs } : {}),
       ...(excluded.length ? { excludedExperts: excluded } : {}),
+      ...(twin.length ? { twinRefs: twin } : {}),
       status: 'complete',
     };
     const assistant: ViewMessage = {
@@ -587,6 +676,9 @@ export function ChatPane({
             ...(draft.report ? { reportRefs: [draft.report.id] } : {}),
             ...(refs.length ? { expertRefs: refs } : {}),
             ...(excluded.length ? { excludedExperts: excluded } : {}),
+            ...(twin.length ? { twinRefs: twin } : {}),
+            ...(consult ? { twinConsult: true } : {}),
+            ...(consult && draft.followUpItemId ? { followUpItemId: draft.followUpItemId } : {}),
           },
           options,
         ),
@@ -806,8 +898,24 @@ export function ChatPane({
 
   const conflict = modeConflict(skill, mode);
   const expertIssue = expertConflict(expertRefs, skill, mode);
+  const twinIssue = twinRefs.length > 0 && (mode !== 'ask' || skill !== null);
   let noticeNode: ReactNode = null;
-  if (conflict === null && expertIssue === 'skillNoExperts') {
+  if (twinIssue) {
+    noticeNode = (
+      <>
+        <span role="alert">{t('chat.twin.needAsk')}</span>
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setSkill(null);
+            setMode('ask');
+          }}
+        >
+          {t('chat.experts.switchToAsk')}
+        </Button>
+      </>
+    );
+  } else if (conflict === null && expertIssue === 'skillNoExperts') {
     noticeNode = <span role="alert">{t('chat.experts.skillNoExperts')}</span>;
   } else if (conflict === null && expertIssue === 'needAsk') {
     noticeNode = (
@@ -971,6 +1079,46 @@ export function ChatPane({
       />
     ) : null;
 
+  // “请专家看看”：输入框上方说明这次按哪些孪生项请专家，可以取消（M4 规格 2.6 之二）
+  const twinConsultBar =
+    twinConsult && twinRefs.length > 0 && !readOnly ? (
+      <>
+        <span role="status">
+          {t('chat.twin.consultBar', {
+            items: twinRefs.map(twinRefLabel).join(t('chat.twin.separator')),
+          })}
+        </span>
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setTwinConsult(false);
+            setFollowUpItemId(null);
+          }}
+        >
+          {t('chat.twin.cancelConsult')}
+        </Button>
+      </>
+    ) : null;
+
+  // @ 列表里的孪生项：当前客户的四个方面和有预测的指标
+  const twinItems: TwinItemOption[] =
+    reportClientId === null
+      ? []
+      : [
+          ...TWIN_DOMAINS.map((code) => ({ kind: 'domain' as const, code })),
+          ...twinMetrics.map((code) => ({ kind: 'metric' as const, code })),
+        ].map((ref) => ({ ref, label: twinRefLabel(ref) }));
+  const changeTwinRefs = (refs: TwinRef[]) => {
+    const unique = refs.filter(
+      (r, i) => refs.findIndex((x) => twinRefKey(x) === twinRefKey(r)) === i,
+    );
+    setTwinRefs(unique.slice(0, TWIN_REFS_MAX));
+    if (unique.length === 0) {
+      setTwinConsult(false);
+      setFollowUpItemId(null);
+    }
+  };
+
   const boundBar = boundExpertId ? (
     <div className={expertStyles.boundBar} role="note" aria-label={t('experts.bound.label')}>
       <ExpertAvatar name={expertName(boundExpertId)} />
@@ -1002,9 +1150,20 @@ export function ChatPane({
       disabled={readOnly || loadState !== 'idle'}
       generating={generating}
       onSubmit={() =>
-        void submit({ text, mode, skill, client, report, expertRefs, excludedExperts })
+        void submit({
+          text,
+          mode,
+          skill,
+          client,
+          report,
+          expertRefs,
+          excludedExperts,
+          twinRefs,
+          twinConsult,
+          followUpItemId,
+        })
       }
-      canSendEmpty={canSendEmpty({ text, mode, skill, client, report })}
+      canSendEmpty={canSendEmpty({ text, mode, skill, client, report, twinRefs, twinConsult })}
       onStop={onStop}
       notice={noticeNode}
       reports={reportOptions}
@@ -1016,7 +1175,10 @@ export function ChatPane({
       {...(mentionable.length > 0 && !readOnly ? { onExpertRefsChange: changeExpertRefs } : {})}
       maxExperts={maxExperts}
       {...(boundExpertId ? { lockedMode: 'ask' as const } : {})}
-      expertBar={expertBar}
+      expertBar={expertBar ?? twinConsultBar}
+      twinItems={boundExpertId ? EMPTY : twinItems}
+      twinRefs={twinRefs}
+      {...(!readOnly && !boundExpertId ? { onTwinRefsChange: changeTwinRefs } : {})}
     />
   );
 

@@ -112,13 +112,21 @@ export interface FollowUpCardProps {
   onOpenClient?: (clientId: string) => void;
   /** 处理成功（或发现这一项已变化）后刷新清单 */
   onChanged: () => void;
+  /** “请专家看看”（M4 规格 2.6 之二，专家预览打开时才有）：请过后显示“已请专家（时间）”，状态不变 */
+  onAskExpert?: () => void;
 }
 
 /**
  * 一条跟进项（规格 2.6）：类型、方面或指标、一句依据、生成时间、“已延续 x 天”；
- * 按钮“打开客户”“处理”。“请专家看看”在第 4 步加。
+ * 按钮“打开客户”“处理”，专家预览打开时还有“请专家看看”。
  */
-export function FollowUpCard({ item, showClient, onOpenClient, onChanged }: FollowUpCardProps) {
+export function FollowUpCard({
+  item,
+  showClient,
+  onOpenClient,
+  onChanged,
+  onAskExpert,
+}: FollowUpCardProps) {
   const { t } = useTranslation();
   const basis = useFollowUpBasis();
   const titleId = useId();
@@ -185,6 +193,15 @@ export function FollowUpCard({ item, showClient, onOpenClient, onChanged }: Foll
           >
             {t('followUps.handle')}
           </Button>
+          {onAskExpert && (
+            <Button
+              variant="ghost"
+              onClick={onAskExpert}
+              aria-label={t('twin.ai.askExpertLabel', { subject: subject ?? kind })}
+            >
+              {t('twin.ai.askExpert')}
+            </Button>
+          )}
         </div>
       )}
     </li>

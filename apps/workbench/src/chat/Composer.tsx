@@ -1,12 +1,25 @@
 import { IconButton } from '@health-buddy/ui';
 import {
   TASK_MODES,
+  TWIN_REFS_MAX,
+  twinRefKey,
   type ClientSummary,
   type ExpertSummary,
   type SkillSummary,
   type TaskMode,
+  type TwinRef,
 } from '@health-buddy/shared';
-import { ArrowUp, AtSign, FileText, Paperclip, Slash, Square, Stethoscope, X } from 'lucide-react';
+import {
+  Activity,
+  ArrowUp,
+  AtSign,
+  FileText,
+  Paperclip,
+  Slash,
+  Square,
+  Stethoscope,
+  X,
+} from 'lucide-react';
 import {
   type ChangeEvent,
   type ClipboardEvent,
@@ -73,6 +86,12 @@ export interface ReportOption {
   critical?: boolean;
 }
 
+/** @ 列表里的孪生项（M4 规格 2.8）：当前客户的四个方面和有预测的指标 */
+export interface TwinItemOption {
+  ref: TwinRef;
+  label: string;
+}
+
 export interface ComposerProps {
   inputRef: RefObject<HTMLTextAreaElement | null>;
   text: string;
@@ -111,6 +130,11 @@ export interface ComposerProps {
   lockedMode?: TaskMode;
   /** 输入框上方的专家选择条（运行会自动请专家的技能时，规格 2.5） */
   expertBar?: ReactNode;
+  /** 当前客户可以 @ 的孪生项；没有客户时为空 */
+  twinItems?: readonly TwinItemOption[];
+  /** 这条消息引用的孪生项（最多 TWIN_REFS_MAX 个） */
+  twinRefs?: readonly TwinRef[];
+  onTwinRefsChange?: (refs: TwinRef[]) => void;
 }
 
 /** 输入框：模式切换、/ 技能和 @ 客户补全、发送和停止 */
@@ -142,6 +166,9 @@ export function Composer({
   maxExperts = 3,
   lockedMode,
   expertBar,
+  twinItems = [],
+  twinRefs = [],
+  onTwinRefsChange,
 }: ComposerProps) {
   const { t } = useTranslation();
   const skillName = useSkillName();
@@ -205,6 +232,19 @@ export function Composer({
                 ...(i === 0 ? { group: t('chat.experts.group') } : {}),
                 ...(full ? { disabled: true } : {}),
                 select: full ? () => {} : pick(() => onExpertRefsChange?.([...expertRefs, e.id])),
+              };
+            }),
+          ...(onTwinRefsChange ? twinItems : [])
+            .filter((item) => !twinRefs.some((r) => twinRefKey(r) === twinRefKey(item.ref)))
+            .filter((item) => item.label.toLowerCase().includes(query))
+            .map((item, i) => {
+              const full = twinRefs.length >= TWIN_REFS_MAX;
+              return {
+                id: `twin:${item.ref.kind}:${item.ref.code}`,
+                label: item.label,
+                ...(full ? { description: t('chat.twin.max'), disabled: true } : {}),
+                ...(i === 0 ? { group: t('chat.twin.group') } : {}),
+                select: full ? () => {} : pick(() => onTwinRefsChange?.([...twinRefs, item.ref])),
               };
             }),
         ];
@@ -288,7 +328,7 @@ export function Composer({
 
       {expertBar && <div className={styles.notice}>{expertBar}</div>}
 
-      {(skill || client || report || expertRefs.length > 0) && (
+      {(skill || client || report || expertRefs.length > 0 || twinRefs.length > 0) && (
         <div className={styles.chips}>
           {skill && (
             <Chip
@@ -326,6 +366,20 @@ export function Composer({
                 label={name}
                 removeLabel={t('chat.experts.removeExpert', { name })}
                 onRemove={() => onExpertRefsChange?.(expertRefs.filter((x) => x !== id))}
+                disabled={disabled}
+              />
+            );
+          })}
+          {twinRefs.map((ref) => {
+            const key = twinRefKey(ref);
+            const name = twinItems.find((i) => twinRefKey(i.ref) === key)?.label ?? ref.code;
+            return (
+              <Chip
+                key={key}
+                icon={<Activity size={12} />}
+                label={name}
+                removeLabel={t('chat.twin.removeTwin', { name })}
+                onRemove={() => onTwinRefsChange?.(twinRefs.filter((r) => twinRefKey(r) !== key))}
                 disabled={disabled}
               />
             );

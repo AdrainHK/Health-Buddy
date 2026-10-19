@@ -12,10 +12,23 @@ import { isAbortError } from '../api/http';
 import { ExpertCenter, type ExpertListState } from '../experts/ExpertCenter';
 import { ExpertsContext } from '../experts/ExpertsContext';
 import { getTwinLevels, listFollowUps } from '../api/twin';
-import { getTask, listClients, listSkills, listTasks, updateTask } from '../api/workbench';
+import {
+  createTask,
+  getTask,
+  listClients,
+  listSkills,
+  listTasks,
+  updateTask,
+} from '../api/workbench';
 import { FollowUpCenter, type FollowUpListState } from '../twin/FollowUpCenter';
+import {
+  TwinActionsContext,
+  useTwinRefLabel,
+  type TwinActions,
+  type TwinConsultRequest,
+} from '../twin/TwinActions';
 import styles from './AppShell.module.css';
-import { ChatPane } from './ChatPane';
+import { ChatPane, type ComposerPrefill } from './ChatPane';
 import { ResultsPanel } from './ResultsPanel';
 import { Sidebar, type SidebarAccount, type TaskListState, type TaskListView } from './Sidebar';
 import { isReadOnlyTask } from './taskGroups';
@@ -85,6 +98,8 @@ export function AppShell({ account }: AppShellProps = {}) {
   const [pendingExpert, setPendingExpert] = useState<ExpertSummary | null>(null);
   /** 一次专家调用结束，结果区的专家标签据此刷新 */
   const [consultationsVersion, setConsultationsVersion] = useState(0);
+  /** 孪生里点了“请专家看看”“生成孪生小结”：对话区在这位客户的任务里预先填好输入框 */
+  const [prefill, setPrefill] = useState<ComposerPrefill | null>(null);
   /** 对话区里点了“查看专家意见”：结果区切到专家标签 */
   const [expertsTabRequest, setExpertsTabRequest] = useState<{
     key: number;
@@ -252,6 +267,74 @@ export function AppShell({ account }: AppShellProps = {}) {
     setCenterView('chat');
   };
 
+  /**
+   * 孪生里的操作回到对话区（M4 规格 2.6 之二、2.7）：用这位客户正在进行的任务（当前任务或最近一个），
+   * 没有就新建一个，标题如“孪生 · 心血管（2026-10-19）”。输入框预先填好，由健管师发送。
+   */
+  const twinRefLabel = useTwinRefLabel();
+  const prefillSeq = useRef(0);
+  const openClientTask = async (
+    client: Pick<ClientSummary, 'id' | 'displayName'>,
+    title: string,
+  ): Promise<Task | null> => {
+    const usable = (task: Task) =>
+      task.clientId === client.id && !isReadOnlyTask(task) && !task.expertId;
+    const existing =
+      activeTask && usable(activeTask)
+        ? activeTask
+        : view === 'active'
+          ? taskList.tasks.filter(usable).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
+          : undefined;
+    let task = existing ?? null;
+    if (!task) {
+      try {
+        task = await createTask({ clientId: client.id, title });
+      } catch {
+        return null;
+      }
+      if (view === 'active') refreshTasks();
+      else changeView('active');
+    }
+    setActiveTask(task);
+    setPendingExpert(null);
+    setCenterView('chat');
+    setFocusClientId(client.id);
+    closeDrawerOnNarrow();
+    if (narrow) setResultsOpen(false);
+    return task;
+  };
+  const today = () => new Date().toISOString().slice(0, 10);
+  const twinActions: TwinActions = {
+    askExpert: (request: TwinConsultRequest) => {
+      const label = twinRefLabel(request.ref);
+      void openClientTask(
+        request.client,
+        t('twin.ai.taskTitle', { subject: label, date: today() }),
+      ).then((task) => {
+        if (!task) return;
+        setPrefill({
+          key: ++prefillSeq.current,
+          taskId: task.id,
+          mode: 'ask',
+          twinRefs: [request.ref],
+          twinConsult: true,
+          ...(request.followUpItemId ? { followUpItemId: request.followUpItemId } : {}),
+        });
+      });
+    },
+    summarize: (client) => {
+      void openClientTask(client, t('twin.ai.summaryTaskTitle', { date: today() })).then((task) => {
+        if (!task) return;
+        setPrefill({
+          key: ++prefillSeq.current,
+          taskId: task.id,
+          mode: 'craft',
+          skillId: 'twin-summary',
+        });
+      });
+    },
+  };
+
   const archiveTask = (task: Task, archived: boolean) => {
     updateTask(task.id, { archived })
       .then((updated) => {
@@ -351,131 +434,134 @@ export function AppShell({ account }: AppShellProps = {}) {
 
   return (
     <ExpertsContext.Provider value={expertList.experts}>
-      <div
-        className={styles.shell}
-        data-layout={narrow ? 'narrow' : 'wide'}
-        data-sidebar={!narrow && sidebarCollapsed ? 'collapsed' : 'expanded'}
-        data-results={!narrow && resultsOpen ? 'open' : 'closed'}
-      >
-        <Sidebar
-          mode={narrow ? 'drawer' : 'docked'}
-          collapsed={!narrow && sidebarCollapsed}
-          open={narrow ? drawerOpen : true}
-          onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
-          onClose={() => setDrawerOpen(false)}
-          {...(account ? { account } : {})}
-          tasks={{
-            view,
-            list: taskList,
-            clients,
-            activeTaskId: activeTask?.id ?? null,
-            onViewChange: changeView,
-            onSelect: selectTask,
-            // 新建任务先回到欢迎页，发送第一条消息时才真正创建，避免留下空任务
-            onNewTask: () => selectTask(null),
-            onArchive: archiveTask,
-            onRetry: refreshTasks,
-          }}
-          experts={{ active: centerView === 'experts', onOpen: openExpertCenter }}
-          followUps={{
-            active: centerView === 'followUps',
-            count: followUpList.data?.openCount ?? null,
-            onOpen: openFollowUps,
-          }}
-          clientList={{
-            clients,
-            levels: twinLevels,
-            activeClientId: panelClient?.id ?? null,
-            onSelect: selectClient,
-          }}
-        />
-        <div className={styles.center}>
-          {centerView === 'experts' && (
-            <ExpertCenter
-              narrow={narrow}
-              onOpenMenu={() => {
-                setResultsOpen(false);
-                setDrawerOpen(true);
-              }}
-              state={expertList}
-              onRetry={() => setExpertsReload((v) => v + 1)}
-              onAsk={askExpert}
-            />
-          )}
-          {centerView === 'followUps' && (
-            <FollowUpCenter
-              narrow={narrow}
-              onOpenMenu={() => {
-                setResultsOpen(false);
-                setDrawerOpen(true);
-              }}
-              state={followUpList}
-              onRetry={() => setTwinSummaryVersion((v) => v + 1)}
-              onOpenClient={openClientById}
-              onChanged={onFollowUpsChanged}
-            />
-          )}
-          {/* 看专家库时对话区仍保持挂载（只是隐藏），正在进行的生成不会被打断 */}
-          <div className={styles.slot} hidden={centerView !== 'chat'}>
-            <ChatPane
-              narrow={narrow}
-              onOpenMenu={() => {
-                setResultsOpen(false);
-                setDrawerOpen(true);
-              }}
-              resultsOpen={resultsOpen}
-              onToggleResults={toggleResults}
-              task={activeTask}
-              skills={skills}
-              clients={clients ?? []}
-              onTaskCreated={onTaskCreated}
-              onTaskChanged={refreshTasks}
-              onArtifact={onArtifact}
-              conversationVersion={conversationVersion}
-              onDraftClientChange={onDraftClientChange}
-              onNewTask={() => selectTask(null)}
-              onReviewUpload={onReviewUpload}
-              onUploadsChanged={onUploadsChanged}
-              uploadsVersion={uploadsVersion}
-              pendingExpert={activeTask ? null : pendingExpert}
-              onOpenExperts={onOpenExperts}
-              onConsultation={onConsultation}
-            />
-          </div>
-        </div>
-        <ResultsPanel
-          mode={narrow ? 'sheet' : 'docked'}
-          open={resultsOpen}
-          onClose={() => setResultsOpen(false)}
-          task={activeTask}
-          client={panelClient}
-          onArtifactsChanged={refreshTasks}
-          onConversationChanged={onConversationChanged}
-          onClientCreated={onClientCreated}
-          onClientSaved={upsertClient}
-          refreshKey={`${activeTask?.id ?? 'none'}:${artifactsVersion}`}
-          reviewRequest={reviewRequest}
-          uploadsVersion={uploadsVersion}
-          // 结果区里确认核对、放弃、重新识别后，对话区的识别卡片也要刷新（验收反馈 3）
-          onUploadsChanged={onUploadsChanged}
-          consultationsVersion={consultationsVersion}
-          expertsTabRequest={expertsTabRequest}
-          clientTabRequest={clientTabRequest}
-          twinRefreshKey={twinPanelVersion}
-          onTwinChanged={onTwinChanged}
-        />
-        {overlayOpen && (
-          <button
-            type="button"
-            className={styles.backdrop}
-            aria-label={drawerOpen ? t('nav.closeMenu') : t('results.close')}
-            onClick={() => {
-              setDrawerOpen(false);
-              setResultsOpen(false);
+      <TwinActionsContext.Provider value={twinActions}>
+        <div
+          className={styles.shell}
+          data-layout={narrow ? 'narrow' : 'wide'}
+          data-sidebar={!narrow && sidebarCollapsed ? 'collapsed' : 'expanded'}
+          data-results={!narrow && resultsOpen ? 'open' : 'closed'}
+        >
+          <Sidebar
+            mode={narrow ? 'drawer' : 'docked'}
+            collapsed={!narrow && sidebarCollapsed}
+            open={narrow ? drawerOpen : true}
+            onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
+            onClose={() => setDrawerOpen(false)}
+            {...(account ? { account } : {})}
+            tasks={{
+              view,
+              list: taskList,
+              clients,
+              activeTaskId: activeTask?.id ?? null,
+              onViewChange: changeView,
+              onSelect: selectTask,
+              // 新建任务先回到欢迎页，发送第一条消息时才真正创建，避免留下空任务
+              onNewTask: () => selectTask(null),
+              onArchive: archiveTask,
+              onRetry: refreshTasks,
+            }}
+            experts={{ active: centerView === 'experts', onOpen: openExpertCenter }}
+            followUps={{
+              active: centerView === 'followUps',
+              count: followUpList.data?.openCount ?? null,
+              onOpen: openFollowUps,
+            }}
+            clientList={{
+              clients,
+              levels: twinLevels,
+              activeClientId: panelClient?.id ?? null,
+              onSelect: selectClient,
             }}
           />
-        )}
-      </div>
+          <div className={styles.center}>
+            {centerView === 'experts' && (
+              <ExpertCenter
+                narrow={narrow}
+                onOpenMenu={() => {
+                  setResultsOpen(false);
+                  setDrawerOpen(true);
+                }}
+                state={expertList}
+                onRetry={() => setExpertsReload((v) => v + 1)}
+                onAsk={askExpert}
+              />
+            )}
+            {centerView === 'followUps' && (
+              <FollowUpCenter
+                narrow={narrow}
+                onOpenMenu={() => {
+                  setResultsOpen(false);
+                  setDrawerOpen(true);
+                }}
+                state={followUpList}
+                onRetry={() => setTwinSummaryVersion((v) => v + 1)}
+                onOpenClient={openClientById}
+                onChanged={onFollowUpsChanged}
+              />
+            )}
+            {/* 看专家库时对话区仍保持挂载（只是隐藏），正在进行的生成不会被打断 */}
+            <div className={styles.slot} hidden={centerView !== 'chat'}>
+              <ChatPane
+                narrow={narrow}
+                onOpenMenu={() => {
+                  setResultsOpen(false);
+                  setDrawerOpen(true);
+                }}
+                resultsOpen={resultsOpen}
+                onToggleResults={toggleResults}
+                task={activeTask}
+                skills={skills}
+                clients={clients ?? []}
+                onTaskCreated={onTaskCreated}
+                onTaskChanged={refreshTasks}
+                onArtifact={onArtifact}
+                conversationVersion={conversationVersion}
+                onDraftClientChange={onDraftClientChange}
+                onNewTask={() => selectTask(null)}
+                onReviewUpload={onReviewUpload}
+                onUploadsChanged={onUploadsChanged}
+                uploadsVersion={uploadsVersion}
+                pendingExpert={activeTask ? null : pendingExpert}
+                onOpenExperts={onOpenExperts}
+                onConsultation={onConsultation}
+                prefill={prefill}
+              />
+            </div>
+          </div>
+          <ResultsPanel
+            mode={narrow ? 'sheet' : 'docked'}
+            open={resultsOpen}
+            onClose={() => setResultsOpen(false)}
+            task={activeTask}
+            client={panelClient}
+            onArtifactsChanged={refreshTasks}
+            onConversationChanged={onConversationChanged}
+            onClientCreated={onClientCreated}
+            onClientSaved={upsertClient}
+            refreshKey={`${activeTask?.id ?? 'none'}:${artifactsVersion}`}
+            reviewRequest={reviewRequest}
+            uploadsVersion={uploadsVersion}
+            // 结果区里确认核对、放弃、重新识别后，对话区的识别卡片也要刷新（验收反馈 3）
+            onUploadsChanged={onUploadsChanged}
+            consultationsVersion={consultationsVersion}
+            expertsTabRequest={expertsTabRequest}
+            clientTabRequest={clientTabRequest}
+            twinRefreshKey={twinPanelVersion}
+            onTwinChanged={onTwinChanged}
+          />
+          {overlayOpen && (
+            <button
+              type="button"
+              className={styles.backdrop}
+              aria-label={drawerOpen ? t('nav.closeMenu') : t('results.close')}
+              onClick={() => {
+                setDrawerOpen(false);
+                setResultsOpen(false);
+              }}
+            />
+          )}
+        </div>
+      </TwinActionsContext.Provider>
     </ExpertsContext.Provider>
   );
 }

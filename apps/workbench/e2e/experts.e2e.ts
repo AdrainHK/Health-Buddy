@@ -162,6 +162,8 @@ function consultationFor(taskId: string, followUp = false): ExpertConsultation {
     origin: null,
     // 重新请专家的场景：报告在这次调用之后被更正过，营养专家因数量上限没请
     reportCorrectedSince: followUp,
+    followUpItemId: null,
+    twinRefs: [],
     routing: {
       selected: [
         { expertId: endo.id, selectedReason: 'manager', reasons: [{ kind: 'manager' }] },
@@ -290,6 +292,18 @@ async function mockApi(page: Page, { followUp = false } = {}): Promise<Mock> {
           return json(route, { reports: [] });
         case key === `GET /api/clients/${ids.client}/report-uploads`:
           return json(route, { uploads: [] });
+        // 对话区读孪生，只用来列出 @孪生项（M4 第 4 步）；这里客户还没有孪生数据
+        case key === `GET /api/clients/${ids.client}/twin`:
+          return json(route, {
+            client,
+            domains: [],
+            riskTier: null,
+            forecasts: [],
+            openFollowUpCount: 0,
+            hasOpenCritical: false,
+            computing: false,
+            hasData: false,
+          });
         case key === `GET /api/tasks/${ids.boundTask}/expert-consultations`:
           return json(route, { consultations: [consultationFor(ids.boundTask)] });
         case key === `GET /api/tasks/${ids.task}/expert-consultations`:
