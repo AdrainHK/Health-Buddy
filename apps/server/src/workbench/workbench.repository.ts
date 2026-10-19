@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { ExpressionBuilder } from 'kysely';
 import {
   detectCriticalFlags,
+  isKnownTwinRef,
   type ArtifactSummary,
   type CriticalFlag,
   type IndicatorCode,
@@ -10,6 +11,7 @@ import {
   type TaskMode,
   type TaskPlan,
   type TaskStep,
+  type TwinRef,
 } from '@health-buddy/shared';
 import {
   getSkill,
@@ -17,6 +19,7 @@ import {
   type HealthHistoryEntry,
   type ReportDetail,
   type ReportIndicatorDetail,
+  type TwinSnapshot,
 } from '@health-buddy/skills';
 import type { ChatMessage } from '@health-buddy/ai-engine';
 import { badRequest, conflict, notFound } from '../common/api-error.js';
@@ -28,6 +31,7 @@ import {
   selectArtifactSummary,
   toArtifactSummary,
 } from '../tasks/tasks.repository.js';
+import { loadTwinSnapshot } from '../twin/twin.repository.js';
 
 const readOnly = () => conflict({ reasons: ['read_only'] });
 
@@ -49,6 +53,10 @@ export interface PreparedTurn {
   assistantMessageId: string;
   /** 专家中心发起的任务绑定的专家（M3 规格 2.3） */
   expertId: string | null;
+  /** @ 引用的孪生项（M4 规格 2.8），已校验属于任务关联的客户 */
+  twinRefs: TwinRef[];
+  /** 从跟进项发起的“请专家看看”，已校验是这位客户、本人的跟进项 */
+  followUpItemId: string | null;
 }
 
 export interface ClientContext {
@@ -145,6 +153,12 @@ export class WorkbenchRepository {
       /** @ 的专家和“不要请”的专家（M3 规格 2.4、2.5），已由接口校验可用 */
       expertRefs?: string[];
       excludedExperts?: string[];
+      /** @ 引用的孪生项（M4 规格 2.8）：任务必须关联客户，编码在目录里，指标要有这位客户的预测 */
+      twinRefs?: TwinRef[];
+      /** “请专家看看”从跟进项发起（2.6 之二）：必须是任务关联客户、本人的跟进项 */
+      followUpItemId?: string;
+      /** /孪生小结、孪生复盘：客户还没有任何孪生数据时拒绝（409 no_twin_data） */
+      requiresTwinData?: boolean;
     },
     claim: (taskId: string) => boolean,
   ): Promise<PreparedTurn> {
@@ -187,6 +201,16 @@ export class WorkbenchRepository {
       const usedReportId =
         reportId ?? (usesReport && clientId ? await latestReportId(trx, clientId) : null);
       if (input.requiresReport && !usedReportId) throw noVerifiedReport();
+      // 孪生项、跟进项都按任务关联的客户校验（行级安全只看得到本人的客户和跟进项）；
+      // 不通过一律 404，在占用任务、调用任何模型之前（M4 规格 7.2）
+      const twinRefs = input.twinRefs ?? [];
+      if (twinRefs.length || input.followUpItemId) {
+        if (!clientId) throw notFound();
+        await checkTwinRefs(trx, ctx, clientId, twinRefs, input.followUpItemId);
+      }
+      if (input.requiresTwinData && clientId && !(await hasTwinData(trx, clientId))) {
+        throw noTwinData();
+      }
       if (!claim(task.id)) throw conflict({ reasons: ['busy'] });
 
       await closeStaleTurns(trx, task.id);
@@ -215,6 +239,7 @@ export class WorkbenchRepository {
           report_refs: reportId ? [reportId] : [],
           expert_refs: input.expertRefs ?? [],
           excluded_experts: input.excludedExperts ?? [],
+          twin_refs: JSON.stringify(twinRefs),
           status: 'complete',
           created_at: new Date(now),
         })
@@ -240,6 +265,8 @@ export class WorkbenchRepository {
         managerMessageId: manager.id,
         assistantMessageId: assistant,
         expertId: task.expert_id,
+        twinRefs,
+        followUpItemId: input.followUpItemId ?? null,
       };
     });
   }
@@ -252,6 +279,8 @@ export class WorkbenchRepository {
     claim: (taskId: string) => boolean,
     /** 技能对报告的要求：required（/体检解读）、optional（/面谈提纲）、none */
     reportUsage: (skillId: string) => 'required' | 'optional' | 'none',
+    /** 读孪生的技能（/孪生小结）：客户还没有孪生数据时拒绝 */
+    usesTwin: (skillId: string) => boolean = () => false,
   ): Promise<RegenerationContext> {
     return withTenant(this.db, ctx, async (trx) => {
       const task = await lockTask(trx, taskId);
@@ -299,6 +328,10 @@ export class WorkbenchRepository {
           reportId = await latestReportId(trx, task.client_id);
         }
         if (!reportId && usage.includes('required')) throw noVerifiedReport();
+      }
+      if (skillIds.some(usesTwin)) {
+        if (!task.client_id) throw notFound();
+        if (!(await hasTwinData(trx, task.client_id))) throw noTwinData();
       }
       if (!claim(task.id)) throw conflict({ reasons: ['busy'] });
 
@@ -658,6 +691,18 @@ export class WorkbenchRepository {
     });
   }
 
+  /**
+   * 读取客户的数字孪生（M4 规格 5.2）：在当前健管师的租户上下文里读，行级安全决定可见范围。
+   * 客户看不到时返回 undefined。快照只进内存，组装提示词前去标识。
+   */
+  twinContext(
+    ctx: TenantContext,
+    clientId: string,
+    focus: readonly TwinRef[] = [],
+  ): Promise<TwinSnapshot | undefined> {
+    return withTenant(this.db, ctx, (trx) => loadTwinSnapshot(trx, ctx, clientId, focus));
+  }
+
   /** 本任务之前的对话（不含这一轮），用作问一问的上下文 */
   history(
     ctx: TenantContext,
@@ -978,6 +1023,71 @@ export function ageBand(birthYear: number | null, now = new Date()): string | nu
 }
 
 const noVerifiedReport = () => conflict({ reasons: ['no_verified_report'] });
+const noTwinData = () => conflict({ reasons: ['no_twin_data'] });
+
+/**
+ * @ 的孪生项和“请专家看看”的跟进项（M4 规格 2.8、7.2）：客户必须是任务关联、本人服务的客户
+ * （行级安全，转出后看不到）；方面在四个方面之内，指标要有这位客户的预测；跟进项必须是这位客户、
+ * 本人的。任何一项不满足按“不存在”处理（404）。
+ */
+async function checkTwinRefs(
+  trx: TenantTransaction,
+  ctx: TenantContext,
+  clientId: string,
+  refs: readonly TwinRef[],
+  followUpItemId: string | undefined,
+): Promise<void> {
+  const own = await trx
+    .selectFrom('clients')
+    .select('id')
+    .where('id', '=', clientId)
+    .where('manager_id', '=', ctx.userId)
+    .executeTakeFirst();
+  if (!own) throw notFound();
+  if (refs.some((r) => !isKnownTwinRef(r))) throw notFound();
+  const metrics = refs.filter((r) => r.kind === 'metric').map((r) => r.code);
+  if (metrics.length) {
+    const rows = await trx
+      .selectFrom('twin_forecasts')
+      .select('metric')
+      .distinct()
+      .where('client_id', '=', clientId)
+      .where('metric', 'in', metrics)
+      .where('superseded_at', 'is', null)
+      .execute();
+    if (rows.length !== new Set(metrics).size) throw notFound();
+  }
+  if (followUpItemId) {
+    const item = await trx
+      .selectFrom('follow_up_items')
+      .select('id')
+      .where('id', '=', followUpItemId)
+      .where('client_id', '=', clientId)
+      .where('manager_id', '=', ctx.userId)
+      .executeTakeFirst();
+    if (!item) throw notFound();
+  }
+}
+
+/** 客户有没有孪生数据：算过非灰的状态，或有预测记录 */
+async function hasTwinData(trx: TenantTransaction, clientId: string): Promise<boolean> {
+  const status = await trx
+    .selectFrom('twin_status_history')
+    .select('id')
+    .where('client_id', '=', clientId)
+    .where('level', '<>', 'unknown')
+    .limit(1)
+    .executeTakeFirst();
+  if (status) return true;
+  const forecast = await trx
+    .selectFrom('twin_forecasts')
+    .select('id')
+    .where('client_id', '=', clientId)
+    .where('superseded_at', 'is', null)
+    .limit(1)
+    .executeTakeFirst();
+  return Boolean(forecast);
+}
 
 /** 该客户最近一份已核对报告（按报告日期，同一天按核对先后） */
 async function latestReportId(trx: TenantTransaction, clientId: string): Promise<string | null> {

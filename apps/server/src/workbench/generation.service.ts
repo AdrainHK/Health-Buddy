@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { GatewayError } from '@health-buddy/ai-engine';
+import { GatewayError, unknownNumbers } from '@health-buddy/ai-engine';
 import {
   EMERGENCY_NOTICE,
   EXPERTS,
@@ -24,23 +24,28 @@ import {
   type TaskMode,
   type TaskStep,
   type TaskStreamEvent,
+  type TwinRef,
 } from '@health-buddy/shared';
 import {
   ASK_NOTICE,
-  ASK_SYSTEM_PROMPT,
+  askSystemPrompt,
   buildAskUserContent,
   buildSystemPrompt,
   CRISIS_HEADER,
   criticalNotice,
   detectCrisisKeywords,
   finalizeClientText,
+  getSkill,
   greetClient,
+  knownNumbers,
+  redactAskClient,
   redactClientIdentity,
   wordingCategories,
   skillUsesReport,
   suggestSkill,
   withAskNotice,
   type SkillDefinition,
+  type WordingIssue,
 } from '@health-buddy/skills';
 import { LLM_GATEWAY, type AppGateway } from '../ai/gateway.provider.js';
 import type { TenantContext } from '../db/database.js';
@@ -84,6 +89,13 @@ const FLUSH_MS = 2000;
 
 /** 问一问里专家全部未能回复时的固定提示（M3 规格 3.6），不生成替代回答 */
 export const EXPERTS_UNAVAILABLE = '专家暂时无法回复，请稍后再试。';
+
+/**
+ * “请专家看看”按孪生项没有对应的专家时（如睡眠，M4 规格 2.6 之二第 4 条）的固定回答，
+ * 不调用专家，不报错
+ */
+export const NO_TWIN_EXPERT =
+  '目前没有负责这个方面的专家。可以在问一问里手动 @ 某位专家，或直接提问。';
 
 /** 技能自动调用专家的选项（M3 规格 2.4、2.5） */
 export interface SkillExpertOptions {
@@ -130,6 +142,13 @@ export interface ExpertAnswerPlan {
   /** 10 分钟内同样的请求复用上次的意见；重新请专家、补请专家时不复用 */
   reuse: boolean;
   maxExperts?: number;
+  /**
+   * “请专家看看”（M4 规格 2.6 之二）：针对的孪生项（有值时读孪生、按孪生项路由）、发起的跟进项、
+   * 要不要用模型补充路由（健管师补充了问题文字时才用）
+   */
+  twinRefs?: readonly TwinRef[];
+  followUpItemId?: string | null;
+  modelRouting?: boolean;
 }
 
 type AnsweredCall = { expertId: string; opinion: ExpertOpinion; removed: number };
@@ -240,6 +259,43 @@ export class GenerationService {
   }
 
   /**
+   * “请专家看看”（M4 规格 2.6 之二）：按孪生项涉及的指标自动选专家（@ 的专家一定请），
+   * 专家拿到 M3 的去标识资料加孪生项的状态、依据、历史和预测。触发方式记为 twin，不复用 10 分钟内的意见；
+   * 从跟进项发起时跟进项记“已请专家”，状态不变。危机、急症和免责提示和 M3 一样保留。
+   */
+  async twinConsultAnswer(
+    ctx: TenantContext,
+    turn: ExpertTurn & {
+      managerMessageId: string;
+      twinRefs: TwinRef[];
+      followUpItemId: string | null;
+    },
+    request: { content: string; expertRefs: string[]; excludedExperts: string[]; typed: boolean },
+    io: TurnIo,
+  ): Promise<void> {
+    const remaining = await this.consultation.remainingToday(ctx);
+    await this.expertAnswer(
+      ctx,
+      turn,
+      {
+        question: request.content,
+        trigger: 'twin',
+        mode: 'route',
+        forced: request.expertRefs,
+        excluded: request.excludedExperts,
+        bound: null,
+        requestMessageId: turn.managerMessageId,
+        reuse: false,
+        maxExperts: Math.max(1, Math.min(remaining, 3)),
+        twinRefs: turn.twinRefs,
+        followUpItemId: turn.followUpItemId,
+        modelRouting: request.typed,
+      },
+      io,
+    );
+  }
+
+  /**
    * 重新请专家、补请专家（M3 规格 6.4）：按原调用的问题和报告再请一次，生成新的调用记录，
    * 回答写在一条新的回答里（和直接请专家一样渲染）。不复用 10 分钟内的意见。
    */
@@ -288,6 +344,17 @@ export class GenerationService {
         if (headers) io.emit({ type: 'text', messageId, delta: headers });
         return await this.finish(ctx, messageId, headers, 'error', io, 'internal_error');
       }
+      // “请专家看看”：再读孪生（正在读取数字孪生），孪生项作为这次的关注点
+      const twinRefs = plan.twinRefs ?? [];
+      if (client && turn.clientId && twinRefs.length) {
+        const twin = await this.readTwin(ctx, turn.clientId, twinRefs, steps);
+        if (!twin) {
+          const headers = signalHeaders();
+          if (headers) io.emit({ type: 'text', messageId, delta: headers });
+          return await this.finish(ctx, messageId, headers, 'error', io, 'internal_error');
+        }
+        client.snapshot = { ...client.snapshot, twin };
+      }
       const run = {
         taskId: turn.taskId,
         messageId,
@@ -301,6 +368,13 @@ export class GenerationService {
         origin: plan.origin ?? null,
         requestMessageId: plan.requestMessageId,
         ...(plan.maxExperts !== undefined ? { maxExperts: plan.maxExperts } : {}),
+        ...(twinRefs.length
+          ? {
+              twinRefs,
+              followUpItemId: plan.followUpItemId ?? null,
+              modelRouting: plan.modelRouting ?? true,
+            }
+          : {}),
       };
 
       // 10 分钟内同样的请求：沿用上次的意见，不再调用模型（规格 3.7）
@@ -355,6 +429,7 @@ export class GenerationService {
             question: plan.question,
             identifiers: client?.identifiers ?? [],
             earlierTexts,
+            ...(twinRefs.length ? { twinRefs } : {}),
           },
         },
         { emit: io.emit, signal: io.signal, steps: steps.forExperts() },
@@ -366,6 +441,12 @@ export class GenerationService {
       if (io.signal.aborted || outcome?.result.status === 'stopped')
         throw new GatewayError('aborted');
       const answered = answeredCalls(outcome?.result.calls ?? []);
+      // 孪生项没有对应的专家（如睡眠）：固定回答，提示可以手动 @ 专家，不算出错
+      if (twinRefs.length && outcome && !outcome.result.routing.selected.length) {
+        const text = `${signalHeaders()}${NO_TWIN_EXPERT}`;
+        io.emit({ type: 'text', messageId, delta: text });
+        return await this.finish(ctx, messageId, text, 'complete', io);
+      }
       if (!outcome || !answered.length) {
         // 专家都没回复（或调用没有发起）也要把危机和急症提示留给健管师（关键词识别不依赖模型）
         const text = `${signalHeaders()}${EXPERTS_UNAVAILABLE}`;
@@ -431,6 +512,8 @@ export class GenerationService {
       reportId?: string | null;
       assistantMessageId: string;
       managerMessageId: string;
+      /** @ 引用的孪生项（M4 规格 2.8），回答以它们为主 */
+      twinRefs?: readonly TwinRef[];
     },
     request: { mode: TaskMode; content: string },
     io: TurnIo,
@@ -449,16 +532,27 @@ export class GenerationService {
         : undefined;
       if (turn.clientId && !client)
         return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
+      // M4 规格 2.9：读档案时一并读孪生（正在读取数字孪生），状态和预测作为档案的一部分
+      const twin =
+        client && turn.clientId
+          ? await this.readTwin(ctx, turn.clientId, turn.twinRefs ?? [], steps)
+          : undefined;
+      if (client && !twin)
+        return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
 
       const step = await steps.start('answer', 'steps.answer');
       const redact = (t: string) => redactClientIdentity(t, client?.identifiers ?? []);
+      // 手动调整的理由、跟进备注也去标识（M4 规格 5.4 第 6 条）
+      const snapshot = client
+        ? redactAskClient({ ...client.snapshot, twin: twin ?? null }, redact)
+        : undefined;
       // 历史消息也去标识：之前几轮里健管师可能提到过姓名或手机号
       const history = (await this.repo.history(ctx, turn.taskId, turn)).map((m) => ({
         ...m,
         content: redact(m.content),
       }));
       const question = redact(request.content);
-      const userContent = buildAskUserContent(client?.snapshot, question);
+      const userContent = buildAskUserContent(snapshot, question);
 
       // 固定的提醒由后端拼在开头，不依赖模型；模型拒答时也保留
       const signalTexts = [request.content, ...(await this.repo.managerTexts(ctx, turn.taskId))];
@@ -475,7 +569,7 @@ export class GenerationService {
         ctx,
         {
           route: 'chat',
-          system: ASK_SYSTEM_PROMPT,
+          system: askSystemPrompt(snapshot),
           messages: [...history, { role: 'user', content: userContent }],
           maxOutputTokens: 4000,
         },
@@ -534,8 +628,11 @@ export class GenerationService {
     io: TurnIo,
   ): Promise<void> {
     try {
+      // 读孪生的技能（/孪生小结、孪生复盘）：读档案 → 读数字孪生 → 技能
+      const readsTwin = skillIds.some((id) => getSkill(id)?.usesTwin);
       const plan = await this.repo.createPlan(ctx, turn.assistantMessageId, [
         { kind: 'read_client' },
+        ...(readsTwin ? [{ kind: 'read_twin' as const }] : []),
         ...skillIds.map((skillId) => ({ kind: 'run_skill' as const, skillId })),
       ]);
       io.emit({ type: 'plan', plan });
@@ -568,9 +665,12 @@ export class GenerationService {
       if (!run.clientId || !run.skills.length)
         return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
       const usesReport = run.skills.some(skillUsesReport);
-      const client = usesReport
-        ? await this.readReport(ctx, run.clientId, steps, run.reportId ?? null, run.skills)
-        : await this.readClient(ctx, run.clientId, steps, run.reportId ?? null);
+      const usesTwin = run.skills.some((s) => s.usesTwin);
+      const client = usesTwin
+        ? await this.readTwinClient(ctx, run.clientId, steps)
+        : usesReport
+          ? await this.readReport(ctx, run.clientId, steps, run.reportId ?? null, run.skills)
+          : await this.readClient(ctx, run.clientId, steps, run.reportId ?? null);
       if (!client) return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
 
       // 心理危机和疑似急症信号不只依赖模型判断：健管师的原话、退回原因、本任务之前的消息里有关键词也算
@@ -594,8 +694,10 @@ export class GenerationService {
             }
           : {}),
       };
+      // 孪生里手动调整的理由、跟进备注同样去标识（M4 规格 5.4 第 6 条）
+      const redactedSnapshot = redactAskClient(snapshot, redact);
       const input = {
-        client: snapshot,
+        client: redactedSnapshot,
         managerRequest: redact(run.managerRequest),
         returnReason: run.returnReason === undefined ? undefined : redact(run.returnReason),
         riskTierCriteria: this.riskTierCriteria,
@@ -634,7 +736,21 @@ export class GenerationService {
         // 仍没通过就不保存草稿。日志只记类别和次数，不记输出内容。
         // M3：用了专家意见时，通俗版里不能出现“专家”和专家名称（合规审查第 4 条），同样重试一次
         const check = (data: unknown) => {
-          const wording = skill.checkOutput?.(data as never) ?? [];
+          const wording: WordingIssue[] = [
+            ...(skill.checkOutput?.(data as never, skillInput) ?? []),
+          ];
+          // 读孪生的技能：说明文字里的数值只能来自输入资料，不能自己推算（M4 规格 2.7、5.2）
+          if (skill.numberCheckTexts) {
+            const allowed = knownNumbers(skillInput.client, [
+              skillInput.managerRequest,
+              skillInput.returnReason ?? '',
+            ]);
+            const invented = unknownNumbers(
+              skill.numberCheckTexts(data as never).join('\n'),
+              allowed,
+            );
+            if (invented.length) wording.push({ category: 'invented_number', term: '', index: 0 });
+          }
           const clientFacing = (data as { clientFacing?: unknown }).clientFacing;
           const mentions =
             used && skill.clientFacing && typeof clientFacing === 'string'
@@ -941,6 +1057,44 @@ export class GenerationService {
     const detect = await steps.start('detect_critical', 'steps.detectCritical');
     await steps.finish(detect, 'done');
     return client;
+  }
+
+  /** 正在读取数字孪生（M4 规格 2.9）：客户看不到时步骤失败，返回 undefined */
+  private async readTwin(
+    ctx: TenantContext,
+    clientId: string,
+    focus: readonly TwinRef[],
+    steps: StepRunner,
+  ) {
+    const step = await steps.start('read_twin', 'steps.readTwin');
+    const twin = await this.repo.twinContext(ctx, clientId, focus);
+    await steps.finish(step, twin ? 'done' : 'failed');
+    return twin;
+  }
+
+  /**
+   * /孪生小结 读资料（M4 规格 2.7）：正在读取客户档案 → 正在读取数字孪生 → 正在计算趋势
+   * （预测已由孪生计算好，这一步只取用）→ 正在识别危急指标
+   */
+  private async readTwinClient(
+    ctx: TenantContext,
+    clientId: string,
+    steps: StepRunner,
+  ): Promise<ClientContext | undefined> {
+    const read = await steps.start('read_client', 'steps.readClient');
+    const client = await this.repo.clientContext(ctx, clientId, null, { detail: true });
+    if (!client) {
+      await steps.finish(read, 'failed');
+      return undefined;
+    }
+    await steps.finish(read, 'done');
+    const twin = await this.readTwin(ctx, clientId, [], steps);
+    if (!twin) return undefined;
+    const forecast = await steps.start('compute_forecast', 'steps.computeForecast');
+    await steps.finish(forecast, 'done');
+    const detect = await steps.start('detect_critical', 'steps.detectCritical');
+    await steps.finish(detect, 'done');
+    return { ...client, snapshot: { ...client.snapshot, twin } };
   }
 
   /** 读档案、识别危急指标，两步都推给前端 */

@@ -17,6 +17,7 @@ import type {
   ConsultationTrigger,
   TaskStep,
   TaskStreamEvent,
+  TwinRef,
 } from '@health-buddy/shared';
 import { LLM_GATEWAY, type AppGateway } from '../ai/gateway.provider.js';
 import { APP_CONFIG, type AppConfig } from '../config.js';
@@ -55,6 +56,13 @@ export interface ConsultRun {
   origin?: ConsultationOrigin | null;
   /** 这次调用回答的健管师消息（重新请专家按它的原文再问；10 分钟内复用时比较原文） */
   requestMessageId?: string | null;
+  /**
+   * “请专家看看”（M4 规格 2.6 之二）：针对的孪生项（source.twinRefs 同一份）、发起的跟进项，
+   * 以及要不要用模型补充路由（健管师补充了问题文字时才用）
+   */
+  twinRefs?: readonly TwinRef[];
+  followUpItemId?: string | null;
+  modelRouting?: boolean;
 }
 
 /**
@@ -193,6 +201,7 @@ export class ConsultationService {
           forced: run.forced,
           excluded: run.excluded,
           bound: run.bound ?? null,
+          ...(run.modelRouting === false ? { modelRouting: false } : {}),
         },
         {
           signal: io.signal,
@@ -232,6 +241,8 @@ export class ConsultationService {
                   origin: run.origin ?? null,
                   requestMessageId: run.requestMessageId ?? null,
                   requestKey: expertRequestKey(run),
+                  twinRefs: run.twinRefs ?? [],
+                  followUpItemId: run.followUpItemId ?? null,
                 },
                 planned,
                 DAILY_EXPERT_CALLS,
@@ -306,6 +317,7 @@ export class ConsultationService {
         `consultation finished ${JSON.stringify({
           trigger: run.trigger,
           status: final,
+          twinRefs: run.twinRefs?.length ?? 0,
           experts: result.calls.length,
           answered: result.calls.filter((c) => c.status === 'done').length,
           removed: result.calls.reduce((n, c) => n + c.removedFindings, 0),

@@ -167,6 +167,8 @@ export interface TaskMessagesTable extends ManagerScoped {
   report_refs: ColumnType<string[], string[] | undefined, string[]>;
   expert_refs: ColumnType<string[], string[] | undefined, never>;
   excluded_experts: ColumnType<string[], string[] | undefined, never>;
+  /** @ 引用的孪生项（迁移 0018），JSON 数组：{kind, code}，最多 3 个 */
+  twin_refs: ColumnType<unknown, string | undefined, never>;
   status: 'streaming' | 'complete' | 'stopped' | 'refused' | 'error';
   created_at: Timestamp;
 }
@@ -185,7 +187,9 @@ export interface TaskStepsTable extends ManagerScoped {
     | 'route_experts'
     | 'consult_experts'
     | 'consult_expert'
-    | 'synthesize_experts';
+    | 'synthesize_experts'
+    | 'read_twin'
+    | 'compute_forecast';
   label_key: string;
   expert_ids: ColumnType<string[], string[] | undefined, never>;
   label_date: ColumnType<string | null, string | null | undefined, string | null>;
@@ -424,7 +428,7 @@ export interface ExpertConsultationsTable extends ManagerScoped {
   message_id: string;
   client_id: ColumnType<string | null, string | null | undefined, never>;
   report_id: ColumnType<string | null, string | null | undefined, never>;
-  trigger: 'expert_center' | 'mention' | 'skill_auto' | 'plan';
+  trigger: 'expert_center' | 'mention' | 'skill_auto' | 'plan' | 'twin';
   routing: JsonColumn<unknown>;
   status: 'running' | 'done' | 'partial' | 'failed' | 'stopped';
   synthesis: NullableJson<unknown>;
@@ -443,6 +447,9 @@ export interface ExpertConsultationsTable extends ManagerScoped {
   /** 这次调用回答的健管师消息；请求里和专家有关的部分（只有专家 id） */
   request_message_id: ColumnType<string | null, string | null | undefined, never>;
   request_key: ColumnType<string | null, string | null | undefined, never>;
+  /** “请专家看看”关联的跟进项和孪生项（迁移 0018） */
+  follow_up_item_id: ColumnType<string | null, string | null | undefined, never>;
+  twin_refs: ColumnType<unknown, string | null | undefined, never>;
   created_at: Timestamp;
   finished_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
 }

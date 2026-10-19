@@ -7,6 +7,7 @@ import {
   domainMetrics,
   indicatorUnit,
   matchesRule,
+  weeklyAverages,
   worstTwinLevel,
   type CreateMonitoringReadingRequest,
   type CriticalComparator,
@@ -27,7 +28,13 @@ import {
   type TwinTimelineQuery,
   type TwinTimelineResponse,
   type TwinTimelineType,
+  type TwinRef,
 } from '@health-buddy/shared';
+import type {
+  TwinFollowUpSnapshot,
+  TwinForecastSnapshot,
+  TwinSnapshot,
+} from '@health-buddy/skills';
 import { selectTiers, toTier } from '../clients/client-record.repository.js';
 import { selectClientSummary, toClientSummary } from '../clients/clients.repository.js';
 import { DB } from '../db/db.provider.js';
@@ -245,27 +252,8 @@ export class TwinRepository {
   }
 
   /** 每个方面最近一次有新数据写入的时间，和客户有没有任何已核对报告、监测数据 */
-  private async latestDataAt(trx: TenantTransaction, clientId: string) {
-    const report = await trx
-      .selectFrom('report_indicators')
-      .select(['code', (eb) => eb.fn.max('created_at').as('at')])
-      .where('client_id', '=', clientId)
-      .where('code', 'is not', null)
-      .where('value', 'is not', null)
-      .groupBy('code')
-      .execute();
-    const readings = await trx
-      .selectFrom('monitoring_readings')
-      .select(['metric', (eb) => eb.fn.max('created_at').as('at')])
-      .where('client_id', '=', clientId)
-      .groupBy('metric')
-      .execute();
-    const reportAt = new Map(report.map((r) => [r.code!, new Date(r.at).getTime()]));
-    const readingAt = new Map(readings.map((r) => [r.metric, new Date(r.at).getTime()]));
-    return {
-      byDomain: latestDomainDataAt(reportAt, readingAt, domainMetrics),
-      hasData: report.length > 0 || readings.length > 0,
-    };
+  private latestDataAt(trx: TenantTransaction, clientId: string) {
+    return latestDataAt(trx, clientId);
   }
 
   /** 某个方面（或全部）的状态历史，从新到旧 */
@@ -998,6 +986,190 @@ function toReading(
     source: row.source,
     deletable: row.source === 'manual' && row.created_by === userId,
   };
+}
+
+/** 每个方面最近一次有新数据写入的时间，和客户有没有任何已核对报告、监测数据 */
+async function latestDataAt(trx: TenantTransaction, clientId: string) {
+  const report = await trx
+    .selectFrom('report_indicators')
+    .select(['code', (eb) => eb.fn.max('created_at').as('at')])
+    .where('client_id', '=', clientId)
+    .where('code', 'is not', null)
+    .where('value', 'is not', null)
+    .groupBy('code')
+    .execute();
+  const readings = await trx
+    .selectFrom('monitoring_readings')
+    .select(['metric', (eb) => eb.fn.max('created_at').as('at')])
+    .where('client_id', '=', clientId)
+    .groupBy('metric')
+    .execute();
+  const reportAt = new Map(report.map((r) => [r.code!, new Date(r.at).getTime()]));
+  const readingAt = new Map(readings.map((r) => [r.metric, new Date(r.at).getTime()]));
+  return {
+    byDomain: latestDomainDataAt(reportAt, readingAt, domainMetrics),
+    hasData: report.length > 0 || readings.length > 0,
+  };
+}
+
+/** 孪生快照里每个指标最多带几次历史数值 */
+const SNAPSHOT_HISTORY_LIMIT = 12;
+
+/**
+ * 给模型的孪生快照（M4 规格 5.2）：四个方面的状态和依据、当前预测（含历次数值）、本人未处理的跟进项。
+ * 在调用者的租户上下文里读，行级安全决定可见范围；数值、理由和备注只进内存，组装提示词前由
+ * 生成服务去标识（redactTwin），不写日志。客户看不到时返回 undefined。
+ */
+export async function loadTwinSnapshot(
+  trx: TenantTransaction,
+  ctx: TenantContext,
+  clientId: string,
+  focus: readonly TwinRef[] = [],
+  now = new Date(),
+): Promise<TwinSnapshot | undefined> {
+  if (ctx.role !== 'manager' || !(await clientVisible(trx, clientId))) return undefined;
+  const rows = await selectStatusRows(trx, clientId)
+    .orderBy('h.created_at', 'desc')
+    .orderBy('h.id', 'desc')
+    .limit(HISTORY_ROW_LIMIT)
+    .execute();
+  const latest = await latestDataAt(trx, clientId);
+  const domains = buildDomainViews(rows as StatusRow[], latest.byDomain).map((d) => ({
+    domain: d.domain,
+    level: d.level,
+    computedLevel: d.computed?.level ?? null,
+    manual:
+      d.manual && d.manual.level !== 'unknown'
+        ? { level: d.manual.level, reason: d.manual.reason ?? '' }
+        : null,
+    previousLevel: d.previousLevel,
+    changedOn: d.changedAt?.slice(0, 10) ?? null,
+    basis: d.computed?.basis ?? [],
+  }));
+
+  const forecastRows = await trx
+    .selectFrom('twin_forecasts')
+    .selectAll()
+    .where('client_id', '=', clientId)
+    .where('superseded_at', 'is', null)
+    .orderBy('metric')
+    .orderBy('source')
+    .execute();
+  const forecasts: TwinForecastSnapshot[] = [];
+  for (const row of forecastRows) {
+    const f = forecastFromRow(row as ForecastRow);
+    const unit = indicatorUnit(f.metric as IndicatorCode);
+    forecasts.push({
+      metric: f.metric,
+      source: f.source,
+      unit,
+      status: f.status,
+      insufficientReason: f.insufficientReason,
+      pointsNeeded: f.pointsNeeded,
+      nPoints: f.nPoints,
+      spanDays: f.spanDays,
+      basis: f.basis ? { kind: f.basis.kind, from: f.basis.from, to: f.basis.to } : null,
+      methodVersion: f.methodVersion,
+      intervalLevel: f.intervalLevel,
+      uncertainty: f.uncertainty,
+      points: f.points.map((p) => ({
+        monthsAhead: p.monthsAhead,
+        date: p.date,
+        mid: p.mid,
+        low: p.low,
+        high: p.high,
+      })),
+      history: await forecastHistory(trx, clientId, f.metric, f.source, unit, now),
+    });
+  }
+
+  const items = await trx
+    .selectFrom('follow_up_items')
+    .select((eb) => [
+      'follow_up_items.kind',
+      'follow_up_items.severity',
+      'follow_up_items.domain',
+      'follow_up_items.metric',
+      'follow_up_items.status',
+      'follow_up_items.basis',
+      'follow_up_items.note',
+      eb
+        .exists(
+          eb
+            .selectFrom('follow_up_events as e')
+            .select('e.id')
+            .whereRef('e.item_id', '=', 'follow_up_items.id')
+            .where('e.action', '=', 'consulted'),
+        )
+        .as('consulted'),
+    ])
+    .where('client_id', '=', clientId)
+    .where('manager_id', '=', ctx.userId)
+    .where('status', 'in', ['open', 'snoozed'])
+    .orderBy('severity')
+    .orderBy('last_triggered_at', 'desc')
+    .limit(50)
+    .execute();
+  const followUps: TwinFollowUpSnapshot[] = items.map((i) => ({
+    kind: i.kind,
+    severity: i.severity,
+    domain: i.domain,
+    metric: i.metric,
+    status: i.status as 'open' | 'snoozed',
+    basis: (i.basis && typeof i.basis === 'object' ? i.basis : {}) as Record<string, unknown>,
+    note: i.note,
+    consulted: Boolean(i.consulted),
+  }));
+  return { domains, forecasts, followUps, focus: [...focus] };
+}
+
+/**
+ * 预测指标的历次实际数值（5.2）：报告指标是已核对的数值（同一单位），监测指标是有效周的周平均
+ * （保留一位小数），和预测用的口径一致。
+ */
+async function forecastHistory(
+  trx: TenantTransaction,
+  clientId: string,
+  metric: string,
+  source: 'report' | 'monitoring',
+  unit: string,
+  now: Date,
+): Promise<{ date: string; value: number }[]> {
+  if (source === 'report') {
+    const rows = await trx
+      .selectFrom('report_indicators as i')
+      .innerJoin('health_reports as r', (join) =>
+        join.onRef('r.id', '=', 'i.report_id').onRef('r.client_id', '=', 'i.client_id'),
+      )
+      .select((eb) => [
+        'i.value',
+        eb.fn<string>('to_char', [eb.ref('r.report_date'), eb.val('YYYY-MM-DD')]).as('date'),
+      ])
+      .where('i.client_id', '=', clientId)
+      .where('i.code', '=', metric)
+      .where('i.unit', '=', unit)
+      .where('i.superseded_by', 'is', null)
+      .where('i.value', 'is not', null)
+      .orderBy('r.report_date', 'desc')
+      .limit(SNAPSHOT_HISTORY_LIMIT)
+      .execute();
+    return rows.reverse().map((r) => ({ date: r.date, value: Number(r.value) }));
+  }
+  const readings = await trx
+    .selectFrom('monitoring_readings')
+    .select(['value', 'measured_at'])
+    .where('client_id', '=', clientId)
+    .where('metric', '=', metric)
+    .where('unit', '=', unit)
+    .where('measured_at', '>=', new Date(now.getTime() - DETAIL_READING_DAYS * DAY_MS))
+    .limit(DETAIL_READING_LIMIT)
+    .execute();
+  return weeklyAverages(
+    readings.map((r) => ({ at: r.measured_at.toISOString(), value: Number(r.value) })),
+    now.toISOString(),
+  )
+    .slice(-SNAPSHOT_HISTORY_LIMIT)
+    .map((w) => ({ date: w.to, value: Math.round(w.average * 10) / 10 }));
 }
 
 export async function clientVisible(trx: TenantTransaction, clientId: string): Promise<boolean> {
