@@ -313,8 +313,38 @@ describe('合规审核补充：孪生措辞检查（M4 PR #46）', () => {
     expect(cats('建议把心血管改为红色。')).toContain('status_change');
     expect(cats('应改为绿')).toContain('status_change');
     expect(cats('收缩压将会继续升高。')).toContain('forecast_certainty');
-    expect(cats('建议每次两片。')).toContain('drug_advice');
+    expect(cats('降压药每次两片。')).toContain('drug_advice');
     expect(cats('可以加到 5 mg。')).toContain('drug_advice');
+  });
+
+  it('复审：照抄的手动调整不算结论，“可由黄调为红”“调整为红色预警”算', () => {
+    expect(cats('心血管已由健管师手动调整为红（2026-10-12）。')).not.toContain('status_change');
+    expect(cats('健管师手动调整为红（2026-10-12）。')).not.toContain('status_change');
+    expect(cats('代谢已调整为绿。')).not.toContain('status_change');
+    expect(cats('心血管可由黄调为红。')).toContain('status_change');
+    expect(cats('建议从黄调为红。')).toContain('status_change');
+    expect(cats('建议将心血管调整为红色预警。')).toContain('status_change');
+  });
+
+  it('复审：“不能排除”“除外”不算否定', () => {
+    expect(cats('不能排除心血管风险升高。')).toContain('disease_risk');
+    expect(cats('无法排除进展为慢性病。')).toContain('disease_risk');
+    expect(cats('不能说心血管风险升高。')).not.toContain('disease_risk');
+  });
+
+  it('复审：面包、鸡蛋、坚果这类饮食数量不算剂量', () => {
+    for (const t of [
+      '早餐两片面包。',
+      '每天一颗鸡蛋。',
+      '加餐几粒坚果。',
+      '早餐可以加一颗鸡蛋。',
+    ]) {
+      expect(cats(t), t).not.toContain('drug_advice');
+    }
+    expect(cats('降压药每次两片。')).toContain('drug_advice');
+    expect(cats('每次两粒二甲双胍。')).toContain('drug_advice');
+    expect(cats('可以加到 5 mg。')).toContain('drug_advice');
+    expect(cats('建议把降压药加量。')).toContain('drug_advice');
   });
 
   it('knows the added disease names and risk phrases', () => {
