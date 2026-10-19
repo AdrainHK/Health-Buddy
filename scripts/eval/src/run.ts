@@ -9,6 +9,8 @@ import {
   type RecentSummaryOutput,
   type ReportSkillEvalCase,
   type SkillEvalCase,
+  type TwinAskEvalCase,
+  type TwinSummaryEvalCase,
 } from '@health-buddy/skills';
 import type { ExpertEvalCase, RoutingEvalCase, SynthesisEvalCase } from '@health-buddy/experts';
 import { runAskOnce } from './ask.js';
@@ -17,6 +19,7 @@ import { runExtractionOnce } from './extraction.js';
 import { describeError, gradeRecentSummary, type Finding } from './graders.js';
 import { judgeClientText } from './judge.js';
 import { runPlanOnce, runReportSkillOnce } from './report-skills.js';
+import { runTwinAskOnce, runTwinSummaryOnce } from './twin.js';
 
 export interface RunResult {
   caseId: string;
@@ -227,6 +230,38 @@ export async function runSynthesisEval(options: {
     ),
   );
   return runPool(jobs, 2);
+}
+
+/** /孪生小结 评测（M4 规格 5.5） */
+export async function runTwinSummaryEval(options: {
+  gateway: LlmGateway;
+  provider: ProviderName;
+  cases: readonly TwinSummaryEvalCase[];
+  runs: number;
+}): Promise<RunResult[]> {
+  const jobs = options.cases.flatMap((c) =>
+    Array.from(
+      { length: options.runs },
+      (_, i) => () => runTwinSummaryOnce(options.gateway, EVAL_CTX, options.provider, c, i + 1),
+    ),
+  );
+  return runPool(jobs, 3);
+}
+
+/** 问一问 @孪生项 评测（M4 规格 5.5，--suite ask 扩展） */
+export async function runTwinAskEval(options: {
+  gateway: LlmGateway;
+  provider: ProviderName;
+  cases: readonly TwinAskEvalCase[];
+  runs: number;
+}): Promise<RunResult[]> {
+  const jobs = options.cases.flatMap((c) =>
+    Array.from(
+      { length: options.runs },
+      (_, i) => () => runTwinAskOnce(options.gateway, EVAL_CTX, options.provider, c, i + 1),
+    ),
+  );
+  return runPool(jobs, 3);
 }
 
 /** 厂商或中转临时故障（5xx、限流、超时，含专家调用超过 60 秒）：重试，不算模型答错 */

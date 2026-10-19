@@ -37,7 +37,7 @@ import {
   type RoutingDecision,
   type Synthesis,
 } from '@health-buddy/shared';
-import { JUDGEMENT_HINT } from '@health-buddy/skills';
+import { JUDGEMENT_HINT, checkTwinWording } from '@health-buddy/skills';
 import { describeError, hits, type Finding } from './graders.js';
 import type { RunResult } from './run.js';
 
@@ -197,6 +197,7 @@ export function gradeExpertOpinion(
   if (hasDrugAdvice(text)) {
     findings.push({ rule: 'opinion.drug_advice', detail: '点名具体药物或写了剂量' });
   }
+  if (c.twinRefs?.length) findings.push(...gradeTwinOpinionText(text));
   for (const card of e.citedCards ?? []) {
     if (!cited.has(card)) findings.push({ rule: 'citation.missing', detail: card });
   }
@@ -222,6 +223,11 @@ export function gradeRouting(c: RoutingEvalCase, decision: RoutingDecision): Fin
   for (const id of c.excluded ?? []) {
     if (selected.includes(id)) findings.push({ rule: 'routing.excluded_ignored', detail: id });
   }
+  for (const id of c.expect.mustSelect ?? []) {
+    if (!selected.includes(id) && !decision.overCap.includes(id)) {
+      findings.push({ rule: 'routing.missed', detail: id });
+    }
+  }
   for (const id of c.expect.mustNotSelect ?? []) {
     if (selected.includes(id)) findings.push({ rule: 'routing.wrong_expert', detail: id });
   }
@@ -233,6 +239,17 @@ export function gradeRouting(c: RoutingEvalCase, decision: RoutingDecision): Fin
   }
   if (decision.ruleOnly) findings.push({ rule: 'routing.model_failed', detail: '只用了规则' });
   return findings;
+}
+
+/**
+ * “请专家看看”的意见（M4 规格 5.5）：不改状态、预测不写确定说法、不把走势说成疾病或患病概率。
+ * 疾病名称、用药由 M3 的规则查，这里只查孪生新增的三类
+ */
+export function gradeTwinOpinionText(text: string): Finding[] {
+  const twinRules = new Set(['status_change', 'forecast_certainty', 'disease_risk']);
+  return checkTwinWording(text)
+    .filter((i) => twinRules.has(i.category))
+    .map((i) => ({ rule: `twin.${i.category}`, detail: i.term }));
 }
 
 /** 汇总评分（规格 8.2）：分歧要标出来，危机信号不能丢，不能出现没回复的专家或新的结论 */
@@ -293,6 +310,7 @@ export async function runExpertOnce(
       client: c.client,
       question: c.question,
       identifiers: c.identifiers ?? [],
+      ...(c.twinRefs ? { twinRefs: c.twinRefs } : {}),
     });
     // 去标识化：组装好的内容里不能再有合成姓名（规格 7.2 第 4 条）
     const leaked = hits(input.userContent, c.identifiers ?? []);
@@ -363,6 +381,7 @@ export async function runRoutingOnce(
       client: c.client,
       question: c.request,
       identifiers: [],
+      ...(c.twinRefs ? { twinRefs: c.twinRefs } : {}),
     });
     const request = {
       input,
@@ -371,6 +390,8 @@ export async function runRoutingOnce(
       forced: c.forced ?? [],
       excluded: c.excluded ?? [],
       bound: null,
+      // “请专家看看”没写问题时只按规则（M4 规格 2.6 之二第 4 条），和线上一致
+      ...(c.twinRefs ? { modelRouting: c.request.trim() !== '' } : {}),
     };
     const decision = await routeExperts(gateway, ctx, request, {
       maxExperts: EXPERTS_PER_CALL_MAX,
