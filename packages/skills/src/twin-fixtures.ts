@@ -1,10 +1,11 @@
-import type { TwinBasisItem } from '@health-buddy/shared';
+import { DEFAULT_CRITICAL_RULES, type TwinBasisItem } from '@health-buddy/shared';
 import type { ClientSnapshot } from './framework.js';
-import type {
-  TwinDomainSnapshot,
-  TwinFollowUpSnapshot,
-  TwinForecastSnapshot,
-  TwinSnapshot,
+import {
+  forecastCrossings,
+  type TwinDomainSnapshot,
+  type TwinFollowUpSnapshot,
+  type TwinForecastSnapshot,
+  type TwinSnapshot,
 } from './twin-input.js';
 
 /**
@@ -183,6 +184,21 @@ function forecast(
   };
 }
 
+/** 和后端组装快照时一样：用报告参考范围和平台默认危急阈值算越线 */
+function withCrossings(
+  f: TwinForecastSnapshot,
+  reference: { low: number | null; high: number | null } | null,
+): TwinForecastSnapshot {
+  return {
+    ...f,
+    crossings: forecastCrossings(
+      f.points,
+      reference,
+      DEFAULT_CRITICAL_RULES.filter((r) => r.metric === f.metric),
+    ),
+  };
+}
+
 function insufficient(
   metric: string,
   unit: string,
@@ -235,20 +251,46 @@ const BASE: Omit<ClientSnapshot, 'twin'> = {
   criticalFlags: [],
 };
 
-const SBP_RISING = forecast(
-  'sbp',
-  'mmHg',
-  'report',
-  [
-    { date: '2024-10-12', value: 126 },
-    { date: '2025-04-15', value: 131 },
-    { date: '2025-10-10', value: 137 },
-    { date: '2026-09-12', value: 146 },
-  ],
-  [
-    { monthsAhead: 3, date: '2026-12-12', mid: 150.2, low: 143.6, high: 156.8 },
-    { monthsAhead: 6, date: '2027-03-12', mid: 154.4, low: 145.1, high: 163.7 },
-  ],
+const SBP_RISING = withCrossings(
+  forecast(
+    'sbp',
+    'mmHg',
+    'report',
+    [
+      { date: '2024-10-12', value: 126 },
+      { date: '2025-04-15', value: 131 },
+      { date: '2025-10-10', value: 137 },
+      { date: '2026-09-12', value: 146 },
+    ],
+    [
+      { monthsAhead: 3, date: '2026-12-12', mid: 150.2, low: 143.6, high: 156.8 },
+      { monthsAhead: 6, date: '2027-03-12', mid: 154.4, low: 145.1, high: 163.7 },
+    ],
+  ),
+  { low: 90, high: 139 },
+);
+
+/** 家庭收缩压上升很快：3 个月后区间上端、6 个月后中间值达到危急阈值 180 */
+const SBP_TO_CRITICAL = withCrossings(
+  forecast(
+    'sbp',
+    'mmHg',
+    'monitoring',
+    [
+      { date: '2026-08-02', value: 148.2 },
+      { date: '2026-08-16', value: 151.5 },
+      { date: '2026-08-30', value: 155.1 },
+      { date: '2026-09-13', value: 158.6 },
+      { date: '2026-09-27', value: 162.4 },
+      { date: '2026-10-11', value: 166.3 },
+      { date: '2026-10-18', value: 168.1 },
+    ],
+    [
+      { monthsAhead: 3, date: '2027-01-18', mid: 178.6, low: 168.2, high: 189 },
+      { monthsAhead: 6, date: '2027-04-18', mid: 186.1, low: 171, high: 201.2 },
+    ],
+  ),
+  null,
 );
 
 const WEIGHT_FALLING = forecast(
@@ -268,17 +310,20 @@ const WEIGHT_FALLING = forecast(
   [{ monthsAhead: 3, date: '2027-01-18', mid: 82.4, low: 80.9, high: 83.9 }],
 );
 
-const FPG_VOLATILE = forecast(
-  'fpg',
-  'mmol/L',
-  'report',
-  [
-    { date: '2025-03-20', value: 5.6 },
-    { date: '2025-09-18', value: 6.8 },
-    { date: '2026-03-16', value: 5.9 },
-  ],
-  [{ monthsAhead: 3, date: '2026-06-16', mid: 6.1, low: 4.4, high: 7.8 }],
-  'high',
+const FPG_VOLATILE = withCrossings(
+  forecast(
+    'fpg',
+    'mmol/L',
+    'report',
+    [
+      { date: '2025-03-20', value: 5.6 },
+      { date: '2025-09-18', value: 6.8 },
+      { date: '2026-03-16', value: 5.9 },
+    ],
+    [{ monthsAhead: 3, date: '2026-06-16', mid: 6.1, low: 4.4, high: 7.8 }],
+    'high',
+  ),
+  { low: 3.9, high: 6.1 },
 );
 
 export const TWIN_SNAPSHOTS = {
@@ -341,6 +386,53 @@ export const TWIN_SNAPSHOTS = {
           { domain: 'cardiovascular' },
         ),
       ],
+      focus: [],
+    },
+  },
+
+  /**
+   * 预测越过危急阈值：家庭收缩压周平均还没到 180，但按走势 3 个月后区间上端、6 个月后中间值达到 180。
+   * 只是数值推算：不改状态、不生成跟进项，要提醒健管师关注、联系客户（规格 2.4、5.5）
+   */
+  criticalCrossing: {
+    ...BASE,
+    ageBand: '60-69',
+    monitoring: [
+      {
+        metric: 'sbp',
+        unit: 'mmHg',
+        readings: [
+          { date: '2026-10-16', value: 167 },
+          { date: '2026-10-17', value: 169 },
+        ],
+      },
+    ],
+    twin: {
+      domains: [
+        domain('metabolic', 'green', [
+          reportBasis('fpg', 5.3, 'mmol/L', '2026-06-20', { low: 3.9, high: 6.1 }),
+        ]),
+        domain(
+          'cardiovascular',
+          'yellow',
+          [
+            monitoringBasis(
+              'sbp',
+              168.1,
+              'mmHg',
+              '2026-10-18',
+              7,
+              { comparator: 'gt', value: 140 },
+              'yellow',
+            ),
+          ],
+          { previousLevel: 'green', changedOn: '2026-08-10' },
+        ),
+        domain('sleep', 'green', [monitoringBasis('sleep_hours', 6.8, 'h', '2026-10-18', 7, null)]),
+        domain('weight', 'green', [monitoringBasis('weight', 72.4, 'kg', '2026-10-18', 5, null)]),
+      ],
+      forecasts: [SBP_TO_CRITICAL],
+      followUps: [],
       focus: [],
     },
   },

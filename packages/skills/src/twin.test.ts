@@ -19,12 +19,19 @@ import { TWIN_SNAPSHOTS, withFocus } from './twin-fixtures.js';
 import {
   TWIN_LEVEL_ZH,
   describeTwin,
+  forecastCrossings,
   redactTwin,
+  twinFreeTexts,
   twinFlaggedIndicators,
   twinNumbers,
   twinRefLabel,
 } from './twin-input.js';
-import { checkTwinWording, wordingCategories } from './wording.js';
+import {
+  checkSpokenWording,
+  checkTwinJudgments,
+  checkTwinWording,
+  wordingCategories,
+} from './wording.js';
 
 const output = (over: Partial<TwinSummaryOutput['professional']> = {}): TwinSummaryOutput => ({
   professional: {
@@ -93,7 +100,7 @@ describe('/孪生小结 skill definition', () => {
     const rendered = twinSummary.render(
       output({
         domains: [{ domain: 'cardiovascular', explanation: '按规则，收缩压高于参考范围。' }],
-        trends: [{ metric: 'sbp', comment: '如果按过去的走势可能继续上升。' }],
+        trends: [{ metric: 'sbp', source: null, comment: '如果按过去的走势可能继续上升。' }],
       }),
       input,
     );
@@ -276,5 +283,179 @@ describe('twin eval cases', () => {
     expect(new Set(ids).size).toBe(ids.length);
     for (const c of twinSummaryEvalCases) expect(c.client.twin).toBeTruthy();
     for (const c of twinAskEvalCases) expect(c.client.twin?.focus.length).toBeGreaterThan(0);
+  });
+});
+
+describe('合规审核补充：孪生措辞检查（M4 PR #46）', () => {
+  const cats = (t: string) => wordingCategories(checkTwinWording(t));
+
+  it('checks every match, not only the first one', () => {
+    // 第一处在否定里被跳过，第二处照样要查出来
+    const issues = checkTwinWording('不能说一定会升高。但按走势一定会继续升高。');
+    expect(issues.filter((i) => i.category === 'forecast_certainty')).toHaveLength(1);
+    const status = checkTwinWording('由黄升为红（2026-10-17）。建议将代谢调整为绿色。');
+    expect(status.filter((i) => i.category === 'status_change')).toHaveLength(1);
+  });
+
+  it('does not flag negated certainty, food colours, described changes or lifestyle amounts', () => {
+    for (const t of [
+      '预测不一定会实现，区间较宽。',
+      '走势未必会继续。',
+      '建议调整饮食，少吃红肉，多吃绿叶菜。',
+      '心血管由黄升为红（2026-10-17）。',
+      '可以了解每天喝几杯水，主食是否超过两碗。',
+    ]) {
+      expect(checkTwinWording(t), t).toEqual([]);
+    }
+  });
+
+  it('still flags status conclusions, certainty and drug doses', () => {
+    expect(cats('建议把心血管改为红色。')).toContain('status_change');
+    expect(cats('应改为绿')).toContain('status_change');
+    expect(cats('收缩压将会继续升高。')).toContain('forecast_certainty');
+    expect(cats('建议每次两片。')).toContain('drug_advice');
+    expect(cats('可以加到 5 mg。')).toContain('drug_advice');
+  });
+
+  it('knows the added disease names and risk phrases', () => {
+    for (const t of [
+      '提示代谢综合征',
+      '有高脂血症',
+      '高胆固醇血症',
+      '动脉硬化',
+      '心梗',
+      '心肌梗死',
+      '心衰',
+      '睡眠呼吸暂停',
+      '失眠',
+    ]) {
+      expect(cats(t), t).toContain('presumed_disease');
+    }
+    for (const t of [
+      '心血管风险较高。',
+      '属于高风险。',
+      '风险是常人的 2 倍。',
+      '患病的概率约为 30%。',
+      '可能进展为慢性病。',
+    ]) {
+      expect(cats(t), t).toContain('disease_risk');
+    }
+    expect(cats('这不代表会进展为任何疾病。')).not.toContain('disease_risk');
+  });
+
+  it('keeps 失眠 out of the interview-outline disease list (M2 unchanged)', () => {
+    expect(wordingCategories(checkSpokenWording('最近有没有失眠？'))).not.toContain(
+      'presumed_disease',
+    );
+    expect(wordingCategories(checkSpokenWording('有没有心梗病史？'))).toContain('presumed_disease');
+  });
+
+  it('checkTwinJudgments only reports the three twin categories (for expert opinions)', () => {
+    expect(
+      checkTwinJudgments('建议将心血管改为红色，收缩压将会升高，心血管风险较高。').map(
+        (i) => i.category,
+      ),
+    ).toEqual(expect.arrayContaining(['status_change', 'forecast_certainty', 'disease_risk']));
+    expect(checkTwinJudgments('可能有高血压')).toEqual([]);
+  });
+});
+
+describe('合规审核补充：去标识、越线、自由文字（M4 PR #46）', () => {
+  it('redacts addresses in manual reasons and follow-up notes without touching health text', () => {
+    const twin = {
+      ...TWIN_SNAPSHOTS.manualAdjusted.twin,
+      domains: TWIN_SNAPSHOTS.manualAdjusted.twin.domains.map((d) =>
+        d.manual
+          ? {
+              ...d,
+              manual: { ...d.manual, reason: '客户住在北京市朝阳区建国路88号，体检前熬夜。' },
+            }
+          : d,
+      ),
+      followUps: TWIN_SNAPSHOTS.manualAdjusted.twin.followUps.map((f) => ({
+        ...f,
+        note: '家住幸福小区3栋2单元501室，每天走路 30 分钟',
+      })),
+    };
+    const text = describeTwin(redactTwin(twin, (t) => redactClientIdentity(t, ['王测试'])));
+    for (const leaked of ['建国路', '88号', '幸福小区', '3栋', '501室', '朝阳区']) {
+      expect(text).not.toContain(leaked);
+    }
+    expect(text).toContain('[地址]');
+    expect(text).toContain('每天走路 30 分钟');
+    for (const t of [
+      '每天走路 30 分钟，收缩压 146 mmHg，参考范围 3.9–6.1',
+      '去超市买菜，在小区里散步，逛街一小时',
+      '住在医院三天，出院后血压稳定',
+      '城市郊区空气好',
+    ]) {
+      expect(redactClientIdentity(t, []), t).toBe(t);
+    }
+    expect(redactClientIdentity('地址：浙江省杭州市西湖区文三路100号', [])).toBe('地址：[地址]');
+    expect(redactClientIdentity('她在建国路88-2号开店', [])).toBe('[地址]开店');
+  });
+
+  it('returns the raw free texts for crisis and emergency keyword detection', () => {
+    expect(twinFreeTexts(TWIN_SNAPSHOTS.manualAdjusted.twin)).toEqual([
+      expect.stringContaining('火锅'),
+      expect.stringContaining('换了工作'),
+    ]);
+    expect(twinFreeTexts(null)).toEqual([]);
+  });
+
+  it('computes reference and critical crossings on the backend and writes them for the model', () => {
+    const points = [
+      { monthsAhead: 3 as const, mid: 178.6, low: 168.2, high: 189 },
+      { monthsAhead: 6 as const, mid: 186.1, low: 171, high: 201.2 },
+    ];
+    const crossings = forecastCrossings(points, { low: 90, high: 139 }, [
+      { comparator: 'gte', value: 180, level: 'urgent' },
+    ]);
+    expect(crossings).toEqual([
+      expect.objectContaining({ kind: 'critical', monthsAhead: 3, by: 'interval', bound: 180 }),
+      expect.objectContaining({ kind: 'reference', monthsAhead: 3, by: 'mid', bound: 139 }),
+      expect.objectContaining({ kind: 'critical', monthsAhead: 6, by: 'mid', bound: 180 }),
+      expect.objectContaining({ kind: 'reference', monthsAhead: 6, by: 'mid', bound: 139 }),
+    ]);
+    const text = describeTwin(TWIN_SNAPSHOTS.criticalCrossing.twin);
+    expect(text).toContain('3 个月后的区间上端达到危急阈值 ≥ 180（需尽快就医）');
+    expect(text).toContain('6 个月后的中间值达到危急阈值 ≥ 180');
+    expect(describeTwin(TWIN_SNAPSHOTS.stable.twin)).toContain('没有越过参考范围或危急阈值');
+    const rendered = twinSummary.render(output(), {
+      client: TWIN_SNAPSHOTS.criticalCrossing,
+      managerRequest: '',
+    }).professional;
+    expect(rendered).toContain('越线：3 个月后的区间上端达到危急阈值 ≥ 180');
+  });
+
+  it('does not whitelist numbers that only appear in free text', () => {
+    const twin = {
+      ...TWIN_SNAPSHOTS.stable.twin,
+      followUps: [
+        { ...TWIN_SNAPSHOTS.manualAdjusted.twin.followUps[0]!, note: '客户说血压到过 213' },
+      ],
+    };
+    expect(twinNumbers(twin)).not.toContain(213);
+  });
+
+  it('matches trend comments by metric and source', () => {
+    const report = TWIN_SNAPSHOTS.worsening.twin.forecasts[0]!;
+    const twin = {
+      ...TWIN_SNAPSHOTS.worsening.twin,
+      forecasts: [report, { ...report, source: 'monitoring' as const }],
+    };
+    const client = { ...TWIN_SNAPSHOTS.worsening, twin };
+    const rendered = twinSummary.render(
+      output({
+        trends: [
+          { metric: 'sbp', source: 'monitoring', comment: '家庭血压的说明' },
+          { metric: 'sbp', source: null, comment: '没写来源的说明' },
+        ],
+      }),
+      { client, managerRequest: '' },
+    ).professional;
+    expect(rendered.match(/家庭血压的说明/g)).toHaveLength(1);
+    // 两条预测时，没写来源的说明不挂到任何一条上
+    expect(rendered).not.toContain('没写来源的说明');
   });
 });

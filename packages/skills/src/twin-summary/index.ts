@@ -13,6 +13,7 @@ import {
   TWIN_DOMAIN_ZH,
   TWIN_LEVEL_ZH,
   TWIN_PROMPT_RULES,
+  describeCrossing,
   describeTwin,
   type TwinForecastSnapshot,
   type TwinSnapshot,
@@ -31,7 +32,14 @@ export const twinSummaryOutputSchema = z.object({
     overview: z.string().min(1),
     domains: z.array(z.object({ domain: z.enum(TWIN_DOMAINS), explanation: z.string() })),
     changes: z.array(z.string()),
-    trends: z.array(z.object({ metric: z.string(), comment: z.string() })),
+    trends: z.array(
+      z.object({
+        metric: z.string(),
+        /** 同一指标既有报告又有监测预测时，写清是哪一个；只有一个时可以为 null */
+        source: z.enum(['report', 'monitoring']).nullable().default(null),
+        comment: z.string(),
+      }),
+    ),
     followUps: z.array(z.string()),
     suggestions: z.array(z.string()),
     referralAdvice: z.string().nullable(),
@@ -142,7 +150,9 @@ export const twinSummary: SkillDefinition<typeof twinSummaryOutputSchema> = {
     if (!forecasts.length) lines.push('没有可预测的指标数据，暂不预测。');
     for (const f of forecasts) {
       lines.push(`- ${forecastLine(f)}`);
-      const comment = p.trends.find((t) => t.metric === f.metric)?.comment.trim();
+      if (f.crossings?.length)
+        lines.push(`  - 越线：${f.crossings.map(describeCrossing).join('；')}（只是数值的推算）`);
+      const comment = trendComment(p.trends, f, forecasts)?.trim();
       if (comment) lines.push(`  - 说明：${comment}`);
     }
     if (forecasts.length) {
@@ -180,6 +190,23 @@ export const twinSummary: SkillDefinition<typeof twinSummaryOutputSchema> = {
     return twinCorrectionNote(wordingCategories(issues));
   },
 };
+
+/**
+ * 预测对应的说明：指标和来源都对上的优先；没写来源的只在这个指标只有一个预测时用，
+ * 免得报告和监测两条预测挂上同一句说明。
+ */
+function trendComment(
+  trends: TwinSummaryOutput['professional']['trends'],
+  f: TwinForecastSnapshot,
+  all: readonly TwinForecastSnapshot[],
+): string | undefined {
+  const exact = trends.find((t) => t.metric === f.metric && t.source === f.source);
+  if (exact) return exact.comment;
+  const single = all.filter((x) => x.metric === f.metric).length === 1;
+  return single
+    ? trends.find((t) => t.metric === f.metric && t.source === null)?.comment
+    : undefined;
+}
 
 /** 模型写的全部文字（措辞检查和数值校验用） */
 export function twinSummaryTexts(output: TwinSummaryOutput): string[] {

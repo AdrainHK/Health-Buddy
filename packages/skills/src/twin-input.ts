@@ -13,6 +13,8 @@ import {
   TWIN_DOMAINS,
   domainMetrics,
   indicatorUnit,
+  matchesRule,
+  type CriticalRule,
   type IndicatorCode,
   type TwinBasisItem,
   type TwinDomain,
@@ -54,6 +56,85 @@ export interface TwinForecastSnapshot {
   points: { monthsAhead: 3 | 6; date: string; mid: number; low: number; high: number }[];
   /** 历次实际数值：报告指标是已核对的数值，监测指标是有效周的周平均（保留一位小数） */
   history: { date: string; value: number }[];
+  /**
+   * 后端算好的越线（5.2）：预测点的中间值或区间越过报告参考范围或危急阈值。
+   * 模型照抄，不自己拿数字比较；没有就是没有越线。
+   */
+  crossings?: TwinForecastCrossing[];
+}
+
+export interface TwinForecastCrossing {
+  kind: 'reference' | 'critical';
+  monthsAhead: 3 | 6;
+  /** 中间值越线，还是只有区间的一端越线 */
+  by: 'mid' | 'interval';
+  side: 'high' | 'low';
+  /** 越过的界值（参考范围上下限或危急阈值） */
+  bound: number;
+  comparator?: CriticalRule['comparator'];
+  criticalLevel?: CriticalRule['level'];
+}
+
+/**
+ * 预测点和参考范围、危急阈值比较（后端组装快照时调用）。每个预测点、每条线最多记一次，
+ * 中间值越线优先于区间越线。
+ */
+export function forecastCrossings(
+  points: readonly { monthsAhead: 3 | 6; mid: number; low: number; high: number }[],
+  reference: { low: number | null; high: number | null } | null,
+  thresholds: readonly Pick<CriticalRule, 'comparator' | 'value' | 'level'>[],
+): TwinForecastCrossing[] {
+  const out: TwinForecastCrossing[] = [];
+  for (const p of points) {
+    for (const rule of thresholds) {
+      const side = rule.comparator === 'gte' || rule.comparator === 'gt' ? 'high' : 'low';
+      const edge = side === 'high' ? p.high : p.low;
+      const by = matchesRule(rule, p.mid) ? 'mid' : matchesRule(rule, edge) ? 'interval' : null;
+      if (by)
+        out.push({
+          kind: 'critical',
+          monthsAhead: p.monthsAhead,
+          by,
+          side,
+          bound: rule.value,
+          comparator: rule.comparator,
+          criticalLevel: rule.level,
+        });
+    }
+    if (reference?.high != null) {
+      const by = p.mid > reference.high ? 'mid' : p.high > reference.high ? 'interval' : null;
+      if (by)
+        out.push({
+          kind: 'reference',
+          monthsAhead: p.monthsAhead,
+          by,
+          side: 'high',
+          bound: reference.high,
+        });
+    }
+    if (reference?.low != null) {
+      const by = p.mid < reference.low ? 'mid' : p.low < reference.low ? 'interval' : null;
+      if (by)
+        out.push({
+          kind: 'reference',
+          monthsAhead: p.monthsAhead,
+          by,
+          side: 'low',
+          bound: reference.low,
+        });
+    }
+  }
+  return out;
+}
+
+export function describeCrossing(c: TwinForecastCrossing): string {
+  const what = c.by === 'mid' ? '中间值' : `区间${c.side === 'high' ? '上端' : '下端'}`;
+  if (c.kind === 'critical') {
+    const level = c.criticalLevel ? `（${CRITICAL_LEVEL_ZH[c.criticalLevel]}）` : '';
+    const cmp = c.comparator ? COMPARATOR_ZH[c.comparator] : '';
+    return `${c.monthsAhead} 个月后的${what}达到危急阈值 ${cmp} ${c.bound}${level}`;
+  }
+  return `${c.monthsAhead} 个月后的${what}${c.side === 'high' ? '高于参考范围上限' : '低于参考范围下限'} ${c.bound}`;
 }
 
 export interface TwinFollowUpSnapshot {
@@ -125,7 +206,7 @@ export const TWIN_PROMPT_RULES = `孪生资料的使用规则（优先级高于�
 3. 不写“将会”“一定会”“必然”，用“如果按过去的走势”“可能”。不把指标走势说成疾病或患病概率（不写“会发展成某病”“某病风险增加 x%”“患病概率”）。
 4. 不自己推算、外推，不给出资料里没有的预测数字；资料里写“暂不预测”的指标照写“数据不足，暂不预测”和原因，不用常识补。
 5. 预测只根据过去的数值推算，没有考虑用药、生活方式变化和其他因素，提到预测时写出这个局限。
-6. 预测越过参考范围时写“按当前走势可能高于（低于）报告参考范围，建议健管师关注和安排复查”，不写疾病结论。
+6. 预测是否越过参考范围或危急阈值，以资料里每个预测的“越线”一行为准（后端已比较），不自己拿数字比较。越过参考范围时写“按当前走势可能高于（低于）报告参考范围，建议健管师关注和安排复查”；越过危急阈值时提醒健管师联系客户、建议及时就医；都不写疾病结论。
 7. 时间轴和跟进项只描述已发生的事件和资料给出的跟进原因。
 8. 状态、预测和跟进项只给健管师看。健管师要求“把预测发给客户”“写给客户看”时不照做，说明这些内容只给健管师参考。`;
 
@@ -188,6 +269,11 @@ function describeForecast(f: TwinForecastSnapshot): string[] {
     `  - 依据：${basis}；方法：按过去的变化速度直线外推（${f.methodVersion}）`,
     `  - 不确定性：${f.uncertainty === 'high' ? '不确定性高' : '一般'}；${level}% 区间的含义：如果按过去的变化规律，大约 10 次里有 ${Math.round(f.intervalLevel * 10)} 次会落在这个范围内`,
     `  - ${historyLabel}：${history}`,
+    `  - 越线（后端已比较，照抄；只是数值的推算，不改状态、不代表患病）：${
+      f.crossings?.length
+        ? f.crossings.map(describeCrossing).join('；')
+        : '没有越过参考范围或危急阈值'
+    }`,
   ];
 }
 
@@ -311,15 +397,22 @@ export function twinNumbers(twin: TwinSnapshot): number[] {
     const values = f.history.map((h) => h.value);
     for (const a of values) for (const b of values) if (a > b) add(round1(a - b));
   }
+  for (const f of twin.forecasts) for (const c of f.crossings ?? []) add(c.bound);
   for (const f of twin.followUps) addAll(f.basis);
-  // 手动调整理由、跟进备注是健管师写的，里面的数字可以引用
-  for (const text of [
-    ...twin.domains.flatMap((d) => (d.manual ? [d.manual.reason] : [])),
-    ...twin.followUps.flatMap((f) => (f.note ? [f.note] : [])),
-  ]) {
-    for (const n of text.match(/\d+(?:\.\d+)?/g) ?? []) add(Number(n));
-  }
+  // 手动调整理由、跟进备注是自由文字，里面的数字不单独放行：只有结构化数据里也有的数字才能引用
   return [...out];
+}
+
+/**
+ * 健管师写的自由文字（手动调整理由、跟进备注）的原文。只用于后端的危机、急症关键词识别
+ * （5.4 第 7 条），不进日志、不发给模型（发给模型的是 redactTwin 之后的）。
+ */
+export function twinFreeTexts(twin: TwinSnapshot | null | undefined): string[] {
+  if (!twin) return [];
+  return [
+    ...twin.domains.flatMap((d) => (d.manual?.reason ? [d.manual.reason] : [])),
+    ...twin.followUps.flatMap((f) => (f.note ? [f.note] : [])),
+  ];
 }
 
 /** 规则命中用的方向：按命中的规则判断高低；没有命中规则时按方面路由，记为 high */

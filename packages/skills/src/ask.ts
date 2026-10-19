@@ -52,7 +52,9 @@ export function buildAskUserContent(client: ClientSnapshot | undefined, question
 export const ASK_TWIN_SYSTEM_PROMPT = `${ASK_SYSTEM_PROMPT}
 
 ${TWIN_PROMPT_RULES}
-9. 资料里写了“这次引用的孪生项”时，回答以这些孪生项为主：先写当前状态和依据（指标、数值、日期、来源、命中的规则），再写历次数值和走势；提到预测时同时写依据（几次数据、多长时间）、80% 区间和不确定性，以及预测没有考虑用药和生活方式变化。资料里写“暂不预测”的写明数据不足和原因。`;
+
+@孪生项 的回答要求：
+1. 资料里写了“这次引用的孪生项”时，回答以这些孪生项为主：先写当前状态和依据（指标、数值、日期、来源、命中的规则），再写历次数值和走势；提到预测时同时写依据（几次数据、多长时间）、80% 区间和不确定性，以及预测没有考虑用药和生活方式变化。资料里写“暂不预测”的写明数据不足和原因。`;
 
 /** 问一问的系统提示词：资料里有孪生时用带孪生规则的版本 */
 export function askSystemPrompt(client: ClientSnapshot | undefined): string {

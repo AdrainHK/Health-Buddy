@@ -219,6 +219,45 @@ export function redactIdentifiers(text: string): string {
   return text.replace(ID_NUMBER, '[证件号]').replace(PHONE, '[电话]');
 }
 
+const HAN = '\\u4e00-\\u9fa5';
+/** 地址里才有的字：行政区划、道路门牌、楼栋单元、小区 */
+const ADDRESS_MARK = /[省市区县镇乡村路街巷弄号栋幢室]|单元|小区|花园|公寓|大厦|家园|新村/;
+/** “住在……”“家住……”“地址：……”后面到标点为止；只有确实像地址（有地址用字）才替换 */
+const ADDRESS_CUE = new RegExp(
+  `(住在|家住|住址(?:是|为)?[:：]?|地址(?:是|为)?[:：]?|搬到了?|搬去了?)\\s*([^，。；;,!！？?\\n（()]{2,30})`,
+  'g',
+);
+/** 道路加门牌号：“建国路88号”“北京市朝阳区建国路88-2号” */
+const ADDRESS_ROAD = new RegExp(
+  `(?:[${HAN}]{2,6}(?:省|自治区))?(?:[${HAN}]{2,6}市)?(?:[${HAN}]{1,6}(?:区|县|镇|乡))?[${HAN}A-Za-z0-9]{1,12}?(?:大道|大街|路|街|巷|弄|胡同)\\s*\\d+(?:-\\d+)?\\s*号院?`,
+  'g',
+);
+/** 楼栋单元门牌：“幸福小区3栋2单元501室”“5号楼1单元” */
+const ADDRESS_BUILDING = new RegExp(
+  `(?:[${HAN}]{2,10}(?:小区|花园|公寓|大厦|家园|新村|社区|苑))?\\d+\\s*(?:号楼|栋|幢)(?:\\s*\\d+\\s*单元)?(?:\\s*\\d+\\s*(?:室|号|户))?|\\d+\\s*单元\\s*\\d+\\s*(?:室|号|户)?`,
+  'g',
+);
+/** 省市、市区两级连写：“浙江省杭州市”“杭州市西湖区” */
+const ADDRESS_ADMIN = new RegExp(
+  `[${HAN}]{2,6}(?:省|自治区)[${HAN}]{2,6}市|[${HAN}]{2,6}市[${HAN}]{1,6}(?:区|县)`,
+  'g',
+);
+
+/**
+ * 地址（M4 合规审核 T1）：手动调整理由、跟进备注、健管师的要求里可能写了客户住址。
+ * 只认有明确地址特征的写法（门牌号、楼栋单元、省市区连写、“住在/地址”后面带地址用字），
+ * “每天走 30 分钟”“参考范围 3.9–6.1”这类健康数据不受影响。
+ */
+export function redactAddresses(text: string): string {
+  return text
+    .replace(ADDRESS_CUE, (all, cue: string, rest: string) =>
+      ADDRESS_MARK.test(rest) ? `${cue}[地址]` : all,
+    )
+    .replace(ADDRESS_ROAD, '[地址]')
+    .replace(ADDRESS_BUILDING, '[地址]')
+    .replace(ADDRESS_ADMIN, '[地址]');
+}
+
 /**
  * Q9：健管师的要求原样进入提示词，里面可能带客户姓名或联系方式。
  * 组装提示词前把这些字样替换成“该客户”。identifiers 由后端从客户档案取（姓名、昵称、手机号等）。
@@ -240,6 +279,6 @@ export function redactClientIdentity(text: string, identifiers: readonly string[
       );
     }
   }
-  // 不管有没有引用客户，手机号、身份证号都按格式替换掉
-  return redactIdentifiers(out);
+  // 不管有没有引用客户，手机号、身份证号、地址都按格式替换掉
+  return redactAddresses(redactIdentifiers(out));
 }

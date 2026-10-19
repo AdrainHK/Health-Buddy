@@ -32,7 +32,24 @@ export const DISEASE_TERMS = [
   '哮喘',
   '骨质疏松',
   '贫血',
+  // M4 合规审核补充（孪生小结、专家意见里常见的病名）
+  '代谢综合征',
+  '高脂血症',
+  '高胆固醇血症',
+  '动脉硬化',
+  '动脉粥样硬化',
+  '心梗',
+  '心肌梗死',
+  '心衰',
+  '心力衰竭',
+  '睡眠呼吸暂停',
 ] as const;
+
+/**
+ * 孪生相关检查另外不许写的病名。“失眠”在面谈提纲里常作为症状来问（“最近有没有失眠”），
+ * 不放进 DISEASE_TERMS，免得改变 M2 提纲的检查；孪生小结和孪生问答里不把睡眠时长说成失眠。
+ */
+export const TWIN_DISEASE_TERMS: readonly string[] = [...DISEASE_TERMS, '失眠'];
 
 /**
  * 具体药名和药物类别：词表在 packages/shared（专家引擎共用）。
@@ -227,26 +244,30 @@ export function wordingCategories(issues: readonly WordingIssue[]): WordingCateg
 
 // ---------- M4 /孪生小结（规格 5.3、5.4） ----------
 
-const TWIN_COLOR = '(?:红|黄|绿|灰)(?:色)?';
+/**
+ * 状态颜色：后面不能紧跟别的汉字（“红肉”“绿叶菜”“黄豆”不是状态），“红色状态”“黄级”可以。
+ */
+const TWIN_COLOR = '(?:红|黄|绿|灰)(?:色)?(?=[^\\u4e00-\\u9fff]|$|状态|级|档|灯)';
 /**
  * 状态结论（Q4：AI 不定状态）：“建议将代谢调整为红”“应改为绿色”“状态应为黄”“下调为黄色”。
- * “由绿变黄”是描述后端给出的变化，不算。
+ * “由绿变黄”“由黄升为红”是描述后端给出的变化，不算（见 findStatusChange）。
  */
 export const STATUS_CHANGE = new RegExp(
   `(?:改为|改成|调整为|调为|调成|上调为|下调为|升为|降为|应为|应该是|应当是|定为|标为|标记为)${SAME_CLAUSE}{0,2}${TWIN_COLOR}|(?:建议|应|应该|需要)${SAME_CLAUSE}{0,10}(?:改|调整|调|上调|下调|标)${SAME_CLAUSE}{0,4}${TWIN_COLOR}`,
 );
 
 /** 预测的确定说法（5.3）：不写“将会”“一定会”“必然” */
-export const FORECAST_CERTAINTY = /将会|一定会|必然|肯定会|注定/;
+export const FORECAST_CERTAINTY =
+  /(?<![不未])将会|(?<!不)一定会|(?<![不未])必然|(?<!不)肯定会|(?<!不)注定/;
 
 /**
  * 把指标走势说成疾病或患病概率（5.3）：“会得”“会发展成”“患病概率”“风险增加”“发病率”。
  * “不会得”“不能说会得”这类否定和说明不算（前面有“不”“非”“不是”“不能”“不代表”时跳过）。
  */
 const DISEASE_RISK =
-  /(?<![不非没])(?:会得|会患|会发展成|会发展为|会演变成|发展成为|患病概率|患病风险|发病概率|发病风险|发病率|得病|(?:风险|概率|可能性)(?:增加|升高|上升|提高)|\d+(?:\.\d+)?\s*%\s*的?(?:风险|概率|可能))/g;
+  /(?<![不非没])(?:会得|会患|会发展成|会发展为|会演变成|发展成为|进展为|进展成|患病概率|患病风险|发病概率|发病风险|发病率|得病|高风险|(?:心血管|心脑血管|代谢|健康)?风险(?:较高|很高|偏高|升高了|高于常人)|风险(?:是|为|约为|约是|达到?)[^，。；,;\n]{0,6}?\d+(?:\.\d+)?\s*倍|(?:概率|可能性)(?:约为|约是|大约是|为|是|达到?|约)\s*\d+(?:\.\d+)?\s*%|(?:风险|概率|可能性)(?:增加|升高|上升|提高)|\d+(?:\.\d+)?\s*%\s*的?(?:风险|概率|可能))/g;
 const NEGATION_BEFORE =
-  /(?:不能|不应|不得|不会|不代表|不意味着|并不|不是|不说|不写|不做|无法)[^，。；\n]{0,8}$/;
+  /(?:不能|不应|不得|不会|不代表|不意味着|并不|不是|不说|不写|不做|无法|没法|没办法|未必|不一定)[^，。；\n]{0,8}$/;
 
 function findDiseaseRisk(text: string): WordingIssue[] {
   const { text: norm, origin } = normalized(text);
@@ -258,17 +279,47 @@ function findDiseaseRisk(text: string): WordingIssue[] {
   return out;
 }
 
+/** 每一处匹配都检查（不只第一处）：前面是否定或说明时跳过这一处，后面的照样检查 */
 function findPattern(
   text: string,
   pattern: RegExp,
   category: WordingCategory,
   term: string,
+  skip?: (before: string) => boolean,
 ): WordingIssue[] {
   const { text: norm, origin } = normalized(text);
-  const m = pattern.exec(norm);
-  if (!m) return [];
-  if (NEGATION_BEFORE.test(norm.slice(Math.max(0, m.index - 12), m.index))) return [];
-  return [{ category, term, index: origin[m.index] ?? 0 }];
+  const global = new RegExp(
+    pattern.source,
+    pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`,
+  );
+  const out: WordingIssue[] = [];
+  for (const m of norm.matchAll(global)) {
+    const before = norm.slice(Math.max(0, m.index - 12), m.index);
+    if (NEGATION_BEFORE.test(before) || skip?.(before)) continue;
+    out.push({ category, term, index: origin[m.index] ?? 0 });
+  }
+  return out;
+}
+
+/** “由黄升为红”“从绿调为黄”：描述后端给出的变化，不是 AI 的结论 */
+const DESCRIBED_CHANGE = /(?:由|从)(?:红|黄|绿|灰)色?$/;
+
+/**
+ * 孪生检查里的剂量：只看药物剂量的单位（mg、片、粒、胶囊……）。
+ * “每天喝几杯水”“主食是否超过两碗”是生活方式，孪生小结（只给健管师）可以写。
+ */
+export const TWIN_DRUG_DOSE =
+  /(?:\d+(?:\.\d+)?|\d+\/\d+|(?<![同统唯单第某])[一二两三四五六七八九十半几]+)\s*(?:mg|毫克|微克|μg|ug|(?<!薯|面包|燕麦)片|粒|颗|胶囊|丸|单位|IU)(?![/A-Za-z])/i;
+
+function findTwinDrugAdvice(text: string): WordingIssue[] {
+  const { text: norm, origin } = normalized(text);
+  const out: WordingIssue[] = [];
+  const advice = DRUG_ADVICE.exec(norm);
+  if (advice)
+    out.push({ category: 'drug_advice', term: '用药建议', index: origin[advice.index] ?? 0 });
+  const dose = TWIN_DRUG_DOSE.exec(norm);
+  if (dose) out.push({ category: 'drug_advice', term: '剂量', index: origin[dose.index] ?? 0 });
+  return out;
 }
 
 /**
@@ -282,10 +333,27 @@ export function checkTwinWording(text: string): WordingIssue[] {
       term: b.term,
       index: b.index,
     })),
-    ...asIssues('presumed_disease', findDiseaseTerms(text)),
-    ...findPattern(text, STATUS_CHANGE, 'status_change', '状态结论'),
+    ...asIssues('presumed_disease', findTerms(text, TWIN_DISEASE_TERMS)),
+    ...findPattern(text, STATUS_CHANGE, 'status_change', '状态结论', (before) =>
+      DESCRIBED_CHANGE.test(before),
+    ),
     ...findPattern(text, FORECAST_CERTAINTY, 'forecast_certainty', '确定说法'),
     ...findDiseaseRisk(text),
-    ...checkAdviceWording(text),
+    ...asIssues('drug_name', findDrugNames(text)),
+    ...findTwinDrugAdvice(text),
+  ];
+}
+
+/**
+ * 孪生专属的三类（状态结论、预测的确定说法、疾病风险），专家意见的校验也用（M4 规格 5.4）：
+ * 专家意见原有的禁用词、药物检查不变。
+ */
+export function checkTwinJudgments(text: string): WordingIssue[] {
+  return [
+    ...findPattern(text, STATUS_CHANGE, 'status_change', '状态结论', (before) =>
+      DESCRIBED_CHANGE.test(before),
+    ),
+    ...findPattern(text, FORECAST_CERTAINTY, 'forecast_certainty', '确定说法'),
+    ...findDiseaseRisk(text),
   ];
 }
