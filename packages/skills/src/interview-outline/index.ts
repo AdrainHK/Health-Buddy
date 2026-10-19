@@ -109,7 +109,7 @@ export const interviewOutline: SkillDefinition<typeof interviewOutlineOutputSche
   },
 };
 
-const CATEGORY_NOTE: Record<WordingCategory, string> = {
+const CATEGORY_NOTE: Partial<Record<WordingCategory, string>> = {
   banned_term: '问题里出现了禁用词（如“诊断”“筛查”“治愈”“根治”）',
   presumed_disease:
     '问题里点名了疾病名称（包括问家族史时），等于预设客户患病；改成问症状、习惯和测量情况，如“家里人有没有血压、血糖方面的问题”',
@@ -125,7 +125,7 @@ const CATEGORY_NOTE: Record<WordingCategory, string> = {
 export function outlineCorrectionNote(categories: readonly WordingCategory[]): string {
   return [
     '## 上一次生成的提纲没有通过措辞检查，请重新生成',
-    ...categories.map((c) => `- ${CATEGORY_NOTE[c]}`),
+    ...categories.flatMap((c) => (CATEGORY_NOTE[c] ? [`- ${CATEGORY_NOTE[c]}`] : [])),
     '- 其余要求不变；每个问题都按“问题的措辞”一节检查一遍再输出。',
   ].join('\n');
 }

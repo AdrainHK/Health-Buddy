@@ -23,6 +23,18 @@ export {
   type InterviewOutlineOutput,
 } from './interview-outline/index.js';
 export * from './report-input.js';
+export * from './twin-input.js';
+export * from './numbers.js';
+export {
+  twinSummary,
+  twinSummaryOutputSchema,
+  twinSummaryTexts,
+  twinCorrectionNote,
+  forecastLine,
+  type TwinSummaryOutput,
+} from './twin-summary/index.js';
+export { twinSummaryEvalCases, twinAskEvalCases } from './twin-summary/evals/cases.js';
+export { TWIN_SNAPSHOTS } from './twin-fixtures.js';
 export * from './wording.js';
 export * from './eval-types.js';
 export { SNAPSHOTS } from './fixtures.js';

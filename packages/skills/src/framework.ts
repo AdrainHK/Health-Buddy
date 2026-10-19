@@ -18,6 +18,7 @@ import {
   type RiskTierSuggestion,
 } from '@health-buddy/shared';
 import type { z } from 'zod';
+import type { TwinSnapshot } from './twin-input.js';
 import type { WordingIssue } from './wording.js';
 
 export const SKILL_MODES = ['plan', 'craft'] as const;
@@ -78,6 +79,11 @@ export interface ClientSnapshot {
   healthHistory?: HealthHistoryEntry[];
   /** 当前风险分层（只给健管师看的专业版用，Q20）；未分层为 null */
   riskTier?: { tier: RiskTier; setOn: string } | null;
+  /**
+   * 数字孪生（M4 规格 5.2）：只给 /孪生小结、问一问和专家组装，不给有通俗版的技能（5.4 第 3 条）。
+   * 手动调整理由和跟进备注在组装提示词前去标识（redactTwin）
+   */
+  twin?: TwinSnapshot | null;
 }
 
 /** 报告里的一项已核对指标 */
@@ -177,6 +183,16 @@ export interface SkillDefinition<S extends z.ZodType = z.ZodType> extends SkillM
   experts?: 'none' | 'auto';
   /** 执行步骤里“调用技能”那一步的 i18n 键，默认 steps.runSkill */
   runStepLabel?: string;
+  /**
+   * 读取数字孪生（M4 /孪生小结）：后端组装 client.twin，执行步骤加“正在读取数字孪生”“正在计算趋势”；
+   * 客户没有任何已核对报告和监测数据时不生成（409 no_twin_data）。只能用于没有通俗版的技能
+   */
+  usesTwin?: boolean;
+  /**
+   * 数值校验（M4 规格 5.2，沿用 M3 3.4）：返回模型自己写的文字，后端核对其中的数值都能在输入里找到；
+   * 有输入以外的数值时带纠正说明重试一次，仍不合格不保存草稿
+   */
+  numberCheckTexts?(output: z.output<S>): string[];
   /** 把客户资料和健管师的要求组装成用户消息 */
   buildUserMessage(input: SkillInput): string;
   /** 把模型输出渲染成产物。input 是这次的输入，用来由后端确定性地写出数值表 */
@@ -185,7 +201,7 @@ export interface SkillDefinition<S extends z.ZodType = z.ZodType> extends SkillM
    * 保存前的确定性措辞检查（/面谈提纲：问题里不能有禁用词和疾病名称）。
    * 有问题时后端带着纠正说明重新生成一次，仍有问题就不保存草稿。
    */
-  checkOutput?(output: z.output<S>): WordingIssue[];
+  checkOutput?(output: z.output<S>, input?: SkillInput): WordingIssue[];
   /** 重新生成时附在用户消息后面的纠正说明。只按问题类别写，不复述上次的输出 */
   correctionNote?(issues: readonly WordingIssue[]): string;
 }
@@ -202,6 +218,8 @@ export function skillUsesReport(skill: Pick<SkillDefinition, 'requiresReport' | 
 export interface PlanTemplate {
   id: string;
   skills: string[];
+  /** 计划里先读取数字孪生（M4“孪生复盘”）；客户没有任何数据时不出计划 */
+  readsTwin?: boolean;
   requiresClient: boolean;
   requiresReport: boolean;
   /** 同 SkillMeta.defaultRequest */

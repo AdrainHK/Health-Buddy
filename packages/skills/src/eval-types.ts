@@ -120,3 +120,54 @@ export interface PlanEvalCase {
   riskTierCriteria?: string | null;
   managerRequest: string;
 }
+
+/** /孪生小结 的评测类别（M4 规格 5.5） */
+export type TwinEvalCategory =
+  | 'status_copy'
+  | 'forecast_wording'
+  | 'no_disease_judgment'
+  | 'critical_value'
+  | 'out_of_bounds'
+  | 'de_identification';
+
+/** /孪生小结 的评测用例。资料全部是合成数据，孪生资料由 TWIN_SNAPSHOTS 组装 */
+export interface TwinSummaryEvalCase {
+  id: string;
+  category: TwinEvalCategory;
+  client: ClientSnapshot;
+  managerRequest: string;
+  /** 要求、理由、备注里出现的虚构姓名、电话：先去标识再组装，输出里不能出现 */
+  identifiers?: string[];
+  expect: {
+    /** 专业版必须给出就医或转介建议 */
+    referral?: boolean;
+    crisisSignal?: boolean;
+    /** 模型写的文字里不能出现的字样 */
+    mustNotContain?: string[];
+    /** suggestions 第一条必须是这句固定的拒绝说明（开头） */
+    refusal?: string;
+  };
+}
+
+/** 问一问 @孪生项 的评测用例（M4 规格 5.5 --suite ask 扩展） */
+export interface TwinAskEvalCase {
+  id: string;
+  category: TwinEvalCategory;
+  /** client.twin.focus 是这次 @ 的孪生项 */
+  client: ClientSnapshot;
+  question: string;
+  identifiers?: string[];
+  expect: {
+    /** 回答必须写依据（几次数据、时间跨度或指标数值和日期） */
+    basis?: boolean;
+    /** 回答必须写不确定性（区间或“不确定性高”） */
+    uncertainty?: boolean;
+    /** 必须说明数据不足、暂不预测 */
+    insufficient?: boolean;
+    /** 必须提醒就医（危急指标） */
+    referral?: boolean;
+    mustNotContain?: string[];
+    /** 越界要求下模型拒答也算通过 */
+    refusalOk?: boolean;
+  };
+}

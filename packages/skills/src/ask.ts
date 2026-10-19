@@ -9,6 +9,7 @@ import type { ClientSnapshot } from './framework.js';
 import { CRISIS_NOTICE } from './guardrails.js';
 import { indicatorName } from './indicators.js';
 import { SKILLS } from './registry.js';
+import { TWIN_PROMPT_RULES, describeTwin, redactTwin } from './twin-input.js';
 
 /** 问一问回答末尾的固定提示（规格 7.3），所有保存下来的回答都带，包括被停止和出错的 */
 export const ASK_NOTICE = ASK_DISCLAIMER;
@@ -38,9 +39,32 @@ export const ASK_SYSTEM_PROMPT = `你是协助健康管理师（下称“健管�
  * question 和 client 都必须已经去标识（后端负责），评测也走这里，保证测的是线上用的提示词。
  */
 export function buildAskUserContent(client: ClientSnapshot | undefined, question: string): string {
-  return client
-    ? `${describeClient({ client, managerRequest: '' })}\n\n## 健管师的问题\n${question}`
-    : question;
+  if (!client) return question;
+  // M4 规格 2.9：读取客户档案时，孪生的状态和预测作为档案的一部分放进上下文
+  const twin = client.twin ? `\n\n${describeTwin(client.twin)}` : '';
+  return `${describeClient({ client, managerRequest: '' })}${twin}\n\n## 健管师的问题\n${question}`;
+}
+
+/**
+ * 问一问读到孪生资料时的系统提示词（M4 规格 5.3）：M1 的规则在前，孪生共用规则在后，
+ * 再加上 @孪生项 的回答要求（2.8、2.9）。
+ */
+export const ASK_TWIN_SYSTEM_PROMPT = `${ASK_SYSTEM_PROMPT}
+
+${TWIN_PROMPT_RULES}
+9. 资料里写了“这次引用的孪生项”时，回答以这些孪生项为主：先写当前状态和依据（指标、数值、日期、来源、命中的规则），再写历次数值和走势；提到预测时同时写依据（几次数据、多长时间）、80% 区间和不确定性，以及预测没有考虑用药和生活方式变化。资料里写“暂不预测”的写明数据不足和原因。`;
+
+/** 问一问的系统提示词：资料里有孪生时用带孪生规则的版本 */
+export function askSystemPrompt(client: ClientSnapshot | undefined): string {
+  return client?.twin ? ASK_TWIN_SYSTEM_PROMPT : ASK_SYSTEM_PROMPT;
+}
+
+/** 问一问的孪生资料去标识：手动调整理由、跟进备注里的姓名和联系方式（5.4 第 6 条） */
+export function redactAskClient(
+  client: ClientSnapshot,
+  redact: (text: string) => string,
+): ClientSnapshot {
+  return client.twin ? { ...client, twin: redactTwin(client.twin, redact) } : client;
 }
 
 const LEVEL_ZH = { urgent: '需尽快就医', attention: '建议就医评估' } as const;
@@ -64,11 +88,14 @@ export function criticalNotice(flags: readonly CriticalFlag[]): string {
  * 只建议，不执行。M1 用关键词识别，不调用模型。
  */
 const SKILL_KEYWORDS: Record<string, RegExp> = {
+  'twin-summary': /孪生(小结|复盘|总结)/,
   'client-recent-summary': /近况|小结|最近(的)?情况|最近怎么样/,
   'report-interpretation': /解读|体检报告(怎么样|怎么看)/,
   'interview-outline': /面谈|提纲|要问(客户)?哪些问题/,
 };
 
 export function suggestSkill(text: string): string | undefined {
-  return SKILLS.find((s) => SKILL_KEYWORDS[s.id]?.test(text))?.id;
+  // 按关键词表的顺序找（“孪生小结”先于“小结”），只建议登记了的技能
+  const id = Object.keys(SKILL_KEYWORDS).find((k) => SKILL_KEYWORDS[k]?.test(text));
+  return SKILLS.some((s) => s.id === id) ? id : undefined;
 }

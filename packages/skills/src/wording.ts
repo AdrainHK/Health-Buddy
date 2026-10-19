@@ -102,7 +102,16 @@ export const JUDGMENT_PHRASES = ['疑似', '患有', '患上', '得了', '确诊
 export const DRUG_REFUSAL_PHRASES = ['未按要求给出用药建议', '用药调整需由医生评估'] as const;
 
 export type WordingCategory =
-  'banned_term' | 'presumed_disease' | 'judgment' | 'drug_name' | 'drug_advice';
+  | 'banned_term'
+  | 'presumed_disease'
+  | 'judgment'
+  | 'drug_name'
+  | 'drug_advice'
+  // M4 /孪生小结（规格 5.3、5.4）
+  | 'status_change'
+  | 'forecast_certainty'
+  | 'disease_risk'
+  | 'invented_number';
 
 export interface WordingIssue {
   category: WordingCategory;
@@ -112,11 +121,19 @@ export interface WordingIssue {
   index: number;
 }
 
+/** /孪生小结 拒绝越界要求时固定写的话（twin-summary/skill.md），检查前同样遮掉 */
+export const TWIN_REFUSAL_PHRASES = [
+  '未按要求修改状态',
+  '未按要求写疾病或患病概率',
+  '未按要求去掉不确定性',
+  '未按要求写给客户的内容',
+] as const;
+
 /** 规范化，并把固定的拒绝句遮成空格（长度不变，位置仍能映射回原文） */
 function normalized(text: string): { text: string; origin: number[] } {
   const n = normalizeForCompliance(text);
   let masked = n.text;
-  for (const phrase of DRUG_REFUSAL_PHRASES) {
+  for (const phrase of [...DRUG_REFUSAL_PHRASES, ...TWIN_REFUSAL_PHRASES]) {
     const p = normalizeForCompliance(phrase).text;
     masked = masked.split(p).join(' '.repeat(p.length));
   }
@@ -206,4 +223,69 @@ export function checkAdviceWording(text: string): WordingIssue[] {
 /** 只要类别（去重），用于重新生成时的提示和日志 */
 export function wordingCategories(issues: readonly WordingIssue[]): WordingCategory[] {
   return [...new Set(issues.map((i) => i.category))];
+}
+
+// ---------- M4 /孪生小结（规格 5.3、5.4） ----------
+
+const TWIN_COLOR = '(?:红|黄|绿|灰)(?:色)?';
+/**
+ * 状态结论（Q4：AI 不定状态）：“建议将代谢调整为红”“应改为绿色”“状态应为黄”“下调为黄色”。
+ * “由绿变黄”是描述后端给出的变化，不算。
+ */
+export const STATUS_CHANGE = new RegExp(
+  `(?:改为|改成|调整为|调为|调成|上调为|下调为|升为|降为|应为|应该是|应当是|定为|标为|标记为)${SAME_CLAUSE}{0,2}${TWIN_COLOR}|(?:建议|应|应该|需要)${SAME_CLAUSE}{0,10}(?:改|调整|调|上调|下调|标)${SAME_CLAUSE}{0,4}${TWIN_COLOR}`,
+);
+
+/** 预测的确定说法（5.3）：不写“将会”“一定会”“必然” */
+export const FORECAST_CERTAINTY = /将会|一定会|必然|肯定会|注定/;
+
+/**
+ * 把指标走势说成疾病或患病概率（5.3）：“会得”“会发展成”“患病概率”“风险增加”“发病率”。
+ * “不会得”“不能说会得”这类否定和说明不算（前面有“不”“非”“不是”“不能”“不代表”时跳过）。
+ */
+const DISEASE_RISK =
+  /(?<![不非没])(?:会得|会患|会发展成|会发展为|会演变成|发展成为|患病概率|患病风险|发病概率|发病风险|发病率|得病|(?:风险|概率|可能性)(?:增加|升高|上升|提高)|\d+(?:\.\d+)?\s*%\s*的?(?:风险|概率|可能))/g;
+const NEGATION_BEFORE =
+  /(?:不能|不应|不得|不会|不代表|不意味着|并不|不是|不说|不写|不做|无法)[^，。；\n]{0,8}$/;
+
+function findDiseaseRisk(text: string): WordingIssue[] {
+  const { text: norm, origin } = normalized(text);
+  const out: WordingIssue[] = [];
+  for (const m of norm.matchAll(DISEASE_RISK)) {
+    if (NEGATION_BEFORE.test(norm.slice(Math.max(0, m.index - 12), m.index))) continue;
+    out.push({ category: 'disease_risk', term: '疾病风险', index: origin[m.index] ?? 0 });
+  }
+  return out;
+}
+
+function findPattern(
+  text: string,
+  pattern: RegExp,
+  category: WordingCategory,
+  term: string,
+): WordingIssue[] {
+  const { text: norm, origin } = normalized(text);
+  const m = pattern.exec(norm);
+  if (!m) return [];
+  if (NEGATION_BEFORE.test(norm.slice(Math.max(0, m.index - 12), m.index))) return [];
+  return [{ category, term, index: origin[m.index] ?? 0 }];
+}
+
+/**
+ * /孪生小结 模型写的每一段文字（专业版，只给健管师）：禁用词、疾病名称、状态结论、预测的确定说法、
+ * 疾病风险说法，以及用药建议和剂量。命中时带纠正说明重试一次，仍不合格不保存草稿。
+ */
+export function checkTwinWording(text: string): WordingIssue[] {
+  return [
+    ...findBannedTerms(text).map((b) => ({
+      category: 'banned_term' as const,
+      term: b.term,
+      index: b.index,
+    })),
+    ...asIssues('presumed_disease', findDiseaseTerms(text)),
+    ...findPattern(text, STATUS_CHANGE, 'status_change', '状态结论'),
+    ...findPattern(text, FORECAST_CERTAINTY, 'forecast_certainty', '确定说法'),
+    ...findDiseaseRisk(text),
+    ...checkAdviceWording(text),
+  ];
 }
