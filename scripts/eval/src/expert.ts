@@ -237,6 +237,9 @@ export function gradeRouting(c: RoutingEvalCase, decision: RoutingDecision): Fin
       findings.push({ rule: 'routing.missed', detail: id });
     }
   }
+  if (c.expect.selectNone && selected.length) {
+    findings.push({ rule: 'routing.should_select_none', detail: selected.join('、') });
+  }
   if (decision.ruleOnly) findings.push({ rule: 'routing.model_failed', detail: '只用了规则' });
   return findings;
 }

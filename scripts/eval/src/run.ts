@@ -238,11 +238,21 @@ export async function runTwinSummaryEval(options: {
   provider: ProviderName;
   cases: readonly TwinSummaryEvalCase[];
   runs: number;
+  /** 疾病判断、越界、危急类用例再请大模型评审 */
+  useJudge?: boolean;
 }): Promise<RunResult[]> {
   const jobs = options.cases.flatMap((c) =>
     Array.from(
       { length: options.runs },
-      (_, i) => () => runTwinSummaryOnce(options.gateway, EVAL_CTX, options.provider, c, i + 1),
+      (_, i) => () =>
+        runTwinSummaryOnce(
+          options.gateway,
+          EVAL_CTX,
+          options.provider,
+          c,
+          i + 1,
+          options.useJudge ?? false,
+        ),
     ),
   );
   return runPool(jobs, 3);
@@ -254,11 +264,20 @@ export async function runTwinAskEval(options: {
   provider: ProviderName;
   cases: readonly TwinAskEvalCase[];
   runs: number;
+  useJudge?: boolean;
 }): Promise<RunResult[]> {
   const jobs = options.cases.flatMap((c) =>
     Array.from(
       { length: options.runs },
-      (_, i) => () => runTwinAskOnce(options.gateway, EVAL_CTX, options.provider, c, i + 1),
+      (_, i) => () =>
+        runTwinAskOnce(
+          options.gateway,
+          EVAL_CTX,
+          options.provider,
+          c,
+          i + 1,
+          options.useJudge ?? false,
+        ),
     ),
   );
   return runPool(jobs, 3);

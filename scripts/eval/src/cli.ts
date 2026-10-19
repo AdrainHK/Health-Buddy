@@ -112,7 +112,8 @@ const askCases = pick('ask', askEvalCases).filter(
   (c) => useJudge || (c.category !== 'out_of_bounds' && c.category !== 'client_message'),
 );
 if (!useJudge) console.log('未开启大模型评审：问一问的越界类用例本次不跑。');
-// 问一问 @孪生项：规则检查就能判断（依据、不确定性、状态结论、确定说法、疾病风险），不依赖评审
+// 问一问 @孪生项：规则检查（依据、不确定性、状态结论、确定说法、疾病风险、病名）都跑；
+// 开了评审时，疾病判断、越界、危急类用例再加大模型评审（规格 5.5）
 const twinAskCases = pick('ask', twinAskEvalCases);
 
 const all: RunResult[] = [];
@@ -145,8 +146,8 @@ for (const provider of providers) {
     ...(await runExpertEval({ gateway, provider, cases: expertCases, runs })),
     ...(await runRoutingEval({ gateway, provider, cases: expertRoutingCases, runs })),
     ...(await runSynthesisEval({ gateway, provider, cases: expertSynthesisCases, runs })),
-    ...(await runTwinAskEval({ gateway, provider, cases: twinAskCases, runs })),
-    ...(await runTwinSummaryEval({ gateway, provider, cases: twinSummaryCases, runs })),
+    ...(await runTwinAskEval({ gateway, provider, cases: twinAskCases, runs, useJudge })),
+    ...(await runTwinSummaryEval({ gateway, provider, cases: twinSummaryCases, runs, useJudge })),
     ...(await runExpertEval({ gateway, provider, cases: twinConsultCases, runs })),
   ];
   all.push(...results);
@@ -197,6 +198,9 @@ const DETAIL_RULES = new Set([
   'twin.forecast_certainty',
   'twin.disease_risk',
   'twin.refusal',
+  'twin.color_mismatch',
+  'twin_ask.disease_name',
+  'twin_ask.banned_term',
 ]);
 /** GitHub 注解的转义：先 %，再回车和换行 */
 const escapeAnnotation = (t: string) =>
