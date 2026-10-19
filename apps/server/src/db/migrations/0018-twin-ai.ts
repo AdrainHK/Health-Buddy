@@ -52,7 +52,10 @@ export async function up(db: Kysely<unknown>): Promise<void> {
 
   // 沿用 0012 的规则，加上：插入时跟进项必须属于同一位健管师；系统级联可以把 follow_up_item_id 置空
   await sql`
-    create or replace function expert_consultations_guard() returns trigger language plpgsql as $$
+    create or replace function expert_consultations_guard() returns trigger language plpgsql
+    -- 固定查找路径：函数里不带模式名的表和函数不会被调用者的 search_path 换掉
+    set search_path = pg_catalog, public, pg_temp
+    as $$
     declare
       is_app boolean := not hb_is_system(tg_relid);
     begin

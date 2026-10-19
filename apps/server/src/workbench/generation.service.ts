@@ -40,6 +40,7 @@ import {
   knownNumbers,
   redactAskClient,
   redactClientIdentity,
+  twinFreeTexts,
   wordingCategories,
   skillUsesReport,
   suggestSkill,
@@ -237,10 +238,13 @@ export class GenerationService {
    */
   async consultAnswer(
     ctx: TenantContext,
-    turn: ExpertTurn & { managerMessageId?: string },
+    turn: ExpertTurn & { managerMessageId?: string; twinRefs?: TwinRef[] },
     request: { content: string; expertRefs: string[] },
     io: TurnIo,
   ): Promise<void> {
+    // 同时 @专家 和 @孪生项（M4 合规审核 T7）：专家同样拿到孪生资料，孪生项不丢；
+    // 依据的孪生可能已经变了，不复用 10 分钟内的意见
+    const twinRefs = turn.twinRefs ?? [];
     await this.expertAnswer(
       ctx,
       turn,
@@ -252,7 +256,8 @@ export class GenerationService {
         excluded: [],
         bound: turn.expertId,
         requestMessageId: turn.managerMessageId ?? null,
-        reuse: true,
+        reuse: twinRefs.length === 0,
+        ...(twinRefs.length ? { twinRefs } : {}),
       },
       io,
     );
@@ -327,8 +332,11 @@ export class GenerationService {
     const steps = new StepRunner(this.repo, ctx, messageId, io.emit);
     // 危机和急症关键词在最前面自己识别，不依赖专家调用：调用没发起、全部失败或出错时也要提示健管师
     let signals = { crisis: false, emergency: false };
+    // 读到客户档案后，危急指标提醒固定拼在回答开头（和问一问一样，不依赖专家怎么写）
+    let critical = '';
     const signalHeaders = () =>
       (signals.crisis ? CRISIS_HEADER : '') + (signals.emergency ? EMERGENCY_HEADER : '');
+    const notices = () => signalHeaders() + critical;
     try {
       const earlierTexts = await this.repo.managerTexts(ctx, turn.taskId);
       const signalTexts = [plan.question, ...earlierTexts];
@@ -354,7 +362,14 @@ export class GenerationService {
           return await this.finish(ctx, messageId, headers, 'error', io, 'internal_error');
         }
         client.snapshot = { ...client.snapshot, twin };
+        // 手动调整理由、跟进备注里的危机和急症字样也算（原文识别，M4 规格 5.4 第 7 条）
+        const twinTexts = twinFreeTexts(twin);
+        signals = {
+          crisis: signals.crisis || detectCrisisKeywords(twinTexts),
+          emergency: signals.emergency || detectEmergencyKeywords(twinTexts),
+        };
       }
+      critical = client ? criticalNotice(client.snapshot.criticalFlags) : '';
       const run = {
         taskId: turn.taskId,
         messageId,
@@ -407,13 +422,13 @@ export class GenerationService {
           crisisSignal: signals.crisis,
           emergencySignal: signals.emergency,
         });
-        const text = renderExpertAnswer(
+        const text = `${critical}${renderExpertAnswer(
           answered,
           recent.calls.length,
           recent.synthesis,
           recent.synthesisStatus,
           signals,
-        );
+        )}`;
         if (!(await io.sessionValid()))
           return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
         io.emit({ type: 'text', messageId, delta: text });
@@ -443,23 +458,23 @@ export class GenerationService {
       const answered = answeredCalls(outcome?.result.calls ?? []);
       // 孪生项没有对应的专家（如睡眠）：固定回答，提示可以手动 @ 专家，不算出错
       if (twinRefs.length && outcome && !outcome.result.routing.selected.length) {
-        const text = `${signalHeaders()}${NO_TWIN_EXPERT}`;
+        const text = `${notices()}${NO_TWIN_EXPERT}`;
         io.emit({ type: 'text', messageId, delta: text });
         return await this.finish(ctx, messageId, text, 'complete', io);
       }
       if (!outcome || !answered.length) {
         // 专家都没回复（或调用没有发起）也要把危机和急症提示留给健管师（关键词识别不依赖模型）
-        const text = `${signalHeaders()}${EXPERTS_UNAVAILABLE}`;
+        const text = `${notices()}${EXPERTS_UNAVAILABLE}`;
         io.emit({ type: 'text', messageId, delta: text });
         return await this.finish(ctx, messageId, text, 'complete', io);
       }
-      const text = renderExpertAnswer(
+      const text = `${critical}${renderExpertAnswer(
         answered,
         outcome.result.calls.length,
         outcome.result.synthesis,
         outcome.result.synthesisStatus,
         signals,
-      );
+      )}`;
       if (!(await io.sessionValid()))
         return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
       io.emit({ type: 'text', messageId, delta: text });
@@ -555,7 +570,12 @@ export class GenerationService {
       const userContent = buildAskUserContent(snapshot, question);
 
       // 固定的提醒由后端拼在开头，不依赖模型；模型拒答时也保留
-      const signalTexts = [request.content, ...(await this.repo.managerTexts(ctx, turn.taskId))];
+      // 孪生里手动调整理由、跟进备注的原文（去标识之前）也算（M4 规格 5.4 第 7 条）
+      const signalTexts = [
+        request.content,
+        ...(await this.repo.managerTexts(ctx, turn.taskId)),
+        ...twinFreeTexts(twin),
+      ];
       const crisis = detectCrisisKeywords(signalTexts);
       const emergency = detectEmergencyKeywords(signalTexts);
       const notices =
@@ -674,10 +694,12 @@ export class GenerationService {
       if (!client) return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
 
       // 心理危机和疑似急症信号不只依赖模型判断：健管师的原话、退回原因、本任务之前的消息里有关键词也算
+      // 孪生小结、孪生复盘：手动调整理由、跟进备注的原文也算（M4 规格 5.4 第 7 条）
       const signalTexts = [
         run.managerRequest,
         run.returnReason ?? '',
         ...(await this.repo.managerTexts(ctx, run.taskId)),
+        ...twinFreeTexts(client.snapshot.twin),
       ];
       const crisis = detectCrisisKeywords(signalTexts);
       const emergencyKeywords = detectEmergencyKeywords(signalTexts);

@@ -35,6 +35,7 @@ import type {
   TwinForecastSnapshot,
   TwinSnapshot,
 } from '@health-buddy/skills';
+import { forecastCrossings } from '@health-buddy/skills';
 import { selectTiers, toTier } from '../clients/client-record.repository.js';
 import { selectClientSummary, toClientSummary } from '../clients/clients.repository.js';
 import { DB } from '../db/db.provider.js';
@@ -1055,10 +1056,35 @@ export async function loadTwinSnapshot(
     .orderBy('metric')
     .orderBy('source')
     .execute();
+  // 越线由后端算好给模型照抄（5.2）：危急阈值用平台启用的一套，参考范围用最近一份带范围的报告
+  const thresholds = forecastRows.length
+    ? await trx
+        .selectFrom('critical_thresholds')
+        .select(['metric', 'comparator', 'value', 'level'])
+        .where('enabled', '=', true)
+        .where(
+          'metric',
+          'in',
+          forecastRows.map((r) => r.metric),
+        )
+        .execute()
+    : [];
   const forecasts: TwinForecastSnapshot[] = [];
   for (const row of forecastRows) {
     const f = forecastFromRow(row as ForecastRow);
     const unit = indicatorUnit(f.metric as IndicatorCode);
+    const reference =
+      f.status === 'ok' ? await latestReference(trx, clientId, f.metric, unit) : null;
+    const crossings =
+      f.status === 'ok'
+        ? forecastCrossings(
+            f.points,
+            reference,
+            thresholds
+              .filter((t) => t.metric === f.metric)
+              .map((t) => ({ comparator: t.comparator, value: Number(t.value), level: t.level })),
+          )
+        : [];
     forecasts.push({
       metric: f.metric,
       source: f.source,
@@ -1080,6 +1106,7 @@ export async function loadTwinSnapshot(
         high: p.high,
       })),
       history: await forecastHistory(trx, clientId, f.metric, f.source, unit, now),
+      crossings,
     });
   }
 
@@ -1123,6 +1150,35 @@ export async function loadTwinSnapshot(
   return { domains, forecasts, followUps, focus: [...focus] };
 }
 
+/** 最近一份带参考范围的已核对报告里这个指标的参考范围（同一单位），没有为 null */
+async function latestReference(
+  trx: TenantTransaction,
+  clientId: string,
+  metric: string,
+  unit: string,
+): Promise<{ low: number | null; high: number | null } | null> {
+  const row = await trx
+    .selectFrom('report_indicators as i')
+    .innerJoin('health_reports as r', (join) =>
+      join.onRef('r.id', '=', 'i.report_id').onRef('r.client_id', '=', 'i.client_id'),
+    )
+    .select(['i.ref_low', 'i.ref_high'])
+    .where('i.client_id', '=', clientId)
+    .where('i.code', '=', metric)
+    .where('i.unit', '=', unit)
+    .where('i.superseded_by', 'is', null)
+    .where((eb) => eb.or([eb('i.ref_low', 'is not', null), eb('i.ref_high', 'is not', null)]))
+    .orderBy('r.report_date', 'desc')
+    .orderBy('i.created_at', 'desc')
+    .limit(1)
+    .executeTakeFirst();
+  if (!row) return null;
+  return {
+    low: row.ref_low === null ? null : Number(row.ref_low),
+    high: row.ref_high === null ? null : Number(row.ref_high),
+  };
+}
+
 /**
  * 预测指标的历次实际数值（5.2）：报告指标是已核对的数值（同一单位），监测指标是有效周的周平均
  * （保留一位小数），和预测用的口径一致。
@@ -1162,6 +1218,8 @@ async function forecastHistory(
     .where('metric', '=', metric)
     .where('unit', '=', unit)
     .where('measured_at', '>=', new Date(now.getTime() - DETAIL_READING_DAYS * DAY_MS))
+    // 读数多于上限时保留最近的（和预测大图一致），不让数据库随意挑
+    .orderBy('measured_at', 'desc')
     .limit(DETAIL_READING_LIMIT)
     .execute();
   return weeklyAverages(

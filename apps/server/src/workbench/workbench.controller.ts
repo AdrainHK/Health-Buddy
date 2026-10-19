@@ -107,6 +107,14 @@ export class WorkbenchController {
       if (fallback === null) throw badRequest();
       input.content = fallback;
     }
+    // 引用的归属先核对（只读）：别人的任务、客户、孪生项、跟进项返回 404，不会因为次数用完返回 429
+    await this.repo.checkTurnRefs(session, {
+      taskId,
+      clientRefs: input.clientRefs,
+      reportRefs: input.reportRefs,
+      twinRefs: input.twinRefs,
+      ...(input.followUpItemId ? { followUpItemId: input.followUpItemId } : {}),
+    });
     const direct = await this.checkExperts(session, taskId, input, skill, plan);
     // “请专家看看”超出当天的专家调用次数时返回 429
     if (input.twinConsult && (await this.consultation.remainingToday(session)) <= 0) {
@@ -333,8 +341,10 @@ export class WorkbenchController {
     const remaining = await this.consultation.remainingToday(session);
     if (direct ? remaining < forced.length : remaining <= 0) throw tooManyRequests();
     this.acquire(session);
-    // “请专家看看”的调用依据的是孪生，不要求报告；重新请时沿用原来的孪生项（只按规则路由）
-    const twin = original.trigger === 'twin' && original.twinRefs.length > 0;
+    // 带孪生项的调用（“请专家看看”，或问一问里同时 @专家 和 @孪生项）重新请时沿用原来的孪生项；
+    // “请专家看看”依据的是孪生，不要求报告，只按规则路由
+    const twinData = original.twinRefs.length > 0;
+    const twin = original.trigger === 'twin' && twinData;
     const turn = await this.claim(session, (claim) =>
       this.repo.prepareFollowUp(session, original.id, claim, {
         requiresReport: !direct && !twin,
@@ -352,7 +362,9 @@ export class WorkbenchController {
           bound,
           origin: { kind: 'reconsult', consultationId: original.id },
           ...(direct ? {} : { maxExperts: Math.min(remaining, EXPERTS_PER_CALL_MAX) }),
-          ...(twin ? { twinRefs: original.twinRefs, modelRouting: false } : {}),
+          ...(twinData
+            ? { twinRefs: original.twinRefs, ...(twin ? { modelRouting: false } : {}) }
+            : {}),
         },
         io,
       ),
@@ -397,10 +409,8 @@ export class WorkbenchController {
           bound: null,
           origin: { kind: 'add_expert', consultationId: original.id },
           maxExperts: 1,
-          // 补请“请专家看看”的专家：同样给孪生资料
-          ...(original.trigger === 'twin' && original.twinRefs.length
-            ? { twinRefs: original.twinRefs }
-            : {}),
+          // 补请带孪生项的调用里的专家：同样给孪生资料
+          ...(original.twinRefs.length ? { twinRefs: original.twinRefs } : {}),
         },
         io,
       ),

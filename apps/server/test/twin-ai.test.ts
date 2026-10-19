@@ -29,6 +29,7 @@ const twinSummaryJson = (overview = '代谢方面需要留意，心血管平稳�
     trends: [
       {
         metric: 'sbp',
+        source: 'monitoring',
         comment: '如果按过去的走势，可能缓慢上升；预测有不确定性，没有考虑用药和生活方式变化。',
       },
     ],
@@ -604,9 +605,31 @@ describe('孪生 AI：孪生小结、@孪生项、请专家看看', () => {
 
     it('本人这位客户的跟进项可以；别的客户、别的健管师的跟进项、非 twin 触发都被拒绝', async () => {
       await insertConsultation(followUpA1, 'twin');
-      await expect(insertConsultation(followUpA1Other, 'twin')).rejects.toThrow();
-      await expect(insertConsultation(followUpA2, 'twin')).rejects.toThrow();
-      await expect(insertConsultation(followUpA1, 'mention')).rejects.toThrow();
+      // 触发器：别的客户、别的健管师（行级安全看不到）的跟进项 → check_violation
+      await expect(insertConsultation(followUpA1Other, 'twin')).rejects.toMatchObject({
+        code: '23514',
+        message: expect.stringContaining('follow-up item must belong'),
+      });
+      await expect(insertConsultation(followUpA2, 'twin')).rejects.toMatchObject({
+        code: '23514',
+        message: expect.stringContaining('follow-up item must belong'),
+      });
+      // 检查约束：跟进项只能随 twin 触发
+      await expect(insertConsultation(followUpA1, 'mention')).rejects.toMatchObject({
+        code: '23514',
+        constraint: 'expert_consultations_follow_up',
+      });
+    });
+
+    it('跟进项随客户删除：调用记录的 follow_up_item_id 由系统级联置空', async () => {
+      await insertConsultation(followUpA1, 'twin');
+      await owner.deleteFrom('follow_up_items').where('client_id', '=', f.clients.a1[0]).execute();
+      const rows = await owner
+        .selectFrom('expert_consultations')
+        .select('follow_up_item_id')
+        .where('trigger', '=', 'twin')
+        .execute();
+      expect(rows).toEqual([{ follow_up_item_id: null }]);
     });
 
     it('应用角色不能直接改调用记录上的跟进项', async () => {
@@ -618,7 +641,310 @@ describe('孪生 AI：孪生小结、@孪生项、请专家看看', () => {
             .set({ follow_up_item_id: null } as never)
             .execute(),
         ),
-      ).rejects.toThrow();
+      ).rejects.toMatchObject({
+        // 列级授权里没有这一列：权限不足（触发器之前就被拒绝）
+        code: '42501',
+        message: expect.stringContaining('permission denied'),
+      });
+    });
+  });
+
+  // ---------- 合规、租户审核补充（PR #46） ----------
+
+  describe('合规、租户审核补充（PR #46）', () => {
+    const messagesOf = (taskId: string) =>
+      owner.selectFrom('task_messages').select('id').where('task_id', '=', taskId).execute();
+    const taskClient = async (taskId: string) =>
+      (
+        await owner
+          .selectFrom('tasks')
+          .select('client_id')
+          .where('id', '=', taskId)
+          .executeTakeFirstOrThrow()
+      ).client_id;
+    const consultedEvents = () =>
+      owner.selectFrom('follow_up_events').select('id').where('action', '=', 'consulted').execute();
+    /** 用所有者身份给 A1 补 n 次今天的专家调用 */
+    async function fillCalls(n: number) {
+      const scope = {
+        operator_id: f.operatorA,
+        org_id: f.orgA,
+        manager_id: f.users.managerA1.id,
+      };
+      const task = await owner
+        .insertInto('tasks')
+        .values({ ...scope, client_id: null, title: '合成任务' })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      const message = await owner
+        .insertInto('task_messages')
+        .values({
+          ...scope,
+          task_id: task.id,
+          role: 'assistant',
+          mode: 'ask',
+          content: '',
+          status: 'streaming',
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      for (let i = 0; i < n; i++) {
+        const c = await owner
+          .insertInto('expert_consultations')
+          .values({
+            ...scope,
+            task_id: task.id,
+            message_id: message.id,
+            trigger: 'mention',
+            routing: JSON.stringify({ selected: [], excluded: [], overCap: [], ruleOnly: false }),
+            status: 'running',
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        await owner
+          .insertInto('expert_calls')
+          .values({
+            ...scope,
+            consultation_id: c.id,
+            expert_id: 'nutrition',
+            expert_version: '0.1.0',
+            sources_version: '0123456789ab',
+            selected_reason: 'manager',
+            status: 'running',
+          })
+          .execute();
+      }
+    }
+
+    it('B1 问一问 @孪生项：跟进备注原文里的危机字样也置顶提示（提示词里仍去标识）', async () => {
+      await followUp(f.clients.a1[0], '测试客户 A1-1 说最近不想活了', 'cardiovascular');
+      const a1 = await as(f.users.managerA1.email, prod);
+      const task = await newTask(a1, { clientId: f.clients.a1[0] });
+      prodProvider.scripts.chat = { text: '按规则，心血管为绿色。' };
+      const res = await send(a1, task, {
+        mode: 'ask',
+        content: '心血管怎么样？',
+        twinRefs: [{ kind: 'domain', code: 'cardiovascular' }],
+      }).expect(200);
+      expect(textOf(res.text).startsWith('**心理危机提示**')).toBe(true);
+      expect(JSON.stringify(prodProvider.calls.at(-1)!.messages)).not.toContain('测试客户');
+    });
+
+    it('B1 /孪生小结：手动调整理由、跟进备注里的急症字样记进草稿的信号', async () => {
+      await followUp(f.clients.a1[0], '昨晚胸痛，出冷汗', 'cardiovascular');
+      const a1 = await as(f.users.managerA1.email, prod);
+      const task = await newTask(a1, { clientId: f.clients.a1[0] });
+      prodProvider.scripts.skill = { json: twinSummaryJson() };
+      await send(a1, task, { mode: 'craft', content: '', skillId: 'twin-summary' }).expect(200);
+      const [artifact] = await artifactsOf(task);
+      expect(artifact).toMatchObject({ emergency_signal: true });
+      expect((artifact!.content as { professional: string }).professional).toContain(
+        '**疑似急症提示**',
+      );
+    });
+
+    it('B1 请专家看看：跟进备注里的危机字样记进调用', async () => {
+      const item = await followUp(f.clients.a1[0], '客户说活着没意思', 'cardiovascular');
+      const a1 = await as(f.users.managerA1.email);
+      const task = await newTask(a1, { clientId: f.clients.a1[0] });
+      await send(a1, task, {
+        mode: 'ask',
+        content: '',
+        twinRefs: [{ kind: 'domain', code: 'cardiovascular' }],
+        twinConsult: true,
+        followUpItemId: item,
+      }).expect(200);
+      expect((await consultationsOf(task))[0]).toMatchObject({ crisis_signal: true });
+    });
+
+    it('有危急指标时“请专家看看”的回答（含没有对应专家的固定回答）开头带危急指标提醒', async () => {
+      await owner
+        .insertInto('monitoring_readings')
+        .values({
+          client_id: f.clients.a1[0],
+          metric: 'sbp',
+          value: 186,
+          unit: 'mmHg',
+          measured_at: new Date(),
+          source: 'synthetic',
+        })
+        .execute();
+      const a1 = await as(f.users.managerA1.email);
+      const task = await newTask(a1, { clientId: f.clients.a1[0] });
+      const sleep = await send(a1, task, {
+        mode: 'ask',
+        content: '',
+        twinRefs: [{ kind: 'domain', code: 'sleep' }],
+        twinConsult: true,
+      }).expect(200);
+      expect(textOf(sleep.text).startsWith('**危急指标提醒**')).toBe(true);
+      expect(textOf(sleep.text)).toContain(NO_TWIN_EXPERT);
+      const cardio = await send(a1, task, {
+        mode: 'ask',
+        content: '',
+        twinRefs: [{ kind: 'domain', code: 'cardiovascular' }],
+        twinConsult: true,
+      }).expect(200);
+      expect(textOf(cardio.text).startsWith('**危急指标提醒**')).toBe(true);
+    });
+
+    it('预测越过危急阈值：后端算好越线写进提示词，模型照抄', async () => {
+      await owner
+        .updateTable('twin_forecasts')
+        .set({
+          points: JSON.stringify([
+            {
+              monthsAhead: 3,
+              date: '2026-04-01',
+              mid: 176.2,
+              low: 165.1,
+              high: 187.3,
+              clipped: false,
+            },
+          ]),
+        })
+        .where('client_id', '=', f.clients.a1[0])
+        .execute();
+      const a1 = await as(f.users.managerA1.email, prod);
+      const task = await newTask(a1, { clientId: f.clients.a1[0] });
+      prodProvider.scripts.chat = { text: '按走势，收缩压可能继续上升。' };
+      await send(a1, task, {
+        mode: 'ask',
+        content: '收缩压趋势怎么样？',
+        twinRefs: [{ kind: 'metric', code: 'sbp' }],
+      }).expect(200);
+      const prompt = JSON.stringify(prodProvider.calls.at(-1)!.messages);
+      expect(prompt).toContain('3 个月后的区间上端达到危急阈值 ≥ 180（需尽快就医）');
+    });
+
+    it('T7 问一问同时 @专家 和 @孪生项：专家拿到孪生资料，调用记下孪生项', async () => {
+      const a1 = await as(f.users.managerA1.email);
+      const task = await newTask(a1, { clientId: f.clients.a1[0] });
+      await send(a1, task, {
+        mode: 'ask',
+        content: '心血管怎么看？',
+        expertRefs: ['cardiovascular'],
+        twinRefs: [{ kind: 'domain', code: 'cardiovascular' }],
+      }).expect(200);
+      const [c] = await consultationsOf(task);
+      expect(c).toMatchObject({
+        trigger: 'mention',
+        twin_refs: [{ kind: 'domain', code: 'cardiovascular' }],
+        follow_up_item_id: null,
+      });
+      const prompt = JSON.stringify(provider.calls.find((x) => x.expertId === 'cardiovascular'));
+      expect(prompt).toContain('这次引用的孪生项：孪生 · 心血管');
+      expect(prompt).not.toContain(PHONE_IN_REASON);
+    });
+
+    it('T4 404 的请求不写消息、不绑定客户', async () => {
+      const a1 = await as(f.users.managerA1.email);
+      const empty = await newTask(a1);
+      for (const other of [f.clients.a2, f.clients.b1]) {
+        await send(a1, empty, {
+          mode: 'ask',
+          content: '',
+          clientRefs: [other],
+          twinRefs: [{ kind: 'domain', code: 'metabolic' }],
+          twinConsult: true,
+        }).expect(404);
+      }
+      // 自己的客户、别人的跟进项：同样不写任何东西、不绑定客户
+      await send(a1, empty, {
+        mode: 'ask',
+        content: '',
+        clientRefs: [f.clients.a1[0]],
+        twinRefs: [{ kind: 'domain', code: 'metabolic' }],
+        twinConsult: true,
+        followUpItemId: followUpA2,
+      }).expect(404);
+      expect(await messagesOf(empty)).toHaveLength(0);
+      expect(await taskClient(empty)).toBeNull();
+      expect(await consultationsOf(empty)).toHaveLength(0);
+      expect(provider.calls).toHaveLength(0);
+    });
+
+    it('T4 客户转出后：@孪生项、请专家看看都被拒绝，不调用模型，跟进项不记已请专家', async () => {
+      const a1 = await as(f.users.managerA1.email);
+      const task = await newTask(a1, { clientId: f.clients.a1[0] });
+      await owner
+        .updateTable('clients')
+        .set({ manager_id: f.users.managerA2.id })
+        .where('id', '=', f.clients.a1[0])
+        .execute();
+      const before = (await messagesOf(task)).length;
+      for (const body of [
+        { mode: 'ask', content: '看看', twinRefs: [{ kind: 'domain', code: 'metabolic' }] },
+        {
+          mode: 'ask',
+          content: '',
+          twinRefs: [{ kind: 'domain', code: 'metabolic' }],
+          twinConsult: true,
+          followUpItemId: followUpA1,
+        },
+      ]) {
+        const res = await send(a1, task, body);
+        expect([404, 409]).toContain(res.status);
+      }
+      expect(provider.calls).toHaveLength(0);
+      expect(await messagesOf(task)).toHaveLength(before);
+      expect(await consultedEvents()).toHaveLength(0);
+    });
+
+    it('T5 当天次数用完时：别人的跟进项仍返回 404（不是 429）；自己的才是 429', async () => {
+      const a1 = await as(f.users.managerA1.email);
+      const task = await newTask(a1, { clientId: f.clients.a1[0] });
+      await fillCalls(200);
+      const base = {
+        mode: 'ask',
+        content: '',
+        twinRefs: [{ kind: 'domain', code: 'metabolic' }],
+        twinConsult: true,
+      };
+      await send(a1, task, { ...base, followUpItemId: followUpA2 }).expect(404);
+      await send(a1, task, { ...base, twinRefs: [{ kind: 'metric', code: 'uric_acid' }] }).expect(
+        404,
+      );
+      await send(a1, task, {
+        mode: 'ask',
+        content: '看看',
+        expertRefs: ['cardiovascular'],
+        twinRefs: [{ kind: 'metric', code: 'uric_acid' }],
+      }).expect(404);
+      await send(a1, task, { ...base, followUpItemId: followUpA1 }).expect(429);
+      expect(provider.calls).toHaveLength(0);
+    });
+
+    it('T2/T4 重新请、补请：别人的调用 404；孪生项已不可用（预测没了）404，不调用模型', async () => {
+      const a1 = await as(f.users.managerA1.email);
+      const task = await newTask(a1, { clientId: f.clients.a1[0] });
+      await send(a1, task, {
+        mode: 'ask',
+        content: '',
+        twinRefs: [{ kind: 'metric', code: 'sbp' }],
+        twinConsult: true,
+      }).expect(200);
+      const [c] = await consultationsOf(task);
+      for (const u of [f.users.managerA2, f.users.managerB1]) {
+        const other = await as(u.email);
+        await other.post(`/api/expert-consultations/${c!.id}/reconsult`).send({}).expect(404);
+        await other
+          .post(`/api/expert-consultations/${c!.id}/add-expert`)
+          .send({ expertId: 'nutrition' })
+          .expect(404);
+      }
+      // 预测被替换掉（没有当前预测）：原来的孪生项不能再用
+      await owner
+        .updateTable('twin_forecasts')
+        .set({ superseded_at: new Date() })
+        .where('client_id', '=', f.clients.a1[0])
+        .execute();
+      provider.calls.length = 0;
+      const before = (await messagesOf(task)).length;
+      await a1.post(`/api/expert-consultations/${c!.id}/reconsult`).send({}).expect(404);
+      expect(provider.calls).toHaveLength(0);
+      expect(await messagesOf(task)).toHaveLength(before);
+      expect(await consultationsOf(task)).toHaveLength(1);
     });
   });
 });

@@ -130,6 +130,43 @@ export class WorkbenchRepository {
   constructor(@Inject(DB) private readonly db: Db) {}
 
   /**
+   * 发消息前只读地核对引用（M4 合规审核 T5）：任务、@ 的客户和报告、孪生项、跟进项都要是本人的，
+   * 不是一律 404。放在专家调用次数（429）的检查之前，别人的资源不会因为次数用完而返回 429。
+   * 不写库、不占任务；prepareTurn 里会在锁住任务后再核对一遍。
+   */
+  checkTurnRefs(
+    ctx: TenantContext,
+    input: {
+      taskId: string;
+      clientRefs: string[];
+      reportRefs: string[];
+      twinRefs?: TwinRef[];
+      followUpItemId?: string;
+    },
+  ): Promise<void> {
+    return withTenant(this.db, ctx, async (trx) => {
+      const task = await trx
+        .selectFrom('tasks')
+        .select('client_id')
+        .where('id', '=', input.taskId)
+        .executeTakeFirst();
+      if (!task) throw notFound();
+      const ref = input.clientRefs[0];
+      if (ref && task.client_id && ref !== task.client_id) throw notFound();
+      if (ref && !task.client_id && !(await clientVisible(trx, ref))) throw notFound();
+      const clientId = task.client_id ?? ref ?? null;
+      const reportId = input.reportRefs[0];
+      if (reportId && (!clientId || !(await reportOfClient(trx, reportId, clientId))))
+        throw notFound();
+      const twinRefs = input.twinRefs ?? [];
+      if (twinRefs.length || input.followUpItemId) {
+        if (!clientId) throw notFound();
+        await checkTwinRefs(trx, ctx, clientId, twinRefs, input.followUpItemId);
+      }
+    });
+  }
+
+  /**
    * 发消息前的准备：校验任务、客户引用和技能，写入健管师的消息和一条“生成中”的回答。
    * claim 在归属校验通过后、写入之前调用，用来占住这个任务的生成（同一任务不并行）。
    */
@@ -477,11 +514,20 @@ export class WorkbenchRepository {
       const consultation = await trx
         .selectFrom('expert_consultations as c')
         .innerJoin('task_messages as m', 'm.id', 'c.message_id')
-        .select(['c.task_id', 'c.report_id', 'c.request_message_id', 'm.created_at'])
+        .select(['c.task_id', 'c.report_id', 'c.request_message_id', 'c.twin_refs', 'm.created_at'])
         .where('c.id', '=', consultationId)
         .executeTakeFirst();
       if (!consultation) throw notFound();
       const task = await lockTask(trx, consultation.task_id);
+      // 带孪生项的调用（“请专家看看”、@专家 + @孪生项）重新请、补请（M4 合规审核 T2）：
+      // 孪生项按任务现在关联的客户再核对一遍（客户转出、预测被删后不能再用），不通过按“不存在”处理
+      const twinRefs = Array.isArray(consultation.twin_refs)
+        ? (consultation.twin_refs as TwinRef[])
+        : [];
+      if (twinRefs.length) {
+        if (!task.client_id) throw notFound();
+        await checkTwinRefs(trx, ctx, task.client_id, twinRefs, undefined);
+      }
       // 原来的问题：记下的那条消息；更早的调用没有记，取回答之前最近的一条健管师消息
       let request = consultation.request_message_id
         ? await trx
