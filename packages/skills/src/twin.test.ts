@@ -418,11 +418,18 @@ describe('合规审核补充：去标识、越线、自由文字（M4 PR #46）'
       '去超市买菜，在小区里散步，逛街一小时',
       '住在医院三天，出院后血压稳定',
       '城市郊区空气好',
+      // 复审：普通词里的“市…区”和胰岛素剂量里的“单元”不是地址
+      '在城市社区卫生服务中心随访',
+      '去超市旁边的社区医院复查',
+      '胰岛素 8 单元 2 次',
+      '晚餐前胰岛素8单元2次，睡前6单元1次',
     ]) {
       expect(redactClientIdentity(t, []), t).toBe(t);
     }
     expect(redactClientIdentity('地址：浙江省杭州市西湖区文三路100号', [])).toBe('地址：[地址]');
     expect(redactClientIdentity('她在建国路88-2号开店', [])).toBe('[地址]开店');
+    expect(redactClientIdentity('杭州市西湖区', [])).toBe('[地址]');
+    expect(redactClientIdentity('在2单元501室', [])).toBe('在[地址]');
   });
 
   it('returns the raw free texts for crisis and emergency keyword detection', () => {
