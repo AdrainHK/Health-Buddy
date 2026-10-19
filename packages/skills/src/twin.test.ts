@@ -448,7 +448,7 @@ describe('合规审核补充：去标识、越线、自由文字（M4 PR #46）'
       expect.objectContaining({ kind: 'reference', monthsAhead: 6, by: 'mid', bound: 139 }),
     ]);
     const text = describeTwin(TWIN_SNAPSHOTS.criticalCrossing.twin);
-    expect(text).toContain('3 个月后的区间上端达到危急阈值 ≥ 180（需尽快就医）');
+    expect(text).toContain('3 个月后的区间上端达到危急阈值 ≥ 180（该阈值级别：需尽快就医）');
     expect(text).toContain('6 个月后的中间值达到危急阈值 ≥ 180');
     expect(describeTwin(TWIN_SNAPSHOTS.stable.twin)).toContain('没有越过参考范围或危急阈值');
     const rendered = twinSummary.render(output(), {

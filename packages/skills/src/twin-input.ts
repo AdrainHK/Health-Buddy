@@ -130,7 +130,7 @@ export function forecastCrossings(
 export function describeCrossing(c: TwinForecastCrossing): string {
   const what = c.by === 'mid' ? '中间值' : `区间${c.side === 'high' ? '上端' : '下端'}`;
   if (c.kind === 'critical') {
-    const level = c.criticalLevel ? `（${CRITICAL_LEVEL_ZH[c.criticalLevel]}）` : '';
+    const level = c.criticalLevel ? `（该阈值级别：${CRITICAL_LEVEL_ZH[c.criticalLevel]}）` : '';
     const cmp = c.comparator ? COMPARATOR_ZH[c.comparator] : '';
     return `${c.monthsAhead} 个月后的${what}达到危急阈值 ${cmp} ${c.bound}${level}`;
   }

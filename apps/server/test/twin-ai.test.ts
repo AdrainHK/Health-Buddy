@@ -814,7 +814,7 @@ describe('孪生 AI：孪生小结、@孪生项、请专家看看', () => {
         twinRefs: [{ kind: 'metric', code: 'sbp' }],
       }).expect(200);
       const prompt = JSON.stringify(prodProvider.calls.at(-1)!.messages);
-      expect(prompt).toContain('3 个月后的区间上端达到危急阈值 ≥ 180（需尽快就医）');
+      expect(prompt).toContain('3 个月后的区间上端达到危急阈值 ≥ 180（该阈值级别：需尽快就医）');
     });
 
     it('T7 问一问同时 @专家 和 @孪生项：专家拿到孪生资料，调用记下孪生项', async () => {
