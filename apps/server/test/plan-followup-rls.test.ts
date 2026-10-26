@@ -1517,4 +1517,196 @@ describe('方案和随访数据表的行级安全和约束', () => {
       ).rejects.toMatchObject({ code: '23514' });
     });
   });
+
+  describe('确认函数的并发、权限和转出（评审补充）', () => {
+    /** 单独的连接，开事务并设置租户上下文（和 withTenant 一样只在本事务内有效） */
+    async function openTx(c: TenantContext) {
+      const conn = new pg.Client({ connectionString: TEST_APP_URL });
+      await conn.connect();
+      await conn.query('begin');
+      await conn.query(
+        `select set_config('app.user_id', $1, true), set_config('app.role', $2, true),
+                set_config('app.operator_id', $3, true), set_config('app.org_id', $4, true)`,
+        [c.userId, c.role, c.operatorId ?? '', c.orgId ?? ''],
+      );
+      return conn;
+    }
+
+    it('同一位客户的两次随访计划确认串行：后一个等前一个提交，再把前一个的随访替代', async () => {
+      const client = f.clients.a1[0];
+      const schedA = await draft(managerA1(), client, 'visit_schedule', {
+        rows: [{ dueDate: futureDate(12), method: 'phone', purpose: 'routine', focus: null }],
+      });
+      const schedB = await draft(managerA1(), client, 'visit_schedule', {
+        rows: [{ dueDate: futureDate(15), method: 'wechat', purpose: 'routine', focus: null }],
+      });
+      const c1 = await openTx(managerA1());
+      const c2 = await openTx(managerA1());
+      try {
+        await c1.query('select approve_visit_schedule($1)', [schedA]);
+        let settled = false;
+        const second = c2.query('select approve_visit_schedule($1)', [schedB]).finally(() => {
+          settled = true;
+        });
+        await new Promise((r) => setTimeout(r, 300));
+        // 第二个连接还在等客户行锁
+        expect(settled).toBe(false);
+        await c1.query('commit');
+        await second;
+        await c2.query('commit');
+      } finally {
+        await c1.end();
+        await c2.end();
+      }
+      const rows = await owner
+        .selectFrom('visits')
+        .select(['status', 'source_artifact_id'])
+        .where('client_id', '=', client)
+        .where('source_artifact_id', 'in', [schedA, schedB])
+        .execute();
+      expect(rows.filter((r) => r.source_artifact_id === schedA).map((r) => r.status)).toEqual([
+        'superseded',
+      ]);
+      expect(rows.filter((r) => r.source_artifact_id === schedB).map((r) => r.status)).toEqual([
+        'planned',
+      ]);
+    });
+
+    it('随访计划和随访记录的确认函数：同机构、协会B的健管师按不存在处理，不写任何行', async () => {
+      const visitsBefore = await owner.selectFrom('visits').select('id').execute();
+      const recordsBefore = await owner.selectFrom('visit_records').select('id').execute();
+      for (const c of [managerA2(), managerB1()]) {
+        const schedule = await draft(managerA1(), f.clients.a1[0], 'visit_schedule', {
+          rows: [{ dueDate: futureDate(20), method: 'phone', purpose: 'routine', focus: null }],
+        });
+        const record = await draft(
+          managerA1(),
+          f.clients.a1[0],
+          'visit_record',
+          recordStructured(),
+        );
+        await expect(
+          as(c, (trx) => call(trx, 'approve_visit_schedule', schedule)),
+        ).rejects.toMatchObject({ code: 'P0002' });
+        await expect(
+          as(c, (trx) => call(trx, 'approve_visit_record', record)),
+        ).rejects.toMatchObject({ code: 'P0002' });
+        const statuses = await owner
+          .selectFrom('artifacts')
+          .select('status')
+          .where('id', 'in', [schedule, record])
+          .execute();
+        expect(statuses.map((r) => r.status)).toEqual(['draft', 'draft']);
+      }
+      expect(await owner.selectFrom('visits').select('id').execute()).toHaveLength(
+        visitsBefore.length,
+      );
+      expect(await owner.selectFrom('visit_records').select('id').execute()).toHaveLength(
+        recordsBefore.length,
+      );
+    });
+
+    it('内部函数不给应用角色执行权限', async () => {
+      const draftId = await draft(managerA1(), f.clients.a1[0], 'care_plan', carePlanStructured());
+      const calls = [
+        sql`select m5_lock_draft(${draftId}::uuid, 'care_plan')`,
+        sql`select m5_default_visit_method(${f.clients.a1[0]}::uuid)`,
+        sql`select hb_user_today()`,
+      ];
+      for (const stmt of calls) {
+        await expect(asA1((trx) => stmt.execute(trx))).rejects.toMatchObject({ code: '42501' });
+      }
+      const row = await owner
+        .selectFrom('artifacts')
+        .select('status')
+        .where('id', '=', draftId)
+        .executeTakeFirstOrThrow();
+      expect(row.status).toBe('draft');
+    });
+
+    it('客户转出后，原健管师不能确认转出前的草稿；新健管师也确认不了', async () => {
+      const plan = await draft(managerA1(), f.clients.a1[0], 'care_plan', carePlanStructured());
+      const schedule = await draft(managerA1(), f.clients.a1[0], 'visit_schedule', {
+        rows: [{ dueDate: futureDate(20), method: 'phone', purpose: 'routine', focus: null }],
+      });
+      const record = await draft(managerA1(), f.clients.a1[0], 'visit_record', recordStructured());
+      await owner
+        .updateTable('clients')
+        .set({ manager_id: f.users.managerA2.id })
+        .where('id', '=', f.clients.a1[0])
+        .execute();
+      for (const c of [managerA1(), managerA2()]) {
+        for (const [fn, id] of [
+          ['approve_care_plan', plan],
+          ['approve_visit_schedule', schedule],
+          ['approve_visit_record', record],
+        ] as const) {
+          await expect(
+            as(c, (trx) => call(trx, fn, id)),
+            `${c.userId} ${fn}`,
+          ).rejects.toMatchObject({ code: 'P0002' });
+        }
+      }
+      const plans = await owner
+        .selectFrom('care_plans')
+        .select('status')
+        .where('client_id', '=', f.clients.a1[0])
+        .execute();
+      expect(plans.map((p) => p.status)).toEqual(['active']);
+    });
+
+    it('消息引用的素材被删除后，这条消息的内容和状态仍然可以更新', async () => {
+      const messageId = await asA1(async (trx) => {
+        const task = await trx
+          .insertInto('tasks')
+          .values({
+            operator_id: f.operatorA,
+            org_id: f.orgA,
+            manager_id: f.users.managerA1.id,
+            client_id: f.clients.a1[0],
+            title: 't',
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        return (
+          await trx
+            .insertInto('task_messages')
+            .values({
+              operator_id: f.operatorA,
+              org_id: f.orgA,
+              manager_id: f.users.managerA1.id,
+              task_id: task.id,
+              role: 'manager',
+              mode: 'craft',
+              status: 'streaming',
+              material_refs: [seeded.a1!.material],
+            })
+            .returning('id')
+            .executeTakeFirstOrThrow()
+        ).id;
+      });
+      const deleted = await asA1((trx) =>
+        trx.deleteFrom('visit_materials').where('id', '=', seeded.a1!.material).executeTakeFirst(),
+      );
+      expect(deleted.numDeletedRows).toBe(1n);
+      const updated = await asA1((trx) =>
+        trx
+          .updateTable('task_messages')
+          .set({ status: 'complete', content: '合成回复' })
+          .where('id', '=', messageId)
+          .executeTakeFirst(),
+      );
+      expect(updated.numUpdatedRows).toBe(1n);
+      // 引用本身不能由应用改（列权限），写入后只能更新内容和状态
+      await expect(
+        asA1((trx) =>
+          trx
+            .updateTable('task_messages')
+            .set({ material_refs: [seeded.b1!.material] })
+            .where('id', '=', messageId)
+            .execute(),
+        ),
+      ).rejects.toMatchObject({ code: '42501' });
+    });
+  });
 });

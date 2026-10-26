@@ -174,7 +174,9 @@ export async function up(db: Kysely<unknown>): Promise<void> {
   `.execute(db);
 
   await sql`
-    -- 预览环境（PLAN_LIBRARY_PREVIEW）由后端在事务里设置；只影响健管师和管理员能不能看到待审定的条目
+    -- 预览环境（PLAN_LIBRARY_PREVIEW）由后端在事务里设置；只影响健管师和管理员能不能看到待审定的条目。
+    -- 后端只能在配置 PLAN_LIBRARY_PREVIEW=true 时设置 hb.plan_library_preview = on（第 2、3 步实现时落实），
+    -- 正式环境永远不设，否则待审定的条目会出现在方案库和 @ 里
     create function plan_library_preview() returns boolean language sql stable as $$
       select coalesce(current_setting('hb.plan_library_preview', true), '') = 'on'
     $$;
@@ -1050,6 +1052,12 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       if hb_is_system(tg_relid) then
         return new;
       end if;
+      -- 只在写入引用时检查：引用的素材以后被删除或清理，不影响这条消息的其他更新（如流式写入内容、状态）
+      if tg_op = 'UPDATE' and new.material_refs = old.material_refs
+        and new.library_refs = old.library_refs and new.task_id = old.task_id
+      then
+        return new;
+      end if;
       if cardinality(new.material_refs) > 0 then
         select t.client_id into v_client from tasks t where t.id = new.task_id;
         if v_client is null or (
@@ -1082,7 +1090,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
   // ---------- 6. 确认函数（5.4 第 1 条、6.1） ----------
   // 以所有者身份执行（要写应用角色没有 insert 权限的表），所以在函数里显式校验：
   // 当前是健管师、产物是本人的、kind 正确、是这条产物链的最新草稿、任务没有断开、关联了客户。
-  // 加锁顺序和客户转出一致：先锁客户（共享锁，挡住转出），再锁产物。
+  // 加锁顺序和客户转出一致：先锁客户（no key update，同一客户的确认串行、挡住转出），再锁产物。
   await sql`
     create function m5_lock_draft(p_artifact_id uuid, p_kind text) returns artifacts
       language plpgsql security definer set search_path = pg_catalog, public, pg_temp
@@ -1099,7 +1107,10 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       if v_client is null then
         raise exception 'artifact not found' using errcode = 'no_data_found';
       end if;
-      perform 1 from clients c where c.id = v_client and c.manager_id = app_user_id() for share;
+      -- 排他的行锁（不挡外键检查）：同一位客户的确认互相排队，后一个看到前一个写入的方案和随访，
+      -- 不会出现两份随访计划都是待随访、或生效方案旁边留着待方案生效的复评；也挡住客户转出
+      perform 1 from clients c where c.id = v_client and c.manager_id = app_user_id()
+        for no key update;
       if not found then
         raise exception 'artifact not found' using errcode = 'no_data_found';
       end if;
