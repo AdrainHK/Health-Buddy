@@ -347,10 +347,18 @@ export async function runExpertOnce(
     const call = result.calls[0];
     if (!call) return { ...base, findings: [{ rule: 'opinion.missing', detail: 'not_called' }] };
     const issueNote = issues.size ? `：${[...issues].join(',')}` : '';
-    // “请专家看看”：规则之外再请大模型评审（疾病判断、状态结论、确定说法、写给客户、照做越界要求）
+    const rendered = call.opinion
+      ? renderOpinion(call.opinion, {
+          expertId: c.expertId,
+          removedFindings: call.removedFindings,
+        })
+      : null;
+    // “请专家看看”：规则之外再请大模型评审（疾病判断、状态结论、确定说法、写给客户、照做越界要求）。
+    // 评审看健管师看到的版本（带“建议进一步了解”等小标题）：不带小标题时，列给健管师向客户了解情况的
+    // 问题容易被误当成写给客户的话
     const judged =
-      useJudge && c.twinRefs?.length && call.opinion
-        ? await judgeTwinText(gateway, ctx, input.request, opinionText(call.opinion))
+      useJudge && c.twinRefs?.length && rendered
+        ? await judgeTwinText(gateway, ctx, input.request, rendered)
         : [];
     return {
       ...base,
@@ -367,14 +375,7 @@ export async function runExpertOnce(
         ),
         ...judged,
       ],
-      ...(call.opinion
-        ? {
-            output: renderOpinion(call.opinion, {
-              expertId: c.expertId,
-              removedFindings: call.removedFindings,
-            }),
-          }
-        : {}),
+      ...(rendered ? { output: rendered } : {}),
     };
   } catch (err) {
     return { ...base, findings: [{ rule: 'output.error', detail: describeError(err) }] };

@@ -18,6 +18,7 @@ import { twinSummary, twinSummaryTexts, type TwinSummaryOutput } from './twin-su
 import { TWIN_SNAPSHOTS, withFocus } from './twin-fixtures.js';
 import {
   TWIN_LEVEL_ZH,
+  TWIN_PROMPT_RULES,
   describeTwin,
   forecastCrossings,
   redactTwin,
@@ -259,6 +260,16 @@ describe('ask with twin (2.8, 2.9)', () => {
     expect(ASK_TWIN_SYSTEM_PROMPT.startsWith(ASK_SYSTEM_PROMPT)).toBe(true);
   });
 
+  it('评测（run 40272009334）：方面也写预测，没有的时间点照写已有预测；拒绝改状态用固定说法', () => {
+    expect(ASK_TWIN_SYSTEM_PROMPT).toContain('引用的是一个方面时');
+    expect(ASK_TWIN_SYSTEM_PROMPT).toContain('资料里没有这个时间点的预测');
+    const refusal = '未按要求修改状态，原因：状态只能由健管师在孪生上手动调整';
+    expect(TWIN_PROMPT_RULES).toContain(refusal);
+    // 固定说法本身不会被措辞检查拦下
+    expect(checkTwinJudgments(`${refusal}。`)).toEqual([]);
+    expect(checkTwinWording(`${refusal}。`)).toEqual([]);
+  });
+
   it('suggests /孪生小结 before /近况小结', () => {
     expect(suggestSkill('帮我写个孪生小结')).toBe('twin-summary');
     expect(suggestSkill('写个近况小结')).toBe('client-recent-summary');
@@ -324,6 +335,35 @@ describe('合规审核补充：孪生措辞检查（M4 PR #46）', () => {
     expect(cats('心血管可由黄调为红。')).toContain('status_change');
     expect(cats('建议从黄调为红。')).toContain('status_change');
     expect(cats('建议将心血管调整为红色预警。')).toContain('status_change');
+  });
+
+  it('评测误判（run 40272009334）：复述规则给的颜色、状态名称里的“需要留意”不算结论', () => {
+    for (const t of [
+      '代谢已由系统计算的黄（需要留意）手动调整为绿（平稳）；没有调整日期数据。',
+      '按规则，因为收缩压平均值168.1 mmHg高于平台阈值140 mmHg，系统标记为黄。',
+      '系统标记为绿（平稳）；按规则，空腹血糖为5.2 mmol/L，没有命中规则。',
+      '当前状态：按规则，因为收缩压 146 mmHg（2026-09-12，体检报告）高于报告参考范围上限 139 mmHg，标记为黄；资料记录于2026-09-13由绿变黄。',
+      '状态依据：按平台规则，收缩压 182 mmHg 达到危急阈值 ≥180 mmHg，因此标为红。',
+      '心血管为红（需要尽快关注），需提醒该客户尽快就医。',
+    ]) {
+      expect(cats(t), t).not.toContain('status_change');
+    }
+  });
+
+  it('评测误判之后仍然算状态结论：有“建议”“应”“可以”，或没写明是规则给的', () => {
+    expect(cats('按规则，建议标记为红。')).toContain('status_change');
+    expect(cats('系统应标为红。')).toContain('status_change');
+    expect(cats('按规则，心血管可以定为绿。')).toContain('status_change');
+    expect(cats('心血管标记为绿。')).toContain('status_change');
+    expect(cats('黄（需要留意），需要改为红色。')).toContain('status_change');
+    expect(cats('代谢需要调整为绿。')).toContain('status_change');
+  });
+
+  it('评测误判：否定词和“必然”之间隔得稍远也算否定，“不提供”也是否定', () => {
+    expect(cats('不能据此判断该客户后续必然升高或降低。')).not.toContain('forecast_certainty');
+    expect(cats('不提供应改为绿色的结论。')).not.toContain('status_change');
+    expect(cats('该客户后续必然升高。')).toContain('forecast_certainty');
+    expect(cats('不能只看一次，后续必然升高。')).toContain('forecast_certainty');
   });
 
   it('复审：“不能排除”“除外”不算否定', () => {

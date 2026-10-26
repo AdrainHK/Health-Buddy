@@ -252,9 +252,10 @@ const TWIN_COLOR =
 /**
  * 状态结论（Q4：AI 不定状态）：“建议将代谢调整为红”“应改为绿色”“状态应为黄”“下调为黄色”。
  * “由绿变黄”“由黄升为红”是描述后端给出的变化，不算（见 findStatusChange）。
+ * “需要留意”“需要尽快关注”是状态名称里的字（“黄（需要留意）手动调整为绿”），不当作“需要……改为”。
  */
 export const STATUS_CHANGE = new RegExp(
-  `(?:改为|改成|调整为|调为|调成|上调为|下调为|升为|降为|应为|应该是|应当是|定为|标为|标记为)${SAME_CLAUSE}{0,2}${TWIN_COLOR}|(?:建议|应|应该|需要)${SAME_CLAUSE}{0,10}(?:改|调整|调|上调|下调|标)${SAME_CLAUSE}{0,4}${TWIN_COLOR}`,
+  `(?:改为|改成|调整为|调为|调成|上调为|下调为|升为|降为|应为|应该是|应当是|定为|标为|标记为)${SAME_CLAUSE}{0,2}${TWIN_COLOR}|(?:建议|应|应该|需要(?!留意|尽快关注))${SAME_CLAUSE}{0,10}(?:改|调整|调|上调|下调|标)${SAME_CLAUSE}{0,4}${TWIN_COLOR}`,
 );
 
 /** 预测的确定说法（5.3）：不写“将会”“一定会”“必然” */
@@ -268,15 +269,20 @@ export const FORECAST_CERTAINTY =
 const DISEASE_RISK =
   /(?<![不非没])(?:会得|会患|会发展成|会发展为|会演变成|发展成为|进展为|进展成|患病概率|患病风险|发病概率|发病风险|发病率|得病|高风险|(?:心血管|心脑血管|代谢|健康)?风险(?:较高|很高|偏高|升高了|高于常人)|风险(?:是|为|约为|约是|达到?)[^，。；,;\n]{0,6}?\d+(?:\.\d+)?\s*倍|(?:概率|可能性)(?:约为|约是|大约是|为|是|达到?|约)\s*\d+(?:\.\d+)?\s*%|(?:风险|概率|可能性)(?:增加|升高|上升|提高)|\d+(?:\.\d+)?\s*%\s*的?(?:风险|概率|可能))/g;
 const NEGATION_BEFORE =
-  /(?:不能|不应|不得|不会|不代表|不意味着|并不|不是|不说|不写|不做|无法|没法|没办法|未必|不一定)[^，。；\n]{0,8}$/;
+  /(?:不能|不应|不得|不会|不代表|不意味着|并不|不是|不说|不写|不做|不提供|不给出|无法|没法|没办法|未必|不一定)[^，。；,;\n]{0,10}$/;
+/**
+ * 否定词往前看的字数（“不能据此判断该客户后续必然升高”：否定词和“必然”之间隔 9 个字）。
+ * 规范化后全角逗号、分号已变成半角，两种都算分句边界（“不能只看一次，后续必然升高”不算否定）
+ */
+const NEGATION_LOOKBACK = 14;
 /** “不能排除……风险升高”“……除外”是肯定有可能，不算否定 */
 const NOT_EXCLUDED = /排除|除外/;
 
 /**
- * 这一处是否在否定或说明里：前面 12 个字以内有否定词，并且同一分句里没有“排除”“除外”
+ * 这一处是否在否定或说明里：前面 14 个字以内有否定词，并且同一分句里没有“排除”“除外”
  */
 function negatedAt(norm: string, index: number, length: number): boolean {
-  const before = norm.slice(Math.max(0, index - 12), index);
+  const before = norm.slice(Math.max(0, index - NEGATION_LOOKBACK), index);
   if (!NEGATION_BEFORE.test(before)) return false;
   const clauseStart = Math.max(
     ...['，', '。', '；', '\n', ',', ';'].map((p) => before.lastIndexOf(p)),
@@ -304,7 +310,7 @@ function findPattern(
   pattern: RegExp,
   category: WordingCategory,
   term: string,
-  skip?: (before: string) => boolean,
+  skip?: (before: string, norm: string, index: number, match: string) => boolean,
 ): WordingIssue[] {
   const { text: norm, origin } = normalized(text);
   const global = new RegExp(
@@ -314,7 +320,7 @@ function findPattern(
   const out: WordingIssue[] = [];
   for (const m of norm.matchAll(global)) {
     const before = norm.slice(Math.max(0, m.index - 12), m.index);
-    if (negatedAt(norm, m.index, m[0].length) || skip?.(before)) continue;
+    if (negatedAt(norm, m.index, m[0].length) || skip?.(before, norm, m.index, m[0])) continue;
     out.push({ category, term, index: origin[m.index] ?? 0 });
   }
   return out;
@@ -327,6 +333,29 @@ function findPattern(
  */
 const DESCRIBED_CHANGE =
   /(?:(?<!可|可以|能|应|应该|应当|宜|建议|需要|需)(?:由|从)(?:红|黄|绿|灰)色?|手动|健管师已?|已)$/;
+
+/**
+ * 复述平台给的颜色：“按规则，因为收缩压 146 高于上限 139，标记为黄”“系统标记为绿（平稳）”。
+ * 只对“标为”“标记为”“定为”这类贴标签的说法（不含“改为”“调整为”），并且同一句里写明了是规则、系统
+ * 或平台给的、没有“建议”“应”“可以”这类说法时才算描述；“建议标记为红”“应标为红”仍算结论。
+ */
+const LABEL_VERB = /^(?:标为|标记为|定为)/;
+const LABEL_ATTRIBUTION = /按(?:平台)?规则|系统|平台|后端/;
+const LABEL_MODAL = /建议|应该|应当|(?<![对相反适供响])应|可以|(?<!不)可|宜|需要(?!留意|尽快关注)/;
+function describedLabel(norm: string, index: number, match: string): boolean {
+  if (!LABEL_VERB.test(match)) return false;
+  const before = norm.slice(0, index);
+  const sentence = before.slice(
+    Math.max(...['。', '；', '\n', ';', '!', '?', '！', '？'].map((p) => before.lastIndexOf(p))) +
+      1,
+  );
+  return LABEL_ATTRIBUTION.test(sentence) && !LABEL_MODAL.test(sentence);
+}
+
+/** 状态结论这一处是否其实是描述（已发生的变化、照抄的手动调整、复述规则给的颜色） */
+function describedStatus(before: string, norm: string, index: number, match: string): boolean {
+  return DESCRIBED_CHANGE.test(before) || describedLabel(norm, index, match);
+}
 
 const TWIN_COUNT =
   '(?:\\d+(?:\\.\\d+)?|\\d+\\/\\d+|(?<![同统唯单第某])[一二两三四五六七八九十半几]+)\\s*';
@@ -372,9 +401,7 @@ export function checkTwinWording(text: string): WordingIssue[] {
       index: b.index,
     })),
     ...asIssues('presumed_disease', findTerms(text, TWIN_DISEASE_TERMS)),
-    ...findPattern(text, STATUS_CHANGE, 'status_change', '状态结论', (before) =>
-      DESCRIBED_CHANGE.test(before),
-    ),
+    ...findPattern(text, STATUS_CHANGE, 'status_change', '状态结论', describedStatus),
     ...findPattern(text, FORECAST_CERTAINTY, 'forecast_certainty', '确定说法'),
     ...findDiseaseRisk(text),
     ...asIssues('drug_name', findDrugNames(text)),
@@ -388,9 +415,7 @@ export function checkTwinWording(text: string): WordingIssue[] {
  */
 export function checkTwinJudgments(text: string): WordingIssue[] {
   return [
-    ...findPattern(text, STATUS_CHANGE, 'status_change', '状态结论', (before) =>
-      DESCRIBED_CHANGE.test(before),
-    ),
+    ...findPattern(text, STATUS_CHANGE, 'status_change', '状态结论', describedStatus),
     ...findPattern(text, FORECAST_CERTAINTY, 'forecast_certainty', '确定说法'),
     ...findDiseaseRisk(text),
   ];
