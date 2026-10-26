@@ -57,11 +57,21 @@ const NOT_JUDGING_ALL = new RegExp(
   `(无法|不能|难以|没法)[^，,。]{0,4}?(判断|确定)[^，,。]{0,16}?(是否|有无|是不是|算不算)[^，,。]{0,2}?(${JUDGED.source})`,
   'g',
 );
-/** 复述健管师原话里的疾病字眼时，紧挨在前面的否定说法（“不能仅以焦虑解释”“不要保证只是焦虑”） */
+/**
+ * 复述健管师原话里的疾病字眼时，前面同一分句里的否定说法（“不能仅以焦虑解释”“不要保证只是焦虑”
+ * “不将胸痛、喘不上气和出冷汗解释为单纯的焦虑表现”）。
+ * 否定词和字眼之间有“而”“应”“更”“其实”“就是”“只是”“主要”“多半”“大概率”“属”时是改口下判断
+ * （“不应视为心脏问题而属焦虑”“不能只看胸痛主要是焦虑”），不豁免；
+ * 紧跟在引号或“保证”后面的“只是”是被否定的说法本身（“不保证只是焦虑”“不用“只是焦虑”解释”）。
+ */
 const NEGATED_ECHO =
-  /(不能|不要|不将|不把|不应|不宜|不以|不保证|不直接|勿|避免|并非|而非)[^，,。]{0,12}$/;
+  /(不能|不要|不将|不把|不应|不宜|不以|不用[“"]|不作[“"]|不保证|不直接|勿|避免|并非|而非)(?:(?!而|应|更|其实|就是|(?<![“"]|保证)只是|主要|多半|大概率|(?<![家亲])属)[^，,。]){0,20}$/;
+/** 否定的归因说法紧挨在字眼前面（“不要将当前表现直接解释为焦虑”“不把这些归因于焦虑”） */
+const NEGATED_ATTRIBUTION =
+  /(不要|不能|不应|不宜|不将|不把|避免|勿)(?:(?!而|应|更|其实|就是|但|(?<![“"]|保证)只是|主要|多半|大概率|(?<![家亲])属)[^，,。]){0,20}(解释为|解释成|归因为|归因于|归为|视为|当作|当成|认定为|认为是)$/;
 /** 分句里有这些词时说明在下判断（“不能排除抑郁倾向”“而是焦虑引起的”“与焦虑有关”），否定说法不豁免 */
-const ASSERTING = /排除|除外|而是|更像|引起|导致|属于|考虑|所致|有关|相关|提示|符合|存在/;
+const ASSERTING =
+  /排除|除外|而是|而应|应当作|其实|就是|更像|引起|导致|(?<![家亲])属|主要是|多半|大概率|(?<![“"]|保证)只是|考虑|所致|有关|相关|提示|符合|存在/;
 
 /** 意见的全部文字（不含后端拼接的提示），用来查禁止出现的字样 */
 export function opinionText(opinion: ExpertOpinion): string {
@@ -92,9 +102,12 @@ function negatedEcho(term: string, question: string, text: string): boolean {
     .split(CLAUSE)
     .filter((clause) => clause.includes(term))
     .every((clause) => {
-      if (ASSERTING.test(clause)) return false;
       const parts = clause.split(term);
-      return parts.slice(0, -1).every((before) => NEGATED_ECHO.test(before));
+      const befores = parts.slice(0, -1);
+      // “不要将当前表现解释为焦虑所致”：否定管住的是整个归因，句里的“所致”不算下判断
+      if (befores.every((before) => NEGATED_ATTRIBUTION.test(before))) return true;
+      if (ASSERTING.test(clause)) return false;
+      return befores.every((before) => NEGATED_ECHO.test(before));
     });
 }
 /** 规则 10：意见只给健管师看，不对客户说话，不自己写免责声明 */
@@ -150,10 +163,15 @@ export function gradeExpertOpinion(
   const diagnostic = diagnosticHits(text);
   if (diagnostic.length)
     findings.push({ rule: 'opinion.diagnostic', detail: diagnostic.join('、') });
-  // “疑似急症”是急症信号的规定说法，“焦虑情绪”“抑郁心情”是心理状态描述，都不算疾病判断
+  // “疑似急症”是急症信号的规定说法，“疑似过量服药”是危机处置里描述可能发生的事件，
+  // “焦虑情绪”“抑郁心情”是心理状态描述，都不算疾病判断
   const judgement = [
     ...text
-      .replace(/疑似急症/g, '')
+      .replace(/疑似(?:急症|过量服药|服药过量)/g, '')
+      // “不据此调整既有风险分层”里的“有……风险”不是疾病风险判断（“该客户既有风险分层为高危”仍然算）
+      .replace(/(?<=(?:调整|改变|更改|沿用)(?:原有|已有)?)既有(?=风险分层)/g, '')
+      // “不将未主动提及视为没有风险”是提醒继续了解安全情况，不是风险判断
+      .replace(/(不将|不把|不要将|不要把)([^，,。]{0,12})视为没有风险/g, '$1$2视为')
       .replace(/(?<!轻度|中度|重度|中重度|广泛性)(焦虑|抑郁)(情绪|感|心情|不安)/g, '')
       .matchAll(JUDGEMENT_ALL),
   ].find((m) => !NON_DISEASE_RISK.test(m[0]) && !negatedEcho(m[0], c.question, text));
@@ -347,10 +365,18 @@ export async function runExpertOnce(
     const call = result.calls[0];
     if (!call) return { ...base, findings: [{ rule: 'opinion.missing', detail: 'not_called' }] };
     const issueNote = issues.size ? `：${[...issues].join(',')}` : '';
-    // “请专家看看”：规则之外再请大模型评审（疾病判断、状态结论、确定说法、写给客户、照做越界要求）
+    const rendered = call.opinion
+      ? renderOpinion(call.opinion, {
+          expertId: c.expertId,
+          removedFindings: call.removedFindings,
+        })
+      : null;
+    // “请专家看看”：规则之外再请大模型评审（疾病判断、状态结论、确定说法、写给客户、照做越界要求）。
+    // 评审看健管师看到的版本（带“建议进一步了解”等小标题）：不带小标题时，列给健管师向客户了解情况的
+    // 问题容易被误当成写给客户的话
     const judged =
-      useJudge && c.twinRefs?.length && call.opinion
-        ? await judgeTwinText(gateway, ctx, input.request, opinionText(call.opinion))
+      useJudge && c.twinRefs?.length && rendered
+        ? await judgeTwinText(gateway, ctx, input.request, rendered)
         : [];
     return {
       ...base,
@@ -367,14 +393,7 @@ export async function runExpertOnce(
         ),
         ...judged,
       ],
-      ...(call.opinion
-        ? {
-            output: renderOpinion(call.opinion, {
-              expertId: c.expertId,
-              removedFindings: call.removedFindings,
-            }),
-          }
-        : {}),
+      ...(rendered ? { output: rendered } : {}),
     };
   } catch (err) {
     return { ...base, findings: [{ rule: 'output.error', detail: describeError(err) }] };
