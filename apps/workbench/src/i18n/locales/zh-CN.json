@@ -245,15 +245,16 @@
       "item": "{{name}} · 第 {{version}} 版",
       "version": "第 {{version}} 版",
       "title": {
+        "pattern": "{{client}}{{summary}} {{date}} 第{{version}}版",
         "client": "{{name}} ",
-        "sourceSeparator": " · ",
-        "default": "{{client}}{{name}} · 第 {{version}} 版",
-        "report-interpretation": "{{client}}体检报告（{{source}}）解读 · 第 {{version}} 版",
-        "report-interpretationNoSource": "{{client}}体检报告解读 · 第 {{version}} 版",
-        "client-recent-summary": "{{client}}近况小结 · 第 {{version}} 版",
-        "client-recent-summaryNoSource": "{{client}}近况小结 · 第 {{version}} 版",
-        "interview-outline": "{{client}}面谈提纲（依据 {{source}}）· 第 {{version}} 版",
-        "interview-outlineNoSource": "{{client}}面谈提纲（依据档案）· 第 {{version}} 版"
+        "summary": {
+          "client-recent-summary": "近况小结",
+          "report-interpretation": "体检报告解读",
+          "interview-outline": "面谈提纲",
+          "twin-summary": "孪生小结"
+        },
+        "source": "依据报告 {{source}}",
+        "sourceSeparator": " · "
       },
       "back": "返回产物列表",
       "criticalBadge": "含危急指标",
@@ -555,8 +556,7 @@
       }
     },
     "artifacts": {
-      "empty": "还没有产物",
-      "meta": "{{date}}"
+      "empty": "还没有产物"
     },
     "sourceNote": "每个数值旁注明来源和日期。",
     "errors": {

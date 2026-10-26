@@ -3,7 +3,7 @@ import { TriangleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import styles from './ArtifactList.module.css';
 import { StatusBadge } from './ArtifactView';
-import { useArtifactTitle } from './artifactTitle';
+import { useArtifactSource, useArtifactTitle } from './artifactTitle';
 
 /** 新的在前：先按生成时间，同一时间按版本号 */
 export function sortArtifacts(items: readonly ArtifactSummary[]): ArtifactSummary[] {
@@ -20,7 +20,7 @@ export interface ArtifactListProps {
   label?: string;
 }
 
-/** 当前任务的产物列表，每一版一行，带状态；标题写明客户、依据的报告和第几版 */
+/** 当前任务的产物列表，每一版一行，带状态；名称是“称呼 内容概括 日期 第几版”，悬停显示依据的报告 */
 export function ArtifactList({
   artifacts,
   selectedId,
@@ -30,6 +30,7 @@ export function ArtifactList({
 }: ArtifactListProps) {
   const { t } = useTranslation();
   const title = useArtifactTitle();
+  const source = useArtifactSource();
   return (
     <ul className={styles.list} aria-label={label ?? t('results.artifacts.list')}>
       {sortArtifacts(artifacts).map((item) => (
@@ -40,7 +41,9 @@ export function ArtifactList({
             aria-current={item.id === selectedId ? true : undefined}
             onClick={() => onSelect(item.id)}
           >
-            <span className={styles.name}>{title(item, clientName)}</span>
+            <span className={styles.name} title={source(item)}>
+              {title(item, clientName)}
+            </span>
             {item.hasCriticalFlags && (
               <span className={styles.critical} title={t('results.artifacts.criticalBadge')}>
                 <TriangleAlert size={14} aria-hidden />

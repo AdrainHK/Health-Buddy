@@ -11,6 +11,7 @@ import {
 } from '@health-buddy/shared';
 import { ApiError, apiFetch, apiRequest, toApiError } from './http';
 import { streamRequest, type StreamOptions } from './stream';
+import { browserTimeZone } from './twin';
 
 /**
  * 确认被拒绝（409）。除了原因，还带禁用词、危急指标数值和风险分层字样在通俗版里的位置，
@@ -93,7 +94,12 @@ export interface ExportedFile {
 
 /** 导出已审核产物的通俗版图片或 PDF */
 export async function exportArtifact(id: string, format: ExportFormat): Promise<ExportedFile> {
-  const res = await apiFetch(`/artifacts/${id}/export`, { method: 'POST', body: { format } });
+  // 文件名里的日期是这一版的生成日期，按健管师所在时区算
+  const tz = browserTimeZone();
+  const res = await apiFetch(`/artifacts/${id}/export`, {
+    method: 'POST',
+    body: tz ? { format, tz } : { format },
+  });
   if (!res.ok) throw await toApiError(res);
   const blob = await res.blob();
   return {

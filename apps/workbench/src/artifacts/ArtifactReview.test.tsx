@@ -69,8 +69,8 @@ async function openArtifact(
   props: Partial<ResultsPanelProps> = {},
 ) {
   const view = renderPanel(props);
-  await user.click(await screen.findByRole('button', { name: /第 1 版/ }));
-  await screen.findByRole('heading', { name: /第 1 版/ });
+  await user.click(await screen.findByRole('button', { name: /第1版/ }));
+  await screen.findByRole('heading', { name: /第1版/ });
   return view;
 }
 
@@ -106,14 +106,14 @@ describe('artifact list', () => {
     const list = await screen.findByRole('list', { name: '本任务的产物' });
     const items = within(list).getAllByRole('button');
     // 验收反馈 4：标题带客户称呼，不只是“第几版”
-    expect(items[0]).toHaveTextContent('合成客户甲 近况小结 · 第 2 版');
+    expect(items[0]).toHaveTextContent('合成客户甲 近况小结 2026-10-15 第2版');
     expect(items[0]).toHaveTextContent('草稿');
     expect(items[0]).toHaveTextContent('含危急指标');
-    expect(items[1]).toHaveTextContent('第 1 版');
+    expect(items[1]).toHaveTextContent('第1版');
     expect(items[1]).toHaveTextContent('已退回');
 
     await user.click(items[0]!);
-    expect(await screen.findByRole('heading', { name: /第 2 版/ })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /第2版/ })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: '通俗版内容' })).toHaveValue(
       draft.artifact.content.clientFacing,
     );
@@ -129,14 +129,14 @@ describe('artifact list', () => {
         json(200, makeArtifactDetail({ id: ids.artifact2, version: 2 })),
     });
     const view = renderPanel();
-    await screen.findByRole('button', { name: /第 1 版/ });
+    await screen.findByRole('button', { name: /第1版/ });
 
     artifacts = [
       ...artifacts,
       makeArtifactSummary({ id: ids.artifact2, version: 2, createdAt: '2026-10-15T09:00:00.000Z' }),
     ];
     view.rerenderWith({ refreshKey: `${ids.task}:1` });
-    expect(await screen.findByRole('heading', { name: /第 2 版/ })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /第2版/ })).toBeInTheDocument();
   });
 
   it('does not switch away from unsaved edits when a newer artifact is generated', async () => {
@@ -159,13 +159,13 @@ describe('artifact list', () => {
     view.rerenderWith({ refreshKey: `${ids.task}:1` });
     const notice = await within(reviewBar()).findByText(/已生成新的版本/);
     expect(notice.closest('[role="alert"]')).not.toBeNull();
-    expect(screen.getByRole('heading', { name: /第 1 版/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /第1版/ })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: '通俗版内容' })).toHaveValue(
       makeArtifactDetail().artifact.content.clientFacing + '补充一句',
     );
 
     await user.click(button('打开新版本'));
-    expect(await screen.findByRole('heading', { name: /第 2 版/ })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /第2版/ })).toBeInTheDocument();
   });
 });
 
@@ -489,7 +489,7 @@ describe('review bar on a draft', () => {
     await user.type(reason, '语气再温和一些');
     await user.click(submit);
 
-    expect(await screen.findByRole('heading', { name: /第 2 版/ })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /第2版/ })).toBeInTheDocument();
     expect(api.callsTo('POST', `${ART_PATH}/return`)[0]?.body).toEqual({
       reason: '语气再温和一些',
     });
@@ -521,7 +521,7 @@ describe('review bar on an approved artifact', () => {
 
   it('copies the client text from the server and exports files', async () => {
     const detail = approved();
-    const filename = '客户近况小结-2026-10-15.pdf';
+    const filename = '近况小结 2026-10-15 第1版.pdf';
     const api = mockApi({
       [`GET ${TASK_PATH}`]: () => json(200, taskDetail(detail)),
       [`GET ${ART_PATH}`]: () => json(200, detail),
@@ -558,7 +558,11 @@ describe('review bar on an approved artifact', () => {
 
     await user.click(button('导出 PDF'));
     await waitFor(() => expect(clicked).toEqual([filename]));
-    expect(api.callsTo('POST', `${ART_PATH}/export`)[0]?.body).toEqual({ format: 'pdf' });
+    // 带上浏览器时区：文件名里的日期按健管师所在时区算
+    expect(api.callsTo('POST', `${ART_PATH}/export`)[0]?.body).toEqual({
+      format: 'pdf',
+      tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    });
     expect(createObjectURL).toHaveBeenCalledTimes(1);
 
     expect(button('导出图片')).toBeEnabled();
@@ -582,14 +586,14 @@ describe('review bar on an approved artifact', () => {
     await openArtifact(user);
 
     await user.click(button('基于此版修改'));
-    expect(await screen.findByRole('heading', { name: /第 2 版/ })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /第2版/ })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: '通俗版内容' })).toBeInTheDocument();
     expect(api.callsTo('POST', `${ART_PATH}/revise`)).toHaveLength(1);
   });
 });
 
-describe('产物标题（验收反馈 4：不只写“第 1 版”）', () => {
-  it('写明客户称呼、依据的报告日期和原件文件名；记录标签的版本也用同样的标题', async () => {
+describe('产物命名（称呼 + 内容概括 + 日期 + 第几版）', () => {
+  it('列表、预览标题和记录标签的版本都用同一个命名规则，依据的报告放在悬停提示里', async () => {
     const summary = (skillId: string, extra: Partial<ArtifactSummary> = {}) =>
       makeArtifactSummary({ skillId, ...extra });
     const interp = makeArtifactDetail(
@@ -636,19 +640,28 @@ describe('产物标题（验收反馈 4：不只写“第 1 版”）', () => {
         .getAllByRole('button')
         .map((b) => b.firstChild?.textContent),
     ).toEqual([
-      '合成客户甲 体检报告（2026-09-12 · synthetic-scan.pdf）解读 · 第 1 版',
-      '合成客户甲 面谈提纲（依据档案）· 第 1 版',
-      '合成客户甲 面谈提纲（依据 2026-09-12）· 第 1 版',
-      '合成客户甲 近况小结 · 第 2 版',
+      '合成客户甲 体检报告解读 2026-10-15 第1版',
+      '合成客户甲 面谈提纲 2026-10-15 第1版',
+      '合成客户甲 面谈提纲 2026-10-15 第1版',
+      '合成客户甲 近况小结 2026-10-15 第2版',
+    ]);
+    const names = within(list)
+      .getAllByRole('button')
+      .map((b) => b.firstElementChild?.getAttribute('title') ?? null);
+    expect(names).toEqual([
+      '依据报告 2026-09-12 · synthetic-scan.pdf',
+      null,
+      '依据报告 2026-09-12',
+      null,
     ]);
     await user.click(within(list).getAllByRole('button')[0]!);
-    const title = '合成客户甲 体检报告（2026-09-12 · synthetic-scan.pdf）解读 · 第 1 版';
+    const title = '合成客户甲 体检报告解读 2026-10-15 第1版';
     expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: '记录' }));
     expect(screen.getByRole('button', { name: '查看第 1 版' })).toHaveTextContent(title);
   });
 
-  it('没有关联客户、没有依据报告时省略称呼和来源', async () => {
+  it('没有关联客户时省略称呼', async () => {
     mockApi({
       [`GET ${TASK_PATH}`]: () =>
         json(200, {
@@ -658,7 +671,9 @@ describe('产物标题（验收反馈 4：不只写“第 1 版”）', () => {
     });
     renderPanel();
     const list = await screen.findByRole('list', { name: '本任务的产物' });
-    expect(within(list).getByRole('button')).toHaveTextContent('体检报告解读 · 第 1 版');
+    expect(within(list).getByRole('button').firstChild?.textContent).toBe(
+      '体检报告解读 2026-10-15 第1版',
+    );
   });
 });
 
@@ -885,8 +900,8 @@ describe('history tab', () => {
     });
     const user = userEvent.setup();
     renderPanel();
-    await user.click(await screen.findByRole('button', { name: /第 2 版/ }));
-    await screen.findByRole('heading', { name: /第 2 版/ });
+    await user.click(await screen.findByRole('button', { name: /第2版/ }));
+    await screen.findByRole('heading', { name: /第2版/ });
     await user.click(screen.getByRole('tab', { name: '记录' }));
 
     const panel = screen.getByRole('tabpanel', { name: '记录' });

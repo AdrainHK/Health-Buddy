@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { CRITICAL_COMPARATORS, CRITICAL_LEVELS } from '../health/critical.js';
+import { timeZoneSchema } from './follow-ups.js';
 import { riskTierSuggestionSchema } from './risk-tiers.js';
 
 /** 产物状态（规格 3.6）。voided 只由系统在客户转出或删除时设置（Q11）。 */
@@ -178,7 +179,14 @@ export const exportFormatSchema = z.enum(['png', 'pdf']);
 export type ExportFormat = z.infer<typeof exportFormatSchema>;
 
 /** POST /api/artifacts/:id/export：会写导出记录，所以用 POST；响应是文件 */
-export const exportArtifactRequestSchema = z.object({ format: exportFormatSchema });
+export const exportArtifactRequestSchema = z.object({
+  format: exportFormatSchema,
+  /**
+   * 健管师的时区（浏览器时区）。导出文件名里的日期是这一版的生成日期，按这个时区算；
+   * 不传或时区不存在时按北京时间
+   */
+  tz: timeZoneSchema.optional(),
+});
 export type ExportArtifactRequest = z.infer<typeof exportArtifactRequestSchema>;
 
 export const clientTextResponseSchema = z.object({ text: z.string() });

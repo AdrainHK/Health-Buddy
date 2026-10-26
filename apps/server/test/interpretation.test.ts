@@ -541,7 +541,7 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
       expect((await detail(agent, artifact.id)).sourceReport.correctedSince).toBe(true);
     });
 
-    it('退回重写沿用原来的报告；导出文件名是“体检解读-报告日期”，不含客户姓名，不含分层', async () => {
+    it('退回重写沿用原来的报告；导出文件名是“体检报告解读 日期 第几版”，不含客户姓名，不含分层', async () => {
       const agent = await as(f.users.managerA1.email);
       const taskId = await newTask(agent, f.clients.a1[0]);
       provider.queue.push({ text: interpretationJson() });
@@ -563,7 +563,7 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
       const pdf = await agent.post(`/api/artifacts/${second!.id}/export`).send({ format: 'pdf' });
       expect(pdf.status).toBe(200);
       const disposition = decodeURIComponent(pdf.headers['content-disposition'] ?? '');
-      expect(disposition).toContain('体检解读-2026-09-12.pdf');
+      expect(disposition).toMatch(/体检报告解读 \d{4}-\d{2}-\d{2} 第2版\.pdf/);
       expect(disposition).not.toContain('测试客户');
       const copy = await agent.post(`/api/artifacts/${second!.id}/copy`).expect(200);
       expect(copy.body.text).not.toMatch(/分层|风险/);
