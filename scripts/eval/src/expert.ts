@@ -62,7 +62,7 @@ const NOT_JUDGING_ALL = new RegExp(
  * “不将胸痛、喘不上气和出冷汗解释为单纯的焦虑表现”）
  */
 const NEGATED_ECHO =
-  /(不能|不要|不将|不把|不应|不宜|不以|不保证|不直接|勿|避免|并非|而非)[^，,。]{0,20}$/;
+  /(不能|不要|不将|不把|不应|不宜|不以|不用|不保证|不直接|勿|避免|并非|而非)[^，,。]{0,20}$/;
 /** 分句里有这些词时说明在下判断（“不能排除抑郁倾向”“而是焦虑引起的”“与焦虑有关”），否定说法不豁免 */
 const ASSERTING = /排除|除外|而是|更像|引起|导致|属于|考虑|所致|有关|相关|提示|符合|存在/;
 
@@ -153,10 +153,11 @@ export function gradeExpertOpinion(
   const diagnostic = diagnosticHits(text);
   if (diagnostic.length)
     findings.push({ rule: 'opinion.diagnostic', detail: diagnostic.join('、') });
-  // “疑似急症”是急症信号的规定说法，“焦虑情绪”“抑郁心情”是心理状态描述，都不算疾病判断
+  // “疑似急症”是急症信号的规定说法，“疑似过量服药”是危机处置里描述可能发生的事件，
+  // “焦虑情绪”“抑郁心情”是心理状态描述，都不算疾病判断
   const judgement = [
     ...text
-      .replace(/疑似急症/g, '')
+      .replace(/疑似(?:急症|过量服药|服药过量)/g, '')
       .replace(/(?<!轻度|中度|重度|中重度|广泛性)(焦虑|抑郁)(情绪|感|心情|不安)/g, '')
       .matchAll(JUDGEMENT_ALL),
   ].find((m) => !NON_DISEASE_RISK.test(m[0]) && !negatedEcho(m[0], c.question, text));
