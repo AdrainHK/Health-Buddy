@@ -371,6 +371,13 @@ describe('合规审核补充：孪生措辞检查（M4 PR #46）', () => {
     expect(cats('预测仅针对指标数值，患病概率较高。')).toContain('disease_risk');
     expect(cats('资料只有收缩压数值预测，没有这项患病概率数据。')).not.toContain('disease_risk');
     expect(cats('没有用药的情况下患病概率较高。')).toContain('disease_risk');
+    // 评测（run 40279578317）
+    expect(cats('80% 区间也不表示患病概率。')).not.toContain('disease_risk');
+    expect(cats('数值预测不等于患病概率。')).not.toContain('disease_risk');
+    expect(cats('没有可用于评估患病概率的数据或模型。')).not.toContain('disease_risk');
+    expect(cats('代谢状态由系统计算的黄调整为绿；没有调整日期。')).not.toContain('status_change');
+    expect(cats('代谢可由系统计算的黄调整为绿。')).toContain('status_change');
+    expect(cats('建议由系统计算的黄调整为绿。')).toContain('status_change');
   });
 
   it('复审：“不能排除”“除外”不算否定', () => {
