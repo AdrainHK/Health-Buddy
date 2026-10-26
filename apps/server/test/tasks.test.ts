@@ -247,6 +247,48 @@ describe('任务接口', () => {
     expect(row).toEqual({ title: '新任务', title_source: 'default' });
   });
 
+  it('客户转出后，自动标题里的客户称呼被清掉，手动标题保留', async () => {
+    const auto = await legacyTask(scopeA1(), f.clients.a1[0], '写个近况小结');
+    const manual = await insertTask(owner, scopeA1(), f.clients.a1[0]);
+    await owner
+      .updateTable('tasks')
+      .set({ title: '我的随访', title_source: 'manual' })
+      .where('id', '=', manual)
+      .execute();
+    const agent = await loginAs(app, f.users.managerA1.email);
+    // 先读一次列表，生成带称呼的标题
+    await agent.get('/api/tasks').expect(200);
+    const named = await owner
+      .selectFrom('tasks')
+      .select('title')
+      .where('id', '=', auto)
+      .executeTakeFirstOrThrow();
+    expect(named.title).toBe('为测试客户 A1-1生成近况小结');
+
+    await owner
+      .updateTable('clients')
+      .set({ manager_id: f.users.managerA2.id })
+      .where('id', '=', f.clients.a1[0])
+      .execute();
+    const rows = await owner
+      .selectFrom('tasks')
+      .select(['id', 'title', 'title_source'])
+      .where('id', 'in', [auto, manual])
+      .execute();
+    expect(rows.find((r) => r.id === auto)).toMatchObject({
+      title: '新任务',
+      title_source: 'default',
+    });
+    expect(rows.find((r) => r.id === manual)).toMatchObject({
+      title: '我的随访',
+      title_source: 'manual',
+    });
+    const list = await agent.get('/api/tasks?archived=true').expect(200);
+    expect(JSON.stringify(list.body)).not.toContain('测试客户 A1-1');
+    const detail = await agent.get(`/api/tasks/${auto}`).expect(200);
+    expect(detail.body.task.title).toBe('生成近况小结');
+  });
+
   it('客户转出后任务只读：不能改名、不能取消归档，返回 409', async () => {
     const taskId = await insertTask(owner, scopeA1(), f.clients.a1[0]);
     await owner
