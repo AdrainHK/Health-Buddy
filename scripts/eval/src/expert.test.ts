@@ -317,6 +317,22 @@ describe('gradeExpertOpinion', () => {
         summary,
       ).toContain('opinion.judgment_hint');
     }
+    // 合规复审（f91d717）B3：否定后改口用“更应”“而属”“多半”“大概率”“只是”“主要是”下判断的仍然算
+    for (const summary of [
+      '不要将胸痛视为心脏病更应视为焦虑。',
+      '不应视为心脏问题而属焦虑。',
+      '不要将其视为心脏问题多半是焦虑。',
+      '不将其解释为心脏问题大概率是焦虑。',
+      '不把胸痛视为急症只是焦虑而已。',
+      '不能只看胸痛主要是焦虑。',
+    ]) {
+      expect(
+        gradeExpertOpinion(c, call(opinion({ summary }))).map((f) => f.rule),
+        summary,
+      ).toContain('opinion.judgment_hint');
+    }
+    const okFamily = opinion({ summary: '联系家属陪同就医，不要保证只是焦虑。' });
+    expect(gradeExpertOpinion(c, call(okFamily))).toEqual([]);
     const bad9 = opinion({ summary: '这些表现可解释为焦虑所致。' });
     expect(gradeExpertOpinion(c, call(bad9)).map((f) => f.rule)).toContain('opinion.judgment_hint');
   });

@@ -255,9 +255,10 @@ const CHANGED_COLOR =
  * “由绿变黄”“由黄升为红”是描述后端给出的变化，不算（见 findStatusChange）。
  * 括号里的“需要留意”“需要尽快关注”是状态名称（“黄（需要留意）手动调整为绿”），不当作“需要……改为”；
  * “心血管需要留意并把它调红”仍算。第二种说法的情态词和改动词之间放宽到整个分句。
+ * “建议列为红色”“我认为应判为黄”“心血管换成红色更合适”也算；“由黄变成红”是描述（见 DESCRIBED_CHANGE）。
  */
 export const STATUS_CHANGE = new RegExp(
-  `(?:改为|改成|调整为|调为|调成|上调为|下调为|升为|降为|应为|应该是|应当是|定为|标为|标记为)${SAME_CLAUSE}{0,2}${CHANGED_COLOR}|(?:建议|(?<![对相反适供响])应|应该|(?<![（(])需要|可以|最好|本该)${SAME_CLAUSE}*?(?:改|调整|调|上调|下调|标)${SAME_CLAUSE}{0,4}${CHANGED_COLOR}`,
+  `(?:改为|改成|调整为|调为|调成|上调为|下调为|升为|降为|升级为|应为|应该是|应当是|定为|标为|标记为|列为|设为|设置为|判为|归为|划为|评为|换成|变成)${SAME_CLAUSE}{0,2}${CHANGED_COLOR}|(?:建议|(?<![对相反适供响])应|应该|(?<![（(])需要|可以(?!看到|看出)|最好|本该)${SAME_CLAUSE}*?(?:改|调整|调|上调|下调|标)${SAME_CLAUSE}{0,4}${CHANGED_COLOR}`,
 );
 
 /** 预测的确定说法（5.3）：不写“将会”“一定会”“必然” */
@@ -272,7 +273,20 @@ const DISEASE_RISK =
   /(?<![不非没])(?:会得|会患|会发展成|会发展为|会演变成|发展成为|进展为|进展成|患病概率|患病风险|发病概率|发病风险|发病率|得病|高风险|(?:心血管|心脑血管|代谢|健康)?风险(?:较高|很高|偏高|升高了|高于常人)|风险(?:是|为|约为|约是|达到?)[^，。；,;\n]{0,6}?\d+(?:\.\d+)?\s*倍|(?:概率|可能性)(?:约为|约是|大约是|为|是|达到?|约)\s*\d+(?:\.\d+)?\s*%|(?:风险|概率|可能性)(?:增加|升高|上升|提高)|\d+(?:\.\d+)?\s*%\s*的?(?:风险|概率|可能))/g;
 /** 一般的否定词：和被否定的说法之间最多隔 8 个字 */
 const NEGATION_WORDS =
-  /(?:不能|不应|不得|不会|不代表|不意味着|并不|不是|不说|不写|不做|不将|不把|不表示|不等于|无法|没法|没办法|未必|不一定)(?=[^，。；,;\n]*$)/g;
+  /(?:不能|不应|不得|不会|不代表|不意味着|并不|不是|不说|不写|不做|不表示|不等于|无法|没法|没办法|未必|不一定)(?=[^，。；,;\n]*$)/g;
+/**
+ * “不能”“不会”后面是做到某件事（“不能坚持运动”“不会控制体重”“不能把盐减下来”“不能管好饮食”）时是条件，
+ * 不是否定：“不能坚持运动患病风险较高”仍算
+ */
+const NEGATION_CONDITIONAL =
+  /^(?:坚持|控制|管住|管好|把握|做到|按时|规律|保持|养成|戒|减|降|改)|下来|到位|好/;
+/**
+ * “不将”“不把”只在后面跟“说成”“写成”“视为”这类描述动词时才是否定（“不把这次波动说成患病风险升高”）；
+ * “不把体重降下来患病风险较高”“不将饮食调整到位患病风险增加”是条件，仍算
+ */
+const NEGATION_DESCRIBING = /(?:不将|不把)(?=[^，。；,;\n]*$)/g;
+const DESCRIBE_VERB =
+  /(?:说成|写成|说为|视为|看作|看成|当作|当成|解释为|解释成|归为|作为)[^，。；,;\n]{0,4}$/;
 /**
  * 否定的对象就是风险、概率、数据或结论本身（“没有这项患病概率数据”“不提供应改为绿色的结论”
  * “没有可用于评估患病概率的数据”）：和被否定的说法之间最多隔 4 个字
@@ -293,13 +307,17 @@ const NEGATION_LOOKBACK = 18;
 
 /** 紧挨在这一处前面的文字（同一分句内）是否有管得到它的否定词 */
 function negationReaches(before: string): boolean {
-  const reaches = (re: RegExp, maxGap: (gap: string) => number) =>
+  const reaches = (re: RegExp, maxGap: (gap: string, word: string) => number) =>
     [...before.matchAll(re)].some((m) => {
       const gap = before.slice(m.index + m[0].length);
-      return gap.length <= maxGap(gap) && !NEGATION_BREAK.test(gap);
+      return gap.length <= maxGap(gap, m[0]) && !NEGATION_BREAK.test(gap);
     });
   return (
-    reaches(NEGATION_WORDS, (gap) => (NEGATION_EXPLAINING.test(gap) ? 14 : 8)) ||
+    reaches(NEGATION_WORDS, (gap, word) => {
+      if ((word === '不能' || word === '不会') && NEGATION_CONDITIONAL.test(gap)) return -1;
+      return NEGATION_EXPLAINING.test(gap) ? 14 : 8;
+    }) ||
+    reaches(NEGATION_DESCRIBING, (gap) => (DESCRIBE_VERB.test(gap) ? 12 : -1)) ||
     reaches(NEGATION_OF_OBJECT, () => 4)
   );
 }
@@ -368,7 +386,12 @@ const DESCRIBED_CHANGE =
  * 括号里的“需要留意”是状态名称，不算。
  */
 const STATUS_JUDGING =
-  /建议|应该|应当|(?<![对相反适供响])应|可以|(?<!不)可(?!能)|宜|(?<![（(])需|最好|本该|判断|认为|更合理|得/;
+  /建议|应该|应当|(?<![对相反适供响])应|可以|(?<!不)可(?!能)|宜|(?<![（(])需|最好|本该|判断|认为|觉得|更合理|(?<![获取记觉值显懂晓])得(?!到)/;
+/**
+ * 这些说法里的“可”“得”不是判断（“可以看到代谢由黄升为红”“可见……”“获得新的读数后……”“记得……”），
+ * 查 STATUS_JUDGING 前先去掉
+ */
+const NOT_JUDGING = /可以看到|可以看出|可见|获得|得到|记得/g;
 
 /**
  * 复述系统给的颜色：只认“系统/平台/规则”（可带“已”“自动”）后面紧跟“标为”“标记为”“定为”
@@ -390,7 +413,7 @@ function clauseBefore(norm: string, index: number): string {
 /** 状态结论这一处是否其实是描述（已发生的变化、照抄的手动调整、复述系统给的颜色） */
 function describedStatus(before: string, norm: string, index: number, match: string): boolean {
   const clause = clauseBefore(norm, index);
-  if (STATUS_JUDGING.test(clause)) return false;
+  if (STATUS_JUDGING.test(clause.replace(NOT_JUDGING, ''))) return false;
   if (DESCRIBED_CHANGE.test(before)) return true;
   return LABEL_VERB.test(match) && LABEL_BY_SYSTEM.test(clause);
 }
