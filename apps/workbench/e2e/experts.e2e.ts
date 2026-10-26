@@ -107,6 +107,8 @@ const skills: SkillSummary[] = [
     allowsEmptyRequest: false,
     planSkills: [],
     experts: 'auto',
+    usesMaterials: false,
+    usesPlanOptions: false,
   },
 ];
 const boundTask: Task = {

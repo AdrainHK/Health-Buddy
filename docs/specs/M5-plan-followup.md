@@ -199,7 +199,7 @@ M2 建好了客户档案，M3 有了专家引擎，M4 有了数字孪生和今�
 - 第一次为某位客户上传素材时，必须勾选“已告知客户本次沟通内容会被整理成服务记录”（Q24），记录勾选人和时间；以后对这位客户不再询问。
 - 素材保存在 `visit_materials`（加密存储同报告原件），只给上传的健管师看；**原文不进日志、错误信息和埋点**。
 - 素材在对话区显示为一张卡片（日期、字数、关联的随访），可以删除。
-- 原文保存期限（Q23）：整理成的记录确认后 30 天删除原文；一直没有整理的素材上传 30 天后删除（复用 M2 的 `storage_purge_queue` 和清理任务）。
+- 原文保存期限（Q23）：整理成的记录确认后 30 天删除原文；一直没有整理的素材上传 30 天后删除。原文存在 `visit_materials.text_encrypted` 列里（不是对象存储），所以不经 M2 的 `storage_purge_queue`：清理任务调用 `visit_materials_purge_due()` 直接把到期的原文置空并记下删除时间，素材行保留（只剩日期、字数、关联的随访）。
 
 **`/随访记录`**
 1. 做一做发送 `/随访记录 @客户`，带 `@随访素材`（最多 3 份，同一位客户），可以补充“这是 10 月 20 日的电话随访”等说明。没有素材时提示先上传，不生成。
@@ -402,7 +402,7 @@ M2 建好了客户档案，M3 有了专家引擎，M4 有了数字孪生和今�
   - 机构管理员、运营商、平台管理员：对这些表**没有任何策略**（Q28）；统计通过 SECURITY DEFINER 函数提供，不含 manager_id、client_id。
 - **只能经确认接口写的表**（`care_plans`、`visit_records`，以及随访计划写入的 `visits`）：应用角色没有直接 insert 的权限，写入走 SECURITY DEFINER 函数 `approve_care_plan(artifact_id)`、`approve_visit_schedule(artifact_id)`、`approve_visit_record(artifact_id, ...)`，函数里重新校验产物属于当前健管师、是最新草稿、kind 正确、状态从 draft 变为 approved（和 M2 的“采用建议分层”同一种做法）。
 - 方案库和随访频次规则是**平台级数据**，没有租户列：所有登录角色可读（健管师只能读已发布的条目，预览开关打开时还能读待审定的），只有平台管理员可写。
-- 客户转出（Q30）：生效方案和历史方案、随访记录、未完成的随访**跟着客户走**（和 M4 的孪生数据一致）；产物本身按 M1 Q11 作废（任务断开客户、只读）；随访素材原文删除（进清理队列）。原健管师读不到。
+- 客户转出（Q30）：生效方案和历史方案、随访记录、未完成的随访**跟着客户走**（和 M4 的孪生数据一致）；产物本身按 M1 Q11 作废（任务断开客户、只读）；随访素材原文在转出的同一个事务里直接删除（不等清理任务），新旧健管师都读不到旧素材。
 - 日志、错误信息、埋点只出现 id、kind、状态和数量。
 
 ### 6.2 数据表
@@ -416,7 +416,7 @@ M2 建好了客户档案，M3 有了专家引擎，M4 有了数字孪生和今�
 | `visit_frequency_rules` | id, risk_tier（high / medium / low / none）, interval_days（7–180）, default_method（phone / wechat / in_person / video）, updated_by, updated_at；单行配置 `first_visit_within_days`（1–14） | 平台级（Q18）；有版本号和修改记录（同 M4 `twin_rules_version`、`twin_status_rule_events` 的做法） |
 | `care_plans` | id, 租户列, client_id, artifact_id（确认的那一版）, lineage_id, sections（数组：diet / exercise / routine / mind）, snapshot（JSON：专业版和通俗版全文、行为目标及参数、引用的库条目 id 和版本）, cycle_weeks（4 / 8 / 12）, start_date, review_date, status（active / ended / superseded）, end_reason（可空：cycle_completed / client_paused / needs_medical_review / other）, approved_by, approved_at, ended_by, ended_at | 每位客户最多一条 active（部分唯一索引）。只经 `approve_care_plan` 写入；应用角色只能把 active 改为 ended（经接口，触发器只放行这几列）。`(artifact_id, client_id) → artifacts(id, client_id)`；产物作废后快照仍保留（Q30） |
 | `visits` | id, 租户列, client_id, due_date, method, purpose（routine / plan_review / follow_up / adhoc）, focus（≤ 200 字，可空）, origin（schedule / plan_review / manual）, source_artifact_id（可空）, care_plan_id（可空）, follow_up_item_id（可空）, status（planned / done / missed / cancelled / superseded / pending_plan）, cancel_reason（可空：client_paused / contacted_elsewhere / duplicate / other）, note（可空，≤ 500 字）, record_id（可空）, rescheduled_from（可空）, done_at, created_by, created_at | origin = schedule 的行只经 `approve_visit_schedule` 写入；manual 的行经“加一次随访”接口写入。复合外键保证跟进项、方案、记录属于同一位客户和健管师。done 必须有 record_id 或 note（check） |
-| `visit_materials` | id, 租户列, client_id, visit_id（可空）, kind（paste / txt）, text_encrypted（≤ 20000 字）, char_count, uploaded_by, consumed_artifact_id（可空）, purge_after, created_at | 原文加密存储，只给上传的健管师读。到期由清理任务删除（Q23） |
+| `visit_materials` | id, 租户列, client_id, visit_id（可空）, kind（paste / txt）, text_encrypted（≤ 20000 字）, char_count, uploaded_by, consumed_artifact_id（可空）, purge_after, created_at | 原文加密存储，只给上传的健管师读。到期由清理任务（`visit_materials_purge_due()`）把原文置空，客户转出时立即置空（Q23、Q30）；原文置空后有 purged_at |
 | `client_record_consents` | id, 租户列, client_id, kind（visit_material）, confirmed_by, confirmed_at | 第一次上传素材时的“已告知客户”勾选（Q24），只追加 |
 | `visit_records` | id, 租户列, client_id, visit_id（可空）, artifact_id, visit_date, method, snapshot（JSON：结构化记录全文）, approved_by, approved_at | 只经 `approve_visit_record` 写入；**只能追加**（应用角色无 update、delete）。补充说明另存 `visit_record_addenda`（id, 租户列, record_id, text ≤ 1000 字, created_by, created_at，只追加） |
 | `visit_events` | id, 租户列, visit_id, actor_id, action（created / rescheduled / done / missed / cancelled / superseded / plan_activated）, created_at | 只记谁在什么时候做了什么，不记备注原文 |

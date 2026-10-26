@@ -30,6 +30,10 @@ export const skillSummarySchema = z.object({
    * auto 执行时自动选择专家。M3 只有 /体检解读 是 auto，且只在专家预览开启时生效。
    */
   experts: z.enum(['none', 'auto']).default('none'),
+  /** 技能读取随访素材（/随访记录，M5 规格 2.9）：没有 @素材 时提示先上传 */
+  usesMaterials: z.boolean().default(false),
+  /** 技能或计划带方案选项条（/方案生成、“方案和随访”，M5 规格 2.2） */
+  usesPlanOptions: z.boolean().default(false),
 });
 export type SkillSummary = z.infer<typeof skillSummarySchema>;
 

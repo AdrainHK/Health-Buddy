@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { CRITICAL_COMPARATORS, CRITICAL_LEVELS } from '../health/critical.js';
 import { timeZoneSchema } from './follow-ups.js';
 import { riskTierSuggestionSchema } from './risk-tiers.js';
+import { planOptionsSchema } from './care-plans.js';
 
 /** 产物状态（规格 3.6）。voided 只由系统在客户转出或删除时设置（Q11）。 */
 export const artifactStatusSchema = z.enum(['draft', 'approved', 'returned', 'voided']);
@@ -76,6 +77,14 @@ export const artifactSchema = artifactSummarySchema.extend({
   emergencySignal: z.boolean().default(false),
   /** 有心理危机信号（关键词，或专家、汇总标出）：审核栏醒目提示 */
   crisisSignal: z.boolean().default(false),
+  /**
+   * 按 kind 的结构化内容（M5 规格 6.2、6.3）：care_plan 是 carePlanStructuredSchema，
+   * visit_schedule 是 visitScheduleStructuredSchema，visit_record 是 visitRecordStructuredSchema；
+   * 其他产物为空。专业版和通俗版文字由后端从这里和库条目渲染
+   */
+  structured: z.unknown().nullable().default(null),
+  /** /方案生成 的选项（部分、周期）；其他产物为空 */
+  planOptions: planOptionsSchema.nullable().default(null),
 });
 export type Artifact = z.infer<typeof artifactSchema>;
 
@@ -147,6 +156,11 @@ export const updateArtifactRequestSchema = z.object({
     professional: z.string().max(ARTIFACT_TEXT_MAX),
     clientFacing: z.string().max(ARTIFACT_TEXT_MAX),
   }),
+  /**
+   * 结构化内容（只限 care_plan、visit_schedule，M5 规格 2.3、2.7）：替换库条目、改目标参数、改日程。
+   * 后端按 kind 用对应的 schema 校验：条目未发布、参数超范围、日期早于今天或超过 6 个月后 → 400
+   */
+  structured: z.unknown().optional(),
 });
 export type UpdateArtifactRequest = z.infer<typeof updateArtifactRequestSchema>;
 
@@ -162,6 +176,17 @@ export const approveArtifactRequestSchema = z.object({
    * 不勾选就不改分层。产物没有建议分层时勾选会被拒绝。
    */
   adoptRiskTier: z.boolean().default(false),
+  /** 方案用到的食谱和过敏史有匹配时必须为 true（M5 Q16） */
+  acknowledgedAllergens: z.boolean().default(false),
+  /**
+   * 只限 visit_record（M5 Q26）：一并标为“已处理（已电话联系）”的跟进项，必须是这位客户未处理的跟进项，
+   * 有一个不是就 404 且整个事务回滚
+   */
+  resolveFollowUpItemIds: z
+    .array(z.uuid())
+    .max(20)
+    .refine((v) => new Set(v).size === v.length, { message: 'duplicate follow-up item' })
+    .default([]),
 });
 export type ApproveArtifactRequest = z.input<typeof approveArtifactRequestSchema>;
 
@@ -210,6 +235,21 @@ export const approveRejectionSchema = z.object({
       /** 勾选了“采用建议分层”，但这份产物没有建议分层 */
       'no_risk_tier_suggestion',
       'read_only',
+      // M5 规格 2.3、2.7、6.3
+      /** 通俗版里出现了药名或用药建议 */
+      'drug_in_client_text',
+      /** 通俗版里出现了孪生状态颜色或预测字样 */
+      'twin_in_client_text',
+      /** 通俗版里出现了专家名称 */
+      'expert_in_client_text',
+      /** 引用的库条目已不是已发布状态 */
+      'library_item_unavailable',
+      /** 目标参数超出模板范围 */
+      'goal_param_out_of_range',
+      /** 用到的食谱和过敏史有匹配，没有勾选“已核对过敏原” */
+      'allergens_not_acknowledged',
+      /** 随访计划的日期不合规（早于今天、超过 6 个月后、重复） */
+      'schedule_mismatch',
     ]),
   ),
   bannedTerms: z.array(z.object({ term: z.string(), index: z.number().int() })).optional(),

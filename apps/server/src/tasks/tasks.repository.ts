@@ -114,6 +114,9 @@ export class TasksRepository {
           'expert_refs',
           'excluded_experts',
           'twin_refs',
+          'library_refs',
+          'material_refs',
+          'plan_options',
           'status',
           'created_at',
         ])
@@ -174,6 +177,11 @@ export class TasksRepository {
           expertRefs: m.expert_refs,
           excludedExperts: m.excluded_experts,
           twinRefs: Array.isArray(m.twin_refs) ? (m.twin_refs as TaskMessage['twinRefs']) : [],
+          libraryRefs: Array.isArray(m.library_refs)
+            ? (m.library_refs as TaskMessage['libraryRefs'])
+            : [],
+          materialRefs: m.material_refs,
+          planOptions: (m.plan_options as TaskMessage['planOptions']) ?? null,
           status: m.status,
           createdAt: m.created_at.toISOString(),
         })),

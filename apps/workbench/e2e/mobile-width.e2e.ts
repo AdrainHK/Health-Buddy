@@ -73,6 +73,8 @@ const skills: SkillSummary[] = [
     allowsEmptyRequest: false,
     planSkills: [],
     experts: 'auto',
+    usesMaterials: false,
+    usesPlanOptions: false,
   },
 ];
 
@@ -291,6 +293,8 @@ const artifactDetail: ArtifactDetailResponse = {
     consultationId: null,
     emergencySignal: false,
     crisisSignal: false,
+    structured: null,
+    planOptions: null,
   },
   sourceReport: { id: ids.report, reportDate: '2026-09-12', correctedSince: false },
   hints: { judgementHints: [], criticalValueMentions: [], riskTierMentions: [] },

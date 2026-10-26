@@ -124,6 +124,8 @@ export const SKILL_AUTO: SkillSummary = {
   allowsEmptyRequest: false,
   planSkills: [],
   experts: 'auto',
+  usesMaterials: false,
+  usesPlanOptions: false,
 };
 
 export function opinion(overrides: Partial<ExpertOpinion> = {}): ExpertOpinion {

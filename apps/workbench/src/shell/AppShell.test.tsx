@@ -227,6 +227,9 @@ describe('AppShell return and rewrite', () => {
       expertRefs: [],
       excludedExperts: [],
       twinRefs: [],
+      libraryRefs: [],
+      materialRefs: [],
+      planOptions: null,
       status: 'complete',
       createdAt: NOW,
     });

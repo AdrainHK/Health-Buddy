@@ -57,6 +57,8 @@ export const SKILL: SkillSummary = {
   allowsEmptyRequest: false,
   planSkills: [],
   experts: 'none',
+  usesMaterials: false,
+  usesPlanOptions: false,
 };
 
 export const CLIENTS: ClientSummary[] = [
@@ -230,6 +232,8 @@ export function makeArtifactDetail(
     consultationId: null,
     emergencySignal: false,
     crisisSignal: false,
+    structured: null,
+    planOptions: null,
     criticalFlags: [],
     sourceReportId: null,
     riskTierSuggestion: null,

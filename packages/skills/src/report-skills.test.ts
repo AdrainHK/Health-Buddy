@@ -111,6 +111,8 @@ describe('M2 技能登记', () => {
       allowsEmptyRequest: true,
       planSkills: ['report-interpretation', 'interview-outline'],
       experts: 'none',
+      usesMaterials: false,
+      usesPlanOptions: false,
     });
     // 验收反馈 8：三个技能都不需要再写要求，后端有默认要求
     for (const skill of SKILLS) expect(skill.defaultRequest).toBeTruthy();

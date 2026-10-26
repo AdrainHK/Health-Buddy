@@ -1,4 +1,8 @@
-import { DEFAULT_CRITICAL_RULES, DEFAULT_TWIN_STATUS_RULES } from '@health-buddy/shared';
+import {
+  DEFAULT_CRITICAL_RULES,
+  DEFAULT_TWIN_STATUS_RULES,
+  DEFAULT_VISIT_FREQUENCY_RULES,
+} from '@health-buddy/shared';
 import { Kysely, PostgresDialect, sql } from 'kysely';
 import pg from 'pg';
 import { hashPassword } from '../src/auth/password.js';
@@ -85,6 +89,21 @@ export async function seedFixtures(db: Owner): Promise<Fixtures> {
   }
   await sql`truncate twin_status_rule_events`.execute(db);
   await sql`update twin_rules_version set version = 1, bumped_xact = null`.execute(db);
+  // 随访频次规则同样由迁移写入（truncate users 时级联清空），补回来，版本号回到 1
+  await sql`truncate visit_frequency_rules, visit_frequency_config, visit_frequency_rule_events`.execute(
+    db,
+  );
+  for (const [tier, rule] of Object.entries(DEFAULT_VISIT_FREQUENCY_RULES.tiers)) {
+    await sql`
+      insert into visit_frequency_rules (risk_tier, interval_days, default_method)
+      values (${tier}, ${rule.intervalDays}, ${rule.defaultMethod})
+    `.execute(db);
+  }
+  await sql`
+    insert into visit_frequency_config (first_visit_within_days)
+    values (${DEFAULT_VISIT_FREQUENCY_RULES.firstVisitWithinDays})
+  `.execute(db);
+  await sql`update visit_frequency_version set version = 1, bumped_xact = null`.execute(db);
   const passwordHash = await hashPassword(PASSWORD);
 
   const op = async (name: string, slug: string, status = 'active') =>
