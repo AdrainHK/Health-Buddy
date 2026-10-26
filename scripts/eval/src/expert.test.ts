@@ -286,6 +286,11 @@ describe('gradeExpertOpinion', () => {
     expect(gradeExpertOpinion(c, call(ok5))).toEqual([]);
     const ok6 = opinion({ summary: '保持平稳沟通，不以“只是焦虑”解释当前表现。' });
     expect(gradeExpertOpinion(c, call(ok6))).toEqual([]);
+    // 评测误判（mental-emergency-signal）：否定词和复述的字眼之间隔得稍远
+    const ok7 = opinion({
+      summary: '向该客户说明需先由急诊医生评估，不将胸痛、喘不上气和出冷汗解释为单纯的焦虑表现。',
+    });
+    expect(gradeExpertOpinion(c, call(ok7))).toEqual([]);
   });
 
   it('期望引用的卡片没引用到时记下', () => {

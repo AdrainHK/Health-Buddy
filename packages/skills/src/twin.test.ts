@@ -345,6 +345,7 @@ describe('合规审核补充：孪生措辞检查（M4 PR #46）', () => {
       '当前状态：按规则，因为收缩压 146 mmHg（2026-09-12，体检报告）高于报告参考范围上限 139 mmHg，标记为黄；资料记录于2026-09-13由绿变黄。',
       '状态依据：按平台规则，收缩压 182 mmHg 达到危急阈值 ≥180 mmHg，因此标为红。',
       '心血管为红（需要尽快关注），需提醒该客户尽快就医。',
+      '该客户数字孪生中的代谢、心血管、睡眠和体重均标记为绿（平稳）。',
     ]) {
       expect(cats(t), t).not.toContain('status_change');
     }
@@ -364,6 +365,12 @@ describe('合规审核补充：孪生措辞检查（M4 PR #46）', () => {
     expect(cats('不提供应改为绿色的结论。')).not.toContain('status_change');
     expect(cats('该客户后续必然升高。')).toContain('forecast_certainty');
     expect(cats('不能只看一次，后续必然升高。')).toContain('forecast_certainty');
+    expect(cats('现有预测仅针对指标数值，不能据此给出疾病风险大小或患病概率。')).not.toContain(
+      'disease_risk',
+    );
+    expect(cats('预测仅针对指标数值，患病概率较高。')).toContain('disease_risk');
+    expect(cats('资料只有收缩压数值预测，没有这项患病概率数据。')).not.toContain('disease_risk');
+    expect(cats('没有用药的情况下患病概率较高。')).toContain('disease_risk');
   });
 
   it('复审：“不能排除”“除外”不算否定', () => {
