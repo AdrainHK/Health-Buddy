@@ -13,6 +13,7 @@ import {
   type ArtifactEvent,
   type CriticalFlag,
   type ExportFormat,
+  type PlanOptions,
   type RiskTierSuggestion,
   type UpdateArtifactRequest,
 } from '@health-buddy/shared';
@@ -286,6 +287,8 @@ interface ArtifactRow {
   consultation_id: string | null;
   emergency_signal: boolean;
   crisis_signal: boolean;
+  structured: unknown;
+  plan_options: unknown;
   created_at: Date;
   detached: boolean;
 }
@@ -330,6 +333,8 @@ async function loadArtifact(
       'artifacts.consultation_id',
       'artifacts.emergency_signal',
       'artifacts.crisis_signal',
+      'artifacts.structured',
+      'artifacts.plan_options',
       'artifacts.created_at',
       'tasks.detached_reason',
     ])
@@ -423,6 +428,8 @@ async function buildDetail(
       emergencySignal: row.emergency_signal,
       crisisSignal: row.crisis_signal,
       clientFacing: isClientFacing(row),
+      structured: row.structured ?? null,
+      planOptions: (row.plan_options as PlanOptions | null) ?? null,
     },
     sourceReport: await sourceReport(trx, row),
     hints: clientTextHints(row),

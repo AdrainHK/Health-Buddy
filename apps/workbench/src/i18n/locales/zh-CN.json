@@ -350,6 +350,13 @@
         "risk_tier_in_client_text": "通俗版里出现了风险分层的字样，请删去标出的位置",
         "no_risk_tier_suggestion": "这份产物没有建议分层，不能采用",
         "read_only": "客户已转出或删除，任务只读",
+        "drug_in_client_text": "通俗版里出现了药名或用药建议，请删去标出的位置",
+        "twin_in_client_text": "通俗版里出现了孪生状态或预测的字样，请删去标出的位置",
+        "expert_in_client_text": "通俗版里出现了专家名称，请删去标出的位置",
+        "library_item_unavailable": "引用的食谱或动作已不在库中，请替换",
+        "goal_param_out_of_range": "目标参数超出了模板允许的范围",
+        "allergens_not_acknowledged": "请先勾选“已核对过敏原”",
+        "schedule_mismatch": "随访日期不能早于今天、不能超过 6 个月后，也不能重复",
         "unknown": "未通过确认检查，请刷新后重试"
       },
       "stale": "内容已在别处修改，已刷新",

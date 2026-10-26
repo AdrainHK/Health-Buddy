@@ -66,6 +66,8 @@ describe('skill metadata', () => {
       allowsEmptyRequest: true,
       planSkills: [],
       experts: 'none',
+      usesMaterials: false,
+      usesPlanOptions: false,
     });
     expect(getSkill('client-recent-summary')).toBe(clientRecentSummary);
     expect(getSkill('nope')).toBeUndefined();

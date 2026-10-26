@@ -9,6 +9,9 @@ import {
 } from './experts.js';
 import { reportUploadSummarySchema } from './reports.js';
 import { TWIN_REFS_MAX, twinRefKey, twinRefSchema } from './twin.js';
+import { planOptionsSchema } from './care-plans.js';
+import { libraryItemTypeSchema } from '../plan/library.js';
+import { VISIT_MATERIALS_PER_RECORD_MAX } from './visits.js';
 
 /** 三种工作模式：问一问、想一想、做一做（M1 规格 3.3） */
 export const TASK_MODES = ['ask', 'plan', 'craft'] as const;
@@ -66,6 +69,14 @@ export type TaskListResponse = z.infer<typeof taskListResponseSchema>;
 export const messageStatusSchema = z.enum(['streaming', 'complete', 'stopped', 'refused', 'error']);
 export type MessageStatus = z.infer<typeof messageStatusSchema>;
 
+/** @ 引用的库条目：食谱、运动和放松练习（只能引用已发布的条目，后端再校验） */
+export const LIBRARY_REFS_MAX = 3;
+export const libraryRefSchema = z.object({
+  type: libraryItemTypeSchema.exclude(['goal_template']),
+  id: z.uuid(),
+});
+export type LibraryRef = z.infer<typeof libraryRefSchema>;
+
 export const taskMessageSchema = z.object({
   id: z.uuid(),
   role: z.enum(['manager', 'assistant']),
@@ -81,6 +92,12 @@ export const taskMessageSchema = z.object({
   excludedExperts: z.array(expertIdSchema).default([]),
   /** @ 引用的孪生项（M4 规格 2.8），最多 3 个 */
   twinRefs: z.array(twinRefSchema).default([]),
+  /** @ 引用的库条目（M5 规格 2.1），最多 3 个 */
+  libraryRefs: z.array(libraryRefSchema).default([]),
+  /** @ 引用的随访素材（M5 规格 2.9），最多 3 份 */
+  materialRefs: z.array(z.uuid()).default([]),
+  /** /方案生成 的选项 */
+  planOptions: planOptionsSchema.nullable().default(null),
   status: messageStatusSchema,
   createdAt: z.iso.datetime(),
 });
@@ -106,6 +123,12 @@ export const taskStepSchema = z.object({
     // M4 规格 2.7、2.9：正在读取数字孪生、正在计算趋势
     'read_twin',
     'compute_forecast',
+    // M5 规格 2.1：正在读取当前方案、正在选择食谱和动作、正在排随访日期、正在读取随访素材、正在读取随访记录
+    'read_care_plan',
+    'select_library_items',
+    'schedule_visits',
+    'read_visit_materials',
+    'read_visit_records',
   ]),
   labelKey: z.string(),
   /** 步骤文案参数：涉及的专家 id（如“已调用：内分泌与代谢专家、营养专家”） */
@@ -183,6 +206,17 @@ export const sendMessageRequestSchema = z
     twinConsult: z.boolean().default(false),
     /** 从跟进项发起的“请专家看看”：必须是任务关联客户的跟进项，否则 404 */
     followUpItemId: z.uuid().optional(),
+    /** @ 引用的库条目（M5 规格 2.1），最多 3 个 */
+    libraryRefs: z.array(libraryRefSchema).max(LIBRARY_REFS_MAX).default([]),
+    /**
+     * @ 引用的随访素材（/随访记录），最多 3 份，必须属于任务关联的客户、由当前健管师上传；
+     * 否则 404，不调用任何模型
+     */
+    materialRefs: z.array(z.uuid()).max(VISIT_MATERIALS_PER_RECORD_MAX).default([]),
+    /** /方案生成、“方案和随访”计划的选项 */
+    planOptions: planOptionsSchema.optional(),
+    /** 关联的那一次随访（“准备随访”“记录随访”），必须是任务关联客户的随访 */
+    visitId: z.uuid().optional(),
   })
   // 问一问不能调用技能（Q4），前端会先提示切换模式
   .refine((v) => !(v.mode === 'ask' && v.skillId !== undefined), {
@@ -220,6 +254,19 @@ export const sendMessageRequestSchema = z
   .refine((v) => v.followUpItemId === undefined || v.twinConsult, {
     message: 'follow-up item only with twin consult',
     path: ['followUpItemId'],
+  })
+  .refine((v) => new Set(v.libraryRefs.map((r) => r.id)).size === v.libraryRefs.length, {
+    message: 'duplicate library ref',
+    path: ['libraryRefs'],
+  })
+  .refine((v) => new Set(v.materialRefs).size === v.materialRefs.length, {
+    message: 'duplicate material ref',
+    path: ['materialRefs'],
+  })
+  // 素材只能交给技能整理（/随访记录），不能在问一问里引用
+  .refine((v) => v.materialRefs.length === 0 || v.skillId !== undefined, {
+    message: 'material refs need a skill',
+    path: ['materialRefs'],
   });
 export type SendMessageRequest = z.input<typeof sendMessageRequestSchema>;
 

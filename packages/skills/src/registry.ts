@@ -63,6 +63,9 @@ export function skillSummaries(expertsEnabled = false): SkillSummary[] {
       allowsEmptyRequest: s.defaultRequest !== null,
       planSkills: [],
       experts: expertsEnabled ? (s.experts ?? 'none') : ('none' as const),
+      // M5 的技能在第 5、6 步加入，到时按技能定义填写
+      usesMaterials: false,
+      usesPlanOptions: false,
     })),
     ...PLAN_TEMPLATES.map((p) => {
       const skills = p.skills.map((id) => getSkill(id)).filter((s) => s !== undefined);
@@ -77,6 +80,8 @@ export function skillSummaries(expertsEnabled = false): SkillSummary[] {
         allowsEmptyRequest: p.defaultRequest !== null,
         planSkills: [...p.skills],
         experts: 'none' as const,
+        usesMaterials: false,
+        usesPlanOptions: false,
       };
     }),
   ];

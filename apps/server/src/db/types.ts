@@ -173,6 +173,11 @@ export interface TaskMessagesTable extends ManagerScoped {
   excluded_experts: ColumnType<string[], string[] | undefined, never>;
   /** @ 引用的孪生项（迁移 0018），JSON 数组：{kind, code}，最多 3 个 */
   twin_refs: ColumnType<unknown, string | undefined, never>;
+  /** @ 引用的库条目（迁移 0020），JSON 数组：{type, id}，最多 3 个 */
+  library_refs: ColumnType<unknown, string | undefined, never>;
+  /** @ 引用的随访素材（迁移 0020），最多 3 份 */
+  material_refs: ColumnType<string[], string[] | undefined, string[]>;
+  plan_options: ColumnType<unknown, string | null | undefined, never>;
   status: 'streaming' | 'complete' | 'stopped' | 'refused' | 'error';
   created_at: Timestamp;
 }
@@ -193,7 +198,12 @@ export interface TaskStepsTable extends ManagerScoped {
     | 'consult_expert'
     | 'synthesize_experts'
     | 'read_twin'
-    | 'compute_forecast';
+    | 'compute_forecast'
+    | 'read_care_plan'
+    | 'select_library_items'
+    | 'schedule_visits'
+    | 'read_visit_materials'
+    | 'read_visit_records';
   label_key: string;
   expert_ids: ColumnType<string[], string[] | undefined, never>;
   label_date: ColumnType<string | null, string | null | undefined, string | null>;
@@ -233,6 +243,12 @@ export interface ArtifactsTable extends ManagerScoped {
     string | null | undefined,
     string | null
   >;
+  /** 按 kind 的结构化内容（迁移 0020） */
+  structured: ColumnType<unknown, string | null | undefined, string | null>;
+  /** /方案生成 的选项（迁移 0020），生成后不能改 */
+  plan_options: ColumnType<unknown, string | null | undefined, never>;
+  visit_id: ColumnType<string | null, string | null | undefined, never>;
+  material_ids: ColumnType<string[] | null, string[] | null | undefined, never>;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -671,4 +687,213 @@ export interface Database {
   follow_up_items: FollowUpItemsTable;
   follow_up_events: FollowUpEventsTable;
   twin_compute_state: TwinComputeStateTable;
+  plan_library_recipes: PlanLibraryRecipesTable;
+  plan_library_exercises: PlanLibraryExercisesTable;
+  plan_goal_templates: PlanGoalTemplatesTable;
+  plan_library_events: PlanLibraryEventsTable;
+  visit_frequency_rules: VisitFrequencyRulesTable;
+  visit_frequency_config: VisitFrequencyConfigTable;
+  visit_frequency_version: VisitFrequencyVersionTable;
+  visit_frequency_rule_events: VisitFrequencyRuleEventsTable;
+  care_plans: CarePlansTable;
+  visits: VisitsTable;
+  client_record_consents: ClientRecordConsentsTable;
+  visit_materials: VisitMaterialsTable;
+  visit_records: VisitRecordsTable;
+  visit_record_addenda: VisitRecordAddendaTable;
+  visit_events: VisitEventsTable;
+}
+
+// ---------- M5 方案和随访（迁移 0020） ----------
+
+type LibraryStatus = 'draft' | 'review' | 'published' | 'retired';
+
+interface LibraryItemColumns {
+  id: Generated<string>;
+  code: ColumnType<string, string, never>;
+  source_note: string;
+  status: ColumnType<LibraryStatus, LibraryStatus | undefined, LibraryStatus>;
+  /** 内容改动时由触发器加一 */
+  version: ColumnType<number, number | undefined, never>;
+  reviewed_by_label: Nullable<string>;
+  reviewed_on: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  updated_by: Nullable<string>;
+  updated_at: ColumnType<Date, undefined, never>;
+}
+
+export interface PlanLibraryRecipesTable extends LibraryItemColumns {
+  name: string;
+  meal_types: string[];
+  ingredients: Json<unknown[]>;
+  steps: Json<unknown[]>;
+  nutrition_per_serving: ColumnType<unknown, string | null | undefined, string | null>;
+  nutrition_basis: Nullable<string>;
+  tags: ColumnType<string[], string[] | undefined, string[]>;
+  allergens: string[];
+}
+
+export interface PlanLibraryExercisesTable extends LibraryItemColumns {
+  name: string;
+  category: 'aerobic' | 'strength' | 'flexibility' | 'balance' | 'relaxation';
+  intensity: 'low' | 'moderate';
+  setting: string[];
+  equipment: ColumnType<string[], string[] | undefined, string[]>;
+  steps: Json<unknown[]>;
+  key_points: Json<unknown[]>;
+  common_mistakes: ColumnType<unknown[], string | undefined, string>;
+  manager_cautions: string;
+  met: NullableNumeric;
+}
+
+export interface PlanGoalTemplatesTable extends LibraryItemColumns {
+  section: 'diet' | 'exercise' | 'routine' | 'mind';
+  text: string;
+  params: ColumnType<unknown[], string | undefined, string>;
+  metric: Nullable<'steps' | 'sleep_hours'>;
+  metric_param: Nullable<string>;
+}
+
+export interface PlanLibraryEventsTable {
+  id: Generated<string>;
+  item_type: 'recipe' | 'exercise' | 'goal_template';
+  item_id: string;
+  actor_id: string | null;
+  action: 'created' | 'updated' | 'status_changed';
+  before: unknown;
+  after: unknown;
+  created_at: Timestamp;
+}
+
+export type VisitMethodColumn = 'phone' | 'wechat' | 'in_person' | 'video';
+
+export interface VisitFrequencyRulesTable {
+  risk_tier: ColumnType<'high' | 'medium' | 'low' | 'none', never, never>;
+  interval_days: ColumnType<number, never, number>;
+  default_method: ColumnType<VisitMethodColumn, never, VisitMethodColumn>;
+  updated_by: ColumnType<string | null, never, string | null>;
+  updated_at: ColumnType<Date, never, never>;
+}
+
+export interface VisitFrequencyConfigTable {
+  id: ColumnType<boolean, never, never>;
+  first_visit_within_days: ColumnType<number, never, number>;
+  updated_by: ColumnType<string | null, never, string | null>;
+  updated_at: ColumnType<Date, never, never>;
+}
+
+export interface VisitFrequencyVersionTable {
+  id: ColumnType<boolean, never, never>;
+  version: ColumnType<number, never, never>;
+  updated_at: ColumnType<Date, never, never>;
+}
+
+export interface VisitFrequencyRuleEventsTable {
+  id: Generated<string>;
+  actor_id: string | null;
+  before: unknown;
+  after: unknown;
+  rules_version: number;
+  created_at: Timestamp;
+}
+
+/** 只经 approve_care_plan 写入；应用只能把生效方案结束 */
+export interface CarePlansTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: string;
+  artifact_id: string | null;
+  lineage_id: string;
+  sections: string[];
+  snapshot: unknown;
+  cycle_weeks: number;
+  start_date: Date;
+  review_date: Date;
+  status: 'active' | 'ended' | 'superseded';
+  end_reason: Nullable<'cycle_completed' | 'client_paused' | 'needs_medical_review' | 'other'>;
+  approved_by: string;
+  approved_at: Timestamp;
+  ended_by: Nullable<string>;
+  ended_at: Nullable<Date>;
+}
+
+export type VisitStatusColumn =
+  'planned' | 'done' | 'missed' | 'cancelled' | 'superseded' | 'pending_plan';
+
+export interface VisitsTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: ColumnType<string, string, never>;
+  due_date: ColumnType<Date, Date | string, Date | string>;
+  method: VisitMethodColumn;
+  purpose: ColumnType<
+    'routine' | 'plan_review' | 'follow_up' | 'adhoc',
+    'routine' | 'follow_up' | 'adhoc',
+    never
+  >;
+  focus: Nullable<string>;
+  origin: ColumnType<'schedule' | 'plan_review' | 'manual', 'manual', never>;
+  source_artifact_id: ColumnType<string | null, undefined, never>;
+  care_plan_id: ColumnType<string | null, undefined, never>;
+  follow_up_item_id: ColumnType<string | null, string | null | undefined, never>;
+  status: ColumnType<VisitStatusColumn, 'planned' | undefined, VisitStatusColumn>;
+  cancel_reason: Nullable<'client_paused' | 'contacted_elsewhere' | 'duplicate' | 'other'>;
+  note: Nullable<string>;
+  record_id: Nullable<string>;
+  rescheduled_from: ColumnType<Date | null, undefined, Date | string | null>;
+  done_at: ColumnType<Date | null, undefined, Date | string | null>;
+  created_by: ColumnType<string | null, string, never>;
+  created_at: ColumnType<Date, undefined, never>;
+}
+
+export interface ClientRecordConsentsTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: string;
+  kind: 'visit_material';
+  confirmed_by: string;
+  confirmed_at: ColumnType<Date, undefined, never>;
+}
+
+/** 原文由后端加密后存入，只给上传的健管师读；到期或客户转出后删除 */
+export interface VisitMaterialsTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: string;
+  visit_id: ColumnType<string | null, string | null | undefined, never>;
+  kind: 'paste' | 'txt';
+  text_encrypted: ColumnType<Buffer | null, Buffer, never>;
+  char_count: number;
+  uploaded_by: string;
+  consumed_artifact_id: ColumnType<string | null, undefined, never>;
+  purge_after: ColumnType<Date, undefined, never>;
+  purged_at: ColumnType<Date | null, undefined, never>;
+  created_at: ColumnType<Date, undefined, never>;
+}
+
+/** 只经 approve_visit_record 写入，只能追加 */
+export interface VisitRecordsTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: string;
+  visit_id: string | null;
+  artifact_id: string | null;
+  visit_date: Date;
+  method: VisitMethodColumn;
+  snapshot: unknown;
+  approved_by: string;
+  approved_at: Timestamp;
+}
+
+export interface VisitRecordAddendaTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: string;
+  record_id: string;
+  text: string;
+  created_by: string;
+  created_at: ColumnType<Date, undefined, never>;
+}
+
+export interface VisitEventsTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: string;
+  visit_id: string;
+  actor_id: string | null;
+  action:
+    'created' | 'rescheduled' | 'done' | 'missed' | 'cancelled' | 'superseded' | 'plan_activated';
+  created_at: Timestamp;
 }
