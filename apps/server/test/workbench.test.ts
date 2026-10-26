@@ -162,6 +162,72 @@ describe('对话和生成接口', () => {
     ]);
   });
 
+  it('任务标题：第一轮按内容生成，调用技能后换成技能标题，改过名的不再自动改', async () => {
+    const agent = await loginAs(app, f.users.managerA1.email);
+    const taskId = await newTask(agent);
+    const titleOf = async () =>
+      (await agent.get(`/api/tasks/${taskId}`).expect(200)).body.task.title as string;
+    const updatedAtOf = async () =>
+      (await agent.get(`/api/tasks/${taskId}`).expect(200)).body.task.updatedAt as string;
+    expect(await titleOf()).toBe('新任务');
+
+    await send(agent, taskId, {
+      mode: 'ask',
+      content: '请帮我看看最近血压怎么样？谢谢',
+      clientRefs: [f.clients.a1[0]],
+    }).expect(200);
+    expect(await titleOf()).toBe('问一问：测试客户 A1-1 · 看看最近血压怎么样');
+    // 列表里是同一个标题
+    const listed = (await agent.get('/api/tasks').expect(200)).body.tasks as {
+      id: string;
+      title: string;
+    }[];
+    expect(listed.find((t) => t.id === taskId)?.title).toBe(
+      '问一问：测试客户 A1-1 · 看看最近血压怎么样',
+    );
+
+    // 再问一句不改标题
+    await send(agent, taskId, { mode: 'ask', content: '那运动呢？' }).expect(200);
+    expect(await titleOf()).toBe('问一问：测试客户 A1-1 · 看看最近血压怎么样');
+
+    // 第一次调用技能：换成技能标题
+    provider.queue.push({ chunks: [summaryJson()] });
+    await send(agent, taskId, {
+      mode: 'craft',
+      content: '',
+      skillId: 'client-recent-summary',
+    }).expect(200);
+    expect(await titleOf()).toBe('为测试客户 A1-1生成近况小结');
+
+    // 健管师改名后不再自动改；读详情、列表也不会覆盖
+    await agent.patch(`/api/tasks/${taskId}`).send({ title: '王阿姨的随访' }).expect(200);
+    const before = await updatedAtOf();
+    provider.queue.push({ chunks: ['好的。'] });
+    await send(agent, taskId, { mode: 'ask', content: '还有别的吗' }).expect(200);
+    await agent.get('/api/tasks').expect(200);
+    expect(await titleOf()).toBe('王阿姨的随访');
+    expect(await updatedAtOf()).not.toBe(before);
+    const row = await owner
+      .selectFrom('tasks')
+      .select('title_source')
+      .where('id', '=', taskId)
+      .executeTakeFirstOrThrow();
+    expect(row.title_source).toBe('manual');
+  });
+
+  it('新建时给了标题的任务（如孪生“请专家看看”）不自动改名', async () => {
+    const agent = await loginAs(app, f.users.managerA1.email);
+    const created = await agent
+      .post('/api/tasks')
+      .send({ clientId: f.clients.a1[0], title: '孪生 · 心血管（2026-10-19）' })
+      .expect(201);
+    const taskId = created.body.task.id as string;
+    await send(agent, taskId, { mode: 'ask', content: '最近血压怎么样' }).expect(200);
+    expect((await agent.get(`/api/tasks/${taskId}`).expect(200)).body.task.title).toBe(
+      '孪生 · 心血管（2026-10-19）',
+    );
+  });
+
   it('问一问引用客户：读档案、识别危急指标，提示词里没有客户姓名', async () => {
     await owner
       .insertInto('monitoring_readings')

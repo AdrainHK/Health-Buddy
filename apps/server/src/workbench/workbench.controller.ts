@@ -141,6 +141,7 @@ export class WorkbenchController {
           twinRefs: input.twinRefs,
           ...(input.followUpItemId ? { followUpItemId: input.followUpItemId } : {}),
           requiresTwinData: usesTwin,
+          twinConsult: input.twinConsult,
         },
         claim,
       ),

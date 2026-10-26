@@ -1,21 +1,24 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type {
-  ArtifactSummary,
-  CreateTaskRequest,
-  PlanStep,
-  Task,
-  TaskDetailResponse,
-  TaskMessage,
-  TaskPlan,
-  TaskStep,
-  UpdateTaskRequest,
+import {
+  TWIN_CONSULT_DEFAULT_REQUEST,
+  type ArtifactSummary,
+  type CreateTaskRequest,
+  type PlanStep,
+  type Task,
+  type TaskDetailResponse,
+  type TaskMessage,
+  type TaskPlan,
+  type TaskStep,
+  type UpdateTaskRequest,
 } from '@health-buddy/shared';
 import { conflict } from '../common/api-error.js';
 import { selectUploadSummary, toUploadSummary } from '../reports/reports.repository.js';
 import { DB } from '../db/db.provider.js';
 import { withTenant, type Db, type TenantContext, type TenantTransaction } from '../db/database.js';
+import type { TaskTitleSource } from '../db/types.js';
+import { buildTaskTitle, type TitleTurn } from './task-title.js';
 
-/** 健管师没给标题时的默认标题，第一次发消息后前端可以改名 */
+/** 健管师没给标题时的默认标题，第一次发消息时换成按这一轮生成的标题（见 task-title.ts） */
 export const DEFAULT_TASK_TITLE = '新任务';
 
 export type TaskLookup = 'missing' | Task;
@@ -41,7 +44,7 @@ export class TasksRepository {
         .orderBy('id')
         .limit(500);
       if (filter.clientId) q = q.where('client_id', '=', filter.clientId);
-      return (await q.execute()).map(toTask);
+      return (await backfillTitles(trx, await q.execute())).map(toTask);
     });
   }
 
@@ -58,6 +61,7 @@ export class TasksRepository {
           client_id: input.clientId ?? null,
           expert_id: input.expertId ?? null,
           title: input.title ?? DEFAULT_TASK_TITLE,
+          title_source: input.title !== undefined ? 'manual' : 'default',
           archived_at: null,
         })
         .returning(TASK_COLUMNS)
@@ -75,7 +79,10 @@ export class TasksRepository {
       const row = await trx
         .updateTable('tasks')
         .set({
-          ...(input.title !== undefined ? { title: input.title } : {}),
+          // 健管师改过名的任务不再自动生成标题
+          ...(input.title !== undefined
+            ? { title: input.title, title_source: 'manual' as const }
+            : {}),
           ...(input.archived !== undefined
             ? { archived_at: input.archived ? (current.archived_at ?? new Date()) : null }
             : {}),
@@ -90,7 +97,9 @@ export class TasksRepository {
 
   detail(ctx: TenantContext, id: string): Promise<TaskDetailResponse | undefined> {
     return withTenant(this.db, ctx, async (trx) => {
-      const task = await selectTask(trx).where('id', '=', id).executeTakeFirst();
+      const found = await selectTask(trx).where('id', '=', id).executeTakeFirst();
+      if (!found) return undefined;
+      const [task] = await backfillTitles(trx, [found]);
       if (!task) return undefined;
       const messages = await trx
         .selectFrom('task_messages')
@@ -198,6 +207,7 @@ export class TasksRepository {
 const TASK_COLUMNS = [
   'id',
   'title',
+  'title_source',
   'client_id',
   'archived_at',
   'detached_reason',
@@ -208,6 +218,108 @@ const TASK_COLUMNS = [
 
 function selectTask(trx: TenantTransaction) {
   return trx.selectFrom('tasks').select(TASK_COLUMNS);
+}
+
+/** 客户称呼（行级安全决定能不能读到）；读不到时标题里不写称呼 */
+async function clientNames(
+  trx: TenantTransaction,
+  ids: (string | null)[],
+): Promise<Map<string, string>> {
+  const unique = [...new Set(ids.filter((id): id is string => id !== null))];
+  if (!unique.length) return new Map();
+  const rows = await trx
+    .selectFrom('clients')
+    .select(['id', 'display_name'])
+    .where('id', 'in', unique)
+    .execute();
+  return new Map(rows.map((r) => [r.id, r.display_name]));
+}
+
+/**
+ * 发消息时按这一轮生成任务标题（产品负责人反馈：列表里每一行都是“新任务”）：
+ * - 还是默认标题时生成；
+ * - 上次是按问题摘要生成的（auto_text），这一轮调用了技能时换成技能标题；
+ * - 健管师给过或改过标题（manual）、已经是技能标题时不动。
+ * 不改 updated_at（prepareTurn 已经更新）。标题含客户称呼，不写日志。
+ */
+export async function applyAutoTitle(
+  trx: TenantTransaction,
+  task: { id: string; title_source: TaskTitleSource },
+  clientId: string | null,
+  turn: TitleTurn,
+): Promise<void> {
+  if (task.title_source === 'manual' || task.title_source === 'auto_skill') return;
+  if (task.title_source === 'auto_text' && !turn.skillId) return;
+  const name = clientId ? ((await clientNames(trx, [clientId])).get(clientId) ?? null) : null;
+  const { title, source } = buildTaskTitle(turn, name);
+  await trx
+    .updateTable('tasks')
+    .set({ title, title_source: source })
+    .where('id', '=', task.id)
+    .where('title_source', '=', task.title_source)
+    .execute();
+}
+
+type TaskRow = Parameters<typeof toTask>[0];
+
+/**
+ * 补标题（读时补，不在迁移里复制标题规则）：上线前建的任务还是“新任务”，读列表或详情时按第一条
+ * 健管师消息生成标题。只读任务（客户已转出或删除）不能写，只在返回结果里换上生成的标题。
+ * 不改 updated_at，列表顺序不变。
+ */
+async function backfillTitles(trx: TenantTransaction, rows: TaskRow[]): Promise<TaskRow[]> {
+  const pending = rows.filter((r) => r.title_source === 'default');
+  if (!pending.length) return rows;
+  const firsts = await trx
+    .selectFrom('task_messages')
+    .distinctOn('task_id')
+    .select(['task_id', 'mode', 'skill_id', 'content', 'expert_refs', 'twin_refs'])
+    .where(
+      'task_id',
+      'in',
+      pending.map((r) => r.id),
+    )
+    .where('role', '=', 'manager')
+    .orderBy('task_id')
+    .orderBy('created_at')
+    .orderBy('id')
+    .execute();
+  if (!firsts.length) return rows;
+  const byTask = new Map(firsts.map((m) => [m.task_id, m]));
+  const names = await clientNames(
+    trx,
+    pending.map((r) => r.client_id),
+  );
+  const titled = new Map<string, TaskRow>();
+  // 按 id 顺序逐个更新，和发消息时锁任务的顺序无关，避免死锁
+  for (const row of [...pending].sort((a, b) => a.id.localeCompare(b.id))) {
+    const m = byTask.get(row.id);
+    if (!m) continue;
+    const twinRefs = Array.isArray(m.twin_refs) ? (m.twin_refs as TitleTurn['twinRefs']) : [];
+    const { title, source } = buildTaskTitle(
+      {
+        mode: m.mode,
+        skillId: m.skill_id,
+        content: m.content,
+        // 消息上没有记“请专家看看”，按默认问题识别
+        twinConsult: twinRefs.length > 0 && m.content.startsWith(TWIN_CONSULT_DEFAULT_REQUEST),
+        twinRefs,
+        expertIds: row.expert_id ? [row.expert_id] : m.expert_refs,
+      },
+      row.client_id ? (names.get(row.client_id) ?? null) : null,
+    );
+    if (!row.detached_reason) {
+      await trx
+        .updateTable('tasks')
+        .set({ title, title_source: source })
+        .where('id', '=', row.id)
+        .where('title_source', '=', 'default')
+        .where('detached_reason', 'is', null)
+        .execute();
+    }
+    titled.set(row.id, { ...row, title, title_source: source });
+  }
+  return rows.map((r) => titled.get(r.id) ?? r);
 }
 
 /**
@@ -227,6 +339,7 @@ export async function clientVisible(
 function toTask(row: {
   id: string;
   title: string;
+  title_source: TaskTitleSource;
   client_id: string | null;
   archived_at: Date | null;
   detached_reason: Task['detachedReason'];

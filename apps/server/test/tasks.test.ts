@@ -151,6 +151,102 @@ describe('任务接口', () => {
     expect(res.body.messages).toEqual([]);
   });
 
+  /** 上线前的任务：标题还是“新任务”，有一条健管师消息 */
+  const legacyTask = async (scope: Scope, clientId: string | null, content: string) => {
+    const taskId = await insertTask(owner, scope, clientId);
+    await owner
+      .updateTable('tasks')
+      .set({ title: '新任务', title_source: 'default' })
+      .where('id', '=', taskId)
+      .execute();
+    await owner
+      .insertInto('task_messages')
+      .values({
+        operator_id: scope.operatorId,
+        org_id: scope.orgId,
+        manager_id: scope.managerId,
+        task_id: taskId,
+        role: 'manager',
+        mode: 'craft',
+        content,
+        skill_id: 'client-recent-summary',
+        client_refs: clientId ? [clientId] : [],
+        status: 'complete',
+      })
+      .execute();
+    return taskId;
+  };
+
+  it('上线前的“新任务”：读列表时按第一条消息补上标题，不改更新时间', async () => {
+    const taskId = await legacyTask(scopeA1(), f.clients.a1[0], '写个近况小结');
+    const empty = await insertTask(owner, scopeA1());
+    await owner
+      .updateTable('tasks')
+      .set({ title: '新任务', title_source: 'default' })
+      .where('id', '=', empty)
+      .execute();
+    const before = await owner
+      .selectFrom('tasks')
+      .select('updated_at')
+      .where('id', '=', taskId)
+      .executeTakeFirstOrThrow();
+    const agent = await loginAs(app, f.users.managerA1.email);
+    const list = await agent.get('/api/tasks').expect(200);
+    const titles = new Map(
+      (list.body.tasks as { id: string; title: string }[]).map((t) => [t.id, t.title]),
+    );
+    expect(titles.get(taskId)).toBe('为测试客户 A1-1生成近况小结');
+    // 还没发过消息的任务保持“新任务”
+    expect(titles.get(empty)).toBe('新任务');
+    const row = await owner
+      .selectFrom('tasks')
+      .select(['title', 'title_source', 'updated_at'])
+      .where('id', '=', taskId)
+      .executeTakeFirstOrThrow();
+    expect(row).toMatchObject({ title: '为测试客户 A1-1生成近况小结', title_source: 'auto_skill' });
+    expect(row.updated_at.toISOString()).toBe(before.updated_at.toISOString());
+  });
+
+  it('补标题只作用于本人的任务：别人读列表不会改到、也看不到我的任务和客户称呼', async () => {
+    const taskA1 = await legacyTask(scopeA1(), f.clients.a1[0], '写个近况小结');
+    const taskB = await legacyTask(scopeB1(), f.clients.b1, '写个近况小结');
+    for (const email of [f.users.managerB1.email, f.users.managerA2.email]) {
+      const agent = await loginAs(app, email);
+      const list = await agent.get('/api/tasks').expect(200);
+      expect(list.body.tasks.map((t: { id: string }) => t.id)).not.toContain(taskA1);
+      expect(JSON.stringify(list.body)).not.toContain('测试客户 A1-1');
+      await agent.get(`/api/tasks/${taskA1}`).expect(404);
+    }
+    const rows = await owner
+      .selectFrom('tasks')
+      .select(['id', 'title', 'title_source'])
+      .where('id', 'in', [taskA1, taskB])
+      .execute();
+    const a1 = rows.find((r) => r.id === taskA1);
+    expect(a1).toMatchObject({ title: '新任务', title_source: 'default' });
+    // B 自己读列表时只补了 B 的任务
+    expect(rows.find((r) => r.id === taskB)?.title_source).toBe('auto_skill');
+  });
+
+  it('只读任务（客户已转出）读时显示生成的标题，但不写库', async () => {
+    const taskId = await legacyTask(scopeA1(), f.clients.a1[0], '写个近况小结');
+    await owner
+      .updateTable('clients')
+      .set({ manager_id: f.users.managerA2.id })
+      .where('id', '=', f.clients.a1[0])
+      .execute();
+    const agent = await loginAs(app, f.users.managerA1.email);
+    const detail = await agent.get(`/api/tasks/${taskId}`).expect(200);
+    // 客户已不可见，标题里不带称呼
+    expect(detail.body.task.title).toBe('生成近况小结');
+    const row = await owner
+      .selectFrom('tasks')
+      .select(['title', 'title_source'])
+      .where('id', '=', taskId)
+      .executeTakeFirstOrThrow();
+    expect(row).toEqual({ title: '新任务', title_source: 'default' });
+  });
+
   it('客户转出后任务只读：不能改名、不能取消归档，返回 409', async () => {
     const taskId = await insertTask(owner, scopeA1(), f.clients.a1[0]);
     await owner

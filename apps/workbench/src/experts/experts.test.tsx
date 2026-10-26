@@ -82,7 +82,7 @@ describe('专家库和专家中心提问（规格 2.2、2.3）', () => {
 
   it('从左侧栏打开专家库，看详情和来源清单，向 TA 提问后新建绑定专家的问一问任务', async () => {
     let tasks: Task[] = [];
-    const bound = makeTask({ title: '向内分泌与代谢专家提问', expertId: ENDO.id });
+    const bound = makeTask({ title: '问内分泌与代谢专家：合成问题', expertId: ENDO.id });
     let sse!: ReturnType<typeof controlledSse>;
     const api = mockApi({
       'GET /tasks': () => json(200, { tasks }),
@@ -155,10 +155,8 @@ describe('专家库和专家中心提问（规格 2.2、2.3）', () => {
     await user.type(screen.getByRole('textbox'), '合成问题：血糖偏高要关注什么');
     await user.keyboard('{Enter}');
     await waitFor(() => expect(api.callsTo('POST', MSG_PATH)).toHaveLength(1));
-    expect(api.callsTo('POST', '/tasks')[0]?.body).toEqual({
-      expertId: ENDO.id,
-      title: '向内分泌与代谢专家提问',
-    });
+    // 标题由后端按第一条消息生成（如“问内分泌与代谢专家：合成问题”），新建时不带标题
+    expect(api.callsTo('POST', '/tasks')[0]?.body).toEqual({ expertId: ENDO.id });
     expect(api.callsTo('POST', MSG_PATH)[0]?.body).toEqual({
       mode: 'ask',
       content: '合成问题：血糖偏高要关注什么',
