@@ -245,17 +245,19 @@ export function wordingCategories(issues: readonly WordingIssue[]): WordingCateg
 // ---------- M4 /孪生小结（规格 5.3、5.4） ----------
 
 /**
- * 状态颜色：后面不能紧跟别的汉字（“红肉”“绿叶菜”“黄豆”不是状态），“红色状态”“黄级”可以。
+ * 改状态的动词后面的颜色：只排除后面紧跟食物字的（“改为绿叶菜”“调成红枣茶”），
+ * “改为红色更合适”“状态应为红才对”照样算
  */
-const TWIN_COLOR =
-  '(?:红|黄|绿|灰)(?:色)?(?=[^\\u4e00-\\u9fff]|$|状态|级|档|灯|预警|警示|标识|标记)';
+const CHANGED_COLOR =
+  '(?:红|黄|绿|灰)(?!肉|叶|菜|豆|枣|茶|瓜|薯|糖|酒|椒|米|萝卜|油|色(?:食|蔬|水果))';
 /**
  * 状态结论（Q4：AI 不定状态）：“建议将代谢调整为红”“应改为绿色”“状态应为黄”“下调为黄色”。
  * “由绿变黄”“由黄升为红”是描述后端给出的变化，不算（见 findStatusChange）。
- * “需要留意”“需要尽快关注”是状态名称里的字（“黄（需要留意）手动调整为绿”），不当作“需要……改为”。
+ * 括号里的“需要留意”“需要尽快关注”是状态名称（“黄（需要留意）手动调整为绿”），不当作“需要……改为”；
+ * “心血管需要留意并把它调红”仍算。第二种说法的情态词和改动词之间放宽到整个分句。
  */
 export const STATUS_CHANGE = new RegExp(
-  `(?:改为|改成|调整为|调为|调成|上调为|下调为|升为|降为|应为|应该是|应当是|定为|标为|标记为)${SAME_CLAUSE}{0,2}${TWIN_COLOR}|(?:建议|应|应该|需要(?!留意|尽快关注))${SAME_CLAUSE}{0,10}(?:改|调整|调|上调|下调|标)${SAME_CLAUSE}{0,4}${TWIN_COLOR}`,
+  `(?:改为|改成|调整为|调为|调成|上调为|下调为|升为|降为|应为|应该是|应当是|定为|标为|标记为)${SAME_CLAUSE}{0,2}${CHANGED_COLOR}|(?:建议|(?<![对相反适供响])应|应该|(?<![（(])需要|可以|最好|本该)${SAME_CLAUSE}*?(?:改|调整|调|上调|下调|标)${SAME_CLAUSE}{0,4}${CHANGED_COLOR}`,
 );
 
 /** 预测的确定说法（5.3）：不写“将会”“一定会”“必然” */
@@ -268,14 +270,39 @@ export const FORECAST_CERTAINTY =
  */
 const DISEASE_RISK =
   /(?<![不非没])(?:会得|会患|会发展成|会发展为|会演变成|发展成为|进展为|进展成|患病概率|患病风险|发病概率|发病风险|发病率|得病|高风险|(?:心血管|心脑血管|代谢|健康)?风险(?:较高|很高|偏高|升高了|高于常人)|风险(?:是|为|约为|约是|达到?)[^，。；,;\n]{0,6}?\d+(?:\.\d+)?\s*倍|(?:概率|可能性)(?:约为|约是|大约是|为|是|达到?|约)\s*\d+(?:\.\d+)?\s*%|(?:风险|概率|可能性)(?:增加|升高|上升|提高)|\d+(?:\.\d+)?\s*%\s*的?(?:风险|概率|可能))/g;
-const NEGATION_BEFORE =
-  /(?:不能|不应|不得|不会|不代表|不意味着|并不|不是|不说|不写|不做|不提供|不给出|不表示|不等于|没有(?:这项|此项|相关|该项?|可用于|足够)|无法|没法|没办法|未必|不一定)[^，。；,;\n]{0,14}$/;
+/** 一般的否定词：和被否定的说法之间最多隔 8 个字 */
+const NEGATION_WORDS =
+  /(?:不能|不应|不得|不会|不代表|不意味着|并不|不是|不说|不写|不做|不将|不把|不表示|不等于|无法|没法|没办法|未必|不一定)(?=[^，。；,;\n]*$)/g;
 /**
- * 否定词往前看的字数（“不能据此判断该客户后续必然升高”隔 9 个字，
- * “不能据此给出疾病风险大小或患病概率”隔 13 个字）。
- * 规范化后全角逗号、分号已变成半角，两种都算分句边界（“不能只看一次，后续必然升高”不算否定）
+ * 否定的对象就是风险、概率、数据或结论本身（“没有这项患病概率数据”“不提供应改为绿色的结论”
+ * “没有可用于评估患病概率的数据”）：和被否定的说法之间最多隔 4 个字
+ */
+const NEGATION_OF_OBJECT = /(?:不提供|不给出|没有(?:这项|此项|该项?|可用于))(?=[^，。；,;\n]*$)/g;
+/** “不能据此判断……”“无法据此给出……”这类说明：否定词后面是这些字时，最多隔 14 个字 */
+const NEGATION_EXPLAINING = /^(?:据此|仅凭|单凭|凭此|只凭)/;
+/**
+ * 否定词和被查的说法之间有这些字时，否定管不到后面（“并不只是血压的问题而是心血管风险较高”
+ * “不会控制饮食的话三个月后血糖将会继续升高”“在不提供任何干预的情况下患病概率约为 30%”）
+ */
+const NEGATION_BREAK = /而|但|却|其实|就是|反而|的话|时|情况下/;
+/**
+ * 否定词往前看的字数。规范化后全角逗号、分号已变成半角，两种都算分句边界
+ * （“不能只看一次，后续必然升高”不算否定）
  */
 const NEGATION_LOOKBACK = 18;
+
+/** 紧挨在这一处前面的文字（同一分句内）是否有管得到它的否定词 */
+function negationReaches(before: string): boolean {
+  const reaches = (re: RegExp, maxGap: (gap: string) => number) =>
+    [...before.matchAll(re)].some((m) => {
+      const gap = before.slice(m.index + m[0].length);
+      return gap.length <= maxGap(gap) && !NEGATION_BREAK.test(gap);
+    });
+  return (
+    reaches(NEGATION_WORDS, (gap) => (NEGATION_EXPLAINING.test(gap) ? 14 : 8)) ||
+    reaches(NEGATION_OF_OBJECT, () => 4)
+  );
+}
 /** “不能排除……风险升高”“……除外”是肯定有可能，不算否定 */
 const NOT_EXCLUDED = /排除|除外/;
 
@@ -284,7 +311,7 @@ const NOT_EXCLUDED = /排除|除外/;
  */
 function negatedAt(norm: string, index: number, length: number): boolean {
   const before = norm.slice(Math.max(0, index - NEGATION_LOOKBACK), index);
-  if (!NEGATION_BEFORE.test(before)) return false;
+  if (!negationReaches(before)) return false;
   const clauseStart = Math.max(
     ...['，', '。', '；', '\n', ',', ';'].map((p) => before.lastIndexOf(p)),
   );
@@ -333,29 +360,39 @@ function findPattern(
  * - 照抄的手动调整：“健管师手动调整为红”“已调整为绿”。
  */
 const DESCRIBED_CHANGE =
-  /(?:(?<!可|可以|能|应|应该|应当|宜|建议|需要|需)(?:由|从)(?:[^，。；,;\n]{0,8}?的)?(?:红|黄|绿|灰)色?|手动|健管师已?|已)$/;
+  /(?:(?:由|从)(?:[^，。；,;\n]{0,8}?的)?(?:红|黄|绿|灰)色?|手动|健管师已?|已)$/;
 
 /**
- * 复述平台给的颜色：“按规则，因为收缩压 146 高于上限 139，标记为黄”“系统标记为绿（平稳）”。
- * 只对“标为”“标记为”“定为”这类贴标签的说法（不含“改为”“调整为”），并且同一句里写明了是规则、系统、
- * 平台、孪生或资料给的、没有“建议”“应”“可以”这类说法时才算描述；“建议标记为红”“应标为红”仍算结论。
+ * 同一分句里这一处前面有这些说法时就是 AI 在下结论，不算描述
+ * （“我建议将代谢方面目前的状态由系统计算的黄调整为绿”“应当把心血管从平台计算的黄改为红”）。
+ * 括号里的“需要留意”是状态名称，不算。
+ */
+const STATUS_JUDGING =
+  /建议|应该|应当|(?<![对相反适供响])应|可以|(?<!不)可(?!能)|宜|(?<![（(])需|最好|本该|判断|认为|更合理|得/;
+
+/**
+ * 复述系统给的颜色：只认“系统/平台/规则”（可带“已”“自动”）后面紧跟“标为”“标记为”“定为”
+ * （“系统标记为绿（平稳）”“平台已标为黄”），分句里不能有别的判断说法。
+ * “按规则……，因此标为红”“孪生资料看本该标为红”都算结论：写颜色用“当前为黄”“状态为黄”。
  */
 const LABEL_VERB = /^(?:标为|标记为|定为)/;
-const LABEL_ATTRIBUTION = /按(?:平台)?规则|系统|平台|后端|孪生|资料/;
-const LABEL_MODAL = /建议|应该|应当|(?<![对相反适供响])应|可以|(?<!不)可|宜|需要(?!留意|尽快关注)/;
-function describedLabel(norm: string, index: number, match: string): boolean {
-  if (!LABEL_VERB.test(match)) return false;
+const LABEL_BY_SYSTEM = /(?:系统|平台|规则)(?:已|自动)?$/;
+
+function clauseBefore(norm: string, index: number): string {
   const before = norm.slice(0, index);
-  const sentence = before.slice(
-    Math.max(...['。', '；', '\n', ';', '!', '?', '！', '？'].map((p) => before.lastIndexOf(p))) +
-      1,
+  return before.slice(
+    Math.max(
+      ...['，', '。', '；', '\n', ',', ';', '!', '?', '！', '？'].map((p) => before.lastIndexOf(p)),
+    ) + 1,
   );
-  return LABEL_ATTRIBUTION.test(sentence) && !LABEL_MODAL.test(sentence);
 }
 
-/** 状态结论这一处是否其实是描述（已发生的变化、照抄的手动调整、复述规则给的颜色） */
+/** 状态结论这一处是否其实是描述（已发生的变化、照抄的手动调整、复述系统给的颜色） */
 function describedStatus(before: string, norm: string, index: number, match: string): boolean {
-  return DESCRIBED_CHANGE.test(before) || describedLabel(norm, index, match);
+  const clause = clauseBefore(norm, index);
+  if (STATUS_JUDGING.test(clause)) return false;
+  if (DESCRIBED_CHANGE.test(before)) return true;
+  return LABEL_VERB.test(match) && LABEL_BY_SYSTEM.test(clause);
 }
 
 const TWIN_COUNT =

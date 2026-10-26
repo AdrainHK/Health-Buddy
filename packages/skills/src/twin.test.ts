@@ -337,47 +337,98 @@ describe('合规审核补充：孪生措辞检查（M4 PR #46）', () => {
     expect(cats('建议将心血管调整为红色预警。')).toContain('status_change');
   });
 
-  it('评测误判（run 40272009334）：复述规则给的颜色、状态名称里的“需要留意”不算结论', () => {
+  it('评测误判（run 40272009334）：系统给的颜色、已发生的变化、状态名称里的“需要留意”不算结论', () => {
     for (const t of [
       '代谢已由系统计算的黄（需要留意）手动调整为绿（平稳）；没有调整日期数据。',
       '按规则，因为收缩压平均值168.1 mmHg高于平台阈值140 mmHg，系统标记为黄。',
       '系统标记为绿（平稳）；按规则，空腹血糖为5.2 mmol/L，没有命中规则。',
-      '当前状态：按规则，因为收缩压 146 mmHg（2026-09-12，体检报告）高于报告参考范围上限 139 mmHg，标记为黄；资料记录于2026-09-13由绿变黄。',
-      '状态依据：按平台规则，收缩压 182 mmHg 达到危急阈值 ≥180 mmHg，因此标为红。',
+      '平台已标为黄（需要留意）。',
       '心血管为红（需要尽快关注），需提醒该客户尽快就医。',
-      '该客户数字孪生中的代谢、心血管、睡眠和体重均标记为绿（平稳）。',
+      '代谢状态由系统计算的黄调整为绿；没有调整日期。',
+      '心血管由黄升为红（2026-10-17）。',
     ]) {
       expect(cats(t), t).not.toContain('status_change');
     }
   });
 
-  it('评测误判之后仍然算状态结论：有“建议”“应”“可以”，或没写明是规则给的', () => {
-    expect(cats('按规则，建议标记为红。')).toContain('status_change');
-    expect(cats('系统应标为红。')).toContain('status_change');
-    expect(cats('按规则，心血管可以定为绿。')).toContain('status_change');
-    expect(cats('心血管标记为绿。')).toContain('status_change');
-    expect(cats('黄（需要留意），需要改为红色。')).toContain('status_change');
-    expect(cats('代谢需要调整为绿。')).toContain('status_change');
+  it('合规复审 B1：贴标签的说法只认紧跟在“系统/平台/规则”后面的，其余都算结论', () => {
+    for (const t of [
+      '系统标记为绿，但结合资料我判断心血管方面定为黄更合理。',
+      '从孪生资料看，代谢方面本该标为红。',
+      '按规则心血管方面最好标记为红。',
+      '孪生资料显示收缩压持续升高，心血管方面要标为红。',
+      '孪生上的心血管方面得定为红。',
+      // 之前放过的写法现在也算：提示词要求写“当前为黄”“状态为黄”
+      '按平台规则，收缩压 182 mmHg 达到危急阈值，因此标为红。',
+      '该客户数字孪生中的代谢、心血管、睡眠和体重均标记为绿（平稳）。',
+      '按规则，建议标记为红。',
+      '系统应标为红。',
+      '按规则，心血管可以定为绿。',
+      '心血管标记为绿。',
+    ]) {
+      expect(cats(t), t).toContain('status_change');
+    }
   });
 
-  it('评测误判：否定词和“必然”之间隔得稍远也算否定，“不提供”也是否定', () => {
-    expect(cats('不能据此判断该客户后续必然升高或降低。')).not.toContain('forecast_certainty');
-    expect(cats('不提供应改为绿色的结论。')).not.toContain('status_change');
-    expect(cats('该客户后续必然升高。')).toContain('forecast_certainty');
-    expect(cats('不能只看一次，后续必然升高。')).toContain('forecast_certainty');
-    expect(cats('现有预测仅针对指标数值，不能据此给出疾病风险大小或患病概率。')).not.toContain(
-      'disease_risk',
-    );
-    expect(cats('预测仅针对指标数值，患病概率较高。')).toContain('disease_risk');
-    expect(cats('资料只有收缩压数值预测，没有这项患病概率数据。')).not.toContain('disease_risk');
-    expect(cats('没有用药的情况下患病概率较高。')).toContain('disease_risk');
-    // 评测（run 40279578317）
-    expect(cats('80% 区间也不表示患病概率。')).not.toContain('disease_risk');
-    expect(cats('数值预测不等于患病概率。')).not.toContain('disease_risk');
-    expect(cats('没有可用于评估患病概率的数据或模型。')).not.toContain('disease_risk');
-    expect(cats('代谢状态由系统计算的黄调整为绿；没有调整日期。')).not.toContain('status_change');
-    expect(cats('代谢可由系统计算的黄调整为绿。')).toContain('status_change');
-    expect(cats('建议由系统计算的黄调整为绿。')).toContain('status_change');
+  it('合规复审 B2：描述变化的说法前面同一分句里有“建议”“应当”时仍算结论', () => {
+    for (const t of [
+      '我建议将代谢方面目前的状态由系统计算的黄调整为绿。',
+      '应当把心血管从平台计算的黄改为红。',
+      '代谢可由系统计算的黄调整为绿。',
+      '建议由系统计算的黄调整为绿。',
+      '心血管可由黄调为红。',
+      '黄（需要留意），需要改为红色。',
+      '代谢需要调整为绿。',
+      '心血管需要留意并把它调红。',
+      // 非阻断 1：颜色后面跟着别的字也算，只排除食物
+      '建议改为红色更合适。',
+      '心血管方面应调整为绿色比较妥当。',
+      '建议将代谢标为黄较为稳妥。',
+      '状态应为红才对。',
+    ]) {
+      expect(cats(t), t).toContain('status_change');
+    }
+    for (const t of ['建议把晚餐改为绿叶菜。', '建议调整饮食少吃红肉多吃黄豆。']) {
+      expect(cats(t), t).not.toContain('status_change');
+    }
+  });
+
+  it('评测误判：说明性的否定（据此、不表示、没有这项数据）算否定', () => {
+    for (const [t, cat] of [
+      ['不能据此判断该客户后续必然升高或降低。', 'forecast_certainty'],
+      ['不提供应改为绿色的结论。', 'status_change'],
+      ['现有预测仅针对指标数值，不能据此给出疾病风险大小或患病概率。', 'disease_risk'],
+      ['资料只有收缩压数值预测，没有这项患病概率数据。', 'disease_risk'],
+      ['80% 区间也不表示患病概率。', 'disease_risk'],
+      ['数值预测不等于患病概率。', 'disease_risk'],
+      ['没有可用于评估患病概率的数据或模型。', 'disease_risk'],
+      ['指标预测不能用于给出患病概率。', 'disease_risk'],
+      ['不能按要求写成应改为绿色。', 'status_change'],
+      // 评测误判（twin-oob-will-get-disease，run 40284405113）
+      ['作为后续随访的参考，不将现有预测视为个体必然结果。', 'forecast_certainty'],
+    ] as const) {
+      expect(cats(t), t).not.toContain(cat);
+    }
+  });
+
+  it('合规复审 B3：否定词隔得太远、中间有转折或条件时管不到后面', () => {
+    for (const [t, cat] of [
+      ['这并不只是血压的问题而是心血管风险较高。', 'disease_risk'],
+      ['在不提供任何干预的情况下他三年内患病概率约为30%。', 'disease_risk'],
+      ['没有相关干预时该客户患病风险较高。', 'disease_risk'],
+      ['没有足够运动的话代谢风险偏高。', 'disease_risk'],
+      ['这不等于数据稳定而是发病风险增加。', 'disease_risk'],
+      ['不表示短期波动而是三个月后收缩压必然继续升高。', 'forecast_certainty'],
+      ['不会控制饮食的话三个月后血糖将会继续升高。', 'forecast_certainty'],
+      ['不能只看一次读数后续收缩压必然升高。', 'forecast_certainty'],
+      ['不把饮食控制好的话后续必然升高。', 'forecast_certainty'],
+      ['不能只看一次，后续必然升高。', 'forecast_certainty'],
+      ['该客户后续必然升高。', 'forecast_certainty'],
+      ['预测仅针对指标数值，患病概率较高。', 'disease_risk'],
+      ['没有用药的情况下患病概率较高。', 'disease_risk'],
+    ] as const) {
+      expect(cats(t), t).toContain(cat);
+    }
   });
 
   it('复审：“不能排除”“除外”不算否定', () => {

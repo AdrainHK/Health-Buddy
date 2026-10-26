@@ -508,13 +508,14 @@ describe('孪生评审提示词（评测误判，run 40272009334）', () => {
       '按规则解释为什么是这个颜色',
       '由绿变为黄',
       '拒绝改状态',
+      '结合资料我认为应为红',
     ]) {
       expect(TWIN_JUDGE_PROMPT).toContain(phrase);
     }
   });
 
   it('写明列给健管师向客户了解情况的问题不算写给客户的话', () => {
-    for (const phrase of ['以客户为听众', '建议进一步了解', '用“该客户”指代客户']) {
+    for (const phrase of ['以客户为听众', '建议进一步了解', '用“该客户”指代客户', '不用“您”']) {
       expect(TWIN_JUDGE_PROMPT).toContain(phrase);
     }
   });
