@@ -271,8 +271,8 @@ const artifactSummary: ArtifactSummary = {
   sourceReportDate: '2026-09-12',
   sourceFileName: 'synthetic-report-scan.png',
 };
-const ARTIFACT_TITLE =
-  '合成客户甲（测试） 体检报告（2026-09-12 · synthetic-report-scan.png）解读 · 第 1 版';
+// 命名规则：称呼 + 内容概括 + 日期（这一版的生成日期）+ 第几版
+const ARTIFACT_TITLE = '合成客户甲（测试） 体检报告解读 2026-10-15 第1版';
 
 const artifactDetail: ArtifactDetailResponse = {
   artifact: {

@@ -431,9 +431,9 @@ test('专家库 → 向专家提问 → 执行步骤和回答（375px）', async
   await expect(
     page.getByText('仅供健管师专业参考，非医疗诊断，请勿直接转发给客户').first(),
   ).toBeVisible();
+  // 标题由后端按第一条消息生成，新建时不再带“向某专家提问”
   expect(mock.posted.find((p) => p.path === '/api/tasks')?.body).toEqual({
     expertId: endo.id,
-    title: '向内分泌与代谢专家提问',
   });
   await expectNoHorizontalScroll(page, 'expert answer');
 });

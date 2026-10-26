@@ -137,6 +137,10 @@ describe('ClientRecord', () => {
     expect(within(monitoring).getByText(/· 测试数据 · 近 30 天 12 条/)).toBeInTheDocument();
 
     expect(within(section('产物')).getByText('已审核')).toBeInTheDocument();
+    // 和产物标签同一个命名规则：称呼 + 内容概括 + 日期 + 第几版
+    expect(
+      within(section('产物')).getByText('合成客户甲 近况小结 2026-10-15 第1版'),
+    ).toBeInTheDocument();
   });
 
   it('has no “新建客户” button once a client is selected (owner feedback)', async () => {

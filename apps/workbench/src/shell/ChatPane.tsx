@@ -504,6 +504,8 @@ export function ChatPane({
         onOpen: () => {
           opened = true;
           hooks.onOpen?.();
+          // 后端在流打开前已按这一轮生成了任务标题，刷新任务列表让侧栏和标题栏马上换上
+          onTaskChanged?.();
         },
         onEvent: (event) => {
           if (!current()) return;
@@ -621,15 +623,9 @@ export function ChatPane({
     let target = task;
     if (!target) {
       try {
-        // 从专家中心过来：新建绑定这位专家的任务（M3 规格 2.3）
-        target = await createTask(
-          pendingExpert
-            ? {
-                expertId: pendingExpert.id,
-                title: t('experts.askTaskTitle', { name: pendingExpert.name }),
-              }
-            : {},
-        );
+        // 从专家中心过来：新建绑定这位专家的任务（M3 规格 2.3）。标题由后端按第一条消息生成，
+        // 如“问营养专家：王测试 · 最近饮食怎么调整”
+        target = await createTask(pendingExpert ? { expertId: pendingExpert.id } : {});
       } catch (err) {
         if (fromComposer) restoreComposer(draft);
         setNotice({ kind: 'error', key: errorKey(err) });
@@ -1183,6 +1179,9 @@ export function ChatPane({
   );
 
   const hasMessages = conversation.messages.length > 0 || uploads.length > 0;
+  const headerTitle =
+    task?.title ||
+    (pendingExpert ? t('experts.askTaskTitle', { name: pendingExpert.name }) : t('chat.untitled'));
   const reportDates = new Map(reportOptions.map((r) => [r.id, r.date]));
 
   return (
@@ -1196,11 +1195,8 @@ export function ChatPane({
             onClick={onOpenMenu}
           />
         )}
-        <h1 className={styles.title}>
-          {task?.title ||
-            (pendingExpert
-              ? t('experts.askTaskTitle', { name: pendingExpert.name })
-              : t('chat.untitled'))}
+        <h1 className={styles.title} title={headerTitle}>
+          {headerTitle}
         </h1>
         <IconButton
           label={resultsOpen ? t('results.close') : t('results.open')}

@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { getClientRecord } from '../api/clients';
 import { isAbortError } from '../api/http';
 import { StatusBadge } from '../artifacts/ArtifactView';
-import { useArtifactTitle } from '../artifacts/artifactTitle';
+import { useArtifactSource, useArtifactTitle } from '../artifacts/artifactTitle';
 import { useDynamicT } from '../i18n/dynamic';
 import { ReportsSection } from '../reports/ReportsSection';
 import { AbnormalBadge } from '../reports/ReviewView';
@@ -260,6 +260,7 @@ function Monitoring({ record }: { record: RecordData }) {
 function Artifacts({ record }: { record: RecordData }) {
   const { t } = useTranslation();
   const title = useArtifactTitle();
+  const source = useArtifactSource();
   if (record.readOnly) return null;
   return (
     <Section title={t('record.sections.artifacts')}>
@@ -269,12 +270,9 @@ function Artifacts({ record }: { record: RecordData }) {
         <ul className={styles.list}>
           {record.artifacts.map((a) => (
             <li key={a.id} className={styles.item}>
-              <span className={styles.itemMain}>
-                {/* 档案就是这位客户的，标题里不再重复称呼 */}
-                {title(a)}
-              </span>
-              <span className={styles.meta}>
-                {t('record.artifacts.meta', { date: displayDate(a.createdAt) })}
+              <span className={styles.itemMain} title={source(a)}>
+                {/* 和产物标签同一个命名规则：称呼 内容概括 日期 第几版（名称里已有日期） */}
+                {title(a, record.client.displayName)}
               </span>
               <StatusBadge status={a.status} />
             </li>

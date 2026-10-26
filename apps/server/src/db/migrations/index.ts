@@ -17,6 +17,7 @@ import * as m0015 from './0015-expert-reconsult.js';
 import * as m0016 from './0016-client-twin.js';
 import * as m0017 from './0017-twin-compute.js';
 import * as m0018 from './0018-twin-ai.js';
+import * as m0019 from './0019-task-title-source.js';
 
 export interface Migration {
   name: string;
@@ -43,4 +44,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { name: '0016-client-twin', up: m0016.up },
   { name: '0017-twin-compute', up: m0017.up },
   { name: '0018-twin-ai', up: m0018.up },
+  { name: '0019-task-title-source', up: m0019.up },
 ];

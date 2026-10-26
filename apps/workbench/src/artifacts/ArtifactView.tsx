@@ -24,7 +24,7 @@ import {
 import { isAbortError } from '../api/http';
 import { ExpertReviewNotes } from '../experts/ExpertReviewNotes';
 import { useDynamicT, useStepLabel } from '../i18n/dynamic';
-import { useArtifactTitle } from './artifactTitle';
+import { useArtifactSource, useArtifactTitle } from './artifactTitle';
 import styles from './ArtifactView.module.css';
 import { PlainMarkdown } from './PlainMarkdown';
 import { type ArtifactErrorKey, classifyArtifactError } from './errors';
@@ -123,6 +123,7 @@ export function ArtifactView({
 }: ArtifactViewProps) {
   const { t } = useTranslation();
   const title = useArtifactTitle();
+  const source = useArtifactSource();
   const { artifact, hints, sourceReport } = detail;
   /** 只有专业版的产物（/面谈提纲，规格 2.8）：编辑专业版，没有通俗版、复制和导出 */
   const clientFacing = artifact.clientFacing;
@@ -475,7 +476,7 @@ export function ArtifactView({
           size="small"
           onClick={onBack}
         />
-        <h3 id="hb-artifact-title" className={styles.title}>
+        <h3 id="hb-artifact-title" className={styles.title} title={source(artifact)}>
           {title(artifact, clientName)}
         </h3>
         <StatusBadge status={artifact.status} />

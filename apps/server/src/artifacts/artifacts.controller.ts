@@ -101,7 +101,12 @@ export class ArtifactsController {
     const parsed = exportArtifactRequestSchema.safeParse(body);
     if (!parsed.success) throw badRequest();
     const { file, filename } = found(
-      await this.artifacts.exportClientText(session, artifactId, parsed.data.format),
+      await this.artifacts.exportClientText(
+        session,
+        artifactId,
+        parsed.data.format,
+        parsed.data.tz,
+      ),
     );
     res.setHeader('Cache-Control', 'no-store');
     return new StreamableFile(file, {

@@ -144,10 +144,14 @@ interface ManagerScoped {
   manager_id: string;
 }
 
+export type TaskTitleSource = 'default' | 'auto_text' | 'auto_skill' | 'manual';
+
 export interface TasksTable extends ManagerScoped {
   id: Generated<string>;
   client_id: string | null;
   title: string;
+  /** 标题的来历（0019）：default、auto_text、auto_skill 会按对话内容自动生成，manual 不再自动改 */
+  title_source: ColumnType<TaskTitleSource, TaskTitleSource | undefined, TaskTitleSource>;
   archived_at: Date | null;
   detached_reason: 'client_transferred' | 'client_deleted' | null;
   /** 专家中心发起的任务绑定的专家（M3） */

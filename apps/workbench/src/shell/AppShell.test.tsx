@@ -149,6 +149,43 @@ describe('AppShell (wide screen)', () => {
     expect(screen.getByText('今天想让我帮你做什么？')).toBeInTheDocument();
   });
 
+  it('第一条消息后，侧栏和标题栏换上后端生成的任务标题；过长时截断，悬停看全文', async () => {
+    const created = makeTask({ id: ids.task3, title: '新任务', clientId: null, updatedAt: NOW });
+    const titled = {
+      ...created,
+      title: '问一问：合成客户甲 · 最近两周的血压和睡眠情况怎么样，需要提醒复测和调整作息…',
+    };
+    let tasks = TASKS;
+    mockApi({
+      'GET /tasks': () => json(200, { tasks }),
+      'GET /clients': () => json(200, { clients: CLIENTS }),
+      'GET /skills': () => json(200, { skills: [SKILL] }),
+      'POST /tasks': () => {
+        tasks = [created, ...TASKS];
+        return json(200, { task: created });
+      },
+      // 后端在流打开前已按这一轮生成了标题
+      [`POST /tasks/${ids.task3}/messages`]: () => {
+        tasks = [titled, ...TASKS];
+        return sseResponse([
+          { type: 'text', messageId: ids.assistantMsg, delta: '合成回答' },
+          { type: 'done', messageId: ids.assistantMsg, reason: 'complete' },
+        ]);
+      },
+    });
+    const user = userEvent.setup();
+    render(<AppShell />);
+    await user.click(screen.getByRole('radio', { name: '问一问' }));
+    await user.type(screen.getByRole('textbox'), '合成问题');
+    await user.keyboard('{Enter}');
+
+    const row = await screen.findByRole('button', { name: titled.title });
+    expect(row).toHaveAttribute('title', titled.title);
+    expect(screen.queryByRole('button', { name: '新任务' })).not.toBeInTheDocument();
+    const heading = await screen.findByRole('heading', { level: 1, name: titled.title });
+    expect(heading).toHaveAttribute('title', titled.title);
+  });
+
   it('archives a task through PATCH', async () => {
     const api = mockWorkbench();
     const user = userEvent.setup();
@@ -239,13 +276,13 @@ describe('AppShell return and rewrite', () => {
     expect(await screen.findByText('合成回答：已生成第 1 版')).toBeInTheDocument();
 
     const results = screen.getByRole('complementary', { name: '结果' });
-    await user.click(await within(results).findByRole('button', { name: /第 1 版/ }));
+    await user.click(await within(results).findByRole('button', { name: /第1版/ }));
     const bar = await within(results).findByRole('region', { name: '审核' });
     await user.click(within(bar).getByRole('button', { name: '退回重写' }));
     await user.type(within(bar).getByRole('textbox', { name: /退回原因/ }), '语气再温和一些');
     await user.click(within(bar).getByRole('button', { name: '退回并重写' }));
 
-    expect(await within(results).findByRole('heading', { name: /第 2 版/ })).toBeInTheDocument();
+    expect(await within(results).findByRole('heading', { name: /第2版/ })).toBeInTheDocument();
     expect(await screen.findByText('合成回答：已按退回原因重写第 2 版')).toBeInTheDocument();
     // 静默重新加载：原来的对话还在
     expect(screen.getByText('合成回答：已生成第 1 版')).toBeInTheDocument();
@@ -341,7 +378,7 @@ describe('刷新页面后恢复产物和记录（验收反馈 3）', () => {
     sourceReportDate: '2026-09-12',
     sourceFileName: 'synthetic-scan.pdf',
   });
-  const TITLE = '合成客户甲 体检报告（2026-09-12 · synthetic-scan.pdf）解读 · 第 1 版';
+  const TITLE = '合成客户甲 体检报告解读 2026-10-15 第1版';
   // 列表按钮的名称后面还带状态（草稿）
   const item = (name: string) => name.startsWith(TITLE);
 

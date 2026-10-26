@@ -165,7 +165,7 @@ describe('第一次 @客户：结果区自动切到孪生，正打开产物时�
     render(<AppShell />);
     await user.click(await screen.findByRole('button', { name: '随便问问' }));
     const results = screen.getByRole('complementary', { name: '结果' });
-    await user.click(await within(results).findByRole('button', { name: /合成任务|第 1 版/ }));
+    await user.click(await within(results).findByRole('button', { name: /合成任务|第1版/ }));
     await waitFor(() =>
       expect(within(results).getByRole('tab', { name: '产物' })).toHaveAttribute(
         'aria-selected',

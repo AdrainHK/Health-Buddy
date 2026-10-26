@@ -37,6 +37,8 @@ export async function insertDraft(
     clientId?: string | null;
     clientFacing?: string;
     criticalFlags?: CriticalFlag[];
+    /** 这一版的生成时间（导出文件名里的日期） */
+    createdAt?: Date;
   } = {},
 ) {
   const id = crypto.randomUUID();
@@ -59,6 +61,7 @@ export async function insertDraft(
         clientFacing: options.clientFacing ?? CLEAN_CLIENT_TEXT,
       }),
       critical_flags: JSON.stringify(options.criticalFlags ?? []),
+      ...(options.createdAt ? { created_at: options.createdAt } : {}),
     })
     .execute();
   return id;

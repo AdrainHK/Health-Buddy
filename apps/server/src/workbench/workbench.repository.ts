@@ -27,6 +27,7 @@ import { DB } from '../db/db.provider.js';
 import { asDate } from '../db/report-functions.js';
 import { withTenant, type Db, type TenantContext, type TenantTransaction } from '../db/database.js';
 import {
+  applyAutoTitle,
   clientVisible,
   selectArtifactSummary,
   toArtifactSummary,
@@ -196,6 +197,8 @@ export class WorkbenchRepository {
       followUpItemId?: string;
       /** /孪生小结、孪生复盘：客户还没有任何孪生数据时拒绝（409 no_twin_data） */
       requiresTwinData?: boolean;
+      /** “请专家看看”：只用于生成任务标题 */
+      twinConsult?: boolean;
     },
     claim: (taskId: string) => boolean,
   ): Promise<PreparedTurn> {
@@ -295,6 +298,15 @@ export class WorkbenchRepository {
         .set({ updated_at: new Date() })
         .where('id', '=', task.id)
         .execute();
+      // 任务还没有标题时按这一轮生成标题（如“为王测试生成近况小结”），健管师改过名的不动
+      await applyAutoTitle(trx, task, clientId, {
+        mode: input.mode,
+        skillId: input.skillId ?? null,
+        content: input.content,
+        twinConsult: Boolean(input.twinConsult),
+        twinRefs,
+        expertIds: task.expert_id ? [task.expert_id] : (input.expertRefs ?? []),
+      });
       return {
         taskId: task.id,
         clientId,
@@ -982,7 +994,7 @@ function tenantScope(ctx: TenantContext) {
 async function lockTask(trx: TenantTransaction, taskId: string) {
   const task = await trx
     .selectFrom('tasks')
-    .select(['id', 'client_id', 'detached_reason', 'expert_id'])
+    .select(['id', 'client_id', 'detached_reason', 'expert_id', 'title_source'])
     .where('id', '=', taskId)
     .forUpdate()
     .executeTakeFirst();

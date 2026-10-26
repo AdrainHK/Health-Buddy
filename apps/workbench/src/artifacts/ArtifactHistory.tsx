@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import styles from './ArtifactHistory.module.css';
 import { StatusBadge } from './ArtifactView';
-import { useArtifactTitle } from './artifactTitle';
+import { useArtifactSource, useArtifactTitle } from './artifactTitle';
 
 /** 确认时勾选了“已知悉”危急指标，后端记在 reason 里 */
 const CRITICAL_ACKNOWLEDGED = 'critical_acknowledged';
@@ -26,6 +26,7 @@ export function ArtifactHistory({
 }: ArtifactHistoryProps) {
   const { t, i18n } = useTranslation();
   const title = useArtifactTitle();
+  const source = useArtifactSource();
   const format = useMemo(
     () => new Intl.DateTimeFormat(i18n.language, { dateStyle: 'medium', timeStyle: 'short' }),
     [i18n.language],
@@ -69,7 +70,9 @@ export function ArtifactHistory({
                     aria-label={t('results.history.open', { version: v.version })}
                     onClick={() => onOpenVersion(v.id)}
                   >
-                    <span className={styles.versionName}>{title(v, clientName)}</span>
+                    <span className={styles.versionName} title={source(v)}>
+                      {title(v, clientName)}
+                    </span>
                     <time className={styles.time} dateTime={v.createdAt}>
                       {format.format(new Date(v.createdAt))}
                     </time>

@@ -296,7 +296,11 @@ describe('产物接口', () => {
   });
 
   it('导出图片和 PDF：只有已审核的可以，文件名不带客户姓名，每次都有记录', async () => {
-    const { id } = await draftA1({ criticalFlags: [SBP_FLAG] });
+    // 这一版的生成时间：北京时间已是 10 月 19 日，洛杉矶还是 10 月 18 日
+    const { id } = await draftA1({
+      criticalFlags: [SBP_FLAG],
+      createdAt: new Date('2026-10-18T20:00:00.000Z'),
+    });
     const agent = await loginAs(app, f.users.managerA1.email);
     await exportAs(agent, id, 'png').expect(409);
 
@@ -306,8 +310,28 @@ describe('产物接口', () => {
     expect(png.headers['cache-control']).toBe('no-store');
     expect((png.body as Buffer).subarray(1, 4).toString()).toBe('PNG');
     const disposition = decodeURIComponent(png.headers['content-disposition'] ?? '');
-    expect(disposition).toMatch(/近况小结-\d{4}-\d{2}-\d{2}\.png/);
+    // 命名规则：内容概括 + 这一版的生成日期 + 第几版；给客户的文件不带客户称呼
+    expect(disposition).toContain("filename*=UTF-8''近况小结 2026-10-19 第1版.png");
     expect(disposition).not.toContain('测试客户');
+    // 日期按健管师时区；时区不存在时按北京时间
+    const local = await agent
+      .post(`/api/artifacts/${id}/export`)
+      .send({ format: 'png', tz: 'America/Los_Angeles' })
+      .expect(200);
+    expect(decodeURIComponent(local.headers['content-disposition'] ?? '')).toContain(
+      '近况小结 2026-10-18 第1版.png',
+    );
+    const unknownTz = await agent
+      .post(`/api/artifacts/${id}/export`)
+      .send({ format: 'png', tz: 'Mars/Olympus_Mons' })
+      .expect(200);
+    expect(decodeURIComponent(unknownTz.headers['content-disposition'] ?? '')).toContain(
+      '近况小结 2026-10-19 第1版.png',
+    );
+    await agent
+      .post(`/api/artifacts/${id}/export`)
+      .send({ format: 'png', tz: '../etc' })
+      .expect(400);
 
     const pdf = await exportAs(agent, id, 'pdf').expect(200);
     expect(pdf.headers['content-type']).toBe('application/pdf');
@@ -323,6 +347,8 @@ describe('产物接口', () => {
       .execute();
     expect(events.map((e) => [e.action, e.format])).toEqual([
       ['approved', null],
+      ['exported', 'png'],
+      ['exported', 'png'],
       ['exported', 'png'],
       ['exported', 'pdf'],
     ]);

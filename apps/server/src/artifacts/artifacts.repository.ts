@@ -22,6 +22,7 @@ import { dbErrorCode } from '../common/db-error.js';
 import { DB } from '../db/db.provider.js';
 import { withTenant, type Db, type TenantContext, type TenantTransaction } from '../db/database.js';
 import { selectArtifactSummary, toArtifactSummary } from '../tasks/tasks.repository.js';
+import { localDate, isValidTimeZone } from '../twin/time-zone.js';
 import { renderPdf, renderPng } from './export-renderer.js';
 
 type RejectReason = ApproveRejection['reasons'][number];
@@ -222,6 +223,7 @@ export class ArtifactsRepository {
     ctx: TenantContext,
     id: string,
     format: ExportFormat,
+    tz?: string,
   ): Promise<{ file: Buffer; filename: string } | undefined> {
     return this.write(ctx, async (trx) => {
       const row = await loadArtifact(trx, id, 'share');
@@ -237,9 +239,7 @@ export class ArtifactsRepository {
       const doc = { title, date, body: buildClientDeliverable(text) };
       const file = format === 'pdf' ? await renderPdf(doc) : renderPng(doc);
       await recordEvent(trx, ctx, row, 'exported', null, format);
-      // 文件名不带客户姓名（规格 3.6）；依据报告的产物用报告日期，如“体检解读-2026-09-12”（M2 规格 2.10）
-      const report = await sourceReport(trx, row);
-      return { file, filename: `${title}-${report?.reportDate ?? date}.${format}` };
+      return { file, filename: exportFileName(row, format, tz) };
     });
   }
 
@@ -472,6 +472,36 @@ function deliverableText(row: ArtifactRow): string {
   }
   return text;
 }
+
+/**
+ * 导出文件名（产品负责人反馈的命名规则：称呼 + 内容概括 + 日期 + 第几版），如
+ * “体检报告解读 2026-10-19 第1版.pdf”。导出的是给客户的通俗版，文件名仍然不带客户姓名
+ * （M1 规格 3.6、M2 规格 2.10）。日期是这一版的生成日期，按健管师时区（没有时按北京时间）。
+ * 只用固定的概括文字、日期和数字，再去掉文件系统不允许的字符。
+ */
+export function exportFileName(
+  row: Pick<ArtifactRow, 'skill_id' | 'version' | 'created_at'>,
+  format: ExportFormat,
+  tz?: string,
+): string {
+  const summary = EXPORT_SUMMARIES[row.skill_id] ?? getSkill(row.skill_id)?.title ?? '';
+  const date =
+    tz && isValidTimeZone(tz) ? localDate(row.created_at, tz) : shanghaiDate(row.created_at);
+  const name = [summary, date, `第${row.version}版`].filter(Boolean).join(' ');
+  const safe = Array.from(name)
+    .filter((c) => c >= ' ' && !UNSAFE_FILE_CHARS.includes(c))
+    .join('')
+    .trim();
+  return `${safe}.${format}`;
+}
+
+const UNSAFE_FILE_CHARS = '\\/:*?"<>|';
+
+/** 文件名里的内容概括，和工作台产物标题一致（results.artifacts.title.summary）；没列的用技能标题 */
+export const EXPORT_SUMMARIES: Record<string, string> = {
+  'client-recent-summary': '近况小结',
+  'report-interpretation': '体检报告解读',
+};
 
 /** 导出文件上的日期按北京时间 */
 function shanghaiDate(d: Date): string {
