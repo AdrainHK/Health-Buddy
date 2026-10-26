@@ -238,7 +238,7 @@ describe('孪生计算队列', () => {
   it('合成数据生成后全量计算：每位合成客户都有状态，触发原因为 seed；再运行一次不重复计算', async () => {
     await writeDemoData(
       owner,
-      generateDemoData({ today: new Date('2026-10-15T00:00:00Z') }),
+      generateDemoData({ today: new Date() }),
       'demo-password-for-tests',
     );
     const appDb = createDb(TEST_APP_URL, 2);
