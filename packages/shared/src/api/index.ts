@@ -17,3 +17,4 @@ export * from './twin-stats.js';
 export * from './care-plans.js';
 export * from './visits.js';
 export * from './plan-library-admin.js';
+export * from './plan-stats.js';

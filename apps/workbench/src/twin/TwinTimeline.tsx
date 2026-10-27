@@ -96,6 +96,31 @@ function useEventText(): (e: TwinTimelineEvent) => string {
             kind: skillName(e.kind),
             action: t(`twin.timeline.artifactAction.${e.action}`),
           });
+        case 'care_plan': {
+          const sections = e.sections
+            .map((x) => t(`twin.timeline.planSections.${x}`))
+            .join(t('twin.timeline.separator'));
+          const action = t(`twin.timeline.carePlanAction.${e.action}`);
+          return e.endReason
+            ? t('twin.timeline.carePlanEnded', {
+                sections,
+                action,
+                reason: t(`twin.timeline.carePlanEndReasons.${e.endReason}`),
+              })
+            : t('twin.timeline.carePlan', { sections, action });
+        }
+        case 'visit':
+          return t('twin.timeline.visit', {
+            purpose: t(`twin.timeline.visitPurposes.${e.purpose}`),
+            method: t(`twin.timeline.visitMethods.${e.method}`),
+            action: t(`twin.timeline.visitAction.${e.action}`),
+          });
+        case 'visit_record':
+          return t('twin.timeline.visitRecord', {
+            date: e.visitDate,
+            method: t(`twin.timeline.visitMethods.${e.method}`),
+            excerpt: e.excerpt,
+          });
       }
     },
     [t, metricName, expertName, skillName],

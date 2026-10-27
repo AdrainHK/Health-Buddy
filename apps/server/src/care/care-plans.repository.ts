@@ -11,6 +11,7 @@ import {
   type PlanSection,
 } from '@health-buddy/shared';
 import { DB } from '../db/db.provider.js';
+import { planGoalTemplateMetrics } from '../db/plan-functions.js';
 import { withTenant, type Db, type TenantContext, type TenantTransaction } from '../db/database.js';
 import { localDate } from '../twin/time-zone.js';
 import { clientVisible } from '../twin/twin.repository.js';
@@ -102,13 +103,8 @@ export class CarePlansRepository {
       const tz = await managerTimeZone(trx, ctx, tzFallback);
       const goals = (plan.snapshot as CarePlanSnapshot).structured.sections.flatMap((s) => s.goals);
       const templateIds = [...new Set(goals.map((g) => g.templateId))];
-      const templates = templateIds.length
-        ? await trx
-            .selectFrom('plan_goal_templates')
-            .select(['id', 'params', 'metric', 'metric_param'])
-            .where('id', 'in', templateIds)
-            .execute()
-        : [];
+      // 模板以后被停用时健管师看不到它，经数据库函数读指标相关的列
+      const templates = await planGoalTemplateMetrics(trx, templateIds);
       const byId = new Map(templates.map((t) => [t.id, t]));
       const tracked: { key: string; metric: 'steps' | 'sleep_hours'; target: number }[] = [];
       const untracked = new Set<string>();

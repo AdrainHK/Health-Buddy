@@ -612,3 +612,89 @@ function findEfficacyPattern(text: string): WordingIssue[] {
     index: origin[m.index] ?? 0,
   }));
 }
+
+// ---------- M5 方案通俗版（规格 2.3、5.3、5.4） ----------
+
+/**
+ * 方案通俗版里不能出现的孪生字样（规格 2.3：出现就不能确认）：预测、状态颜色的说法、“红灯”“黄灯”。
+ * 状态名称（“需要留意”等）只给健管师看；“需要留意盐的用量”这类日常说法很常见，只拦带颜色的写法。
+ */
+export const CLIENT_TWIN_TERMS = ['孪生', '预测', '红灯', '黄灯', '需要尽快关注'] as const;
+
+/** “状态是黄”“状态显示为红”“当前为黄”“黄（需要留意）”：状态加颜色、或颜色加括号里的状态名称 */
+const CLIENT_TWIN_PATTERNS = [
+  new RegExp(
+    `(?:状态|当前)${SAME_CLAUSE}{0,5}?(?:红|黄|绿|灰)(?!肉|叶|菜|豆|枣|茶|瓜|薯|糖|酒|椒|米|萝卜|油)`,
+    'g',
+  ),
+  /(?:红|黄|绿|灰)色?[(（](?:需要|平稳|暂无)/g,
+];
+
+export function findClientTwinTerms(text: string): { term: string; index: number }[] {
+  const { text: norm, origin } = normalized(text);
+  const out = findTerms(text, CLIENT_TWIN_TERMS);
+  for (const re of CLIENT_TWIN_PATTERNS) {
+    for (const m of norm.matchAll(re)) out.push({ term: '状态颜色', index: origin[m.index] ?? 0 });
+  }
+  return out.sort((a, b) => a.index - b.index);
+}
+
+/** 通俗版里点名专家（“营养专家”“专家建议”）：专家意见原文和专家名称都不进通俗版 */
+export function findExpertMentions(
+  text: string,
+  expertNames: readonly string[],
+): { term: string; index: number }[] {
+  return findTerms(text, [...new Set([...expertNames, '专家'])]);
+}
+
+/**
+ * 保健品、膳食补充剂和代餐（规格 5.3：方案不推荐）。“可以吃点钙片”不再靠“片”字识别，靠这份词表。
+ */
+export const SUPPLEMENT_TERMS = [
+  '保健品',
+  '膳食补充剂',
+  '营养补充剂',
+  '代餐',
+  '钙片',
+  '维生素片',
+  '复合维生素',
+  '鱼油',
+  '蛋白粉',
+  '益生菌',
+  '酵素',
+] as const;
+
+/** 规格允许的固定说法（“用药调整由医生评估”），检查用药建议前遮掉 */
+const CLIENT_DRUG_ALLOWED = [
+  '用药调整由医生评估',
+  '用药调整需由医生评估',
+  '请向开药医生确认',
+  '如在服用药物',
+  '如正在服用药物',
+];
+
+/**
+ * 通俗版的用药建议：动词和“药”、胶囊、剂量或具体药名在同一分句。不把片、粒、颗当作药
+ * （“加姜片”“一颗鸡蛋”是做法），“山药”“芍药”里的药也不算。
+ */
+const CLIENT_DRUG_TARGETS = ['(?<![山芍])药', '胶囊', '剂量', ...DRUG_NAMES].join('|');
+const CLIENT_DRUG_ADVICE = new RegExp(
+  `(?:${verbs})${SAME_CLAUSE}{0,8}?(?:${CLIENT_DRUG_TARGETS})|(?:${CLIENT_DRUG_TARGETS})${SAME_CLAUSE}{0,8}?(?:${verbs})`,
+);
+
+/** 方案通俗版的药物检查：具体药名、用药建议、保健品。只给类别和位置 */
+export function findClientDrugIssues(text: string): WordingIssue[] {
+  const { text: norm0, origin } = normalized(text);
+  let norm = norm0;
+  for (const phrase of CLIENT_DRUG_ALLOWED) {
+    const p = normalizeForCompliance(phrase).text;
+    norm = norm.split(p).join(' '.repeat(p.length));
+  }
+  const out: WordingIssue[] = asIssues('drug_name', findDrugNames(text));
+  const advice = CLIENT_DRUG_ADVICE.exec(norm);
+  if (advice) {
+    out.push({ category: 'drug_advice', term: '用药建议', index: origin[advice.index] ?? 0 });
+  }
+  out.push(...asIssues('drug_advice', findTerms(text, SUPPLEMENT_TERMS)));
+  return out.sort((a, b) => a.index - b.index);
+}

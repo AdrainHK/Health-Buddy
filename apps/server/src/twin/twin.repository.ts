@@ -24,6 +24,7 @@ import {
   type TwinOrgAdminResponse,
   type TwinResponse,
   type TwinStatusRecord,
+  type PlanSection,
   type TwinTimelineEvent,
   type TwinTimelineQuery,
   type TwinTimelineResponse,
@@ -475,6 +476,9 @@ export class TwinRepository {
               'follow_up',
               'expert',
               'artifact',
+              'care_plan',
+              'visit',
+              'visit_record',
             ]
           : TWIN_TIMELINE_ORG_ADMIN_TYPES;
       const types = new Set(
@@ -779,6 +783,104 @@ export class TwinRepository {
             kind: r.kind,
             action: r.action as 'approved' | 'copied' | 'exported',
           });
+      }
+
+      // M5：方案生效、结束、被替代（只显示部分和原因，不显示方案文字）
+      if (types.has('care_plan')) {
+        // 生效和结束（被替代）各按自己的时间排序、截取，很早生效、最近才结束的方案不会漏掉结束事件
+        const activated = await trx
+          .selectFrom('care_plans')
+          .select(['id', 'sections', 'approved_at'])
+          .where('client_id', '=', clientId)
+          .where('approved_at', '<', before)
+          .orderBy('approved_at', 'desc')
+          .limit(n)
+          .execute();
+        for (const r of activated)
+          events.push({
+            type: 'care_plan',
+            id: `care_plan:${r.id}:activated`,
+            at: iso(r.approved_at),
+            planId: r.id,
+            action: 'activated',
+            sections: r.sections as PlanSection[],
+            endReason: null,
+          });
+        const closed = await trx
+          .selectFrom('care_plans')
+          .select(['id', 'sections', 'status', 'end_reason', 'ended_at'])
+          .where('client_id', '=', clientId)
+          .where('status', '!=', 'active')
+          .where('ended_at', '<', before)
+          .orderBy('ended_at', 'desc')
+          .limit(n)
+          .execute();
+        for (const r of closed)
+          events.push({
+            type: 'care_plan',
+            id: `care_plan:${r.id}:${r.status}`,
+            at: iso(r.ended_at!),
+            planId: r.id,
+            action: r.status as 'ended' | 'superseded',
+            sections: r.sections as PlanSection[],
+            endReason: r.end_reason,
+          });
+      }
+
+      // M5：随访完成、未联系上、取消（不显示重点和备注）
+      if (types.has('visit')) {
+        const rows = await trx
+          .selectFrom('visit_events as e')
+          .innerJoin('visits as v', 'v.id', 'e.visit_id')
+          .select(['e.id', 'e.action', 'e.created_at', 'v.id as visit_id', 'v.method', 'v.purpose'])
+          .where('e.client_id', '=', clientId)
+          .where('e.action', 'in', ['done', 'missed', 'cancelled'])
+          .where('e.created_at', '<', before)
+          .orderBy('e.created_at', 'desc')
+          .limit(n)
+          .execute();
+        for (const r of rows)
+          events.push({
+            type: 'visit',
+            id: `visit:${r.id}`,
+            at: iso(r.created_at),
+            visitId: r.visit_id,
+            action: r.action as 'done' | 'missed' | 'cancelled',
+            method: r.method,
+            purpose: r.purpose,
+          });
+      }
+
+      // M5：随访记录确认（日期、方式和摘要的前 50 字）
+      if (types.has('visit_record')) {
+        const rows = await trx
+          .selectFrom('visit_records')
+          .select((eb) => [
+            'id',
+            'method',
+            'snapshot',
+            'approved_at',
+            eb.fn<string>('to_char', [eb.ref('visit_date'), eb.val('YYYY-MM-DD')]).as('visit_date'),
+          ])
+          .where('client_id', '=', clientId)
+          .where('approved_at', '<', before)
+          .orderBy('approved_at', 'desc')
+          .limit(n)
+          .execute();
+        for (const r of rows) {
+          const summary = (r.snapshot as { summary?: unknown } | null)?.summary;
+          events.push({
+            type: 'visit_record',
+            id: `visit_record:${r.id}`,
+            at: iso(r.approved_at),
+            recordId: r.id,
+            visitDate: r.visit_date,
+            method: r.method,
+            excerpt: Array.from(typeof summary === 'string' ? summary : '')
+              .slice(0, 50)
+              .join(''),
+          });
+        }
       }
 
       events.sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id));
