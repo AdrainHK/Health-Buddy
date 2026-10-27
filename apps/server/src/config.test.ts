@@ -44,6 +44,15 @@ describe('config', () => {
     );
   });
 
+  it('accepts only a 32-byte base64 visit material key', () => {
+    expect(loadConfig({ ...base }).visitMaterialKey).toBeUndefined();
+    const key = Buffer.alloc(32, 1).toString('base64');
+    expect(loadConfig({ ...base, VISIT_MATERIAL_KEY: key }).visitMaterialKey).toHaveLength(32);
+    expect(() =>
+      loadConfig({ ...base, VISIT_MATERIAL_KEY: Buffer.alloc(16).toString('base64') }),
+    ).toThrow(/VISIT_MATERIAL_KEY/);
+  });
+
   it('requires both platform admin variables', () => {
     expect(loadConfig({ ...base, PLATFORM_ADMIN_EMAIL: 'a@x.com' }).platformAdmin).toBeUndefined();
   });

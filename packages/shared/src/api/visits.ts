@@ -183,13 +183,22 @@ export const visitMaterialSchema = z.object({
 });
 export type VisitMaterial = z.infer<typeof visitMaterialSchema>;
 
+/**
+ * 上传素材：粘贴的文字，或工作台在本地读出的 .txt 文件内容（source = txt；后端不解析文件）
+ */
 export const createVisitMaterialRequestSchema = z.object({
   text: z.string().trim().min(1).max(VISIT_MATERIAL_TEXT_MAX),
+  source: z.enum(['paste', 'txt']).default('paste'),
   visitId: z.uuid().optional(),
   /** 第一次为这位客户上传时必须为 true（已告知客户，Q24）；以后不再询问 */
   consentConfirmed: z.boolean().optional(),
 });
-export type CreateVisitMaterialRequest = z.infer<typeof createVisitMaterialRequestSchema>;
+export type CreateVisitMaterialRequest = z.input<typeof createVisitMaterialRequestSchema>;
+
+export const visitMaterialResponseSchema = z.object({ material: visitMaterialSchema });
+
+/** 第一次为这位客户上传素材却没勾选“已告知客户”时，400 的原因 */
+export const VISIT_MATERIAL_CONSENT_REQUIRED = 'consent_required';
 
 export const visitMaterialListResponseSchema = z.object({
   materials: z.array(visitMaterialSchema),
@@ -264,6 +273,10 @@ export type VisitRecord = z.infer<typeof visitRecordSchema>;
 export const visitRecordListResponseSchema = z.object({
   records: z.array(visitRecordSummarySchema),
 });
+export type VisitRecordListResponse = z.infer<typeof visitRecordListResponseSchema>;
+
+export const visitRecordResponseSchema = z.object({ record: visitRecordSchema });
+export type VisitRecordResponse = z.infer<typeof visitRecordResponseSchema>;
 
 export const VISIT_ADDENDUM_MAX = 1000;
 /** 补充说明（只追加，记录确认后不能修改） */

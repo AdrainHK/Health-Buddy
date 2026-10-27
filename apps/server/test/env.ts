@@ -30,6 +30,8 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     // 专家默认按正式环境处理（关闭预览）；专家相关的测试单独打开
     expertsPreview: false,
     planLibraryPreview: false,
+    // 测试专用的素材加密密钥，不是任何环境的真实密钥
+    visitMaterialKey: Buffer.alloc(32, 7),
     ...overrides,
   };
 }
