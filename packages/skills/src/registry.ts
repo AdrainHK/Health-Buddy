@@ -39,6 +39,16 @@ export const PLAN_TEMPLATES: readonly PlanTemplate[] = [
     readsTwin: true,
     defaultRequest: '请为这位客户做一次孪生复盘',
   },
+  // M5 规格 2.10：方案和随访 = 读取客户档案 → 读取数字孪生 → /方案生成 → /随访计划；
+  // 随访计划里的“方案复评”按同一次计划刚生成的方案草稿的周期排
+  {
+    id: 'plan-and-visits',
+    skills: [carePlan.id, visitSchedule.id],
+    requiresClient: true,
+    requiresReport: false,
+    readsTwin: true,
+    defaultRequest: '请为这位客户生成方案和随访计划',
+  },
 ];
 
 export function getSkill(id: string): SkillDefinition | undefined {

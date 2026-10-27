@@ -221,6 +221,14 @@ export function TwinView({
           <span className={styles.muted}>{t('twin.ai.summarizeNote')}</span>
         </div>
       )}
+      {actions.planAndVisits && shown.hasData && (
+        <div className={styles.cardActions}>
+          <Button onClick={() => actions.planAndVisits?.(client)}>
+            {t('twin.ai.planAndVisits')}
+          </Button>
+          <span className={styles.muted}>{t('twin.ai.planAndVisitsNote')}</span>
+        </div>
+      )}
       {shown.computing && (
         <p className={styles.computing} role="status" data-testid="twin-computing">
           <span className={styles.spinner} aria-hidden />

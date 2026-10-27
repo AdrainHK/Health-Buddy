@@ -692,10 +692,13 @@ export class GenerationService {
         return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
       const usesReport = run.skills.some(skillUsesReport);
       const usesTwin = run.skills.some((s) => s.usesTwin);
-      // M5 方案和随访技能：读档案 → 读数字孪生 → 读当前方案（→ 排随访日期）
-      const planKind = run.skills.find((s) => s.planContext)?.planContext;
-      const client = planKind
-        ? await this.readPlanClient(ctx, run.clientId, steps, planKind, run.planOptions ?? null)
+      // M5 方案和随访技能：读档案 → 读数字孪生 → 读当前方案（→ 选库条目 → 排随访日期）；
+      // “方案和随访”计划两步都有，一次读齐
+      const planKinds = [
+        ...new Set(run.skills.flatMap((s) => (s.planContext ? [s.planContext] : []))),
+      ];
+      const client = planKinds.length
+        ? await this.readPlanClient(ctx, run.clientId, steps, planKinds, run.planOptions ?? null)
         : usesTwin
           ? await this.readTwinClient(ctx, run.clientId, steps)
           : usesReport
@@ -1156,7 +1159,7 @@ export class GenerationService {
     ctx: TenantContext,
     clientId: string,
     steps: StepRunner,
-    kind: NonNullable<SkillDefinition['planContext']>,
+    kinds: NonNullable<SkillDefinition['planContext']>[],
     planOptions: PlanOptions | null,
   ): Promise<ClientContext | undefined> {
     const read = await steps.start('read_client', 'steps.readClient');
@@ -1172,14 +1175,17 @@ export class GenerationService {
     const twin = await this.readTwin(ctx, clientId, [], steps);
     if (!twin) return undefined;
     const readPlan = await steps.start('read_care_plan', 'steps.readCarePlan');
-    const schedule = kind === 'visit_schedule';
-    const makesPlan = kind === 'care_plan';
+    const schedule = kinds.includes('visit_schedule');
+    const makesPlan = kinds.includes('care_plan');
+    const options = planOptions ?? planOptionsSchema.parse({});
     const plan = await this.repo.planContext(ctx, clientId, {
       schedule,
+      // 同一次计划先生成方案草稿：方案复评按草稿的周期排（2.10）
+      ...(makesPlan && schedule ? { draftCycleWeeks: options.cycleWeeks } : {}),
       ...(makesPlan
         ? {
             library: {
-              options: planOptions ?? planOptionsSchema.parse({}),
+              options,
               // 过敏史只在后端和库条目比对，不进日志（Q16）
               allergyTexts: allergyTextsOf(client.snapshot),
               restriction: exerciseRestriction(client.snapshot),

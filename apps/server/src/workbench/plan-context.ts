@@ -1,4 +1,6 @@
 import {
+  addDaysIso,
+  dateInTimeZone,
   renderGoal,
   scheduleVisits,
   visitRecordStructuredSchema,
@@ -37,6 +39,11 @@ export interface PlanContextOptions {
    * restriction 是运动安全规则的原因类别（Q8）
    */
   library?: { options: PlanOptions; allergyTexts: string[]; restriction: string | null };
+  /**
+   * 想一想“方案和随访”（2.10）：同一次计划先生成的方案草稿的周期。方案复评按今天 + 周期排，
+   * 不看正在执行的旧方案
+   */
+  draftCycleWeeks?: number;
   riskTier: RiskTier | null;
   /** 有 1、2 级未处理的跟进项（第一次随访不晚于 n 天） */
   hasUrgentFollowUp: boolean;
@@ -125,12 +132,20 @@ export async function loadPlanContext(
   if (options.schedule) {
     const timeZone = await managerTimeZone(trx, ctx, options.tzFallback);
     const { rules } = await visitFrequencyRulesIn(trx);
+    const now = options.now ?? new Date();
+    const draftPlan =
+      options.draftCycleWeeks === undefined
+        ? undefined
+        : {
+            cycleWeeks: options.draftCycleWeeks,
+            reviewDate: addDaysIso(dateInTimeZone(now, timeZone), options.draftCycleWeeks * 7),
+          };
     const result = scheduleVisits({
-      now: options.now ?? new Date(),
+      now,
       timeZone,
       riskTier: options.riskTier,
       rules,
-      planReviewDate: currentPlan?.reviewDate ?? null,
+      planReviewDate: draftPlan?.reviewDate ?? currentPlan?.reviewDate ?? null,
       hasUrgentFollowUp: options.hasUrgentFollowUp,
     });
     context.schedule = {
@@ -138,6 +153,7 @@ export async function loadPlanContext(
       tierLabel: TIER_LABEL[result.tier],
       intervalDays: result.intervalDays,
       rows: result.visits,
+      ...(draftPlan ? { draftPlan } : {}),
     };
   }
   return context;
