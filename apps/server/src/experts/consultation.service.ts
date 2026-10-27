@@ -15,6 +15,7 @@ import {
 import type {
   ConsultationOrigin,
   ConsultationTrigger,
+  PlanSection,
   TaskStep,
   TaskStreamEvent,
   TwinRef,
@@ -63,6 +64,8 @@ export interface ConsultRun {
   twinRefs?: readonly TwinRef[];
   followUpItemId?: string | null;
   modelRouting?: boolean;
+  /** M5 /方案生成：按方案部分命中的专家（规格 2.5） */
+  sectionHits?: readonly { expertId: string; section: PlanSection }[];
 }
 
 /**
@@ -70,7 +73,10 @@ export interface ConsultRun {
  * 只有专家 id，不含客户资料和问题原文，存进调用记录，10 分钟内复用意见时比较。
  */
 export function expertRequestKey(
-  run: Pick<ConsultRun, 'trigger' | 'mode' | 'forced' | 'excluded' | 'bound' | 'skillId'>,
+  run: Pick<
+    ConsultRun,
+    'trigger' | 'mode' | 'forced' | 'excluded' | 'bound' | 'skillId' | 'sectionHits'
+  >,
 ): string {
   return JSON.stringify({
     // 触发方式和技能也算在内：计划或另一个技能的调用不会被当成同样的请求复用
@@ -80,6 +86,10 @@ export function expertRequestKey(
     forced: [...new Set(run.forced)].sort(),
     excluded: [...new Set(run.excluded)].sort(),
     bound: run.bound ?? null,
+    // 方案部分不同（只选饮食 / 全选）时请的专家不同，不当成同样的请求复用
+    ...(run.sectionHits?.length
+      ? { sections: [...new Set(run.sectionHits.map((h) => h.section))].sort() }
+      : {}),
   });
 }
 
@@ -202,6 +212,7 @@ export class ConsultationService {
           excluded: run.excluded,
           bound: run.bound ?? null,
           ...(run.modelRouting === false ? { modelRouting: false } : {}),
+          ...(run.sectionHits?.length ? { sectionHits: run.sectionHits } : {}),
         },
         {
           signal: io.signal,

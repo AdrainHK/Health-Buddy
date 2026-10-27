@@ -4,7 +4,8 @@
  * 1. 健管师指定（@、“一定要请”、专家中心绑定）先放进去；“不要请”的从候选里去掉。
  * 2. 规则命中（确定性）：后端标为高于、低于参考范围或没有参考范围的指标，命中登记了这个指标编码的专家。
  * 3. 模型补充：只能从专家目录里选，目录外、不可用、被排除的 id 直接丢弃。
- * 4. 上限：健管师指定 > 规则命中多的 > 模型补充的，取前 N 位；其余记为“因数量上限未调用”。
+ * 4. 上限：健管师指定 > 方案部分命中（M5 /方案生成）> 指标命中多的 > 模型补充的，取前 N 位；
+ *    其余记为“因数量上限未调用”。部分命中也记为 rule，排序在指标命中之前（M5 规格 2.5）。
  * 5. 模型路由失败：只用规则结果，不报错。
  * 6. M4“请专家看看”：健管师没补充问题文字时不用模型补充（modelRouting: false），只按规则命中。
  */
@@ -34,6 +35,8 @@ export type RoutingOutput = z.infer<typeof routingOutputSchema>;
 interface Candidate {
   expertId: string;
   selectedReason: SelectedReason;
+  /** 方案部分命中（M5）：排在指标命中之前 */
+  section: boolean;
   reasons: RoutingReason[];
   /** 规则命中的指标数，用于排序 */
   hits: number;
@@ -126,7 +129,14 @@ export async function routeExperts<C extends CallContext>(
       existing.reasons.push(reason);
       return;
     }
-    candidates.set(id, { expertId: id, selectedReason, reasons: [reason], hits, order });
+    candidates.set(id, {
+      expertId: id,
+      selectedReason,
+      section: false,
+      reasons: [reason],
+      hits,
+      order,
+    });
   };
 
   // 1. 健管师指定（指定的专家即使在“不要请”里也以指定为准；契约已禁止两者重叠）
@@ -135,7 +145,22 @@ export async function routeExperts<C extends CallContext>(
 
   let ruleOnly = false;
   if (request.mode === 'route') {
-    // 2. 规则命中
+    // 2. 规则命中：方案部分（M5），再是指标
+    for (const hit of request.sectionHits ?? []) {
+      if (isExcluded(hit.expertId) || !available.has(hit.expertId)) continue;
+      const reason: RoutingReason = { kind: 'plan_section', section: hit.section };
+      const existing = candidates.get(hit.expertId);
+      if (existing) existing.reasons.push(reason);
+      else
+        candidates.set(hit.expertId, {
+          expertId: hit.expertId,
+          selectedReason: 'rule',
+          section: true,
+          reasons: [reason],
+          hits: 0,
+          order: available.get(hit.expertId) ?? 0,
+        });
+    }
     for (const [id, reasons] of ruleHits(request)) {
       if (isExcluded(id)) continue;
       const existing = candidates.get(id);
@@ -144,6 +169,7 @@ export async function routeExperts<C extends CallContext>(
         candidates.set(id, {
           expertId: id,
           selectedReason: 'rule',
+          section: false,
           reasons,
           hits: reasons.length,
           order: available.get(id) ?? 0,
@@ -189,11 +215,11 @@ export async function routeExperts<C extends CallContext>(
     }
   }
 
-  // 4. 上限：指定 > 规则命中多的 > 模型补充的
-  const rank = { manager: 0, rule: 1, model: 2 } as const;
+  // 4. 上限：指定 > 方案部分命中 > 指标命中多的 > 模型补充的
+  const rank = (c: Candidate) =>
+    c.selectedReason === 'manager' ? 0 : c.section ? 1 : c.selectedReason === 'rule' ? 2 : 3;
   const ordered = [...candidates.values()].sort(
-    (a, b) =>
-      rank[a.selectedReason] - rank[b.selectedReason] || b.hits - a.hits || a.order - b.order,
+    (a, b) => rank(a) - rank(b) || b.hits - a.hits || a.order - b.order,
   );
   const selected = ordered.slice(0, options.maxExperts);
   const overCap = ordered.slice(options.maxExperts).map((c) => c.expertId);

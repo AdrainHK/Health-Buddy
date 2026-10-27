@@ -912,7 +912,8 @@
         "manager_request": "根据健管师的要求",
         "health_history": "根据健康史",
         "indicator_relation": "根据指标之间的关联"
-      }
+      },
+      "planSection": "方案包含{{section}}部分"
     },
     "routing": {
       "selected": "{{name}}：{{reasons}}",

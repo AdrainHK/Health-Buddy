@@ -41,6 +41,10 @@ export function useRoutingReasonLabel(): (reason: RoutingReason) => string {
               : t('experts.reasons.someIndicator'),
             direction: t(`experts.reasons.direction.${reason.direction}`),
           });
+        case 'plan_section':
+          return t('experts.reasons.planSection', {
+            section: t(`care.sections.${reason.section}`),
+          });
       }
     },
     [t, dt],

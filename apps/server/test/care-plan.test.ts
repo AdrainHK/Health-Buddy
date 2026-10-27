@@ -6,7 +6,7 @@ import {
 } from '@health-buddy/shared';
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { ExpertProvider, parseSse } from './expert-fixtures.js';
+import { ExpertProvider, opinion, parseSse } from './expert-fixtures.js';
 import { ownerDb, seedFixtures, type Fixtures } from './fixtures.js';
 import { createTestApp, loginAs } from './http.js';
 
@@ -21,6 +21,9 @@ describe('/方案生成', () => {
   const owner = ownerDb();
   const provider = new ExpertProvider();
   let app: INestApplication;
+  /** 专家预览开启（M3 Q2）：/方案生成 按方案部分请专家 */
+  let preview: INestApplication;
+  const previewProvider = new ExpertProvider();
   let f: Fixtures;
   const lib = { oat: '', peanut: '', review: '', walk: '', breath: '', veg: '', steps: '' };
 
@@ -151,16 +154,22 @@ describe('/方案生成', () => {
 
   beforeAll(async () => {
     app = await createTestApp({}, { llmProviders: { openai: provider } });
+    preview = await createTestApp(
+      { expertsPreview: true },
+      { llmProviders: { openai: previewProvider } },
+    );
   });
 
   beforeEach(async () => {
     f = await seedFixtures(owner);
     await seedLibrary();
     provider.reset();
+    previewProvider.reset();
   });
 
   afterAll(async () => {
     await app.close();
+    await preview.close();
     await owner.destroy();
   });
 
@@ -212,6 +221,95 @@ describe('/方案生成', () => {
     expect(content.clientFacing).toContain('煮开');
     expect(content.clientFacing).not.toContain('合成注意事项');
     expect(content.professional).toContain('合成注意事项');
+    // 专家预览关闭：不请专家，专业版写明
+    expect(provider.routes().some((r) => r.startsWith('expert'))).toBe(false);
+    expect(content.professional).toContain('本次未调用专家。');
+  });
+
+  it('专家预览开启：按方案部分请营养和运动康复专家，问题按部分写；意见只进专业版', async () => {
+    const a1 = await loginAs(preview, f.users.managerA1.email);
+    const task = await newTask(a1, { clientId: f.clients.a1[0] });
+    previewProvider.scripts.skill = reply();
+    const res = await send(a1, task, {
+      mode: 'craft',
+      content: '早上没时间做饭',
+      skillId: 'care-plan',
+      planOptions: OPTIONS,
+    }).expect(200);
+    expect(stepKinds(res.text)).toContain('route_experts');
+    const routes = previewProvider.routes();
+    expect(routes).toEqual(expect.arrayContaining(['expert:nutrition', 'expert:exercise-rehab']));
+    expect(routes).not.toContain('expert:mental-health');
+    const expertCall = previewProvider.calls.find((c) => c.expertId === 'nutrition')!;
+    expect(JSON.stringify(expertCall.messages)).toContain(
+      '请就这位客户的【饮食 / 运动】方案给出要点和注意事项',
+    );
+    // 选中原因记为方案部分
+    const consultation = await owner
+      .selectFrom('expert_consultations')
+      .select('routing')
+      .where('task_id', '=', task)
+      .executeTakeFirstOrThrow();
+    const selected = (
+      consultation.routing as { selected: { expertId: string; reasons: unknown[] }[] }
+    ).selected;
+    expect(selected.find((s) => s.expertId === 'nutrition')?.reasons).toContainEqual({
+      kind: 'plan_section',
+      section: 'diet',
+    });
+    // 方案的提示词里有专家意见摘要；草稿的专业版有专家意见，通俗版没有专家
+    const skillCall = previewProvider.calls.findLast((c) => c.route === 'skill')!;
+    expect(JSON.stringify(skillCall.messages)).toContain('AI 专家意见');
+    const [artifact] = await artifactsOf(task);
+    const content = artifact!.content as { clientFacing: string; professional: string };
+    expect(content.professional).not.toContain('本次未调用专家');
+    expect(content.clientFacing).not.toContain('专家');
+  });
+
+  it('专家预览开启：运动康复专家建议尽快就医时，运动部分按安全规则处理', async () => {
+    const a1 = await loginAs(preview, f.users.managerA1.email);
+    const task = await newTask(a1, { clientId: f.clients.a1[0] });
+    previewProvider.scripts['expert:exercise-rehab'] = {
+      json: {
+        ...opinion('该客户描述的情况需要先就医评估。'),
+        referral: { needed: true, urgency: 'urgent', to: '心内科医生', reason: '需先评估' },
+      },
+    };
+    previewProvider.scripts.skill = reply({
+      sections: [
+        {
+          section: 'diet',
+          professional: '早餐选高纤维的做法。',
+          clientFacing: '早餐换成燕麦粥。',
+          goals: [],
+        },
+        {
+          section: 'exercise',
+          professional: '专家建议先就医。',
+          clientFacing: '建议先就医评估再开始运动。',
+          goals: [],
+        },
+      ],
+      exercises: [],
+      overview: {
+        basis: ['资料里没有'],
+        focus: ['规律三餐'],
+        medicalReview: '运动康复专家建议先就医评估。',
+        changes: [],
+      },
+    });
+    await send(a1, task, {
+      mode: 'craft',
+      content: '',
+      skillId: 'care-plan',
+      planOptions: OPTIONS,
+    }).expect(200);
+    const skillCall = JSON.stringify(
+      previewProvider.calls.findLast((c) => c.route === 'skill')!.messages,
+    );
+    expect(skillCall).toContain('运动安全规则：专家建议尽快就医');
+    expect(skillCall).not.toContain(lib.walk);
+    expect(await artifactsOf(task)).toHaveLength(1);
   });
 
   it('没传方案选项时按默认（全选、8 周）记下', async () => {

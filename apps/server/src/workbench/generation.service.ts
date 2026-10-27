@@ -3,6 +3,7 @@ import { GatewayError, unknownNumbers } from '@health-buddy/ai-engine';
 import {
   EMERGENCY_NOTICE,
   EXPERTS,
+  planSectionExperts,
   EXPERT_MENTION_NOTE,
   consultationDigest,
   detectEmergencyKeywords,
@@ -49,6 +50,7 @@ import {
   withAskNotice,
   type SkillDefinition,
   type WordingIssue,
+  PLAN_SECTION_ZH,
   planFreeTexts,
   redactPlanContext,
 } from '@health-buddy/skills';
@@ -501,7 +503,15 @@ export class GenerationService {
     ctx: TenantContext,
     q: Pick<
       ConsultRun,
-      'taskId' | 'clientId' | 'reportId' | 'trigger' | 'skillId' | 'mode' | 'forced' | 'excluded'
+      | 'taskId'
+      | 'clientId'
+      | 'reportId'
+      | 'trigger'
+      | 'skillId'
+      | 'mode'
+      | 'forced'
+      | 'excluded'
+      | 'sectionHits'
     > & {
       bound?: string | null;
       question: string;
@@ -756,11 +766,29 @@ export class GenerationService {
             ? await this.skillConsultation(ctx, run, skill.id, client, steps, io)
             : undefined;
         if (io.signal.aborted) throw new GatewayError('aborted');
-        const skillInput = used
-          ? { ...input, expertDigest: consultationDigest(used.opinions, expertName) }
-          : input;
         // 疑似急症：关键词，或专家、汇总标出的信号（和危机信号一样各自识别，再取“或”）
         const emergency = emergencyKeywords || Boolean(used?.emergency);
+        // /方案生成：专家标了急症信号或“需尽快就医”的转介时，运动部分同样只写“先就医评估”（规格 2.5）
+        const urgentReferral = Boolean(
+          used?.opinions.some((o) => o.opinion.referral.urgency === 'urgent'),
+        );
+        const library = input.plan?.library;
+        const planInput =
+          library && !library.exerciseRestriction && (emergency || urgentReferral)
+            ? {
+                ...input,
+                plan: {
+                  ...input.plan!,
+                  library: restrictExercise(
+                    library,
+                    urgentReferral ? '专家建议尽快就医' : '有疑似急症信号',
+                  ),
+                },
+              }
+            : input;
+        const skillInput = used
+          ? { ...planInput, expertDigest: consultationDigest(used.opinions, expertName) }
+          : planInput;
         const crisisSignal = crisis || Boolean(used?.crisis);
         const step = await steps.start('run_skill', skill.runStepLabel ?? 'steps.runSkill');
         const userMessage = skill.buildUserMessage(skillInput);
@@ -798,11 +826,16 @@ export class GenerationService {
             if (invented.length) wording.push({ category: 'invented_number', term: '', index: 0 });
           }
           const clientFacing = (data as { clientFacing?: unknown }).clientFacing;
+          const clientTexts =
+            skill.clientFacingTexts?.(data as never) ??
+            (typeof clientFacing === 'string' ? [clientFacing] : []);
           const mentions =
-            used && skill.clientFacing && typeof clientFacing === 'string'
-              ? expertMentions(
-                  clientFacing,
-                  EXPERTS.map((e) => e.meta.name),
+            used && skill.clientFacing
+              ? clientTexts.flatMap((text) =>
+                  expertMentions(
+                    text,
+                    EXPERTS.map((e) => e.meta.name),
+                  ),
                 )
               : [];
           // M5：结构校验（随访日期和输入一致、条目在候选里、参数在范围里），只记类别
@@ -859,7 +892,10 @@ export class GenerationService {
           (emergency ? EMERGENCY_HEADER : '') +
           (used
             ? `${rendered.professional}\n\n${renderConsultationSections(used.synthesis, used.opinions, expertName, { synthesisFailed: used.synthesisFailed })}`
-            : rendered.professional);
+            : // /方案生成 没请专家（预览关闭、次数用完）时写明（规格 2.5）
+              skill.planContext === 'care_plan'
+              ? `${rendered.professional}\n\n本次未调用专家。`
+              : rendered.professional);
 
         // 保存前重新确认：会话仍然有效、任务没有断开、客户仍归当前健管师
         if (io.signal.aborted) throw new GatewayError('aborted');
@@ -935,6 +971,23 @@ export class GenerationService {
   ): Promise<UsedConsultation | undefined> {
     let options = run.experts ?? { trigger: 'skill_auto' as const, forced: [], excluded: [] };
     let origin: ConsultationOrigin | null = null;
+    // M5 /方案生成：按方案部分命中专家，问题是“就这位客户的【饮食 / 运动】方案给出要点和注意事项”（规格 2.5）
+    const planSections = client.plan?.library?.options.sections;
+    const sectionHits = planSections
+      ? planSectionExperts(planSections, [
+          run.managerRequest,
+          ...(client.snapshot.healthHistory ?? []).map((h) => h.content),
+          ...planFreeTexts(client.plan),
+        ])
+      : [];
+    const question = planSections
+      ? [
+          `请就这位客户的【${planSections.map((s) => PLAN_SECTION_ZH[s]).join(' / ')}】方案给出要点和注意事项。`,
+          run.managerRequest.trim() ? `健管师的要求：${run.managerRequest.trim()}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n')
+      : run.managerRequest;
     const reuse = async (
       previous: ExpertConsultation,
       labelKey: string,
@@ -989,7 +1042,8 @@ export class GenerationService {
         mode: 'route',
         forced: options.forced,
         excluded: options.excluded,
-        question: run.managerRequest,
+        sectionHits,
+        question,
       });
       if (recent) return reuse(recent, 'steps.reuseRecentExperts', new Date(recent.createdAt));
     }
@@ -1011,9 +1065,10 @@ export class GenerationService {
           mode: 'route',
           forced: options.forced,
           excluded: options.excluded,
+          ...(sectionHits.length ? { sectionHits } : {}),
           source: {
             client: client.snapshot,
-            question: run.managerRequest,
+            question,
             identifiers: client.identifiers,
             earlierTexts: await this.repo.managerTexts(ctx, run.taskId),
           },
