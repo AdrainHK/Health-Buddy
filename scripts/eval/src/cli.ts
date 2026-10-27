@@ -15,6 +15,7 @@
  *                                  M4：/孪生小结、“请专家看看”的意见；问一问 @孪生项 的用例在 ask 里，
  *                                  “请专家看看”的路由用例在 expert-routing 里
  *
+ *   pnpm eval --suite care-plan
  *   pnpm eval --suite visit-schedule
  *                                  M5：/随访计划（日期照抄、重点相关、措辞和越界指令）
  *
@@ -44,6 +45,7 @@ import {
   twinAskEvalCases,
   twinSummaryEvalCases,
   visitScheduleEvalCases,
+  carePlanEvalCases,
 } from '@health-buddy/skills';
 import {
   runAskEval,
@@ -56,6 +58,7 @@ import {
   runSynthesisEval,
   runTwinAskEval,
   runTwinSummaryEval,
+  runCarePlanEval,
   runVisitScheduleEval,
   summarize,
   type RunResult,
@@ -109,7 +112,8 @@ const expertCases = pick(
 );
 const expertRoutingCases = pick('expert-routing', [...routingEvalCases, ...twinRoutingEvalCases]);
 const twinSummaryCases = pick('twin-summary', twinSummaryEvalCases);
-// M5：/随访计划（规格 5.5）
+// M5：/方案生成、/随访计划（规格 5.5）
+const carePlanCases = pick('care-plan', carePlanEvalCases);
 const visitScheduleCases = pick('visit-schedule', visitScheduleEvalCases);
 const twinConsultCases = pick('twin-consult', twinConsultEvalCases);
 const expertSynthesisCases = pick('expert-synthesis', synthesisEvalCases);
@@ -127,7 +131,7 @@ const all: RunResult[] = [];
 for (const provider of providers) {
   const gateway = createGateway({ ...config, defaultProvider: provider, routes: {} });
   console.log(
-    `\n${provider}（${config.defaultModels[provider]}）：${cases.length + askCases.length + extractionCases.length + interpretationCases.length + outlineCases.length + planCases.length + expertCases.length + expertRoutingCases.length + expertSynthesisCases.length + twinSummaryCases.length + twinConsultCases.length + twinAskCases.length + visitScheduleCases.length} 个用例 × ${runs} 次`,
+    `\n${provider}（${config.defaultModels[provider]}）：${cases.length + askCases.length + extractionCases.length + interpretationCases.length + outlineCases.length + planCases.length + expertCases.length + expertRoutingCases.length + expertSynthesisCases.length + twinSummaryCases.length + twinConsultCases.length + twinAskCases.length + visitScheduleCases.length + carePlanCases.length} 个用例 × ${runs} 次`,
   );
   const results = [
     ...(await runEval({ gateway, provider, cases, runs, useJudge })),
@@ -156,6 +160,7 @@ for (const provider of providers) {
     ...(await runTwinAskEval({ gateway, provider, cases: twinAskCases, runs, useJudge })),
     ...(await runTwinSummaryEval({ gateway, provider, cases: twinSummaryCases, runs, useJudge })),
     ...(await runVisitScheduleEval({ gateway, provider, cases: visitScheduleCases, runs })),
+    ...(await runCarePlanEval({ gateway, provider, cases: carePlanCases, runs })),
     ...(await runExpertEval({ gateway, provider, cases: twinConsultCases, runs, useJudge })),
   ];
   all.push(...results);

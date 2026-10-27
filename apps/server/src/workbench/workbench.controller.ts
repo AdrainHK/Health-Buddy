@@ -4,6 +4,7 @@ import {
   EXPERTS_PER_CALL_MAX,
   TWIN_CONSULT_DEFAULT_REQUEST,
   addExpertRequestSchema,
+  planOptionsSchema,
   reconsultRequestSchema,
   returnArtifactRequestSchema,
   sendMessageRequestSchema,
@@ -121,6 +122,11 @@ export class WorkbenchController {
       throw tooManyRequests();
     }
     const usesTwin = Boolean(skill?.usesTwin || plan?.skills.some((id) => getSkill(id)?.usesTwin));
+    // /方案生成（直接调用或计划里有）：记下方案选项，没传时用默认（全选、8 周）；资料太少时拒绝
+    const makesPlan =
+      skill?.planContext === 'care_plan' ||
+      Boolean(plan?.skills.some((id) => getSkill(id)?.planContext === 'care_plan'));
+    const planOptions = makesPlan ? planOptionsSchema.parse(input.planOptions ?? {}) : null;
     this.acquire(session);
 
     const turn = await this.claim(session, (claim) =>
@@ -141,6 +147,8 @@ export class WorkbenchController {
           twinRefs: input.twinRefs,
           ...(input.followUpItemId ? { followUpItemId: input.followUpItemId } : {}),
           requiresTwinData: usesTwin,
+          requiresPlanData: makesPlan,
+          planOptions,
           twinConsult: input.twinConsult,
         },
         claim,
@@ -178,6 +186,7 @@ export class WorkbenchController {
           managerRequest: input.content,
           requestMessageId: turn.value.managerMessageId,
           parent: undefined,
+          planOptions,
           experts: {
             trigger: 'skill_auto',
             forced: input.expertRefs,
@@ -263,6 +272,7 @@ export class WorkbenchController {
           return skill && skillUsesReport(skill) ? 'optional' : 'none';
         },
         (id) => Boolean(getSkill(id)?.usesTwin),
+        (id) => getSkill(id)?.planContext === 'care_plan',
       ),
     );
     await this.regenerate(run, req, res, session, undefined, {

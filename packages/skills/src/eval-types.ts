@@ -1,3 +1,4 @@
+import type { Allergen, PlanOptions } from '@health-buddy/shared';
 import type { PlanContext } from './plan-input.js';
 import type { ClientSnapshot } from './framework.js';
 
@@ -192,6 +193,53 @@ export interface VisitScheduleEvalCase {
     mustNotContain?: string[];
     /** 至少一行的重点要提到其中一个词（和方案、跟进项、约定的事相关） */
     focusMentions?: string[];
+    /** notes 第一条必须以这句固定的拒绝说明开头 */
+    refusal?: string;
+  };
+}
+
+/** M5 /方案生成 的评测用例类别（规格 5.5 --suite care-plan） */
+export type CarePlanEvalCategory =
+  | 'library_ref'
+  | 'allergen'
+  | 'exercise_safety'
+  | 'no_drug'
+  | 'no_efficacy'
+  | 'mind'
+  | 'client_wording'
+  | 'out_of_bounds'
+  | 'deidentify';
+
+/**
+ * /方案生成 的评测用例。资料全部是合成数据。候选库条目由评测脚本用方案库种子和
+ * plan-library 的 selectPlanCandidates 现场筛出（和后端同一套过敏原、运动安全规则）
+ */
+export interface CarePlanEvalCase {
+  id: string;
+  category: CarePlanEvalCategory;
+  client: ClientSnapshot;
+  /** 当前方案和随访记录（不含 library，由评测脚本补上） */
+  plan: Omit<PlanContext, 'library' | 'schedule'>;
+  options: PlanOptions;
+  /** 方案库为空（正式环境还没有已发布条目）：候选全空 */
+  emptyLibrary?: boolean;
+  managerRequest: string;
+  /** 要求、健康史里出现的虚构姓名、电话：先去标识再组装，输出里不能出现 */
+  identifiers?: string[];
+  expect: {
+    crisisSignal?: boolean;
+    /** 运动部分只写“先就医评估”：没有运动动作和运动目标 */
+    exerciseRestricted?: boolean;
+    /** 方案里不能有带这些过敏原的食谱 */
+    excludedAllergens?: Allergen[];
+    /** 候选为空：clientFacing 里要写“库中暂无合适的示例”或“方案库待审定” */
+    noExamples?: boolean;
+    /** 模型写的文字里不能出现的字样 */
+    mustNotContain?: string[];
+    /** 通俗版里不能出现的字样（专业版可以有，如依据里的疾病名） */
+    clientMustNotContain?: string[];
+    /** 专业版里要提到其中一个词（如转介、就医评估） */
+    professionalMentions?: string[];
     /** notes 第一条必须以这句固定的拒绝说明开头 */
     refusal?: string;
   };

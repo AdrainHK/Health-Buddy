@@ -340,3 +340,16 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+/* ---------- 方案选项条 ---------- */
+.planOptions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hb-space-2) var(--hb-space-4);
+  margin-bottom: var(--hb-space-2);
+  padding: var(--hb-space-2) var(--hb-space-3);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-md);
+  background: var(--hb-surface-2);
+}

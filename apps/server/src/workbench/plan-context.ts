@@ -3,12 +3,19 @@ import {
   scheduleVisits,
   visitRecordStructuredSchema,
   type CarePlanSnapshot,
+  type Allergen,
+  type ExerciseCategory,
+  type GoalMetric,
   type GoalParam,
+  type LibraryTag,
+  type MealType,
+  type PlanOptions,
   type PlanSection,
   type RiskTier,
   type VisitMethod,
 } from '@health-buddy/shared';
-import type { PlanContext } from '@health-buddy/skills';
+import { selectPlanCandidates } from '@health-buddy/plan-library';
+import type { PlanContext, PlanLibraryContext } from '@health-buddy/skills';
 import type { TenantContext, TenantTransaction } from '../db/database.js';
 import { dateText, managerTimeZone } from '../care/common.js';
 import { visitFrequencyRulesIn } from '../plan-library/visit-frequency.repository.js';
@@ -25,6 +32,11 @@ const TIER_LABEL = { high: '高', medium: '中', low: '低', none: '未分层' }
 export interface PlanContextOptions {
   /** /随访计划：按频次规则排出日期（Q17） */
   schedule: boolean;
+  /**
+   * /方案生成：读候选库条目和目标模板。allergyTexts 是健康史里过敏史的原文（只在内存里比对，Q16）；
+   * restriction 是运动安全规则的原因类别（Q8）
+   */
+  library?: { options: PlanOptions; allergyTexts: string[]; restriction: string | null };
   riskTier: RiskTier | null;
   /** 有 1、2 级未处理的跟进项（第一次随访不晚于 n 天） */
   hasUrgentFollowUp: boolean;
@@ -109,6 +121,7 @@ export async function loadPlanContext(
   });
 
   const context: PlanContext = { currentPlan, recentRecords };
+  if (options.library) context.library = await loadLibrary(trx, options.library);
   if (options.schedule) {
     const timeZone = await managerTimeZone(trx, ctx, options.tzFallback);
     const { rules } = await visitFrequencyRulesIn(trx);
@@ -128,4 +141,87 @@ export async function loadPlanContext(
     };
   }
   return context;
+}
+
+/**
+ * 候选库条目（5.2）：只有健管师能看到的条目（已发布；预览环境含待审定，由行级安全和预览开关决定），
+ * 筛选规则（过敏原排除、运动安全规则、按部分取目标模板）在 plan-library 里，评测共用。
+ */
+async function loadLibrary(
+  trx: TenantTransaction,
+  opts: NonNullable<PlanContextOptions['library']>,
+): Promise<PlanLibraryContext> {
+  const [recipeRows, exerciseRows, templateRows] = await Promise.all([
+    trx
+      .selectFrom('plan_library_recipes')
+      .select([
+        'id',
+        'version',
+        'name',
+        'meal_types',
+        'tags',
+        'allergens',
+        'ingredients',
+        'steps',
+        'nutrition_per_serving',
+      ])
+      .orderBy('code')
+      .execute(),
+    trx
+      .selectFrom('plan_library_exercises')
+      .select([
+        'id',
+        'version',
+        'name',
+        'category',
+        'intensity',
+        'steps',
+        'key_points',
+        'manager_cautions',
+      ])
+      .orderBy('code')
+      .execute(),
+    trx
+      .selectFrom('plan_goal_templates')
+      .select(['id', 'version', 'section', 'text', 'params', 'metric'])
+      .orderBy('code')
+      .execute(),
+  ]);
+  return selectPlanCandidates(
+    {
+      recipes: recipeRows.map((r) => ({
+        id: r.id,
+        version: r.version,
+        name: r.name,
+        mealTypes: r.meal_types as MealType[],
+        tags: r.tags as LibraryTag[],
+        allergens: r.allergens as Allergen[],
+        ingredients: (r.ingredients as { name: string; householdAmount: string }[]).map((i) => ({
+          name: i.name,
+          householdAmount: i.householdAmount,
+        })),
+        steps: r.steps as string[],
+        energyKcal: (r.nutrition_per_serving as { energyKcal?: number } | null)?.energyKcal ?? null,
+      })),
+      exercises: exerciseRows.map((e) => ({
+        id: e.id,
+        version: e.version,
+        name: e.name,
+        category: e.category as ExerciseCategory,
+        intensity: e.intensity as 'low' | 'moderate',
+        steps: e.steps as string[],
+        keyPoints: e.key_points as string[],
+        managerCautions: e.manager_cautions,
+      })),
+      goalTemplates: templateRows.map((t) => ({
+        id: t.id,
+        version: t.version,
+        section: t.section as PlanSection,
+        text: t.text,
+        params: t.params as GoalParam[],
+        metric: t.metric as GoalMetric | null,
+      })),
+    },
+    opts,
+  );
 }

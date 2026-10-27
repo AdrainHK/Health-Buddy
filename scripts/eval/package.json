@@ -12,6 +12,7 @@
   "dependencies": {
     "@health-buddy/ai-engine": "workspace:*",
     "@health-buddy/experts": "workspace:*",
+    "@health-buddy/plan-library": "workspace:*",
     "@health-buddy/seed": "workspace:*",
     "@health-buddy/shared": "workspace:*",
     "@health-buddy/skills": "workspace:*",

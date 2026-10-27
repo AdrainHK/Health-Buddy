@@ -130,7 +130,10 @@ export type WordingCategory =
   | 'disease_risk'
   | 'invented_number'
   // M5 方案库条目（规格 2.4、4.2）
-  | 'efficacy_claim';
+  | 'efficacy_claim'
+  // M5 方案通俗版（规格 2.3）：孪生状态颜色和预测、风险分层字样
+  | 'twin_term'
+  | 'risk_tier';
 
 export interface WordingIssue {
   category: WordingCategory;
@@ -697,4 +700,39 @@ export function findClientDrugIssues(text: string): WordingIssue[] {
   }
   out.push(...asIssues('drug_advice', findTerms(text, SUPPLEMENT_TERMS)));
   return out.sort((a, b) => a.index - b.index);
+}
+
+/**
+ * 方案通俗版的每一段文字（规格 2.3、5.3）：禁用词、疾病和人群说法、“风险”“患有”这类判断、药物和保健品、
+ * 孪生状态颜色和预测、功效承诺。生成时命中就带纠正说明重试一次（确认时后端再查一遍）。
+ * 风险分层字样由调用方另查（guardrails 的 findRiskTierMentions）。
+ */
+export function checkPlanClientText(text: string): WordingIssue[] {
+  return [
+    ...findBannedTerms(text).map((b) => ({
+      category: 'banned_term' as const,
+      term: b.term,
+      index: b.index,
+    })),
+    ...asIssues('presumed_disease', findTerms(text, LIBRARY_DISEASE_TERMS)),
+    ...asIssues('judgment', findTerms(text, JUDGMENT_PHRASES)),
+    ...findClientDrugIssues(text),
+    ...asIssues('twin_term', findClientTwinTerms(text)),
+    ...asIssues('efficacy_claim', findTerms(text, EFFICACY_TERMS)),
+    ...findEfficacyPattern(text),
+  ];
+}
+
+/** 方案专业版（只给健管师）：禁用词、具体药名和用药建议、功效承诺 */
+export function checkPlanProfessionalText(text: string): WordingIssue[] {
+  return [
+    ...findBannedTerms(text).map((b) => ({
+      category: 'banned_term' as const,
+      term: b.term,
+      index: b.index,
+    })),
+    ...checkAdviceWording(text),
+    ...asIssues('efficacy_claim', findTerms(text, EFFICACY_TERMS)),
+    ...findEfficacyPattern(text),
+  ];
 }

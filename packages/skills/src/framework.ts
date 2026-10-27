@@ -206,9 +206,10 @@ export interface SkillDefinition<S extends z.ZodType = z.ZodType> extends SkillM
   numberCheckTexts?(output: z.output<S>): string[];
   /**
    * 方案和随访的上下文（M5 规格 5.2）：后端组装 SkillInput.plan，执行步骤加“正在读取数字孪生”
-   * “正在读取当前方案”；visit_schedule 再加“正在排随访日期”（日期由后端算，Q17）
+   * “正在读取当前方案”；visit_schedule 再加“正在排随访日期”（日期由后端算，Q17），
+   * care_plan 再加“正在选择食谱和动作”（候选库条目、目标模板和方案选项由后端组装）
    */
-  planContext?: 'visit_schedule';
+  planContext?: 'visit_schedule' | 'care_plan';
   /**
    * 结构校验（M5 规格 5.2）：随访行数和日期必须和输入一致、条目必须在候选里、参数必须在范围里。
    * 返回不合格的类别（不带内容）；有问题时带 validationNote 重试一次，仍不合格不保存草稿
