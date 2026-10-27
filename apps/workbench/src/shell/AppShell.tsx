@@ -11,6 +11,7 @@ import { listExperts } from '../api/experts';
 import { isAbortError } from '../api/http';
 import { ExpertCenter, type ExpertListState } from '../experts/ExpertCenter';
 import { ExpertsContext } from '../experts/ExpertsContext';
+import { getTodayVisits } from '../api/care';
 import { getTwinLevels, listFollowUps } from '../api/twin';
 import {
   createTask,
@@ -20,7 +21,12 @@ import {
   listTasks,
   updateTask,
 } from '../api/workbench';
-import { FollowUpCenter, type FollowUpListState } from '../twin/FollowUpCenter';
+import { PlanLibrary } from '../care/PlanLibrary';
+import {
+  FollowUpCenter,
+  type FollowUpListState,
+  type TodayVisitsState,
+} from '../twin/FollowUpCenter';
 import {
   TwinActionsContext,
   useTwinRefLabel,
@@ -73,10 +79,17 @@ export function AppShell({ account }: AppShellProps = {}) {
   );
   /** 识别记录有变化（对话里上传、识别结束、核对确认），对话区和结果区据此刷新 */
   const [uploadsVersion, setUploadsVersion] = useState(0);
-  /** 中间区域显示对话、专家库（M3 规格 2.1）还是今日跟进清单（M4 规格 2.6，Q12） */
-  const [centerView, setCenterView] = useState<'chat' | 'experts' | 'followUps'>('chat');
+  /** 中间区域显示对话、专家库（M3 规格 2.1）、今日跟进清单（M4 规格 2.6，Q12）还是方案库（M5 规格 2.4） */
+  const [centerView, setCenterView] = useState<'chat' | 'experts' | 'followUps' | 'library'>(
+    'chat',
+  );
   /** 今日跟进清单（所有客户的未处理项目），左侧栏角标也用它 */
   const [followUpList, setFollowUpList] = useState<FollowUpListState>({
+    status: 'loading',
+    data: null,
+  });
+  /** 今日随访（M5 规格 2.7，Q19）：今日跟进入口的第二个分组，角标是两组之和 */
+  const [todayVisits, setTodayVisits] = useState<TodayVisitsState>({
     status: 'loading',
     data: null,
   });
@@ -157,6 +170,12 @@ export function AppShell({ account }: AppShellProps = {}) {
       .catch((err: unknown) => {
         if (!isAbortError(err)) setFollowUpList((list) => ({ status: 'error', data: list.data }));
       });
+    setTodayVisits((v) => ({ status: 'loading', data: v.data }));
+    getTodayVisits(controller.signal)
+      .then((data) => setTodayVisits({ status: 'ready', data }))
+      .catch((err: unknown) => {
+        if (!isAbortError(err)) setTodayVisits((v) => ({ status: 'error', data: v.data }));
+      });
     getTwinLevels(controller.signal)
       .then((levels) => setTwinLevels(new Map(levels.map((l) => [l.clientId, l.level]))))
       .catch(() => {});
@@ -223,6 +242,11 @@ export function AppShell({ account }: AppShellProps = {}) {
 
   const openExpertCenter = () => {
     setCenterView('experts');
+    closeDrawerOnNarrow();
+  };
+
+  const openLibrary = () => {
+    setCenterView('library');
     closeDrawerOnNarrow();
   };
 
@@ -461,9 +485,13 @@ export function AppShell({ account }: AppShellProps = {}) {
               onRetry: refreshTasks,
             }}
             experts={{ active: centerView === 'experts', onOpen: openExpertCenter }}
+            library={{ active: centerView === 'library', onOpen: openLibrary }}
             followUps={{
               active: centerView === 'followUps',
-              count: followUpList.data?.openCount ?? null,
+              count:
+                followUpList.data || todayVisits.data
+                  ? (followUpList.data?.openCount ?? 0) + (todayVisits.data?.count ?? 0)
+                  : null,
               onOpen: openFollowUps,
             }}
             clientList={{
@@ -497,6 +525,18 @@ export function AppShell({ account }: AppShellProps = {}) {
                 onRetry={() => setTwinSummaryVersion((v) => v + 1)}
                 onOpenClient={openClientById}
                 onChanged={onFollowUpsChanged}
+                visits={todayVisits}
+                onVisitsRetry={() => setTwinSummaryVersion((v) => v + 1)}
+                onVisitsChanged={onFollowUpsChanged}
+              />
+            )}
+            {centerView === 'library' && (
+              <PlanLibrary
+                narrow={narrow}
+                onOpenMenu={() => {
+                  setResultsOpen(false);
+                  setDrawerOpen(true);
+                }}
               />
             )}
             {/* 看专家库时对话区仍保持挂载（只是隐藏），正在进行的生成不会被打断 */}

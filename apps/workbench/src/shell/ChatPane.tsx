@@ -42,6 +42,7 @@ import { uploadErrorKey, type UploadErrorKey } from '../reports/errors';
 import { useTwinRefLabel } from '../twin/TwinActions';
 import reportStyles from '../reports/Reports.module.css';
 import { UploadCard } from '../reports/UploadCard';
+import { VisitMaterials } from '../care/VisitMaterials';
 import styles from './ChatPane.module.css';
 import { isReadOnlyTask } from './taskGroups';
 
@@ -226,6 +227,8 @@ export function ChatPane({
   const expertName = useExpertName();
   const [conversation, dispatch] = useReducer(conversationReducer, emptyConversation);
   const [loadState, setLoadState] = useState<'idle' | 'loading' | 'error'>('idle');
+  /** 随访素材的上传表单（M5 规格 2.9）：只在已关联客户的任务里有 */
+  const [materialTaskId, setMaterialTaskId] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   // 默认“做一做”，与 WorkBuddy 的默认模式一致。
   const [mode, setMode] = useState<TaskMode>('craft');
@@ -1129,53 +1132,69 @@ export function ChatPane({
     </div>
   ) : null;
 
+  // 随访素材只属于已关联客户的任务（专家中心的任务不用）；换任务后上传表单自动收起
+  const materialClientId = task?.clientId && !boundExpertId ? task.clientId : null;
+  const materialOpen = materialTaskId !== null && materialTaskId === task?.id;
   const composer = (
-    <Composer
-      inputRef={inputRef}
-      text={text}
-      onTextChange={setText}
-      mode={mode}
-      onModeChange={setMode}
-      skill={skill}
-      onSkillChange={onSkillChange}
-      client={client}
-      onClientChange={onClientChange}
-      // 专家中心的任务不能用技能（Q9）
-      skills={boundExpertId ? EMPTY : skills}
-      clients={clients}
-      disabled={readOnly || loadState !== 'idle'}
-      generating={generating}
-      onSubmit={() =>
-        void submit({
-          text,
-          mode,
-          skill,
-          client,
-          report,
-          expertRefs,
-          excludedExperts,
-          twinRefs,
-          twinConsult,
-          followUpItemId,
-        })
-      }
-      canSendEmpty={canSendEmpty({ text, mode, skill, client, report, twinRefs, twinConsult })}
-      onStop={onStop}
-      notice={noticeNode}
-      reports={reportOptions}
-      report={report}
-      onReportChange={setReport}
-      onAttachFiles={(files) => void onAttachFiles(files)}
-      experts={mentionable}
-      expertRefs={expertRefs}
-      {...(mentionable.length > 0 && !readOnly ? { onExpertRefsChange: changeExpertRefs } : {})}
-      maxExperts={maxExperts}
-      {...(boundExpertId ? { lockedMode: 'ask' as const } : {})}
-      expertBar={expertBar ?? twinConsultBar}
-      twinItems={boundExpertId ? EMPTY : twinItems}
-      twinRefs={twinRefs}
-      {...(!readOnly && !boundExpertId ? { onTwinRefsChange: changeTwinRefs } : {})}
-    />
+    <>
+      {materialClientId && (
+        <VisitMaterials
+          clientId={materialClientId}
+          readOnly={readOnly}
+          uploading={materialOpen && !readOnly}
+          onCloseUpload={() => setMaterialTaskId(null)}
+        />
+      )}
+      <Composer
+        inputRef={inputRef}
+        text={text}
+        onTextChange={setText}
+        mode={mode}
+        onModeChange={setMode}
+        skill={skill}
+        onSkillChange={onSkillChange}
+        client={client}
+        onClientChange={onClientChange}
+        // 专家中心的任务不能用技能（Q9）
+        skills={boundExpertId ? EMPTY : skills}
+        clients={clients}
+        disabled={readOnly || loadState !== 'idle'}
+        generating={generating}
+        onSubmit={() =>
+          void submit({
+            text,
+            mode,
+            skill,
+            client,
+            report,
+            expertRefs,
+            excludedExperts,
+            twinRefs,
+            twinConsult,
+            followUpItemId,
+          })
+        }
+        canSendEmpty={canSendEmpty({ text, mode, skill, client, report, twinRefs, twinConsult })}
+        onStop={onStop}
+        notice={noticeNode}
+        reports={reportOptions}
+        report={report}
+        onReportChange={setReport}
+        onAttachFiles={(files) => void onAttachFiles(files)}
+        experts={mentionable}
+        expertRefs={expertRefs}
+        {...(mentionable.length > 0 && !readOnly ? { onExpertRefsChange: changeExpertRefs } : {})}
+        maxExperts={maxExperts}
+        {...(boundExpertId ? { lockedMode: 'ask' as const } : {})}
+        expertBar={expertBar ?? twinConsultBar}
+        twinItems={boundExpertId ? EMPTY : twinItems}
+        twinRefs={twinRefs}
+        {...(!readOnly && !boundExpertId ? { onTwinRefsChange: changeTwinRefs } : {})}
+        {...(materialClientId && !readOnly && task
+          ? { onUploadMaterial: () => setMaterialTaskId(task.id) }
+          : {})}
+      />
+    </>
   );
 
   const hasMessages = conversation.messages.length > 0 || uploads.length > 0;

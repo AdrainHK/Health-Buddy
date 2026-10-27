@@ -1,0 +1,342 @@
+/* 方案与随访、今日随访、方案库（M5 规格 2.4、2.6、2.7）。只用 --hb-* 令牌 */
+
+.visit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-1);
+  min-width: 0;
+  padding: var(--hb-space-3);
+  border: 1px solid var(--hb-border);
+  border-left: 4px solid var(--hb-border-strong);
+  border-radius: var(--hb-radius-md);
+  background: var(--hb-surface);
+}
+
+.visit[data-purpose='plan_review'],
+.visit[data-purpose='follow_up'] {
+  border-left-color: var(--hb-brand);
+}
+
+.visit[data-overdue] {
+  border-left-color: var(--hb-twin-yellow);
+}
+
+.due,
+.status {
+  padding: 0 var(--hb-space-2);
+  border-radius: var(--hb-radius-sm);
+  background: var(--hb-surface-2);
+  color: var(--hb-text-2);
+  font-size: var(--hb-text-xs);
+  white-space: nowrap;
+}
+
+.due[data-overdue] {
+  background: var(--hb-twin-yellow-bg);
+  color: var(--hb-twin-yellow-text);
+}
+
+.plan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-2);
+  min-width: 0;
+}
+
+.subTitle {
+  margin: var(--hb-space-1) 0 0;
+  font-size: var(--hb-text-sm);
+  font-weight: 600;
+}
+
+.goalGroups,
+.goalList,
+.plainList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-1);
+  margin: 0;
+  font-size: var(--hb-text-sm);
+}
+
+.goalGroups,
+.plainList {
+  padding: 0;
+  list-style: none;
+}
+
+.goalList {
+  padding-left: var(--hb-space-5);
+}
+
+.adherenceItem,
+.historyItem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--hb-space-1) var(--hb-space-3);
+  min-width: 0;
+}
+
+.adherenceItem strong {
+  flex-basis: 100%;
+}
+
+.historyItem > span {
+  flex: 1 1 14em;
+  min-width: 0;
+}
+
+.recordBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-2);
+  min-width: 0;
+}
+
+.formRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hb-space-2);
+}
+
+.formRow > * {
+  flex: 1 1 9em;
+  min-width: 0;
+}
+
+.groupTitle {
+  display: flex;
+  align-items: baseline;
+  gap: var(--hb-space-2);
+  margin: var(--hb-space-4) 0 var(--hb-space-2);
+  font-size: var(--hb-text-md);
+  font-weight: 600;
+}
+
+.groupTitle:first-of-type {
+  margin-top: 0;
+}
+
+.groupCount {
+  color: var(--hb-text-3);
+  font-size: var(--hb-text-sm);
+  font-weight: 400;
+}
+
+/* ---------- 方案库 ---------- */
+.libraryTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hb-space-1);
+  margin: var(--hb-space-3) 0;
+}
+
+.libraryTab {
+  padding: var(--hb-space-1) var(--hb-space-3);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-full);
+  background: var(--hb-surface);
+  color: var(--hb-text-2);
+  font: inherit;
+  font-size: var(--hb-text-sm);
+  cursor: pointer;
+}
+
+.libraryTab[aria-selected='true'] {
+  border-color: var(--hb-brand);
+  background: var(--hb-brand-soft);
+  color: var(--hb-text);
+}
+
+.libraryTab:focus-visible {
+  box-shadow: var(--hb-focus-ring);
+  outline: none;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hb-space-2);
+  margin-bottom: var(--hb-space-3);
+}
+
+.filters > * {
+  flex: 1 1 10em;
+  min-width: 0;
+}
+
+.itemList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.itemButton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-1);
+  width: 100%;
+  min-width: 0;
+  padding: var(--hb-space-3);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-md);
+  background: var(--hb-surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.itemButton:hover {
+  border-color: var(--hb-border-strong);
+}
+
+.itemButton:focus-visible {
+  box-shadow: var(--hb-focus-ring);
+  outline: none;
+}
+
+.itemName {
+  font-size: var(--hb-text-sm);
+  font-weight: 600;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hb-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chip {
+  padding: 0 var(--hb-space-2);
+  border-radius: var(--hb-radius-sm);
+  background: var(--hb-surface-2);
+  color: var(--hb-text-2);
+  font-size: var(--hb-text-xs);
+}
+
+.chip[data-kind='allergen'] {
+  background: var(--hb-twin-yellow-bg);
+  color: var(--hb-twin-yellow-text);
+}
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-3);
+  min-width: 0;
+}
+
+.cautions {
+  padding: var(--hb-space-2) var(--hb-space-3);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-md);
+  background: var(--hb-surface-2);
+  font-size: var(--hb-text-sm);
+}
+
+/* ---------- 产物里的结构化内容编辑器 ---------- */
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-3);
+  min-width: 0;
+}
+
+.editorGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-2);
+  min-width: 0;
+  margin: 0;
+  padding: var(--hb-space-3);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-md);
+}
+
+.editorRow,
+.scheduleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--hb-space-2);
+  min-width: 0;
+}
+
+.editorRow > label,
+.scheduleRow > label {
+  flex: 1 1 8em;
+  min-width: 0;
+}
+
+.scheduleRow > .wide {
+  flex-basis: 100%;
+}
+
+.scheduleList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.scheduleRow {
+  padding-bottom: var(--hb-space-3);
+  border-bottom: 1px solid var(--hb-border);
+}
+
+.goalEditor {
+  display: flex;
+  flex: 1 1 14em;
+  flex-direction: column;
+  gap: var(--hb-space-1);
+  min-width: 0;
+}
+
+.goalText {
+  font-size: var(--hb-text-sm);
+}
+
+/* ---------- 对话区的随访素材 ---------- */
+.materials {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-2);
+  margin-bottom: var(--hb-space-2);
+}
+
+.materialList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hb-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.materialCard {
+  display: flex;
+  align-items: center;
+  gap: var(--hb-space-2);
+  min-width: 0;
+  max-width: 100%;
+  padding: var(--hb-space-1) var(--hb-space-1) var(--hb-space-1) var(--hb-space-3);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-md);
+  background: var(--hb-surface-2);
+  font-size: var(--hb-text-sm);
+}
+
+.materialText {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

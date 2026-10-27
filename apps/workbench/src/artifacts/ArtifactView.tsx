@@ -22,6 +22,24 @@ import {
   updateArtifact,
 } from '../api/artifacts';
 import { isAbortError } from '../api/http';
+import {
+  AllergenPanel,
+  FollowUpResolvePanel,
+  ScheduleNote,
+  useAllergenConflicts,
+} from '../care/M5ReviewNotes';
+import {
+  CarePlanEditor,
+  RecordEditor,
+  ScheduleEditor,
+  carePlanProblems,
+  exerciseProblems,
+  recordProblems,
+  scheduleProblems,
+  type StructuredProblem,
+  useLibraryData,
+} from '../care/StructuredEditors';
+import { type M5Structured, parseM5Structured, sameStructured } from '../care/m5Artifact';
 import { ExpertReviewNotes } from '../experts/ExpertReviewNotes';
 import { useDynamicT, useStepLabel } from '../i18n/dynamic';
 import { useArtifactSource, useArtifactTitle } from './artifactTitle';
@@ -40,7 +58,8 @@ import {
 } from './textMarks';
 
 const VIEWS = ['clientFacing', 'professional'] as const;
-type View = (typeof VIEWS)[number];
+/** structured：M5 方案、随访计划、随访记录的结构化内容（替换条目、改参数、改日程、补填日期和方式） */
+type View = (typeof VIEWS)[number] | 'structured';
 
 const REJECT_REASONS: readonly string[] = approveRejectionSchema.shape.reasons.element.options;
 type RejectReason = (typeof approveRejectionSchema.shape.reasons.element.options)[number];
@@ -127,11 +146,22 @@ export function ArtifactView({
   const { artifact, hints, sourceReport } = detail;
   /** 只有专业版的产物（/面谈提纲，规格 2.8）：编辑专业版，没有通俗版、复制和导出 */
   const clientFacing = artifact.clientFacing;
-  const views: readonly View[] = clientFacing ? VIEWS : ['professional'];
   const saved = clientFacing ? artifact.content.clientFacing : artifact.content.professional;
+  /** M5 产物已保存的结构化内容；其他产物为 null */
+  const savedStructured = useMemo(() => parseM5Structured(artifact), [artifact]);
+  const views: readonly View[] = [
+    ...(clientFacing ? VIEWS : (['professional'] as const)),
+    ...(savedStructured ? (['structured'] as const) : []),
+  ];
 
   const [view, setView] = useState<View>(clientFacing ? 'clientFacing' : 'professional');
   const [text, setText] = useState(saved);
+  /** 结构化内容的本地修改 */
+  const [structured, setStructured] = useState<M5Structured | null>(savedStructured);
+  /** 方案用到的食谱和过敏史有匹配时，健管师勾选“已核对过敏原”（M5 Q16） */
+  const [allergensChecked, setAllergensChecked] = useState(false);
+  /** 随访记录确认时一并标为已处理的跟进项（M5 Q26） */
+  const [resolveIds, setResolveIds] = useState<string[]>([]);
   const [baseHash, setBaseHash] = useState(artifact.contentHash);
   /** 本地编辑基于的已保存内容 */
   const [baseText, setBaseText] = useState(saved);
@@ -165,23 +195,45 @@ export function ArtifactView({
   // 服务端内容变了（保存、刷新），上一次的检查结果以新内容为准。
   // 别处改过、而本地有未保存的修改时，不悄悄覆盖本地修改，提示健管师选择。
   if (baseHash !== artifact.contentHash) {
-    const keepEdits = ownHashRef.current !== artifact.contentHash && editable && text !== baseText;
+    const keepEdits =
+      ownHashRef.current !== artifact.contentHash &&
+      editable &&
+      (text !== baseText || !sameStructured(structured, savedStructured));
     setBaseHash(artifact.contentHash);
     setBaseText(saved);
     setRejection(null);
     setAcknowledged(false);
+    setAllergensChecked(false);
     if (keepEdits) {
       setNewerLoaded(true);
       if (notice?.kind === 'stale') setNotice(null);
     } else {
       setText(saved);
+      setStructured(savedStructured);
       setNewerLoaded(false);
     }
   }
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  const dirty = text !== saved;
+  const structuredDirty = !sameStructured(structured, savedStructured);
+  const dirty = text !== saved || structuredDirty;
+  const library = useLibraryData(structured?.kind === 'care_plan');
+  const allergenHits = useAllergenConflicts(artifact.clientId, savedStructured, library);
+  const hasAllergenConflict =
+    (allergenHits?.length ?? 0) > 0 ||
+    (rejection?.reasons.includes('allergens_not_acknowledged') ?? false);
+  /** 结构化内容里前端能看出的问题（参数超范围、日期不合规等）：有问题时不能保存 */
+  const structuredProblems: StructuredProblem[] = !structured
+    ? []
+    : structured.kind === 'care_plan'
+      ? [
+          ...carePlanProblems(structured.value, library),
+          ...(exerciseProblems(structured.value) ? (['exerciseRange'] as const) : []),
+        ]
+      : structured.kind === 'visit_schedule'
+        ? scheduleProblems(structured.value)
+        : recordProblems(structured.value);
   const unsavedEdits = editable && dirty;
 
   useEffect(() => {
@@ -233,21 +285,27 @@ export function ArtifactView({
     | 'criticalValueBlock'
     | 'riskTierBlock'
     | 'criticalBlock'
+    | 'structuredBlock'
+    | 'allergenBlock'
     | null = !editable
     ? null
     : newerLoaded
       ? 'newerBlock'
       : localBanned
         ? 'bannedBlock'
-        : dirty
-          ? 'unsaved'
-          : hasCriticalValue
-            ? 'criticalValueBlock'
-            : hasRiskTier
-              ? 'riskTierBlock'
-              : hasCritical && !acknowledged
-                ? 'criticalBlock'
-                : null;
+        : structuredProblems.length > 0
+          ? 'structuredBlock'
+          : dirty
+            ? 'unsaved'
+            : hasCriticalValue
+              ? 'criticalValueBlock'
+              : hasRiskTier
+                ? 'riskTierBlock'
+                : hasCritical && !acknowledged
+                  ? 'criticalBlock'
+                  : hasAllergenConflict && !allergensChecked
+                    ? 'allergenBlock'
+                    : null;
 
   const showNewerArtifact =
     newerArtifactId !== null &&
@@ -257,6 +315,7 @@ export function ArtifactView({
   /** 放弃本地修改，载入服务端的最新内容 */
   const reloadLatest = () => {
     setText(saved);
+    setStructured(savedStructured);
     setNewerLoaded(false);
     setNotice(null);
   };
@@ -296,6 +355,7 @@ export function ArtifactView({
         content: clientFacing
           ? { professional: artifact.content.professional, clientFacing: text }
           : { professional: text, clientFacing: '' },
+        ...(structured && structuredDirty ? { structured: structured.value } : {}),
       });
       ownHashRef.current = next.artifact.contentHash;
       setNewerLoaded(false);
@@ -311,6 +371,12 @@ export function ArtifactView({
           contentHash: artifact.contentHash,
           acknowledgedCritical: hasCritical ? acknowledged : false,
           ...(artifact.riskTierSuggestion ? { adoptRiskTier: adoptTier } : {}),
+          ...(savedStructured?.kind === 'care_plan'
+            ? { acknowledgedAllergens: hasAllergenConflict && allergensChecked }
+            : {}),
+          ...(savedStructured?.kind === 'visit_record' && resolveIds.length
+            ? { resolveFollowUpItemIds: resolveIds }
+            : {}),
         });
         setRejection(null);
         onDetail(next);
@@ -331,6 +397,20 @@ export function ArtifactView({
             text: saved,
           });
           if (err.reasons.includes('critical_not_acknowledged')) setAcknowledged(false);
+          if (err.reasons.includes('allergens_not_acknowledged')) setAllergensChecked(false);
+          if (
+            savedStructured &&
+            err.reasons.some((r) =>
+              [
+                'library_item_unavailable',
+                'goal_param_out_of_range',
+                'schedule_mismatch',
+                'record_incomplete',
+              ].includes(r),
+            )
+          ) {
+            setView('structured');
+          }
           if (
             clientFacing &&
             err.reasons.some(
@@ -499,7 +579,9 @@ export function ArtifactView({
             onClick={() => setView(id)}
             onKeyDown={onTabKeyDown}
           >
-            {t(`results.artifacts.views.${id}`)}
+            {id === 'structured'
+              ? t(`care.editor.tabs.${savedStructured?.kind ?? 'care_plan'}`)
+              : t(`results.artifacts.views.${id}`)}
           </button>
         ))}
       </div>
@@ -515,7 +597,28 @@ export function ArtifactView({
             {t('results.artifacts.reportCorrected', { date: sourceReport.reportDate })}
           </p>
         )}
-        {view === 'professional' ? (
+        {view === 'structured' && structured ? (
+          structured.kind === 'care_plan' ? (
+            <CarePlanEditor
+              value={structured.value}
+              library={library}
+              disabled={!editable || working}
+              onChange={(value) => setStructured({ kind: 'care_plan', value })}
+            />
+          ) : structured.kind === 'visit_schedule' ? (
+            <ScheduleEditor
+              value={structured.value}
+              disabled={!editable || working}
+              onChange={(value) => setStructured({ kind: 'visit_schedule', value })}
+            />
+          ) : (
+            <RecordEditor
+              value={structured.value}
+              disabled={!editable || working}
+              onChange={(value) => setStructured({ kind: 'visit_record', value })}
+            />
+          )
+        ) : view === 'professional' ? (
           <>
             <p className={styles.note}>
               {clientFacing
@@ -618,6 +721,30 @@ export function ArtifactView({
             acknowledged={acknowledged}
             disabled={!editable || working}
             onAcknowledge={setAcknowledged}
+          />
+        )}
+
+        {savedStructured?.kind === 'care_plan' && hasAllergenConflict && (
+          <AllergenPanel
+            conflicts={allergenHits ?? []}
+            library={library}
+            showAcknowledge={isDraft}
+            acknowledged={allergensChecked}
+            disabled={!editable || working}
+            onAcknowledge={setAllergensChecked}
+          />
+        )}
+
+        {savedStructured?.kind === 'visit_schedule' && isDraft && (
+          <ScheduleNote count={savedStructured.value.rows.length} />
+        )}
+
+        {savedStructured?.kind === 'visit_record' && isDraft && artifact.clientId && (
+          <FollowUpResolvePanel
+            clientId={artifact.clientId}
+            selected={resolveIds}
+            disabled={!editable || working}
+            onChange={setResolveIds}
           />
         )}
 
@@ -741,11 +868,20 @@ export function ArtifactView({
             {approveBlock && (
               <p className={styles.blockNote}>{t(`results.artifacts.review.${approveBlock}`)}</p>
             )}
+            {structuredProblems.length > 0 && (
+              <ul className={styles.blockNote} data-testid="structured-problems">
+                {structuredProblems.map((p) => (
+                  <li key={p}>{t(`care.editor.problems.${p}`)}</li>
+                ))}
+              </ul>
+            )}
             <div className={styles.actions}>
               {/* 保存按钮统一用主色（验收反馈 1）；有未保存的修改时“确认”不能点，不会同时有两个可点的主色按钮 */}
               <Button
                 variant="primary"
-                disabled={!editable || working || !dirty || newerLoaded}
+                disabled={
+                  !editable || working || !dirty || newerLoaded || structuredProblems.length > 0
+                }
                 onClick={save}
               >
                 {busy === 'save'

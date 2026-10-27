@@ -21,6 +21,7 @@ import { type ConsultationListState, ExpertsTab } from '../experts/ExpertsTab';
 import { ClientForm } from '../record/ClientForm';
 import { ClientRecord } from '../record/ClientRecord';
 import { ReviewTab } from '../reports/ReviewTab';
+import { CareView } from '../care/CareView';
 import { TwinView } from '../twin/TwinView';
 import styles from './ResultsPanel.module.css';
 import { isReadOnlyTask } from './taskGroups';
@@ -71,7 +72,7 @@ export interface ResultsPanelProps {
   twinRefreshKey?: number;
 }
 
-type ClientView = 'twin' | 'record';
+type ClientView = 'twin' | 'care' | 'record';
 
 /** 右侧结果区：产物预览和审核、客户档案、修改记录（M1 规格 3.1、3.6；M2 规格 2.2） */
 export function ResultsPanel({
@@ -96,7 +97,7 @@ export function ResultsPanel({
 }: ResultsPanelProps) {
   const { t } = useTranslation();
   const [tab, setTabState] = useState<Tab>('artifacts');
-  /** 客户标签的两个子视图：孪生（默认）和档案（M2 原样，M4 规格 2.1） */
+  /** 客户标签的子视图：孪生（默认）、方案与随访（M5 规格 2.1）和档案（M2 原样，M4 规格 2.1） */
   const [clientView, setClientView] = useState<ClientView>('twin');
   /**
    * 第一次 @客户 时结果区正打开着产物：不抢焦点，只在客户标签上显示提示点（Q27）。
@@ -568,7 +569,7 @@ export function ResultsPanel({
         {tab === 'client' && !creatingClient && client && (
           <>
             <div className={styles.subViews} role="group" aria-label={t('twin.views.label')}>
-              {(['twin', 'record'] as const).map((v) => (
+              {(['twin', 'care', 'record'] as const).map((v) => (
                 <button
                   key={v}
                   type="button"
@@ -580,6 +581,13 @@ export function ResultsPanel({
                 </button>
               ))}
             </div>
+            {clientView === 'care' && (
+              <CareView
+                client={client}
+                refreshKey={`${refreshKey ?? ''}:${twinRefreshKey}`}
+                {...(onTwinChanged ? { onChanged: onTwinChanged } : {})}
+              />
+            )}
             {clientView === 'twin' ? (
               <TwinView
                 client={client}
@@ -588,7 +596,7 @@ export function ResultsPanel({
                 onOpenRecord={() => setClientView('record')}
                 {...(onTwinChanged ? { onTwinChanged } : {})}
               />
-            ) : (
+            ) : clientView === 'record' ? (
               <ClientRecord
                 client={client}
                 refreshKey={`${refreshKey ?? ''}:${recordVersion}`}
@@ -599,7 +607,7 @@ export function ResultsPanel({
                   setTab('review');
                 }}
               />
-            )}
+            ) : null}
           </>
         )}
         {tab === 'client' && !creatingClient && !client && (

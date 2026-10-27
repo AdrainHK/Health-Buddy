@@ -30,7 +30,8 @@
     "clients": "客户",
     "noClients": "还没有客户",
     "loadingClients": "正在加载客户…",
-    "clientLabel": "{{name}}，孪生状态：{{level}}"
+    "clientLabel": "{{name}}，孪生状态：{{level}}",
+    "library": "方案库"
   },
   "chat": {
     "untitled": "新任务",
@@ -170,7 +171,8 @@
       "consultBar": "将请专家看看：{{items}}。可以补充想问的问题，也可以直接发送",
       "separator": "、",
       "cancelConsult": "不请专家"
-    }
+    },
+    "uploadMaterial": "上传随访素材"
   },
   "steps": {
     "readClient": "读取客户档案",
@@ -320,7 +322,9 @@
         "criticalBlock": "请先勾选“已知悉”危急指标",
         "criticalValueBlock": "通俗版含危急指标数值，删去并保存后才能确认",
         "newerBlock": "请先选择载入最新内容或保留你的修改",
-        "riskTierBlock": "通俗版含风险分层字样，删去并保存后才能确认"
+        "riskTierBlock": "通俗版含风险分层字样，删去并保存后才能确认",
+        "structuredBlock": "结构化内容里有不合规的地方，改好并保存后才能确认",
+        "allergenBlock": "请先勾选“已核对过敏原”"
       },
       "critical": {
         "title": "危急指标",
@@ -1032,6 +1036,7 @@
     "views": {
       "label": "客户视图",
       "twin": "孪生",
+      "care": "方案与随访",
       "record": "档案"
     },
     "disclaimer": "仅供参考，非医疗诊断",
@@ -1442,6 +1447,402 @@
       "tooMany": "操作太频繁，请稍后再试",
       "network": "网络连接失败，请检查网络后重试",
       "unknown": "出错了，请稍后再试"
+    },
+    "groups": {
+      "alerts": "异常跟进",
+      "visits": "今日随访",
+      "count": "{{count}} 项"
+    },
+    "visitsEmpty": "今天没有到期或逾期的随访",
+    "visitsLoadFailed": "今日随访加载失败",
+    "addVisitLabel": "为{{name}}的{{kind}}加一次随访"
+  },
+  "care": {
+    "loading": "正在加载方案与随访…",
+    "loadFailed": "方案与随访加载失败",
+    "retry": "重试",
+    "notFound": "找不到这位客户的方案与随访",
+    "separator": "、",
+    "sections": {
+      "diet": "饮食",
+      "exercise": "运动",
+      "routine": "作息",
+      "mind": "心理"
+    },
+    "plan": {
+      "title": "当前方案",
+      "none": "还没有生效的方案",
+      "noneHint": "方案草稿经健管师审核确认后才生效。",
+      "dates": "生效日期 {{start}} · 周期 {{weeks}} 周 · 复评日期 {{review}}",
+      "includes": "包含：{{sections}}",
+      "goals": "行为目标",
+      "noGoals": "这一部分没有行为目标",
+      "goalUnavailable": "目标模板已停用，请查看全文",
+      "viewFull": "查看全文",
+      "copy": "复制给客户",
+      "copied": "已复制通俗版，可以粘贴发给客户",
+      "copyFailed": "复制失败，请重试",
+      "exportPdf": "导出 PDF",
+      "exportPng": "导出图片",
+      "exportFailed": "导出失败，请重试",
+      "noArtifact": "客户转入后，原来的方案产物不能复制和导出，只能查看全文",
+      "end": "结束方案",
+      "endReason": "结束原因",
+      "endReasonNone": "请选择",
+      "endReasonRequired": "请选择结束原因",
+      "endReasons": {
+        "cycle_completed": "周期结束",
+        "client_paused": "客户要求暂停",
+        "needs_medical_review": "需要先就医评估",
+        "other": "其他"
+      },
+      "endSubmit": "确认结束",
+      "ending": "正在结束…",
+      "cancel": "取消",
+      "endConflict": "方案已经结束或被替代，已刷新",
+      "endFailed": "结束方案失败，请重试",
+      "status": {
+        "active": "生效中",
+        "ended": "已结束",
+        "superseded": "已被替代"
+      }
+    },
+    "full": {
+      "title": "方案全文",
+      "professional": "专业版（只给健管师）",
+      "clientFacing": "通俗版",
+      "close": "关闭",
+      "loading": "正在加载方案全文…",
+      "loadFailed": "方案全文加载失败"
+    },
+    "adherence": {
+      "title": "执行情况",
+      "note": "按日常监测计算，只显示，不生成跟进项，也不改孪生状态。",
+      "metrics": {
+        "steps": "每天步数",
+        "sleep_hours": "每晚睡眠时长"
+      },
+      "units": {
+        "steps": "步",
+        "sleep_hours": "小时"
+      },
+      "target": "{{metric}}：目标 {{target}} {{unit}}",
+      "window": "近 {{days}} 天：平均 {{average}} {{unit}}，达到目标 {{met}} 天（有数据 {{withData}} 天）",
+      "windowNoData": "近 {{days}} 天：没有监测数据",
+      "noData": "没有监测数据，无法看执行情况",
+      "untracked": "需在随访时了解",
+      "loadFailed": "执行情况加载失败"
+    },
+    "visits": {
+      "title": "随访日程",
+      "empty": "没有待处理的随访",
+      "add": "加一次随访",
+      "purposes": {
+        "routine": "常规随访",
+        "plan_review": "方案复评",
+        "follow_up": "跟进项回访",
+        "adhoc": "临时随访"
+      },
+      "methods": {
+        "phone": "电话",
+        "wechat": "微信",
+        "in_person": "面谈",
+        "video": "视频"
+      },
+      "statuses": {
+        "planned": "待随访",
+        "done": "已完成",
+        "missed": "未联系上",
+        "cancelled": "已取消",
+        "superseded": "已被新计划替代",
+        "pending_plan": "待方案生效"
+      },
+      "line": "{{date}} · {{purpose}} · {{method}}",
+      "overdue": "已逾期 {{count}} 天",
+      "dueToday": "今天到期",
+      "missedBefore": "上次未联系上",
+      "noFocus": "没有写重点",
+      "openClient": "打开客户",
+      "openClientLabel": "打开{{name}}",
+      "handle": "处理",
+      "handleLabel": "处理{{name}}的随访（{{date}}）",
+      "loadFailed": "随访日程加载失败",
+      "form": {
+        "date": "日期",
+        "method": "方式",
+        "purpose": "目的",
+        "focus": "重点（可以空，最多 {{max}} 字）",
+        "add": "加入日程",
+        "adding": "正在加入…",
+        "cancel": "取消",
+        "mode": "处理方式",
+        "modes": {
+          "done": "完成",
+          "missed": "未联系上",
+          "reschedule": "改期",
+          "cancel": "取消随访"
+        },
+        "record": "关联的随访记录",
+        "recordNone": "不记录，写一句备注",
+        "recordLoading": "正在加载随访记录…",
+        "note": "备注（最多 {{max}} 字）",
+        "noteRequired": "不关联随访记录时，请写一句备注",
+        "missedDate": "顺延到",
+        "newDate": "新日期",
+        "dateRequired": "请选择日期",
+        "dateRange": "日期不能早于今天，也不能超过 6 个月后",
+        "cancelReason": "取消原因",
+        "cancelReasonNone": "请选择",
+        "cancelReasonRequired": "请选择取消原因",
+        "cancelReasons": {
+          "client_paused": "客户暂停服务",
+          "contacted_elsewhere": "已在其他渠道联系",
+          "duplicate": "重复",
+          "other": "其他"
+        },
+        "submit": "确定",
+        "submitting": "正在保存…"
+      },
+      "errors": {
+        "badRequest": "填写的内容不符合要求，请检查日期和备注",
+        "notFound": "这次随访已不存在，已刷新",
+        "conflict": "这次随访已经处理过，已刷新",
+        "tooMany": "操作太频繁，请稍后再试",
+        "network": "网络连接失败，请重试",
+        "unknown": "保存失败，请重试"
+      }
+    },
+    "records": {
+      "title": "随访记录",
+      "empty": "还没有确认的随访记录",
+      "line": "{{date}} · {{method}}",
+      "open": "查看全文",
+      "close": "收起",
+      "loading": "正在加载随访记录…",
+      "loadFailed": "随访记录加载失败",
+      "summary": "摘要",
+      "feedback": "客户反馈的情况",
+      "topics": {
+        "diet": "饮食",
+        "exercise": "运动",
+        "routine": "作息",
+        "mood": "心理和情绪",
+        "discomfort": "身体不适",
+        "medication": "用药情况",
+        "other": "其他"
+      },
+      "planProgress": "方案执行情况",
+      "agreements": "约定的事和下次随访建议",
+      "attentionPoints": "需要健管师关注的点",
+      "historySuggestions": "建议更新健康史",
+      "openQuestions": "下次随访要了解的情况",
+      "nothing": "没有提到",
+      "addenda": "补充说明",
+      "addendumAdd": "写补充说明",
+      "addendumLabel": "补充说明（记录确认后不能修改，只能追加，最多 {{max}} 字）",
+      "addendumSubmit": "追加",
+      "addendumSaving": "正在保存…",
+      "addendumFailed": "补充说明保存失败，请重试",
+      "addendumCancel": "取消",
+      "historyLine": "{{category}}：{{content}}"
+    },
+    "history": {
+      "title": "历史方案",
+      "empty": "没有历史方案",
+      "line": "{{start}} 至 {{end}} · {{sections}} · {{status}}"
+    },
+    "editor": {
+      "tabs": {
+        "care_plan": "食谱、动作和目标",
+        "visit_schedule": "随访日程表",
+        "visit_record": "日期和方式"
+      },
+      "planNote": "示例食谱、动作和行为目标只能从方案库里选。替换或删除条目后，请核对通俗版里对应的段落。",
+      "libraryFailed": "方案库加载失败，暂时不能替换条目",
+      "goals": "行为目标",
+      "addGoal": "加一个目标",
+      "removeGoal": "删除{{section}}的第 {{index}} 个目标",
+      "goalUnavailable": "目标模板已停用，请删除或换一个",
+      "param": "{{name}}（{{min}}–{{max}}{{unit}}）",
+      "paramOutOfRange": "参数超出了模板允许的范围",
+      "recipes": "示例一周食谱",
+      "noRecipes": "没有示例食谱",
+      "slot": "第 {{day}} 天 · {{meal}}",
+      "day": "第几天",
+      "dayN": "第 {{day}} 天",
+      "addRecipe": "加一份食谱",
+      "slotTaken": "这一餐已经有食谱",
+      "exercises": "动作和放松练习",
+      "noExercises": "没有动作",
+      "exercise": "第 {{index}} 项",
+      "frequency": "每周几次（1–7）",
+      "minutes": "每次几分钟（1–120）",
+      "addExercise": "加一项动作",
+      "itemUnavailable": "已不在库中，请替换",
+      "removeItem": "删除{{name}}",
+      "remove": "删除",
+      "choose": "请选择",
+      "scheduleNote": "日期不能早于今天、不能超过 6 个月后，也不能重复。确认后才写入随访日程。",
+      "schedule": "随访日程表",
+      "rowDate": "第 {{index}} 次 · 日期",
+      "removeRow": "删除第 {{index}} 次随访",
+      "addRow": "加一行",
+      "visitDate": "随访日期",
+      "problems": {
+        "goalUnavailable": "有目标模板已停用，请删除或换一个",
+        "goalRange": "有目标参数超出了模板允许的范围",
+        "itemUnavailable": "有食谱或动作已不在库中，请替换",
+        "exerciseRange": "动作的次数或时长超出了范围",
+        "scheduleEmpty": "随访日程至少要有一行",
+        "scheduleRange": "有随访日期为空、早于今天或超过 6 个月后",
+        "scheduleDuplicate": "有两次随访在同一天",
+        "focusTooLong": "重点超出了字数上限",
+        "recordIncomplete": "请填写随访日期和方式",
+        "recordFuture": "随访日期不能在今天之后"
+      }
+    },
+    "review": {
+      "allergenTitle": "方案用到的食谱和客户的过敏史有匹配，请核对",
+      "allergenLine": "{{recipe}}：含{{allergen}}",
+      "allergenAck": "已核对过敏原",
+      "scheduleWrites": "确认后将写入 {{count}} 次随访；这位客户以前由随访计划排出、还没到期的随访会标为“已被新计划替代”，手动加的随访和方案复评不受影响。",
+      "resolveTitle": "可以一并标为“已处理（已电话联系）”的跟进项",
+      "resolveLine": "{{kind}}：{{basis}}"
+    },
+    "materials": {
+      "list": "随访素材",
+      "card": "随访素材 · {{date}} · {{count}} 字",
+      "linked": "关联 {{date}} 的随访",
+      "delete": "删除 {{date}} 上传的随访素材",
+      "deleteFailed": "删除素材失败，请重试",
+      "title": "上传随访素材",
+      "note": "粘贴聊天记录、通话后的笔记，或选择 .txt 文件。原文加密保存，只有你能用来整理随访记录；整理成的记录确认 30 天后、或上传 30 天后一直没有使用的，原文会被删除。",
+      "textLabel": "素材文字（最多 {{max}} 字）",
+      "count": "{{count}} / {{max}} 字",
+      "chooseTxt": "选择 .txt 文件",
+      "visit": "关联的随访",
+      "noVisit": "不关联",
+      "consent": "已告知客户本次沟通内容会被整理成服务记录",
+      "upload": "上传",
+      "uploading": "正在上传…",
+      "cancel": "取消",
+      "problems": {
+        "empty": "请粘贴素材文字或选择 .txt 文件",
+        "tooLong": "素材超过 {{max}} 字，请分成几份上传",
+        "consent": "第一次为这位客户上传素材，请先勾选“已告知客户”"
+      },
+      "errors": {
+        "tooLong": "素材超过 {{max}} 字，请分成几份上传",
+        "consent": "第一次为这位客户上传素材，请先勾选“已告知客户”",
+        "dailyLimit": "今天上传的素材已达上限，请明天再试",
+        "notConfigured": "素材的加密存储还没有配置，暂时不能上传，请联系平台管理员",
+        "notFound": "这位客户或这次随访已不存在，请刷新后重试",
+        "failed": "上传失败，请重试",
+        "fileFailed": "读取文件失败，请确认是 .txt 文件"
+      }
+    }
+  },
+  "library": {
+    "title": "方案库",
+    "intro": "平台维护的食谱、运动和放松练习、方案目标模板。方案里的示例食谱、动作和行为目标只能从这里选；这里只能浏览，不能修改。",
+    "tabs": {
+      "recipes": "食谱",
+      "exercises": "运动和放松练习",
+      "goals": "目标模板"
+    },
+    "search": "搜索名称",
+    "all": "全部",
+    "meal": "餐次",
+    "tags": "特点",
+    "category": "类别",
+    "intensity": "强度",
+    "section": "部分",
+    "loading": "正在加载方案库…",
+    "loadFailed": "方案库加载失败",
+    "retry": "重试",
+    "empty": "没有符合条件的条目",
+    "count": "共 {{count}} 条",
+    "back": "返回列表",
+    "detailLoading": "正在加载条目…",
+    "detailFailed": "条目加载失败，可能已停用",
+    "version": "第 {{version}} 版",
+    "meals": {
+      "breakfast": "早餐",
+      "lunch": "午餐",
+      "dinner": "晚餐",
+      "snack": "加餐"
+    },
+    "categories": {
+      "aerobic": "有氧",
+      "strength": "力量",
+      "flexibility": "柔韧",
+      "balance": "平衡",
+      "relaxation": "放松练习"
+    },
+    "intensities": {
+      "low": "低强度",
+      "moderate": "中等强度"
+    },
+    "settings": {
+      "home": "居家",
+      "outdoor": "户外",
+      "gym": "健身房"
+    },
+    "sections": {
+      "diet": "饮食",
+      "exercise": "运动",
+      "routine": "作息",
+      "mind": "心理"
+    },
+    "recipe": {
+      "ingredients": "食材和家庭常用量",
+      "grams": "约 {{grams}} 克",
+      "overseas": "海外常见替代：{{alt}}",
+      "steps": "做法要点",
+      "nutrition": "每份的能量和主要营养素",
+      "nutritionLine": "能量 {{energy}} 千卡 · 蛋白质 {{protein}} 克 · 脂肪 {{fat}} 克 · 碳水 {{carb}} 克 · 膳食纤维 {{fiber}} 克 · 钠 {{sodium}} 毫克",
+      "nutritionBasis": "计算依据：{{basis}}",
+      "noNutrition": "没有标营养数据",
+      "allergens": "过敏原",
+      "noAllergens": "未标过敏原",
+      "source": "来源说明"
+    },
+    "exercise": {
+      "noEquipment": "无器材",
+      "steps": "做法步骤",
+      "keyPoints": "动作要点",
+      "mistakes": "常见错误",
+      "cautions": "给健管师看的注意事项（不进通俗版）",
+      "met": "参考 MET 值：{{met}}",
+      "source": "来源说明",
+      "equipmentLine": "器材：{{list}}"
+    },
+    "goal": {
+      "params": "参数范围",
+      "param": "{{name}}：{{min}}–{{max}}{{unit}}，默认 {{def}}{{unit}}",
+      "metric": "执行情况对照：{{metric}}",
+      "source": "来源说明"
+    },
+    "tagNames": {
+      "low_oil": "少油",
+      "low_salt": "少盐",
+      "high_fiber": "高纤维",
+      "quality_protein": "优质蛋白",
+      "mixed_grains": "粗细搭配",
+      "vegetable_rich": "蔬菜多",
+      "low_sugar": "少糖",
+      "quick": "做法简单",
+      "vegetarian": "素食"
+    },
+    "allergenNames": {
+      "peanut": "花生",
+      "tree_nut": "坚果",
+      "dairy": "乳制品",
+      "egg": "蛋",
+      "seafood": "海鲜",
+      "soy": "大豆",
+      "gluten": "麸质",
+      "sesame": "芝麻"
     }
   }
 }

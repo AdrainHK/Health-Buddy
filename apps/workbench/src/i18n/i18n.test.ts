@@ -29,6 +29,21 @@ import {
   RISK_TIERS,
   VERIFY_REJECTION_REASONS,
   streamErrorKindSchema,
+  ALLERGENS,
+  CARE_PLAN_END_REASONS,
+  CARE_PLAN_STATUSES,
+  EXERCISE_CATEGORIES,
+  EXERCISE_INTENSITIES,
+  EXERCISE_SETTINGS,
+  GOAL_METRICS,
+  LIBRARY_TAGS,
+  MEAL_TYPES,
+  PLAN_SECTIONS,
+  VISIT_CANCEL_REASONS,
+  VISIT_FEEDBACK_TOPICS,
+  VISIT_METHODS,
+  VISIT_PURPOSES,
+  VISIT_STATUSES,
 } from '@health-buddy/shared';
 import zhCN from './locales/zh-CN.json';
 
@@ -228,6 +243,51 @@ describe('界面文字走 i18n（验收标准 25）', () => {
     ]);
     // 红线 4：不对任何疾病风险下结论（预测只说“可能”，不说概率、必然）
     const riskWords = ['会得', '患病', '概率', '将会', '必然', '一定会'];
+    expect(
+      all.flatMap(([path, text]) =>
+        riskWords.filter((w) => text.includes(w)).map((w) => `${path}: ${w}`),
+      ),
+    ).toEqual([]);
+  });
+
+  it('M5 方案、随访和方案库的枚举值都有翻译', () => {
+    const groups: [string, readonly string[]][] = [
+      ['care.sections', PLAN_SECTIONS],
+      ['care.plan.status', CARE_PLAN_STATUSES],
+      ['care.plan.endReasons', CARE_PLAN_END_REASONS],
+      ['care.adherence.metrics', GOAL_METRICS],
+      ['care.adherence.units', GOAL_METRICS],
+      ['care.visits.purposes', VISIT_PURPOSES],
+      ['care.visits.methods', VISIT_METHODS],
+      ['care.visits.statuses', VISIT_STATUSES],
+      ['care.visits.form.cancelReasons', VISIT_CANCEL_REASONS],
+      ['care.records.topics', VISIT_FEEDBACK_TOPICS],
+      ['library.meals', MEAL_TYPES],
+      ['library.tagNames', LIBRARY_TAGS],
+      ['library.allergenNames', ALLERGENS],
+      ['library.categories', EXERCISE_CATEGORIES],
+      ['library.intensities', EXERCISE_INTENSITIES],
+      ['library.settings', EXERCISE_SETTINGS],
+      ['library.sections', PLAN_SECTIONS],
+    ];
+    for (const [prefix, values] of groups)
+      for (const v of values)
+        expect(typeof lookup(`${prefix}.${v}`), `${prefix}.${v}`).toBe('string');
+  });
+
+  it('M5 方案与随访、方案库的词条没有禁用词，也没有疾病风险和功效说法（红线 4、5）', () => {
+    const strings = (node: unknown, path: string): [string, string][] =>
+      typeof node === 'string'
+        ? [[path, node]]
+        : node && typeof node === 'object'
+          ? Object.entries(node).flatMap(([k, v]) => strings(v, `${path}.${k}`))
+          : [];
+    const all = ['care', 'library'].flatMap((root) => strings(lookup(root), root));
+    expect(all.length).toBeGreaterThan(100);
+    expect(
+      all.flatMap(([path, text]) => findBannedTerms(text).map((i) => `${path}: ${i.term}`)),
+    ).toEqual([]);
+    const riskWords = ['会得', '患病', '概率', '必然', '一定会', '降血糖', '降血压', '治好'];
     expect(
       all.flatMap(([path, text]) =>
         riskWords.filter((w) => text.includes(w)).map((w) => `${path}: ${w}`),
