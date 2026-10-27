@@ -297,7 +297,8 @@ describe('方案库', () => {
     await user.click(within(dialog).getByRole('button', { name: '保存' }));
     expect(await rowOf('芹菜炒胡萝卜')).toHaveTextContent('草稿');
     expect(screen.getByText('已保存')).toBeInTheDocument();
-  });
+    // 逐字输入整份食谱，CI 上接近默认的 5 秒上限，单独放宽
+  }, 15_000);
 
   it('修改记录列出改前改后', async () => {
     const events: LibraryItemEvent[] = [
