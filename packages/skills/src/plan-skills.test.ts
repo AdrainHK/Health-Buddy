@@ -102,7 +102,7 @@ describe('/随访计划', () => {
         ...evalCase.plan,
         schedule: {
           ...evalCase.plan.schedule!,
-          draftPlan: { cycleWeeks: 4, reviewDate: '2026-11-17' },
+          draftPlan: { cycleWeeks: 4, reviewDate: '2026-11-17', replacesCurrent: true },
         },
       },
     });

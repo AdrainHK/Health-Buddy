@@ -353,6 +353,12 @@ describe('/方案生成', () => {
       },
     ];
     const planId = plan?.type === 'plan' ? plan.plan.id : '';
+    // 跨租户访问被拒绝：别人确认这份计划 → 404，不调用模型、不生成草稿
+    for (const u of [f.users.managerA2, f.users.managerB1]) {
+      await (await as(u.email)).post(`/api/tasks/${task}/plans/${planId}/confirm`).expect(404);
+    }
+    expect(provider.calls).toHaveLength(0);
+    expect(await artifactsOf(task)).toHaveLength(0);
     await a1.post(`/api/tasks/${task}/plans/${planId}/confirm`).expect(200);
     const drafts = await artifactsOf(task);
     expect(drafts.map((a) => a.kind).sort()).toEqual(['care_plan', 'visit_schedule']);

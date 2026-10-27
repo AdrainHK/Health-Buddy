@@ -139,6 +139,7 @@ export async function loadPlanContext(
         : {
             cycleWeeks: options.draftCycleWeeks,
             reviewDate: addDaysIso(dateInTimeZone(now, timeZone), options.draftCycleWeeks * 7),
+            replacesCurrent: currentPlan !== null,
           };
     const result = scheduleVisits({
       now,

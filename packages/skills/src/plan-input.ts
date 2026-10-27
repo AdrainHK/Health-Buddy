@@ -131,7 +131,7 @@ export interface PlanContext {
      * 想一想“方案和随访”（2.10）：方案复评按同一次计划刚生成的方案草稿排（草稿还没确认，
      * 确认随访计划时这一行标为“待方案生效”）。只排随访计划时没有
      */
-    draftPlan?: { cycleWeeks: number; reviewDate: string };
+    draftPlan?: { cycleWeeks: number; reviewDate: string; replacesCurrent: boolean };
   };
 }
 
@@ -167,7 +167,10 @@ export function describeSchedule(schedule: NonNullable<PlanContext['schedule']>)
   ];
   if (schedule.draftPlan) {
     lines.push(
-      `方案复评按本次刚生成的方案草稿排：周期 ${schedule.draftPlan.cycleWeeks} 周，复评日期 ${schedule.draftPlan.reviewDate}（方案确认生效后才写入日程）。上面“当前方案”是正在执行的旧方案，新方案生效后被替代。`,
+      `方案复评按本次刚生成的方案草稿排：周期 ${schedule.draftPlan.cycleWeeks} 周，复评日期 ${schedule.draftPlan.reviewDate}（方案确认生效后才写入日程）。` +
+        (schedule.draftPlan.replacesCurrent
+          ? '上面“当前方案”是正在执行的旧方案，新方案生效后被替代。'
+          : ''),
     );
   }
   schedule.rows.forEach((r, i) => {
