@@ -388,6 +388,9 @@ importers:
       '@health-buddy/experts':
         specifier: workspace:*
         version: link:../../packages/experts
+      '@health-buddy/plan-library':
+        specifier: workspace:*
+        version: link:../../packages/plan-library
       '@health-buddy/seed':
         specifier: workspace:*
         version: link:../seed

@@ -7,6 +7,7 @@ import {
   type CriticalFlag,
   type IndicatorCode,
   type Observation,
+  type PlanOptions,
   type PlanStep,
   type TaskMode,
   type TaskPlan,
@@ -23,6 +24,7 @@ import {
 } from '@health-buddy/skills';
 import type { ChatMessage } from '@health-buddy/ai-engine';
 import { badRequest, conflict, notFound } from '../common/api-error.js';
+import { APP_CONFIG, type AppConfig } from '../config.js';
 import { DB } from '../db/db.provider.js';
 import { asDate } from '../db/report-functions.js';
 import { withTenant, type Db, type TenantContext, type TenantTransaction } from '../db/database.js';
@@ -91,6 +93,8 @@ export interface RegenerationContext {
   /** 确认计划时沿用提出计划那条消息里的“一定要请”“不要请”（M3 规格 2.8） */
   expertRefs?: string[];
   excludedExperts?: string[];
+  /** /方案生成 的方案选项：提出计划或发消息时的选项，退回重写时用上一版草稿的 */
+  planOptions?: PlanOptions | null;
 }
 
 /** 重新请专家、补请专家：按原调用的问题和报告再请一次（M3 规格 6.4） */
@@ -126,6 +130,8 @@ export interface NewArtifact {
   crisisSignal?: boolean;
   /** M5：结构化内容（随访计划的日程等），由数据库按 kind 校验 */
   structured?: unknown;
+  /** M5：方案草稿的选项（部分、周期）；数据库要求 care_plan 必须有，其他产物没有 */
+  planOptions?: PlanOptions | null;
 }
 
 /**
@@ -134,7 +140,10 @@ export interface NewArtifact {
  */
 @Injectable()
 export class WorkbenchRepository {
-  constructor(@Inject(DB) private readonly db: Db) {}
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+  ) {}
 
   /**
    * 发消息前只读地核对引用（M4 合规审核 T5）：任务、@ 的客户和报告、孪生项、跟进项都要是本人的，
@@ -203,6 +212,13 @@ export class WorkbenchRepository {
       followUpItemId?: string;
       /** /孪生小结、孪生复盘：客户还没有任何孪生数据时拒绝（409 no_twin_data） */
       requiresTwinData?: boolean;
+      /**
+       * /方案生成：客户至少要有一份已核对报告、或近 30 天监测、或健康史里的生活习惯（规格 2.2 第 3 条），
+       * 否则拒绝（409 no_plan_data）
+       */
+      requiresPlanData?: boolean;
+      /** /方案生成 的选项，记在这条消息上（确认计划、退回重写时沿用） */
+      planOptions?: PlanOptions | null;
       /** “请专家看看”：只用于生成任务标题 */
       twinConsult?: boolean;
     },
@@ -257,6 +273,9 @@ export class WorkbenchRepository {
       if (input.requiresTwinData && clientId && !(await hasTwinData(trx, clientId))) {
         throw noTwinData();
       }
+      if (input.requiresPlanData && clientId && !(await hasPlanData(trx, clientId))) {
+        throw noPlanData();
+      }
       if (!claim(task.id)) throw conflict({ reasons: ['busy'] });
 
       await closeStaleTurns(trx, task.id);
@@ -286,6 +305,7 @@ export class WorkbenchRepository {
           expert_refs: input.expertRefs ?? [],
           excluded_experts: input.excludedExperts ?? [],
           twin_refs: JSON.stringify(twinRefs),
+          plan_options: input.planOptions ? JSON.stringify(input.planOptions) : null,
           status: 'complete',
           created_at: new Date(now),
         })
@@ -336,6 +356,8 @@ export class WorkbenchRepository {
     reportUsage: (skillId: string) => 'required' | 'optional' | 'none',
     /** 读孪生的技能（/孪生小结）：客户还没有孪生数据时拒绝 */
     usesTwin: (skillId: string) => boolean = () => false,
+    /** /方案生成：客户资料太少时拒绝（409 no_plan_data） */
+    usesPlanData: (skillId: string) => boolean = () => false,
   ): Promise<RegenerationContext> {
     return withTenant(this.db, ctx, async (trx) => {
       const task = await lockTask(trx, taskId);
@@ -361,7 +383,7 @@ export class WorkbenchRepository {
       if (!skillIds.length) throw conflict();
       const request = await trx
         .selectFrom('task_messages')
-        .select(['id', 'content', 'report_refs', 'expert_refs', 'excluded_experts'])
+        .select(['id', 'content', 'report_refs', 'expert_refs', 'excluded_experts', 'plan_options'])
         .where('task_id', '=', task.id)
         .where('role', '=', 'manager')
         .where('created_at', '<', plan.created_at)
@@ -387,6 +409,10 @@ export class WorkbenchRepository {
       if (skillIds.some(usesTwin)) {
         if (!task.client_id) throw notFound();
         if (!(await hasTwinData(trx, task.client_id))) throw noTwinData();
+      }
+      if (skillIds.some(usesPlanData)) {
+        if (!task.client_id) throw notFound();
+        if (!(await hasPlanData(trx, task.client_id))) throw noPlanData();
       }
       if (!claim(task.id)) throw conflict({ reasons: ['busy'] });
 
@@ -415,6 +441,7 @@ export class WorkbenchRepository {
         expertRefs: request.expert_refs,
         excludedExperts: request.excluded_experts,
         requestMessageId: request.id,
+        planOptions: (request.plan_options as PlanOptions | null) ?? null,
       };
     });
   }
@@ -449,6 +476,7 @@ export class WorkbenchRepository {
           'created_at',
           'source_report_id',
           'consultation_id',
+          'plan_options',
         ])
         .where('id', '=', artifactId)
         .forUpdate()
@@ -513,6 +541,8 @@ export class WorkbenchRepository {
         reportId: artifact.source_report_id,
         reuseConsultationId: artifact.consultation_id,
         requestMessageId: request?.id ?? null,
+        // 方案沿用上一版草稿的选项（部分、周期）
+        planOptions: (artifact.plan_options as PlanOptions | null) ?? null,
       };
     });
   }
@@ -769,7 +799,10 @@ export class WorkbenchRepository {
 
   /** 方案和随访技能的上下文（M5 规格 5.2）：当前方案、最近的随访记录，/随访计划 还有排好的日期 */
   planContext(ctx: TenantContext, clientId: string, options: PlanContextOptions) {
-    return withTenant(this.db, ctx, (trx) => loadPlanContext(trx, ctx, clientId, options));
+    // 方案库预览开关打开时，候选里含待审定的条目（行级安全按会话设置放行）
+    return withTenant(this.db, ctx, (trx) => loadPlanContext(trx, ctx, clientId, options), {
+      planLibraryPreview: this.config.planLibraryPreview,
+    });
   }
 
   /** 本任务之前的对话（不含这一轮），用作问一问的上下文 */
@@ -974,6 +1007,7 @@ export class WorkbenchRepository {
           emergency_signal: data.emergencySignal ?? false,
           crisis_signal: data.crisisSignal ?? false,
           ...(data.structured === undefined ? {} : { structured: JSON.stringify(data.structured) }),
+          ...(data.planOptions ? { plan_options: JSON.stringify(data.planOptions) } : {}),
         })
         .execute();
       await trx
@@ -1094,6 +1128,7 @@ export function ageBand(birthYear: number | null, now = new Date()): string | nu
 
 const noVerifiedReport = () => conflict({ reasons: ['no_verified_report'] });
 const noTwinData = () => conflict({ reasons: ['no_twin_data'] });
+const noPlanData = () => conflict({ reasons: ['no_plan_data'] });
 
 /**
  * @ 的孪生项和“请专家看看”的跟进项（M4 规格 2.8、7.2）：客户必须是任务关联、本人服务的客户
@@ -1157,6 +1192,38 @@ async function hasTwinData(trx: TenantTransaction, clientId: string): Promise<bo
     .limit(1)
     .executeTakeFirst();
   return Boolean(forecast);
+}
+
+/**
+ * /方案生成 的数据要求（规格 2.2 第 3 条）：至少一份已核对报告、或近 30 天的监测、
+ * 或健康史里有“生活习惯”类条目
+ */
+async function hasPlanData(trx: TenantTransaction, clientId: string): Promise<boolean> {
+  const report = await trx
+    .selectFrom('health_reports')
+    .select('id')
+    .where('client_id', '=', clientId)
+    .limit(1)
+    .executeTakeFirst();
+  if (report) return true;
+  const since = new Date(Date.now() - MONITORING_DAYS * 24 * 60 * 60 * 1000);
+  const reading = await trx
+    .selectFrom('monitoring_readings')
+    .select('id')
+    .where('client_id', '=', clientId)
+    .where('measured_at', '>=', since)
+    .limit(1)
+    .executeTakeFirst();
+  if (reading) return true;
+  const lifestyle = await trx
+    .selectFrom('client_health_history')
+    .select('id')
+    .where('client_id', '=', clientId)
+    .where('category', '=', 'lifestyle')
+    .where('deleted_at', 'is', null)
+    .limit(1)
+    .executeTakeFirst();
+  return Boolean(lifestyle);
 }
 
 /** 该客户最近一份已核对报告（按报告日期，同一天按核对先后） */

@@ -25,6 +25,8 @@ import {
   type TaskStep,
   type TaskStreamEvent,
   type TwinRef,
+  planOptionsSchema,
+  type PlanOptions,
 } from '@health-buddy/shared';
 import {
   ASK_NOTICE,
@@ -59,6 +61,7 @@ import {
   type ExpertSteps,
 } from '../experts/consultation.service.js';
 import { ExpertQuotaExceeded, ExpertsRepository } from '../experts/experts.repository.js';
+import { allergyTextsOf, exerciseRestriction, restrictExercise } from '@health-buddy/plan-library';
 import { RISK_TIER_CRITERIA } from './risk-tier-criteria.js';
 import {
   WorkbenchRepository,
@@ -692,7 +695,7 @@ export class GenerationService {
       // M5 方案和随访技能：读档案 → 读数字孪生 → 读当前方案（→ 排随访日期）
       const planKind = run.skills.find((s) => s.planContext)?.planContext;
       const client = planKind
-        ? await this.readPlanClient(ctx, run.clientId, steps, planKind)
+        ? await this.readPlanClient(ctx, run.clientId, steps, planKind, run.planOptions ?? null)
         : usesTwin
           ? await this.readTwinClient(ctx, run.clientId, steps)
           : usesReport
@@ -708,9 +711,18 @@ export class GenerationService {
         ...(await this.repo.managerTexts(ctx, run.taskId)),
         ...twinFreeTexts(client.snapshot.twin),
         ...planFreeTexts(client.plan),
+        // 方案和随访技能：健康史里写的危机、急症描述也算（M5 规格 5.4 第 7 条）
+        ...(client.plan ? (client.snapshot.healthHistory ?? []).map((h) => h.content) : []),
       ];
       const crisis = detectCrisisKeywords(signalTexts);
       const emergencyKeywords = detectEmergencyKeywords(signalTexts);
+      // 运动安全规则（Q8）：有疑似急症信号时运动部分同样只写“先就医评估”
+      if (emergencyKeywords && client.plan?.library && !client.plan.library.exerciseRestriction) {
+        client.plan = {
+          ...client.plan,
+          library: restrictExercise(client.plan.library, '有疑似急症信号'),
+        };
+      }
       const redact = (t: string) => redactClientIdentity(t, client.identifiers);
       const snapshot = {
         ...client.snapshot,
@@ -868,6 +880,9 @@ export class GenerationService {
           emergencySignal: emergency,
           crisisSignal,
           ...(rendered.structured === undefined ? {} : { structured: rendered.structured }),
+          ...(skill.planContext === 'care_plan'
+            ? { planOptions: client.plan?.library?.options ?? planOptionsSchema.parse({}) }
+            : {}),
         });
         if (!artifact) {
           await steps.finish(step, 'failed');
@@ -1142,6 +1157,7 @@ export class GenerationService {
     clientId: string,
     steps: StepRunner,
     kind: NonNullable<SkillDefinition['planContext']>,
+    planOptions: PlanOptions | null,
   ): Promise<ClientContext | undefined> {
     const read = await steps.start('read_client', 'steps.readClient');
     const client = await this.repo.clientContext(ctx, clientId, null, {
@@ -1157,14 +1173,29 @@ export class GenerationService {
     if (!twin) return undefined;
     const readPlan = await steps.start('read_care_plan', 'steps.readCarePlan');
     const schedule = kind === 'visit_schedule';
+    const makesPlan = kind === 'care_plan';
     const plan = await this.repo.planContext(ctx, clientId, {
       schedule,
+      ...(makesPlan
+        ? {
+            library: {
+              options: planOptions ?? planOptionsSchema.parse({}),
+              // 过敏史只在后端和库条目比对，不进日志（Q16）
+              allergyTexts: allergyTextsOf(client.snapshot),
+              restriction: exerciseRestriction(client.snapshot),
+            },
+          }
+        : {}),
       riskTier: client.snapshot.riskTier?.tier ?? null,
       hasUrgentFollowUp: twin.followUps.some((f) => f.severity <= 2),
       // 账号没设置时区时按北京时间（和确认随访计划时的日期校验一致）
       tzFallback: 'Asia/Shanghai',
     });
     await steps.finish(readPlan, 'done');
+    if (makesPlan) {
+      const step = await steps.start('select_library_items', 'steps.selectLibraryItems');
+      await steps.finish(step, 'done');
+    }
     if (schedule) {
       const step = await steps.start('schedule_visits', 'steps.scheduleVisits');
       await steps.finish(step, 'done');

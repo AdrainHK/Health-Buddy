@@ -1,4 +1,15 @@
-import type { PlanSection, VisitMethod, VisitPurpose } from '@health-buddy/shared';
+import type {
+  Allergen,
+  ExerciseCategory,
+  GoalMetric,
+  GoalParam,
+  LibraryTag,
+  MealType,
+  PlanOptions,
+  PlanSection,
+  VisitMethod,
+  VisitPurpose,
+} from '@health-buddy/shared';
 
 /**
  * 方案和随访技能的输入（M5 规格 5.2）。由后端组装，只有健康数据和日程，不含客户姓名、电话等。
@@ -51,9 +62,64 @@ export interface ScheduledVisitRow {
   method: VisitMethod;
 }
 
+/** /方案生成 的候选食谱（后端已按过敏原排除，Q16）。食材和做法用于后端渲染通俗版 */
+export interface RecipeCandidate {
+  id: string;
+  version: number;
+  name: string;
+  mealTypes: MealType[];
+  tags: LibraryTag[];
+  allergens: Allergen[];
+  ingredients: { name: string; householdAmount: string }[];
+  steps: string[];
+  energyKcal: number | null;
+}
+
+/** 候选的运动和放松练习（运动安全规则不允许时为空，Q8） */
+export interface ExerciseCandidate {
+  id: string;
+  version: number;
+  name: string;
+  category: ExerciseCategory;
+  intensity: 'low' | 'moderate';
+  steps: string[];
+  keyPoints: string[];
+  /** 给健管师看的注意事项：只写进专业版 */
+  managerCautions: string;
+}
+
+/** 目标模板（只能从这里选，参数在范围内，Q3） */
+export interface GoalTemplateCandidate {
+  id: string;
+  version: number;
+  section: PlanSection;
+  text: string;
+  params: GoalParam[];
+  metric: GoalMetric | null;
+}
+
+/** /方案生成 的方案库候选和规则（规格 5.2） */
+export interface PlanLibraryContext {
+  options: PlanOptions;
+  recipes: RecipeCandidate[];
+  exercises: ExerciseCandidate[];
+  goalTemplates: GoalTemplateCandidate[];
+  /** 因过敏史排除了几份食谱（只记数量） */
+  excludedForAllergy: number;
+  /**
+   * 运动安全规则（Q8）：有危急指标、急症信号，或健康史里有心脏病、近期手术、严重骨关节病时，
+   * 运动部分只写“建议先就医评估再开始运动”，不给动作、强度和时长。这里写原因类别；不限制时为 null
+   */
+  exerciseRestriction: string | null;
+  /** 正式环境的方案库还没有已发布条目（4.1）：饮食和运动只写原则，写明“方案库待审定” */
+  libraryEmpty: boolean;
+}
+
 export interface PlanContext {
   currentPlan: CarePlanDigest | null;
   recentRecords: VisitRecordDigest[];
+  /** /方案生成：候选库条目、目标模板和方案选项 */
+  library?: PlanLibraryContext;
   /** /随访计划：后端算好的随访日期（按日期升序） */
   schedule?: {
     today: string;
@@ -118,4 +184,86 @@ export function redactPlanContext(plan: PlanContext, redact: (t: string) => stri
 export function planFreeTexts(plan: PlanContext | undefined): string[] {
   if (!plan) return [];
   return plan.recentRecords.flatMap((r) => [r.summary, ...r.agreements]);
+}
+
+const MEAL_ZH: Record<MealType, string> = {
+  breakfast: '早餐',
+  lunch: '午餐',
+  dinner: '晚餐',
+  snack: '加餐',
+};
+
+const TAG_ZH: Record<LibraryTag, string> = {
+  low_oil: '少油',
+  low_salt: '少盐',
+  high_fiber: '高纤维',
+  quality_protein: '优质蛋白',
+  mixed_grains: '粗细搭配',
+  vegetable_rich: '蔬菜多',
+  low_sugar: '少糖',
+  quick: '做法简单',
+  vegetarian: '素食',
+};
+
+const CATEGORY_ZH: Record<ExerciseCategory, string> = {
+  aerobic: '有氧',
+  strength: '力量',
+  flexibility: '柔韧',
+  balance: '平衡',
+  relaxation: '放松练习',
+};
+
+export { CATEGORY_ZH as EXERCISE_CATEGORY_ZH, MEAL_ZH };
+
+/** /方案生成：方案选项和候选条目。模型只能选这里的 id，参数在范围内 */
+export function describeLibrary(lib: PlanLibraryContext): string {
+  const lines = [
+    '## 方案选项',
+    `- 包含：${lib.options.sections.map((s) => PLAN_SECTION_ZH[s]).join('、')}（只写这几部分）`,
+    `- 周期：${lib.options.cycleWeeks} 周`,
+  ];
+  if (lib.libraryEmpty) {
+    lines.push(
+      '',
+      '方案库待审定，暂时没有可用的食谱和动作：饮食和运动只写原则，不给示例；通俗版写“库中暂无合适的示例”，专业版写明“方案库待审定”。',
+    );
+  }
+  if (lib.exerciseRestriction) {
+    lines.push(
+      '',
+      `## 运动安全规则：${lib.exerciseRestriction}`,
+      '运动部分只写“建议先就医评估再开始运动”，不选运动动作，不写强度、频率和时长；exercises 里只能有心理部分的放松练习。',
+    );
+  }
+  lines.push('', '## 候选食谱（只能选这里的 id；已按过敏史排除不合适的）');
+  if (lib.excludedForAllergy) lines.push(`因过敏史排除了 ${lib.excludedForAllergy} 份食谱。`);
+  if (!lib.recipes.length) lines.push('没有候选食谱。');
+  for (const r of lib.recipes) {
+    const energy = r.energyKcal === null ? '' : `；约 ${r.energyKcal} 千卡/份`;
+    lines.push(
+      `- ${r.id}：${r.name}（${r.mealTypes.map((m) => MEAL_ZH[m]).join('、')}；${r.tags.map((t) => TAG_ZH[t]).join('、') || '无标签'}${energy}）`,
+    );
+  }
+  lines.push('', '## 候选动作和放松练习（只能选这里的 id）');
+  if (!lib.exercises.length) lines.push('没有候选动作。');
+  for (const e of lib.exercises) {
+    lines.push(
+      `- ${e.id}：${e.name}（${CATEGORY_ZH[e.category]}，${e.intensity === 'low' ? '低强度' : '中等强度'}；注意事项：${e.managerCautions}）`,
+    );
+  }
+  lines.push('', '## 目标模板（只能选这里的 id，参数在范围内）');
+  if (!lib.goalTemplates.length) lines.push('没有可用的目标模板。');
+  for (const t of lib.goalTemplates) {
+    const params = t.params
+      .map((p) =>
+        p.type === 'int'
+          ? `${p.name}：整数 ${p.min}–${p.max}${p.unit ? ` ${p.unit}` : ''}，默认 ${p.default}`
+          : `${p.name}：时间 ${p.min}–${p.max}，默认 ${p.default}`,
+      )
+      .join('；');
+    lines.push(
+      `- ${t.id}（${PLAN_SECTION_ZH[t.section]}）：${t.text}${params ? `【${params}】` : ''}`,
+    );
+  }
+  return lines.join('\n');
 }

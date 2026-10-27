@@ -71,3 +71,13 @@ export {
   type VisitScheduleOutput,
 } from './visit-schedule/index.js';
 export { visitScheduleEvalCases } from './visit-schedule/evals/cases.js';
+export {
+  carePlan,
+  carePlanClientTexts,
+  carePlanProfessionalTexts,
+  carePlanStructured,
+  goalParamValues,
+  validateCarePlan,
+  type CarePlanOutput,
+} from './care-plan/index.js';
+export { carePlanEvalCases } from './care-plan/evals/cases.js';

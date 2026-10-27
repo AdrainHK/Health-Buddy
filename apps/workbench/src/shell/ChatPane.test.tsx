@@ -420,6 +420,41 @@ describe('ChatPane / skills and @ clients', () => {
     });
   });
 
+  it('/方案生成 shows the plan options bar and sends the chosen sections and cycle', async () => {
+    const carePlan: SkillSummary = { ...SKILL, id: 'care-plan', usesPlanOptions: true };
+    const user = userEvent.setup();
+    renderPane({ skills: [SKILL, carePlan], task: makeTask({ clientId: ids.clientA }) });
+    // 普通技能没有选项条
+    await user.type(await screen.findByRole('textbox'), '/近况');
+    await user.keyboard('{Enter}');
+    expect(screen.queryByRole('group', { name: '方案包含' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '移除技能 客户近况小结' }));
+
+    await user.type(input(), '/方案');
+    await user.keyboard('{Enter}');
+    const bar = screen.getByRole('group', { name: '方案包含' });
+    for (const name of ['饮食', '运动', '作息']) {
+      await user.click(within(bar).getByRole('checkbox', { name }));
+    }
+    // 只剩一部分时不能再取消
+    expect(within(bar).getByRole('checkbox', { name: '心理' })).toBeDisabled();
+    await user.click(within(bar).getByRole('checkbox', { name: '饮食' }));
+    await user.selectOptions(within(bar).getByRole('combobox', { name: '方案周期' }), '12');
+    await user.type(input(), '合成请求');
+    await user.keyboard('{Enter}');
+    await waitFor(() =>
+      expect(vi.mocked(fetch).mock.calls.some(([, i]) => i?.method === 'POST')).toBe(true),
+    );
+    const post = vi.mocked(fetch).mock.calls.find(([, init]) => init?.method === 'POST');
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+      mode: 'craft',
+      content: '合成请求',
+      skillId: 'care-plan',
+      clientRefs: [],
+      planOptions: { sections: ['diet', 'mind'], cycleWeeks: 12 },
+    });
+  });
+
   it('navigates the @ menu with the arrow keys', async () => {
     const user = userEvent.setup();
     renderPane();

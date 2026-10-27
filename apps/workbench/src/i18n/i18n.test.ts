@@ -130,6 +130,8 @@ describe('界面文字走 i18n（验收标准 25）', () => {
       'steps.readCarePlan',
       'steps.scheduleVisits',
       'steps.generateVisitSchedule',
+      'steps.selectLibraryItems',
+      'steps.generateCarePlan',
       'skills.client-recent-summary.name',
       'skills.report-interpretation.name',
       'skills.interview-outline.name',
@@ -137,6 +139,7 @@ describe('界面文字走 i18n（验收标准 25）', () => {
       'skills.twin-summary.name',
       'skills.twin-review.name',
       'skills.visit-schedule.name',
+      'skills.care-plan.name',
     ];
     for (const key of keys) expect(typeof lookup(key), key).toBe('string');
   });

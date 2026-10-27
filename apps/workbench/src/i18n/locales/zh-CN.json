@@ -195,7 +195,9 @@
     "generateTwinSummary": "生成孪生小结",
     "readCarePlan": "读取当前方案",
     "scheduleVisits": "排随访日期",
-    "generateVisitSchedule": "生成随访计划"
+    "generateVisitSchedule": "生成随访计划",
+    "selectLibraryItems": "选择食谱和动作",
+    "generateCarePlan": "生成方案"
   },
   "skills": {
     "client-recent-summary": {
@@ -225,6 +227,10 @@
     "visit-schedule": {
       "name": "随访计划",
       "description": "按平台的随访频次规则排出随访日期，为每次随访写建议方式和重点；只给健管师看，确认后写入随访日程"
+    },
+    "care-plan": {
+      "name": "方案生成",
+      "description": "根据档案和孪生起草饮食、运动、作息、心理方案；示例食谱和动作只从方案库里选，审核后才生效，可以复制或导出通俗版给客户"
     }
   },
   "results": {
@@ -1751,6 +1757,11 @@
         "failed": "上传失败，请重试",
         "fileFailed": "读取文件失败，请确认是 .txt 文件"
       }
+    },
+    "planOptions": {
+      "title": "方案包含",
+      "cycle": "方案周期",
+      "weeks": "{{count}} 周"
     }
   },
   "library": {

@@ -1,4 +1,5 @@
 import type { SkillSummary } from '@health-buddy/shared';
+import { carePlan } from './care-plan/index.js';
 import { clientRecentSummary } from './client-recent-summary/index.js';
 import { skillUsesReport, type PlanTemplate, type SkillDefinition } from './framework.js';
 import { interviewOutline } from './interview-outline/index.js';
@@ -13,6 +14,7 @@ export const SKILLS: readonly SkillDefinition[] = [
   reportInterpretation as unknown as SkillDefinition,
   interviewOutline as unknown as SkillDefinition,
   twinSummary as unknown as SkillDefinition,
+  carePlan as unknown as SkillDefinition,
   visitSchedule as unknown as SkillDefinition,
 ];
 
@@ -65,9 +67,9 @@ export function skillSummaries(expertsEnabled = false): SkillSummary[] {
       allowsEmptyRequest: s.defaultRequest !== null,
       planSkills: [],
       experts: expertsEnabled ? (s.experts ?? 'none') : ('none' as const),
-      // M5 的技能在第 5、6 步加入，到时按技能定义填写
       usesMaterials: false,
-      usesPlanOptions: false,
+      // /方案生成 有方案选项条（部分、周期，规格 2.2）
+      usesPlanOptions: s.planContext === 'care_plan',
     })),
     ...PLAN_TEMPLATES.map((p) => {
       const skills = p.skills.map((id) => getSkill(id)).filter((s) => s !== undefined);
@@ -83,7 +85,7 @@ export function skillSummaries(expertsEnabled = false): SkillSummary[] {
         planSkills: [...p.skills],
         experts: 'none' as const,
         usesMaterials: false,
-        usesPlanOptions: false,
+        usesPlanOptions: skills.some((s) => s.planContext === 'care_plan'),
       };
     }),
   ];

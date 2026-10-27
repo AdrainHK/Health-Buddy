@@ -9,6 +9,7 @@ import {
   type DuplicateUpload,
   type ExpertSummary,
   type ReportUploadSummary,
+  type PlanOptions,
   type SkillSummary,
   type Task,
   type TaskMode,
@@ -43,6 +44,7 @@ import { useTwinRefLabel } from '../twin/TwinActions';
 import reportStyles from '../reports/Reports.module.css';
 import { UploadCard } from '../reports/UploadCard';
 import { VisitMaterials } from '../care/VisitMaterials';
+import { DEFAULT_PLAN_OPTIONS, PlanOptionsBar } from '../care/PlanOptionsBar';
 import styles from './ChatPane.module.css';
 import { isReadOnlyTask } from './taskGroups';
 
@@ -128,6 +130,8 @@ interface Draft {
   twinConsult?: boolean;
   /** 从跟进项发起的“请专家看看” */
   followUpItemId?: string | null;
+  /** /方案生成 的方案选项（M5 规格 2.2），只在技能带选项条时发送 */
+  planOptions?: PlanOptions;
   /**
    * 不是从输入框发出的（识别卡片上的“生成解读”、核对后自动解读）：
    * 发送时不清空、失败时也不恢复输入框，健管师正在输入的内容不受影响。
@@ -244,6 +248,8 @@ export function ChatPane({
   const [twinRefs, setTwinRefs] = useState<TwinRef[]>([]);
   const [twinConsult, setTwinConsult] = useState(false);
   const [followUpItemId, setFollowUpItemId] = useState<string | null>(null);
+  /** /方案生成 的方案选项：同一个任务里保留上次的选择 */
+  const [planOptions, setPlanOptions] = useState<PlanOptions>(DEFAULT_PLAN_OPTIONS);
   /** @ 列表里的孪生项：当前客户的四个方面，加上有预测的指标 */
   const [twinMetrics, setTwinMetrics] = useState<string[]>([]);
   /** 当前客户的报告：已核对的可以 @，还没核对完的列出来但不能选 */
@@ -477,6 +483,7 @@ export function ChatPane({
     setTwinRefs(draft.twinRefs ?? []);
     setTwinConsult(Boolean(draft.twinConsult));
     setFollowUpItemId(draft.followUpItemId ?? null);
+    if (draft.planOptions) setPlanOptions(draft.planOptions);
   };
 
   const nextLocalId = () => `${LOCAL_PREFIX}${++localSeq.current}`;
@@ -678,6 +685,9 @@ export function ChatPane({
             ...(twin.length ? { twinRefs: twin } : {}),
             ...(consult ? { twinConsult: true } : {}),
             ...(consult && draft.followUpItemId ? { followUpItemId: draft.followUpItemId } : {}),
+            ...(draft.skill?.usesPlanOptions && draft.planOptions
+              ? { planOptions: draft.planOptions }
+              : {}),
           },
           options,
         ),
@@ -1118,6 +1128,16 @@ export function ChatPane({
     }
   };
 
+  // 选了 /方案生成（或带它的计划）时，输入框上方显示方案选项条（M5 规格 2.2）
+  const planOptionsBar =
+    skill?.usesPlanOptions && conflict === null && !readOnly ? (
+      <PlanOptionsBar
+        value={planOptions}
+        disabled={loadState !== 'idle'}
+        onChange={setPlanOptions}
+      />
+    ) : null;
+
   const boundBar = boundExpertId ? (
     <div className={expertStyles.boundBar} role="note" aria-label={t('experts.bound.label')}>
       <ExpertAvatar name={expertName(boundExpertId)} />
@@ -1172,6 +1192,7 @@ export function ChatPane({
             twinRefs,
             twinConsult,
             followUpItemId,
+            planOptions,
           })
         }
         canSendEmpty={canSendEmpty({ text, mode, skill, client, report, twinRefs, twinConsult })}
@@ -1186,7 +1207,7 @@ export function ChatPane({
         {...(mentionable.length > 0 && !readOnly ? { onExpertRefsChange: changeExpertRefs } : {})}
         maxExperts={maxExperts}
         {...(boundExpertId ? { lockedMode: 'ask' as const } : {})}
-        expertBar={expertBar ?? twinConsultBar}
+        expertBar={expertBar ?? twinConsultBar ?? planOptionsBar}
         twinItems={boundExpertId ? EMPTY : twinItems}
         twinRefs={twinRefs}
         {...(!readOnly && !boundExpertId ? { onTwinRefsChange: changeTwinRefs } : {})}

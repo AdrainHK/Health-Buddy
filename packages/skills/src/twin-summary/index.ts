@@ -223,7 +223,7 @@ export function twinSummaryTexts(output: TwinSummaryOutput): string[] {
   ];
 }
 
-const CATEGORY_NOTE: Record<WordingCategory, string> = {
+const CATEGORY_NOTE: Partial<Record<WordingCategory, string>> = {
   banned_term: '小结里出现了禁用词（如“诊断”“筛查”“治愈”“根治”“确诊”）',
   presumed_disease:
     '小结里出现了疾病名称（包括照抄健康史）；改成“健康史里有相关记录”或只写指标和数值',
@@ -244,7 +244,7 @@ const CATEGORY_NOTE: Record<WordingCategory, string> = {
 export function twinCorrectionNote(categories: readonly WordingCategory[]): string {
   return [
     '## 上一次生成的小结没有通过检查，请重新生成',
-    ...categories.map((c) => `- ${CATEGORY_NOTE[c]}`),
+    ...categories.flatMap((c) => (CATEGORY_NOTE[c] ? [`- ${CATEGORY_NOTE[c]}`] : [])),
     '- 其余要求不变；输出前按“措辞规则”逐条检查一遍。',
   ].join('\n');
 }

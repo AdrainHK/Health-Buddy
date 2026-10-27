@@ -533,7 +533,8 @@ describe('方案和随访产物的确认', () => {
       const base = { version: 1, contentHash: detail.contentHash, content: detail.content };
       await agent
         .patch(`/api/artifacts/${id}`)
-        .send({ ...base, structured: record({ visitDate: dayOffset(1) }) })
+        // 两天后：按 UTC 算的明天在北京时间晚上已经是“今天”，用两天后才和时区无关
+        .send({ ...base, structured: record({ visitDate: dayOffset(2) }) })
         .expect(400);
       const saved = await agent
         .patch(`/api/artifacts/${id}`)
