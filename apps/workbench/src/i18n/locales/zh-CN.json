@@ -192,7 +192,10 @@
     "reuseRecentExperts": "沿用之前的专家意见",
     "readTwin": "读取数字孪生",
     "computeForecast": "计算趋势",
-    "generateTwinSummary": "生成孪生小结"
+    "generateTwinSummary": "生成孪生小结",
+    "readCarePlan": "读取当前方案",
+    "scheduleVisits": "排随访日期",
+    "generateVisitSchedule": "生成随访计划"
   },
   "skills": {
     "client-recent-summary": {
@@ -218,6 +221,10 @@
     "twin-review": {
       "name": "孪生复盘",
       "description": "先读取数字孪生和档案，确认计划后起草孪生小结，只给健管师看，不发给客户"
+    },
+    "visit-schedule": {
+      "name": "随访计划",
+      "description": "按平台的随访频次规则排出随访日期，为每次随访写建议方式和重点；只给健管师看，确认后写入随访日程"
     }
   },
   "results": {
@@ -253,7 +260,11 @@
           "client-recent-summary": "近况小结",
           "report-interpretation": "体检报告解读",
           "interview-outline": "面谈提纲",
-          "twin-summary": "孪生小结"
+          "twin-summary": "孪生小结",
+          "care-plan": "健康方案",
+          "visit-schedule": "随访计划",
+          "visit-script": "随访话术",
+          "visit-record": "随访记录"
         },
         "source": "依据报告 {{source}}",
         "sourceSeparator": " · "

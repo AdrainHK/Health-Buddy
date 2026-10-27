@@ -4,6 +4,7 @@ import { skillUsesReport, type PlanTemplate, type SkillDefinition } from './fram
 import { interviewOutline } from './interview-outline/index.js';
 import { reportInterpretation } from './report-interpretation/index.js';
 import { twinSummary } from './twin-summary/index.js';
+import { visitSchedule } from './visit-schedule/index.js';
 
 /** 技能注册表。新技能在这里登记后，/ 菜单和接口才能看到。 */
 // 各技能的输出结构不同，登记时统一成宽类型；取用时按 outputSchema 校验
@@ -12,6 +13,7 @@ export const SKILLS: readonly SkillDefinition[] = [
   reportInterpretation as unknown as SkillDefinition,
   interviewOutline as unknown as SkillDefinition,
   twinSummary as unknown as SkillDefinition,
+  visitSchedule as unknown as SkillDefinition,
 ];
 
 /**

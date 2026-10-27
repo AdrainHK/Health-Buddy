@@ -33,6 +33,8 @@ import {
   toArtifactSummary,
 } from '../tasks/tasks.repository.js';
 import { loadTwinSnapshot } from '../twin/twin.repository.js';
+import type { PlanContext } from '@health-buddy/skills';
+import { loadPlanContext, type PlanContextOptions } from './plan-context.js';
 
 const readOnly = () => conflict({ reasons: ['read_only'] });
 
@@ -68,6 +70,8 @@ export interface ClientContext {
   identifiers: string[];
   /** 通俗版开头的称呼，只在模型输出之后拼接，不发给模型 */
   displayName: string;
+  /** M5 方案和随访技能的上下文（当前方案、随访记录、排好的日期），去标识前的原文 */
+  plan?: PlanContext;
 }
 
 export interface RegenerationContext {
@@ -120,6 +124,8 @@ export interface NewArtifact {
   emergencySignal?: boolean;
   /** 有心理危机信号 */
   crisisSignal?: boolean;
+  /** M5：结构化内容（随访计划的日程等），由数据库按 kind 校验 */
+  structured?: unknown;
 }
 
 /**
@@ -761,6 +767,11 @@ export class WorkbenchRepository {
     return withTenant(this.db, ctx, (trx) => loadTwinSnapshot(trx, ctx, clientId, focus));
   }
 
+  /** 方案和随访技能的上下文（M5 规格 5.2）：当前方案、最近的随访记录，/随访计划 还有排好的日期 */
+  planContext(ctx: TenantContext, clientId: string, options: PlanContextOptions) {
+    return withTenant(this.db, ctx, (trx) => loadPlanContext(trx, ctx, clientId, options));
+  }
+
   /** 本任务之前的对话（不含这一轮），用作问一问的上下文 */
   history(
     ctx: TenantContext,
@@ -962,6 +973,7 @@ export class WorkbenchRepository {
           consultation_id: data.consultationId ?? null,
           emergency_signal: data.emergencySignal ?? false,
           crisis_signal: data.crisisSignal ?? false,
+          ...(data.structured === undefined ? {} : { structured: JSON.stringify(data.structured) }),
         })
         .execute();
       await trx

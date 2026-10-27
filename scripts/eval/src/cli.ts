@@ -15,6 +15,9 @@
  *                                  M4：/孪生小结、“请专家看看”的意见；问一问 @孪生项 的用例在 ask 里，
  *                                  “请专家看看”的路由用例在 expert-routing 里
  *
+ *   pnpm eval --suite visit-schedule
+ *                                  M5：/随访计划（日期照抄、重点相关、措辞和越界指令）
+ *
  *   pnpm eval --suite expert --show-failures  未通过用例的模型输出打进日志（合成数据）
  *
  * 密钥从环境变量读取（OPENAI_API_KEY、ANTHROPIC_API_KEY），不会打印。
@@ -40,6 +43,7 @@ import {
   reportInterpretationEvalCases,
   twinAskEvalCases,
   twinSummaryEvalCases,
+  visitScheduleEvalCases,
 } from '@health-buddy/skills';
 import {
   runAskEval,
@@ -52,6 +56,7 @@ import {
   runSynthesisEval,
   runTwinAskEval,
   runTwinSummaryEval,
+  runVisitScheduleEval,
   summarize,
   type RunResult,
 } from './run.js';
@@ -104,6 +109,8 @@ const expertCases = pick(
 );
 const expertRoutingCases = pick('expert-routing', [...routingEvalCases, ...twinRoutingEvalCases]);
 const twinSummaryCases = pick('twin-summary', twinSummaryEvalCases);
+// M5：/随访计划（规格 5.5）
+const visitScheduleCases = pick('visit-schedule', visitScheduleEvalCases);
 const twinConsultCases = pick('twin-consult', twinConsultEvalCases);
 const expertSynthesisCases = pick('expert-synthesis', synthesisEvalCases);
 const useJudge = !process.argv.includes('--no-judge');
@@ -120,7 +127,7 @@ const all: RunResult[] = [];
 for (const provider of providers) {
   const gateway = createGateway({ ...config, defaultProvider: provider, routes: {} });
   console.log(
-    `\n${provider}（${config.defaultModels[provider]}）：${cases.length + askCases.length + extractionCases.length + interpretationCases.length + outlineCases.length + planCases.length + expertCases.length + expertRoutingCases.length + expertSynthesisCases.length + twinSummaryCases.length + twinConsultCases.length + twinAskCases.length} 个用例 × ${runs} 次`,
+    `\n${provider}（${config.defaultModels[provider]}）：${cases.length + askCases.length + extractionCases.length + interpretationCases.length + outlineCases.length + planCases.length + expertCases.length + expertRoutingCases.length + expertSynthesisCases.length + twinSummaryCases.length + twinConsultCases.length + twinAskCases.length + visitScheduleCases.length} 个用例 × ${runs} 次`,
   );
   const results = [
     ...(await runEval({ gateway, provider, cases, runs, useJudge })),
@@ -148,6 +155,7 @@ for (const provider of providers) {
     ...(await runSynthesisEval({ gateway, provider, cases: expertSynthesisCases, runs })),
     ...(await runTwinAskEval({ gateway, provider, cases: twinAskCases, runs, useJudge })),
     ...(await runTwinSummaryEval({ gateway, provider, cases: twinSummaryCases, runs, useJudge })),
+    ...(await runVisitScheduleEval({ gateway, provider, cases: visitScheduleCases, runs })),
     ...(await runExpertEval({ gateway, provider, cases: twinConsultCases, runs, useJudge })),
   ];
   all.push(...results);

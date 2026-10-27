@@ -21,7 +21,7 @@ export class VisitFrequencyRepository {
   constructor(@Inject(DB) private readonly db: Db) {}
 
   get(ctx: TenantContext): Promise<VisitFrequencyRulesResponse> {
-    return withTenant(this.db, ctx, (trx) => getIn(trx));
+    return withTenant(this.db, ctx, (trx) => visitFrequencyRulesIn(trx));
   }
 
   /** 整套替换。分层固定四行；某一行没找到（不应发生）按请求不对处理 */
@@ -45,7 +45,7 @@ export class VisitFrequencyRepository {
         .set({ first_visit_within_days: rules.firstVisitWithinDays, updated_by: ctx.userId })
         .executeTakeFirst();
       if (Number(res.numUpdatedRows) !== 1) throw badRequest();
-      return getIn(trx);
+      return visitFrequencyRulesIn(trx);
     });
   }
 
@@ -106,7 +106,10 @@ function ruleValues(row: Record<string, unknown>): VisitFrequencyRuleEvent['befo
   return out;
 }
 
-async function getIn(trx: TenantTransaction): Promise<VisitFrequencyRulesResponse> {
+/** 读当前的随访频次规则（/随访计划排日期也用）*/
+export async function visitFrequencyRulesIn(
+  trx: TenantTransaction,
+): Promise<VisitFrequencyRulesResponse> {
   const tiers = await trx.selectFrom('visit_frequency_rules').selectAll().execute();
   const config = await trx
     .selectFrom('visit_frequency_config')

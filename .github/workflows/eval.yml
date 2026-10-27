@@ -41,6 +41,7 @@ jobs:
           - expert
           - expert-routing,expert-synthesis
           - twin-summary,twin-consult
+          - visit-schedule
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
