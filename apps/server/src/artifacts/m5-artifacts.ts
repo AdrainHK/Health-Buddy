@@ -26,7 +26,8 @@ import { localDate } from '../twin/time-zone.js';
  * - care_plan 有通俗版；visit_schedule、visit_script、visit_record 只有专业版（没有复制和导出）。
  * - care_plan、visit_schedule、visit_record 确认时要写 care_plans、visits、visit_records，
  *   只能经数据库的确认函数（5.4 第 1 条）；这里在调用函数之前做全部可以说清原因的检查。
- * - structured 只能在 care_plan、visit_schedule 草稿上由健管师修改（替换库条目、改参数、改日程）。
+ * - structured 只能在 care_plan、visit_schedule、visit_record 草稿上由健管师修改（替换库条目、改参数、
+ *   改日程、补填随访日期和方式）。
  */
 
 type RejectReason = ApproveRejection['reasons'][number];
@@ -45,14 +46,14 @@ export function professionalOnlyKind(kind: string): boolean {
   return PROFESSIONAL_ONLY_KINDS.has(kind);
 }
 
-/** 健管师能改 structured 的产物 */
-const EDITABLE_STRUCTURED = new Set(['care_plan', 'visit_schedule']);
+/** 健管师能改 structured 的产物（随访记录：素材里看不出日期、方式时由健管师补填，2.9 第 4 条） */
+const EDITABLE_STRUCTURED = new Set(['care_plan', 'visit_schedule', 'visit_record']);
 
 const EXPERT_NAMES = EXPERTS.map((e) => e.meta.name);
 
 /**
  * 校验健管师改过的 structured（PATCH /api/artifacts/:id）：形状、库条目已发布、目标参数在模板范围内、
- * 日程日期在今天到 6 个月后。不合格 → 400。返回要存的结构化内容。
+ * 日程日期在今天到 6 个月后、随访记录的日期不在今天之后。不合格 → 400。返回要存的结构化内容。
  */
 export async function validateEditedStructured(
   trx: TenantTransaction,
@@ -61,6 +62,15 @@ export async function validateEditedStructured(
   structured: unknown,
 ): Promise<unknown> {
   if (!EDITABLE_STRUCTURED.has(kind)) throw badRequest();
+  if (kind === 'visit_record') {
+    const parsed = visitRecordStructuredSchema.safeParse(structured);
+    if (!parsed.success) throw badRequest();
+    if (parsed.data.visitDate) {
+      const today = localDate(new Date(), await managerTimeZone(trx, ctx, 'Asia/Shanghai'));
+      if (parsed.data.visitDate > today) throw badRequest();
+    }
+    return parsed.data;
+  }
   if (kind === 'visit_schedule') {
     const parsed = visitScheduleStructuredSchema.safeParse(structured);
     if (!parsed.success) throw badRequest();

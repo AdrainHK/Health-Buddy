@@ -10,10 +10,13 @@ import {
   visitRecordListResponseSchema,
   visitRecordResponseSchema,
   visitResponseSchema,
+  visitMaterialListResponseSchema,
+  visitMaterialResponseSchema,
   type AdherenceResponse,
   type CarePlan,
   type CarePlanListResponse,
   type CarePlanSummary,
+  type CreateVisitMaterialRequest,
   type CreateVisitRequest,
   type EndCarePlanRequest,
   type ExerciseCategory,
@@ -26,6 +29,8 @@ import {
   type TodayVisitsResponse,
   type UpdateVisitRequest,
   type Visit,
+  type VisitMaterial,
+  type VisitMaterialListResponse,
   type VisitRecord,
   type VisitRecordSummary,
   type VisitStatus,
@@ -203,4 +208,34 @@ export async function listGoalTemplates(
     opts(signal),
   );
   return items;
+}
+
+// ---------- 随访素材（原文只上传，不再读回；列表不含原文） ----------
+
+export async function listVisitMaterials(
+  clientId: string,
+  signal?: AbortSignal,
+): Promise<VisitMaterialListResponse> {
+  return apiRequest(
+    `/clients/${clientId}/visit-materials`,
+    visitMaterialListResponseSchema,
+    opts(signal),
+  );
+}
+
+/** 上传素材：粘贴的文字，或在浏览器里读出的 .txt 内容（source = txt） */
+export async function createVisitMaterial(
+  clientId: string,
+  body: CreateVisitMaterialRequest,
+): Promise<VisitMaterial> {
+  const { material } = await apiRequest(
+    `/clients/${clientId}/visit-materials`,
+    visitMaterialResponseSchema,
+    { method: 'POST', body },
+  );
+  return material;
+}
+
+export function deleteVisitMaterial(id: string): Promise<void> {
+  return apiRequest(`/visit-materials/${id}`, null, { method: 'DELETE' });
 }

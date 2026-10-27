@@ -1,0 +1,336 @@
+import {
+  VISIT_MATERIAL_CONSENT_REQUIRED,
+  VISIT_MATERIAL_TEXT_MAX,
+  type Visit,
+  type VisitMaterial,
+} from '@health-buddy/shared';
+import { Button, IconButton } from '@health-buddy/ui';
+import { MessageSquareText, X } from 'lucide-react';
+import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import {
+  createVisitMaterial,
+  deleteVisitMaterial,
+  listVisitMaterials,
+  listVisits,
+} from '../api/care';
+import { ApiError, isAbortError } from '../api/http';
+import styles from '../twin/Twin.module.css';
+import care from './Care.module.css';
+import { localToday } from './dates';
+
+/** 只读本地的 .txt 文件，内容在浏览器里读出后作为文字上传（Q21），后端不解析文件 */
+const TXT_ACCEPT = '.txt,text/plain';
+
+export interface VisitMaterialsProps {
+  clientId: string;
+  readOnly: boolean;
+  /** 上传表单是否打开（输入框里点了“上传随访素材”） */
+  uploading: boolean;
+  onCloseUpload: () => void;
+}
+
+interface State {
+  materials: VisitMaterial[];
+  consentRecorded: boolean;
+  visits: Visit[];
+}
+
+/**
+ * 对话区里的随访素材（M5 规格 2.9）：还没整理成记录的素材显示为卡片（日期、字数、关联的随访），
+ * 可以删除；上传表单接受粘贴的文字或 .txt 文件，第一次为这位客户上传时必须勾选“已告知客户”。
+ * 原文只上传，不在界面上回显，也不进日志和埋点。
+ */
+export function VisitMaterials({
+  clientId,
+  readOnly,
+  uploading,
+  onCloseUpload,
+}: VisitMaterialsProps) {
+  const { t } = useTranslation();
+  const [state, setState] = useState<State | null>(null);
+  const [version, setVersion] = useState(0);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    Promise.all([
+      listVisitMaterials(clientId, controller.signal),
+      listVisits({ clientId }, controller.signal).catch((err: unknown) => {
+        if (isAbortError(err)) throw err;
+        return [] as Visit[];
+      }),
+    ])
+      .then(([list, visits]) =>
+        setState({
+          materials: list.materials,
+          consentRecorded: list.consentRecorded,
+          visits: visits.filter((v) => v.status === 'planned' || v.status === 'missed'),
+        }),
+      )
+      .catch((err: unknown) => {
+        if (!isAbortError(err)) setState({ materials: [], consentRecorded: false, visits: [] });
+      });
+    return () => controller.abort();
+  }, [clientId, version]);
+
+  const reload = useCallback(() => setVersion((v) => v + 1), []);
+  const visitDate = new Map(state?.visits.map((v) => [v.id, v.dueDate]) ?? []);
+  const usable = (state?.materials ?? []).filter((m) => !m.purged && !m.consumedArtifactId);
+
+  const remove = (m: VisitMaterial) => {
+    setDeleting(m.id);
+    setError(null);
+    deleteVisitMaterial(m.id)
+      .then(reload)
+      .catch((err: unknown) => {
+        if (err instanceof ApiError && err.status === 404) reload();
+        else setError(t('care.materials.deleteFailed'));
+      })
+      .finally(() => setDeleting(null));
+  };
+
+  if (!uploading && usable.length === 0 && !error) return null;
+  return (
+    <div className={care.materials}>
+      {usable.length > 0 && (
+        <ul className={care.materialList} aria-label={t('care.materials.list')}>
+          {usable.map((m) => (
+            <li key={m.id} className={care.materialCard}>
+              <MessageSquareText size={16} aria-hidden />
+              <span className={care.materialText}>
+                {t('care.materials.card', {
+                  date: m.createdAt.slice(0, 10),
+                  count: m.charCount,
+                })}
+                {m.visitId && visitDate.get(m.visitId) && (
+                  <span className={styles.muted}>
+                    {' '}
+                    {t('care.materials.linked', { date: visitDate.get(m.visitId) })}
+                  </span>
+                )}
+              </span>
+              {!readOnly && (
+                <IconButton
+                  size="small"
+                  label={t('care.materials.delete', { date: m.createdAt.slice(0, 10) })}
+                  icon={<X size={14} />}
+                  disabled={deleting === m.id}
+                  onClick={() => remove(m)}
+                />
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {error && (
+        <p className={styles.error} role="alert">
+          {error}
+        </p>
+      )}
+      {uploading && state && !readOnly && (
+        <UploadForm
+          clientId={clientId}
+          consentRecorded={state.consentRecorded}
+          visits={state.visits}
+          onCancel={onCloseUpload}
+          onUploaded={() => {
+            onCloseUpload();
+            reload();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** 读出文本文件的内容（UTF-8） */
+function readText(file: File): Promise<string> {
+  if (typeof file.text === 'function') return file.text();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ''));
+    reader.onerror = () => reject(reader.error ?? new Error('read failed'));
+    reader.readAsText(file);
+  });
+}
+
+type UploadError = 'tooLong' | 'consent' | 'dailyLimit' | 'notConfigured' | 'notFound' | 'failed';
+
+function uploadError(err: unknown): UploadError {
+  if (!(err instanceof ApiError)) return 'failed';
+  if (err.status === 413) return 'tooLong';
+  if (err.status === 400 && err.reasons.includes(VISIT_MATERIAL_CONSENT_REQUIRED)) return 'consent';
+  if (err.status === 429) return 'dailyLimit';
+  if (err.code === 'not_configured') return 'notConfigured';
+  if (err.status === 404) return 'notFound';
+  return 'failed';
+}
+
+function UploadForm({
+  clientId,
+  consentRecorded,
+  visits,
+  onCancel,
+  onUploaded,
+}: {
+  clientId: string;
+  consentRecorded: boolean;
+  visits: Visit[];
+  onCancel: () => void;
+  onUploaded: () => void;
+}) {
+  const { t } = useTranslation();
+  const formId = useId();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const today = localToday();
+  const [text, setText] = useState('');
+  const [source, setSource] = useState<'paste' | 'txt'>('paste');
+  // 默认关联今天到期的那次随访（2.9）
+  const [visitId, setVisitId] = useState(() => visits.find((v) => v.dueDate === today)?.id ?? '');
+  const [consent, setConsent] = useState(false);
+  const [touched, setTouched] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<UploadError | 'fileFailed' | null>(null);
+  const [needConsent, setNeedConsent] = useState(!consentRecorded);
+
+  const length = text.trim().length;
+  const problem =
+    length === 0
+      ? 'empty'
+      : length > VISIT_MATERIAL_TEXT_MAX
+        ? 'tooLong'
+        : needConsent && !consent
+          ? 'consent'
+          : null;
+
+  const onFile = async (file: File | undefined) => {
+    if (!file) return;
+    setError(null);
+    try {
+      setText(await readText(file));
+      setSource('txt');
+    } catch {
+      setError('fileFailed');
+    } finally {
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    setTouched(true);
+    if (problem) return;
+    setBusy(true);
+    setError(null);
+    createVisitMaterial(clientId, {
+      text: text.trim(),
+      source,
+      ...(visitId ? { visitId } : {}),
+      ...(needConsent ? { consentConfirmed: consent } : {}),
+    })
+      .then(() => {
+        setText('');
+        onUploaded();
+      })
+      .catch((err: unknown) => {
+        const key = uploadError(err);
+        if (key === 'consent') setNeedConsent(true);
+        setError(key);
+      })
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <form className={styles.form} onSubmit={submit} noValidate aria-labelledby={`${formId}-title`}>
+      <p id={`${formId}-title`} className={styles.sectionTitle}>
+        {t('care.materials.title')}
+      </p>
+      <p className={styles.muted}>{t('care.materials.note')}</p>
+      <label className={styles.label}>
+        {t('care.materials.textLabel', { max: VISIT_MATERIAL_TEXT_MAX })}
+        <textarea
+          className={styles.textarea}
+          value={text}
+          rows={6}
+          disabled={busy}
+          aria-invalid={
+            touched && (problem === 'empty' || problem === 'tooLong') ? true : undefined
+          }
+          onChange={(e) => {
+            setText(e.target.value);
+            setSource('paste');
+          }}
+        />
+      </label>
+      <p className={styles.muted} role="status">
+        {t('care.materials.count', { count: length, max: VISIT_MATERIAL_TEXT_MAX })}
+      </p>
+      <div className={styles.cardActions}>
+        <Button type="button" disabled={busy} onClick={() => fileRef.current?.click()}>
+          {t('care.materials.chooseTxt')}
+        </Button>
+        <input
+          ref={fileRef}
+          type="file"
+          hidden
+          accept={TXT_ACCEPT}
+          aria-label={t('care.materials.chooseTxt')}
+          data-testid="material-file-input"
+          onChange={(e) => void onFile(e.target.files?.[0])}
+        />
+      </div>
+      <label className={styles.label}>
+        {t('care.materials.visit')}
+        <select
+          className={styles.select}
+          value={visitId}
+          disabled={busy}
+          onChange={(e) => setVisitId(e.target.value)}
+        >
+          <option value="">{t('care.materials.noVisit')}</option>
+          {visits.map((v) => (
+            <option key={v.id} value={v.id}>
+              {t('care.visits.line', {
+                date: v.dueDate,
+                purpose: t(`care.visits.purposes.${v.purpose}`),
+                method: t(`care.visits.methods.${v.method}`),
+              })}
+            </option>
+          ))}
+        </select>
+      </label>
+      {needConsent && (
+        <label className={styles.choice}>
+          <input
+            type="checkbox"
+            checked={consent}
+            disabled={busy}
+            aria-invalid={touched && !consent ? true : undefined}
+            onChange={(e) => setConsent(e.target.checked)}
+          />
+          {t('care.materials.consent')}
+        </label>
+      )}
+      {touched && problem && (
+        <p className={styles.error} role="alert">
+          {t(`care.materials.problems.${problem}`, { max: VISIT_MATERIAL_TEXT_MAX })}
+        </p>
+      )}
+      {error && (
+        <p className={styles.error} role="alert">
+          {t(`care.materials.errors.${error}`, { max: VISIT_MATERIAL_TEXT_MAX })}
+        </p>
+      )}
+      <div className={styles.cardActions}>
+        <Button type="submit" variant="primary" disabled={busy}>
+          {busy ? t('care.materials.uploading') : t('care.materials.upload')}
+        </Button>
+        <Button type="button" variant="ghost" disabled={busy} onClick={onCancel}>
+          {t('care.materials.cancel')}
+        </Button>
+      </div>
+    </form>
+  );
+}

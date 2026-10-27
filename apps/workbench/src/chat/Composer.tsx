@@ -14,6 +14,7 @@ import {
   ArrowUp,
   AtSign,
   FileText,
+  MessageSquareText,
   Paperclip,
   Slash,
   Square,
@@ -119,6 +120,8 @@ export interface ComposerProps {
   onReportChange?: (report: ReportOption | null) => void;
   /** 选择、粘贴或拖入了报告文件（一次算一份报告） */
   onAttachFiles?: (files: File[]) => void;
+  /** 上传随访素材（M5 规格 2.9）：只在已关联客户的任务里出现 */
+  onUploadMaterial?: () => void;
   /** @ 列表里可以选的专家（M3 规格 2.4）；专家预览没开时为空 */
   experts?: readonly ExpertSummary[];
   /** 这条消息 @ 的专家 id */
@@ -160,6 +163,7 @@ export function Composer({
   report = null,
   onReportChange,
   onAttachFiles,
+  onUploadMaterial,
   experts = [],
   expertRefs = [],
   onExpertRefsChange,
@@ -466,6 +470,14 @@ export function Composer({
           ))}
         </div>
         <div className={styles.barEnd}>
+          {onUploadMaterial && (
+            <IconButton
+              label={t('chat.uploadMaterial')}
+              icon={<MessageSquareText size={16} />}
+              disabled={disabled}
+              onClick={onUploadMaterial}
+            />
+          )}
           {onAttachFiles && (
             <>
               <IconButton

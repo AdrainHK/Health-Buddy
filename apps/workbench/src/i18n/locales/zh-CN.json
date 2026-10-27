@@ -171,7 +171,8 @@
       "consultBar": "将请专家看看：{{items}}。可以补充想问的问题，也可以直接发送",
       "separator": "、",
       "cancelConsult": "不请专家"
-    }
+    },
+    "uploadMaterial": "上传随访素材"
   },
   "steps": {
     "readClient": "读取客户档案",
@@ -321,7 +322,9 @@
         "criticalBlock": "请先勾选“已知悉”危急指标",
         "criticalValueBlock": "通俗版含危急指标数值，删去并保存后才能确认",
         "newerBlock": "请先选择载入最新内容或保留你的修改",
-        "riskTierBlock": "通俗版含风险分层字样，删去并保存后才能确认"
+        "riskTierBlock": "通俗版含风险分层字样，删去并保存后才能确认",
+        "structuredBlock": "结构化内容里有不合规的地方，改好并保存后才能确认",
+        "allergenBlock": "请先勾选“已核对过敏原”"
       },
       "critical": {
         "title": "危急指标",
@@ -1647,6 +1650,96 @@
       "title": "历史方案",
       "empty": "没有历史方案",
       "line": "{{start}} 至 {{end}} · {{sections}} · {{status}}"
+    },
+    "editor": {
+      "tabs": {
+        "care_plan": "食谱、动作和目标",
+        "visit_schedule": "随访日程表",
+        "visit_record": "日期和方式"
+      },
+      "planNote": "示例食谱、动作和行为目标只能从方案库里选。替换或删除条目后，请核对通俗版里对应的段落。",
+      "libraryFailed": "方案库加载失败，暂时不能替换条目",
+      "goals": "行为目标",
+      "addGoal": "加一个目标",
+      "removeGoal": "删除{{section}}的第 {{index}} 个目标",
+      "goalUnavailable": "目标模板已停用，请删除或换一个",
+      "param": "{{name}}（{{min}}–{{max}}{{unit}}）",
+      "paramOutOfRange": "参数超出了模板允许的范围",
+      "recipes": "示例一周食谱",
+      "noRecipes": "没有示例食谱",
+      "slot": "第 {{day}} 天 · {{meal}}",
+      "day": "第几天",
+      "dayN": "第 {{day}} 天",
+      "addRecipe": "加一份食谱",
+      "slotTaken": "这一餐已经有食谱",
+      "exercises": "动作和放松练习",
+      "noExercises": "没有动作",
+      "exercise": "第 {{index}} 项",
+      "frequency": "每周几次（1–7）",
+      "minutes": "每次几分钟（1–120）",
+      "addExercise": "加一项动作",
+      "itemUnavailable": "已不在库中，请替换",
+      "removeItem": "删除{{name}}",
+      "remove": "删除",
+      "choose": "请选择",
+      "scheduleNote": "日期不能早于今天、不能超过 6 个月后，也不能重复。确认后才写入随访日程。",
+      "schedule": "随访日程表",
+      "rowDate": "第 {{index}} 次 · 日期",
+      "removeRow": "删除第 {{index}} 次随访",
+      "addRow": "加一行",
+      "visitDate": "随访日期",
+      "problems": {
+        "goalUnavailable": "有目标模板已停用，请删除或换一个",
+        "goalRange": "有目标参数超出了模板允许的范围",
+        "itemUnavailable": "有食谱或动作已不在库中，请替换",
+        "exerciseRange": "动作的次数或时长超出了范围",
+        "scheduleEmpty": "随访日程至少要有一行",
+        "scheduleRange": "有随访日期为空、早于今天或超过 6 个月后",
+        "scheduleDuplicate": "有两次随访在同一天",
+        "focusTooLong": "重点超出了字数上限",
+        "recordIncomplete": "请填写随访日期和方式",
+        "recordFuture": "随访日期不能在今天之后"
+      }
+    },
+    "review": {
+      "allergenTitle": "方案用到的食谱和客户的过敏史有匹配，请核对",
+      "allergenLine": "{{recipe}}：含{{allergen}}",
+      "allergenAck": "已核对过敏原",
+      "scheduleWrites": "确认后将写入 {{count}} 次随访；这位客户以前由随访计划排出、还没到期的随访会标为“已被新计划替代”，手动加的随访和方案复评不受影响。",
+      "resolveTitle": "可以一并标为“已处理（已电话联系）”的跟进项",
+      "resolveLine": "{{kind}}：{{basis}}"
+    },
+    "materials": {
+      "list": "随访素材",
+      "card": "随访素材 · {{date}} · {{count}} 字",
+      "linked": "关联 {{date}} 的随访",
+      "delete": "删除 {{date}} 上传的随访素材",
+      "deleteFailed": "删除素材失败，请重试",
+      "title": "上传随访素材",
+      "note": "粘贴聊天记录、通话后的笔记，或选择 .txt 文件。原文加密保存，只有你能用来整理随访记录；整理成的记录确认 30 天后、或上传 30 天后一直没有使用的，原文会被删除。",
+      "textLabel": "素材文字（最多 {{max}} 字）",
+      "count": "{{count}} / {{max}} 字",
+      "chooseTxt": "选择 .txt 文件",
+      "visit": "关联的随访",
+      "noVisit": "不关联",
+      "consent": "已告知客户本次沟通内容会被整理成服务记录",
+      "upload": "上传",
+      "uploading": "正在上传…",
+      "cancel": "取消",
+      "problems": {
+        "empty": "请粘贴素材文字或选择 .txt 文件",
+        "tooLong": "素材超过 {{max}} 字，请分成几份上传",
+        "consent": "第一次为这位客户上传素材，请先勾选“已告知客户”"
+      },
+      "errors": {
+        "tooLong": "素材超过 {{max}} 字，请分成几份上传",
+        "consent": "第一次为这位客户上传素材，请先勾选“已告知客户”",
+        "dailyLimit": "今天上传的素材已达上限，请明天再试",
+        "notConfigured": "素材的加密存储还没有配置，暂时不能上传，请联系平台管理员",
+        "notFound": "这位客户或这次随访已不存在，请刷新后重试",
+        "failed": "上传失败，请重试",
+        "fileFailed": "读取文件失败，请确认是 .txt 文件"
+      }
     }
   },
   "library": {

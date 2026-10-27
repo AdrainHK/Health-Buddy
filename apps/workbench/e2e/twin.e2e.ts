@@ -1,5 +1,7 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type {
+  ArtifactDetailResponse,
+  ArtifactSummary,
   ClientSummary,
   CurrentUser,
   FollowUpItem,
@@ -35,6 +37,9 @@ const ids = {
   goal: 'a2000000-0000-4000-8000-000000000001',
   visitRecord: 'a4000000-0000-4000-8000-000000000001',
   recipe: 'a5000000-0000-4000-8000-000000000001',
+  exercise: 'a6000000-0000-4000-8000-000000000001',
+  artifact: '70000000-0000-4000-8000-000000000001',
+  event: '80000000-0000-4000-8000-000000000001',
   report: 'f0000000-0000-4000-8000-000000000001',
 };
 
@@ -65,12 +70,72 @@ const task: Task = {
   updatedAt: NOW,
 };
 const skills: SkillSummary[] = [];
+/** M5：一份方案草稿（结构化内容编辑器在手机宽度下不横向滚动） */
+const planArtifact: ArtifactSummary = {
+  id: ids.artifact,
+  taskId: ids.task,
+  skillId: 'care-plan',
+  version: 1,
+  status: 'draft',
+  hasCriticalFlags: false,
+  createdAt: NOW,
+  sourceReportDate: null,
+  sourceFileName: null,
+};
+const planArtifactDetail: ArtifactDetailResponse = {
+  artifact: {
+    ...planArtifact,
+    clientId: ids.client,
+    parentId: null,
+    content: {
+      professional: '## 合成方案专业版',
+      clientFacing: '合成方案通俗版\n\n仅供参考，非医疗诊断',
+    },
+    contentHash: 'hash-1',
+    criticalFlags: [],
+    sourceReportId: null,
+    riskTierSuggestion: null,
+    clientFacing: true,
+    consultationId: null,
+    emergencySignal: false,
+    crisisSignal: false,
+    structured: {
+      sections: [
+        { section: 'diet', professional: '合成', clientFacing: '合成', goals: [] },
+        {
+          section: 'exercise',
+          professional: '合成',
+          clientFacing: '合成',
+          goals: [{ templateId: ids.goal, params: { steps: 7000 } }],
+        },
+      ],
+      recipes: [{ day: 1, meal: 'breakfast', recipeId: ids.recipe }],
+      exercises: [{ exerciseId: ids.exercise, frequencyPerWeek: 3, minutes: 20 }],
+    },
+    planOptions: { sections: ['diet', 'exercise'], cycleWeeks: 8 },
+  },
+  sourceReport: null,
+  hints: { judgementHints: [], criticalValueMentions: [], riskTierMentions: [] },
+  versions: [planArtifact],
+  events: [
+    {
+      id: ids.event,
+      artifactId: ids.artifact,
+      actorId: null,
+      action: 'created',
+      reason: null,
+      format: null,
+      createdAt: NOW,
+    },
+  ],
+};
+
 const detail: TaskDetailResponse = {
   task,
   messages: [],
   steps: [],
   plans: [],
-  artifacts: [],
+  artifacts: [planArtifact],
   uploads: [],
 };
 
@@ -311,6 +376,22 @@ const goalTemplate = {
   metricParam: 'steps',
   sourceNote: '合成来源说明',
 };
+const exercise = {
+  id: ids.exercise,
+  version: 1,
+  code: 'brisk_walk',
+  name: `合成快走 ${LONG_LATIN.slice(0, 50)}`,
+  category: 'aerobic',
+  intensity: 'moderate',
+  setting: ['outdoor'],
+  equipment: [],
+  steps: ['抬头挺胸'],
+  keyPoints: ['微微出汗、能说话'],
+  commonMistakes: [],
+  managerCautions: '合成注意事项',
+  met: null,
+  sourceNote: '合成来源说明',
+};
 const recipe = {
   id: ids.recipe,
   version: 1,
@@ -407,6 +488,12 @@ async function mockApi(page: Page) {
           return json(route, { items: [goalTemplate] });
         case key === 'GET /api/plan-library/recipes':
           return json(route, { items: [recipe] });
+        case key === 'GET /api/plan-library/exercises':
+          return json(route, { items: [exercise] });
+        case key === `GET /api/artifacts/${ids.artifact}`:
+          return json(route, planArtifactDetail);
+        case key === `GET /api/clients/${ids.client}/visit-materials`:
+          return json(route, { materials: [], consentRecorded: true });
         case key === `PATCH /api/follow-ups/${ids.follow}`:
           patches.push(req.postDataJSON());
           done = true;
@@ -547,4 +634,22 @@ test('方案与随访、方案库：375px 下不横向滚动（M5 验收标准 3
   await item.click();
   await expect(page.getByRole('heading', { level: 2, name: /合成燕麦粥/ })).toBeVisible();
   await expectNoHorizontalScroll(page, 'library detail', 'main *');
+});
+
+test('方案草稿的编辑器：375px 下不横向滚动，只能改内容和替换条目（M5 规格 2.1）', async ({
+  page,
+}) => {
+  await mockApi(page);
+  await page.goto(`/?task=${ids.task}`);
+  await page.getByRole('button', { name: '打开结果区' }).click();
+  const panel = page.getByRole('tabpanel');
+  await panel
+    .getByRole('button', { name: /健康方案|第1版/ })
+    .first()
+    .click();
+  await page.getByRole('tab', { name: '食谱、动作和目标' }).click();
+  const editor = page.getByTestId('care-plan-editor');
+  await expect(editor.getByRole('combobox', { name: '第 1 天 · 早餐' })).toBeVisible();
+  await expect(editor.getByRole('spinbutton', { name: /steps/ })).toHaveValue('7000');
+  await expectNoHorizontalScroll(page, 'plan editor');
 });

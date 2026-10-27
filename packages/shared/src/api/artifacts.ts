@@ -157,8 +157,9 @@ export const updateArtifactRequestSchema = z.object({
     clientFacing: z.string().max(ARTIFACT_TEXT_MAX),
   }),
   /**
-   * 结构化内容（只限 care_plan、visit_schedule，M5 规格 2.3、2.7）：替换库条目、改目标参数、改日程。
-   * 后端按 kind 用对应的 schema 校验：条目未发布、参数超范围、日期早于今天或超过 6 个月后 → 400
+   * 结构化内容（只限 care_plan、visit_schedule、visit_record，M5 规格 2.3、2.7、2.9）：替换库条目、
+   * 改目标参数、改日程、补填随访记录的日期和方式。后端按 kind 用对应的 schema 校验：条目未发布、
+   * 参数超范围、日程日期早于今天或超过 6 个月后、随访记录日期在今天之后 → 400
    */
   structured: z.unknown().optional(),
 });

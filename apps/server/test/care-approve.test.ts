@@ -522,6 +522,51 @@ describe('方案和随访产物的确认', () => {
       expect((await approve(f.users.managerA1, id)).body.reasons).toEqual(['record_incomplete']);
     });
 
+    it('健管师补填随访日期和方式后可以确认；日期在今天之后 → 400', async () => {
+      const id = await draft(
+        f.clients.a1[1],
+        'visit_record',
+        record({ visitDate: null, method: null }),
+      );
+      const agent = await as(f.users.managerA1);
+      const detail = (await agent.get(`/api/artifacts/${id}`).expect(200)).body.artifact;
+      const base = { version: 1, contentHash: detail.contentHash, content: detail.content };
+      await agent
+        .patch(`/api/artifacts/${id}`)
+        .send({ ...base, structured: record({ visitDate: dayOffset(1) }) })
+        .expect(400);
+      const saved = await agent
+        .patch(`/api/artifacts/${id}`)
+        .send({ ...base, structured: record({ visitDate: dayOffset(-1), method: 'wechat' }) })
+        .expect(200);
+      expect(saved.body.artifact.structured).toMatchObject({
+        visitDate: dayOffset(-1),
+        method: 'wechat',
+      });
+      const res = await approve(f.users.managerA1, id);
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+    });
+
+    it('别人的随访记录草稿：改结构化内容 → 404，不改任何行', async () => {
+      const id = await draft(f.clients.a1[1], 'visit_record', record({ visitDate: null }));
+      const agent = await as(f.users.managerB1);
+      await agent
+        .patch(`/api/artifacts/${id}`)
+        .send({
+          version: 1,
+          contentHash: 'x',
+          content: { professional: '合成', clientFacing: '' },
+          structured: record(),
+        })
+        .expect(404);
+      const row = await owner
+        .selectFrom('artifacts')
+        .select('structured')
+        .where('id', '=', id)
+        .executeTakeFirstOrThrow();
+      expect((row.structured as { visitDate: string | null }).visitDate).toBeNull();
+    });
+
     it('勾选了别的客户的跟进项 → 404，整个确认回滚', async () => {
       const otherItem = await owner
         .insertInto('follow_up_items')
