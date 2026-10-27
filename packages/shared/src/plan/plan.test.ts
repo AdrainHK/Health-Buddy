@@ -192,6 +192,16 @@ describe('allergenConflicts（Q16）', () => {
     ).toEqual(['r-peanut:peanut', 'r-shrimp:egg']);
   });
 
+  it('芝麻（含芝麻酱、香油）也是过敏原', () => {
+    const sesame = [{ id: 'r-sesame', allergens: ['sesame' as const] }];
+    for (const text of ['芝麻过敏', '吃芝麻酱会起疹子', 'sesame allergy']) {
+      expect(
+        allergenConflicts([text], sesame).map((c) => c.itemId),
+        text,
+      ).toEqual(['r-sesame']);
+    }
+  });
+
   it('没有过敏、明确写“无过敏史”时没有冲突；不认识的过敏原不匹配', () => {
     expect(allergenConflicts([], items)).toEqual([]);
     expect(allergenConflicts(['无过敏史'], items)).toEqual([]);

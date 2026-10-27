@@ -17,6 +17,7 @@ import {
   type TenantContext,
   type TenantTransaction,
 } from '../src/db/database.js';
+import { ALLERGEN_SNAPSHOT_0021 } from '../src/db/migrations/0021-sesame-allergen.js';
 import {
   PLAN_ENUM_SNAPSHOT,
   VISIT_FREQUENCY_SNAPSHOT,
@@ -321,7 +322,9 @@ describe('方案和随访数据表的行级安全和约束', () => {
     Object.fromEntries(CLIENT_TABLES.map((t) => [t, [...ids].sort()]));
 
   it('迁移的固定取值和默认频次和 packages/shared 一致', () => {
-    expect(PLAN_ENUM_SNAPSHOT.allergens).toEqual([...ALLERGENS]);
+    // 0021 把芝麻加进了过敏原
+    expect(ALLERGEN_SNAPSHOT_0021).toEqual([...ALLERGENS]);
+    expect([...PLAN_ENUM_SNAPSHOT.allergens, 'sesame']).toEqual([...ALLERGENS]);
     expect(PLAN_ENUM_SNAPSHOT.tags).toEqual([...LIBRARY_TAGS]);
     expect(PLAN_ENUM_SNAPSHOT.meals).toEqual([...MEAL_TYPES]);
     expect(PLAN_ENUM_SNAPSHOT.sections).toEqual([...PLAN_SECTIONS]);

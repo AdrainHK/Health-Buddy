@@ -140,6 +140,7 @@ export const INGREDIENT_ALLERGEN_HINTS: Readonly<Record<string, readonly string[
   seafood: ['虾', '鱼', '蟹', '扇贝', '贝类', '干贝', '蛤', '蚝', '鱿', '海参'],
   peanut: ['花生'],
   tree_nut: ['核桃', '杏仁', '腰果', '榛子', '开心果', '松子', '巴旦木'],
+  sesame: ['芝麻', '麻酱', '香油', '麻油'],
 };
 
 /**
@@ -149,6 +150,7 @@ export const STEP_ALLERGEN_HINTS: Readonly<Record<string, readonly string[]>> = 
   soy: ['酱油', '生抽', '老抽', '豆瓣', '豆豉', '腐乳'],
   gluten: ['酱油', '生抽', '老抽', '豆瓣'],
   seafood: ['蚝油', '鱼露', '虾皮'],
+  sesame: ['芝麻', '麻酱', '香油', '麻油'],
 };
 
 function hinted(text: string, hints: Readonly<Record<string, readonly string[]>>): string[] {

@@ -53,7 +53,10 @@ export const LIBRARY_TAGS = [
 export const libraryTagSchema = z.enum(LIBRARY_TAGS);
 export type LibraryTag = z.infer<typeof libraryTagSchema>;
 
-/** 过敏原标签（Q16）：花生、坚果、乳制品、蛋、海鲜、大豆、麸质 */
+/**
+ * 过敏原标签（Q16）：花生、坚果、乳制品、蛋、海鲜、大豆、麸质、芝麻
+ * （芝麻由产品负责人 2026-10-27 确认加入；陈醋、香醋里的麸质不单独标）
+ */
 export const ALLERGENS = [
   'peanut',
   'tree_nut',
@@ -62,6 +65,7 @@ export const ALLERGENS = [
   'seafood',
   'soy',
   'gluten',
+  'sesame',
 ] as const;
 export const allergenSchema = z.enum(ALLERGENS);
 export type Allergen = z.infer<typeof allergenSchema>;

@@ -658,7 +658,7 @@
     "nutritionPerServing": null,
     "nutritionBasis": null,
     "tags": ["vegetable_rich", "vegetarian", "high_fiber", "low_oil", "quick"],
-    "allergens": [],
+    "allergens": ["sesame"],
     "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
   },
   {
@@ -939,7 +939,7 @@
     "nutritionPerServing": null,
     "nutritionBasis": null,
     "tags": ["vegetable_rich", "vegetarian", "low_oil"],
-    "allergens": ["soy", "gluten"],
+    "allergens": ["soy", "gluten", "sesame"],
     "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
   },
   {
@@ -968,7 +968,7 @@
     "nutritionPerServing": null,
     "nutritionBasis": null,
     "tags": ["quality_protein", "vegetable_rich", "low_oil"],
-    "allergens": [],
+    "allergens": ["sesame"],
     "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
   },
   {
@@ -1450,7 +1450,7 @@
     "nutritionPerServing": null,
     "nutritionBasis": null,
     "tags": ["vegetarian", "quality_protein", "quick", "low_oil"],
-    "allergens": ["soy"],
+    "allergens": ["soy", "sesame"],
     "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
   },
   {
