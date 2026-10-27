@@ -77,6 +77,13 @@ describe('/随访计划', () => {
     expect(categories.has('presumed_disease')).toBe(true);
     expect(categories.has('judgment')).toBe(true);
     expect(visitSchedule.checkOutput!(output(), input)).toEqual([]);
+    // 说明里照抄“按风险分层排的间隔”不算判断说法
+    expect(
+      visitSchedule.checkOutput!(
+        output({ notes: ['按风险分层“中”的间隔 30 天排，属于中风险客户，第一次随访在方案开始后'] }),
+        input,
+      ),
+    ).toEqual([]);
   });
 
   it('评测用例至少 8 条，日期表都非空', () => {

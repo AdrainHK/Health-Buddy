@@ -24,6 +24,9 @@ import {
 
 const { meta, body } = loadSkillMd(new URL('./skill.md', import.meta.url));
 
+/** 风险分层的说法（只给健管师看的专业版里可以出现） */
+const TIER_WORDING = /风险分层|[高中低]风险/g;
+
 /**
  * /随访计划（M5 规格 2.7）：只有专业版（clientFacing: false），产物 kind = visit_schedule。
  * 日期和目的类别由后端按频次规则算好（Q17），模型只写方式建议和重点；
@@ -153,10 +156,12 @@ export const visitSchedule: SkillDefinition<typeof visitScheduleOutputSchema> = 
   },
 
   checkOutput(output) {
-    return visitScheduleTexts(output).flatMap((t) => [
-      ...checkWhyWording(t),
-      ...checkTwinJudgments(t),
-    ]);
+    return visitScheduleTexts(output).flatMap((t) => {
+      // 专业版只给健管师：照抄“按风险分层排的间隔”“高风险客户”这类分层说法是正常的，
+      // 不算“风险”这类判断说法（遮成等长空格，位置照旧）
+      const masked = t.replace(TIER_WORDING, (m) => ' '.repeat(m.length));
+      return [...checkWhyWording(masked), ...checkTwinJudgments(masked)];
+    });
   },
 
   correctionNote(issues) {
