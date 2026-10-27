@@ -8,6 +8,7 @@ import {
 } from './care-plan/index.js';
 import type { SkillInput } from './framework.js';
 import type { PlanLibraryContext } from './plan-input.js';
+import { checkPlanClientText, checkPlanProfessionalText } from './wording.js';
 import { SKILLS, getSkill, skillSummaries } from './registry.js';
 import { visitScheduleEvalCases } from './visit-schedule/evals/cases.js';
 import { visitSchedule, validateVisitSchedule } from './visit-schedule/index.js';
@@ -384,5 +385,22 @@ describe('技能的输出结构', () => {
         /"(?:minimum|maximum|exclusiveMinimum|exclusiveMaximum)"/,
       );
     }
+  });
+});
+
+describe('方案的功效检查', () => {
+  it('“保证睡眠时间”这类生活安排不算功效承诺；“保证见效”“助眠”仍拦', () => {
+    const terms = (t: string) =>
+      checkPlanClientText(t)
+        .filter((i) => i.category === 'efficacy_claim')
+        .map((i) => i.term);
+    expect(terms('每天保证睡眠 7 小时，白天保证饮水。')).toEqual([]);
+    expect(terms('坚持下去保证见效。')).toEqual(['保证', '见效']);
+    expect(terms('睡前做助眠放松。')).toEqual(['助眠']);
+    expect(
+      checkPlanProfessionalText('建议转介医生评估治疗。').filter(
+        (i) => i.category === 'efficacy_claim',
+      ),
+    ).toEqual([]);
   });
 });

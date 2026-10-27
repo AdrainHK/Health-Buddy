@@ -702,6 +702,11 @@ export function findClientDrugIssues(text: string): WordingIssue[] {
   return out.sort((a, b) => a.index - b.index);
 }
 
+/** “保证睡眠时间”“保证饮水”这类生活安排不是功效承诺：方案的功效检查前遮掉这里的“保证” */
+const ROUTINE_ASSURE =
+  /保证(?=[^，。；,.;]{0,4}(?:睡眠|休息|饮水|喝水|水分|充足|规律|作息|早餐|三餐|蔬菜|蛋白))/g;
+const maskRoutineAssure = (text: string) => text.replace(ROUTINE_ASSURE, '　　');
+
 /**
  * 方案通俗版的每一段文字（规格 2.3、5.3）：禁用词、疾病和人群说法、“风险”“患有”这类判断、药物和保健品、
  * 孪生状态颜色和预测、功效承诺。生成时命中就带纠正说明重试一次（确认时后端再查一遍）。
@@ -718,7 +723,7 @@ export function checkPlanClientText(text: string): WordingIssue[] {
     ...asIssues('judgment', findTerms(text, JUDGMENT_PHRASES)),
     ...findClientDrugIssues(text),
     ...asIssues('twin_term', findClientTwinTerms(text)),
-    ...asIssues('efficacy_claim', findTerms(text, EFFICACY_TERMS)),
+    ...asIssues('efficacy_claim', findTerms(maskRoutineAssure(text), EFFICACY_TERMS)),
     ...findEfficacyPattern(text),
   ];
 }
@@ -738,7 +743,7 @@ export function checkPlanProfessionalText(text: string): WordingIssue[] {
       index: b.index,
     })),
     ...checkAdviceWording(text),
-    ...asIssues('efficacy_claim', findTerms(text, PROFESSIONAL_EFFICACY_TERMS)),
+    ...asIssues('efficacy_claim', findTerms(maskRoutineAssure(text), PROFESSIONAL_EFFICACY_TERMS)),
     ...findEfficacyPattern(text),
   ];
 }
