@@ -95,7 +95,7 @@ describe('左侧栏：今日跟进入口和客户列表', () => {
     const entry = await screen.findByRole('button', { name: /今日跟进.*2 项未处理/ });
     await user.click(entry);
     expect(entry).toHaveAttribute('aria-current', 'page');
-    const list = await screen.findByRole('list', { name: '跟进项' });
+    const list = await screen.findByRole('list', { name: '异常跟进' });
     const items = within(list).getAllByRole('listitem');
     expect(items[0]).toHaveTextContent('合成客户乙 · 危急指标');
     expect(items[1]).toHaveTextContent('合成客户甲 · 状态变差');

@@ -3,6 +3,7 @@ import { PRODUCT_NAME, type ClientSummary, type Task, type TwinLevel } from '@he
 import {
   Archive,
   BellRing,
+  BookOpen,
   ArchiveRestore,
   ArrowLeft,
   Heart,
@@ -63,6 +64,8 @@ export interface SidebarProps {
   experts?: { active: boolean; onOpen: () => void };
   /** 今日跟进入口（M4 规格 2.1，Q12）：带未处理数量角标，点开后中间区域显示清单 */
   followUps?: { active: boolean; count: number | null; onOpen: () => void };
+  /** 方案库（M5 规格 2.1、2.4）：所有健管师可见，只读 */
+  library?: { active: boolean; onOpen: () => void };
   /** 客户列表（M4 规格 2.1）：名字旁的小圆点是四个方面里最严重的状态，点客户打开孪生 */
   clientList?: SidebarClients;
 }
@@ -85,6 +88,7 @@ export function Sidebar({
   tasks,
   experts,
   followUps,
+  library,
   clientList,
 }: SidebarProps) {
   const { t } = useTranslation();
@@ -161,6 +165,14 @@ export function Sidebar({
           label={t('nav.experts')}
           {...(experts ? { onClick: experts.onOpen, current: experts.active } : {})}
         />
+        {library && (
+          <NavItem
+            icon={<BookOpen size={18} />}
+            label={t('nav.library')}
+            onClick={library.onOpen}
+            current={library.active}
+          />
+        )}
         <NavItem icon={<Timer size={18} />} label={t('nav.automations')} />
       </nav>
 

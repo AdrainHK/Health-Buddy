@@ -14,6 +14,7 @@ import { type FormEvent, useCallback, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { updateFollowUp } from '../api/twin';
+import { AddVisitForm } from '../care/AddVisitForm';
 import { displayDateTime, twinErrorKey } from './errors';
 import { formatNumber, useComparator, useMetricName } from './format';
 import styles from './Twin.module.css';
@@ -131,6 +132,7 @@ export function FollowUpCard({
   const basis = useFollowUpBasis();
   const titleId = useId();
   const [handling, setHandling] = useState(false);
+  const [addingVisit, setAddingVisit] = useState(false);
   const kind = t(`followUps.kinds.${item.kind}`);
   const metricName = useMetricName();
   const subject = item.domain
@@ -167,7 +169,17 @@ export function FollowUpCard({
         {item.consultedAt &&
           ` · ${t('followUps.consulted', { time: displayDateTime(item.consultedAt) })}`}
       </p>
-      {handling ? (
+      {addingVisit ? (
+        <AddVisitForm
+          clientId={item.clientId}
+          followUpItemId={item.id}
+          onCancel={() => setAddingVisit(false)}
+          onAdded={() => {
+            setAddingVisit(false);
+            onChanged();
+          }}
+        />
+      ) : handling ? (
         <HandleForm
           item={item}
           onCancel={() => setHandling(false)}
@@ -192,6 +204,13 @@ export function FollowUpCard({
             aria-label={t('followUps.handleLabel', { name: item.clientName, kind })}
           >
             {t('followUps.handle')}
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => setAddingVisit(true)}
+            aria-label={t('followUps.addVisitLabel', { name: item.clientName, kind })}
+          >
+            {t('care.visits.add')}
           </Button>
           {onAskExpert && (
             <Button
