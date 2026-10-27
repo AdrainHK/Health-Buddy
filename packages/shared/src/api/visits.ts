@@ -183,13 +183,22 @@ export const visitMaterialSchema = z.object({
 });
 export type VisitMaterial = z.infer<typeof visitMaterialSchema>;
 
+/**
+ * 上传素材：粘贴的文字，或工作台在本地读出的 .txt 文件内容（source = txt；后端不解析文件）
+ */
 export const createVisitMaterialRequestSchema = z.object({
   text: z.string().trim().min(1).max(VISIT_MATERIAL_TEXT_MAX),
+  source: z.enum(['paste', 'txt']).default('paste'),
   visitId: z.uuid().optional(),
   /** 第一次为这位客户上传时必须为 true（已告知客户，Q24）；以后不再询问 */
   consentConfirmed: z.boolean().optional(),
 });
-export type CreateVisitMaterialRequest = z.infer<typeof createVisitMaterialRequestSchema>;
+export type CreateVisitMaterialRequest = z.input<typeof createVisitMaterialRequestSchema>;
+
+export const visitMaterialResponseSchema = z.object({ material: visitMaterialSchema });
+
+/** 第一次为这位客户上传素材却没勾选“已告知客户”时，400 的原因 */
+export const VISIT_MATERIAL_CONSENT_REQUIRED = 'consent_required';
 
 export const visitMaterialListResponseSchema = z.object({
   materials: z.array(visitMaterialSchema),
@@ -264,6 +273,10 @@ export type VisitRecord = z.infer<typeof visitRecordSchema>;
 export const visitRecordListResponseSchema = z.object({
   records: z.array(visitRecordSummarySchema),
 });
+export type VisitRecordListResponse = z.infer<typeof visitRecordListResponseSchema>;
+
+export const visitRecordResponseSchema = z.object({ record: visitRecordSchema });
+export type VisitRecordResponse = z.infer<typeof visitRecordResponseSchema>;
 
 export const VISIT_ADDENDUM_MAX = 1000;
 /** 补充说明（只追加，记录确认后不能修改） */
@@ -283,3 +296,32 @@ export type VisitFrequencyRulesResponse = z.infer<typeof visitFrequencyRulesResp
 
 /** 平台管理员修改（PATCH /api/admin/visit-frequency-rules）：整套替换 */
 export const updateVisitFrequencyRulesRequestSchema = visitFrequencyRulesSchema;
+
+/**
+ * 随访频次规则的修改记录（只有平台管理员能看）。target 是改的哪一行：一个风险分层，或
+ * “有 1、2 级未处理跟进项时首次随访不晚于几天”（first_visit）。规则不是客户数据，可以记原值。
+ */
+export const visitFrequencyRuleEventSchema = z.object({
+  id: z.string(),
+  target: z.enum(['high', 'medium', 'low', 'none', 'first_visit']),
+  actorName: z.string().nullable(),
+  rulesVersion: z.number().int().positive(),
+  before: z.object({
+    intervalDays: z.number().int().optional(),
+    defaultMethod: visitMethodSchema.optional(),
+    firstVisitWithinDays: z.number().int().optional(),
+  }),
+  after: z.object({
+    intervalDays: z.number().int().optional(),
+    defaultMethod: visitMethodSchema.optional(),
+    firstVisitWithinDays: z.number().int().optional(),
+  }),
+  createdAt: z.iso.datetime(),
+});
+export type VisitFrequencyRuleEvent = z.infer<typeof visitFrequencyRuleEventSchema>;
+export const visitFrequencyRuleEventListResponseSchema = z.object({
+  events: z.array(visitFrequencyRuleEventSchema),
+});
+export type VisitFrequencyRuleEventListResponse = z.infer<
+  typeof visitFrequencyRuleEventListResponseSchema
+>;

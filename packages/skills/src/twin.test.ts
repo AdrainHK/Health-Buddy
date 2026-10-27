@@ -28,6 +28,7 @@ import {
   twinRefLabel,
 } from './twin-input.js';
 import {
+  checkLibraryText,
   checkSpokenWording,
   checkTwinJudgments,
   checkTwinWording,
@@ -646,5 +647,34 @@ describe('合规审核补充：去标识、越线、自由文字（M4 PR #46）'
     expect(rendered.match(/家庭血压的说明/g)).toHaveLength(1);
     // 两条预测时，没写来源的说明不挂到任何一条上
     expect(rendered).not.toContain('没写来源的说明');
+  });
+});
+
+describe('方案库条目的措辞检查（M5 规格 4.2）', () => {
+  it('功效承诺：词表和“降低、控制、改善 + 指标”句式；同一处只报一次', () => {
+    expect(checkLibraryText('降血糖小炒').map((i) => i.term)).toEqual(['降血糖']);
+    expect(checkLibraryText('有助于降低血糖').map((i) => i.category)).toEqual(['efficacy_claim']);
+    expect(checkLibraryText('帮助控制血压、改善血脂').map((i) => i.term)).toEqual([
+      '控制血压',
+      '改善血脂',
+    ]);
+    expect(checkLibraryText('睡前喝一杯助眠').map((i) => i.term)).toEqual(['助眠']);
+  });
+
+  it('人群和疾病说法：三高、血糖高、焦虑、失眠也不许写', () => {
+    expect(checkLibraryText('适合三高人群').map((i) => i.term)).toEqual(['三高']);
+    expect(checkLibraryText('适合血糖高的人').map((i) => i.term)).toEqual(['血糖高']);
+    expect(checkLibraryText('缓解焦虑和失眠').map((i) => i.term)).toEqual(['焦虑', '失眠']);
+  });
+
+  it('普通的食物和动作描述不误报', () => {
+    for (const text of [
+      '少油快炒，加少许盐',
+      '慢慢呼气，肩膀放松',
+      '每天步行 6000 步',
+      '两面煎熟',
+    ]) {
+      expect(checkLibraryText(text), text).toEqual([]);
+    }
   });
 });

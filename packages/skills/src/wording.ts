@@ -128,7 +128,9 @@ export type WordingCategory =
   | 'status_change'
   | 'forecast_certainty'
   | 'disease_risk'
-  | 'invented_number';
+  | 'invented_number'
+  // M5 方案库条目（规格 2.4、4.2）
+  | 'efficacy_claim';
 
 export interface WordingIssue {
   category: WordingCategory;
@@ -480,4 +482,133 @@ export function checkTwinJudgments(text: string): WordingIssue[] {
     ...findPattern(text, FORECAST_CERTAINTY, 'forecast_certainty', '确定说法'),
     ...findDiseaseRisk(text),
   ];
+}
+
+// ---------- M5 方案库条目（规格 2.4、4.2） ----------
+
+/**
+ * 功效承诺：库条目只描述食物和动作本身，不写和疾病、指标挂钩的效果（“降血糖”“护肝”），
+ * 也不写“保证”“见效”这类承诺。方案生成器的通俗版检查以后同样用这份词表。
+ */
+export const EFFICACY_TERMS = [
+  '降血糖',
+  '降血压',
+  '降血脂',
+  '降尿酸',
+  '降压',
+  '降糖',
+  '降脂',
+  '控糖',
+  '控血糖',
+  '稳血糖',
+  '调血脂',
+  '治好',
+  '治疗',
+  '疗效',
+  '功效',
+  '药效',
+  '食疗',
+  '排毒',
+  '抗癌',
+  '防癌',
+  '抗衰',
+  '减肥',
+  '瘦身',
+  '燃脂',
+  '刮油',
+  '逆转',
+  '根除',
+  '保证',
+  '见效',
+  '消炎',
+  '补血',
+  '养肝',
+  '护肝',
+  '清血管',
+  '软化血管',
+  '增强免疫',
+  '提高免疫',
+  '降胆固醇',
+  '稳糖',
+  '控压',
+  '助眠',
+  '安神',
+  '改善睡眠',
+  '降火',
+  '去火',
+  '清热',
+  '祛湿',
+  '养胃',
+  '健脾',
+  '补肾',
+  '护心',
+  '通血管',
+  '抗氧化',
+  '抗炎',
+  '减脂',
+  '燃烧脂肪',
+  '提高抵抗力',
+  '延缓衰老',
+  '立竿见影',
+] as const;
+
+/** 和指标挂钩的效果说法：“降低血糖”“控制血压”“改善血脂”（词表列不全的组合） */
+export const EFFICACY_PATTERN =
+  /(?:降低|降|控制|调节|稳定|平稳|改善|调理|调|稳)(?:血糖|血压|血脂|胆固醇|尿酸)/;
+
+/**
+ * 方案库条目里另外不许写的人群和疾病说法（“适合三高人群”“缓解焦虑”）。只用于库条目和以后的方案通俗版，
+ * 不放进 DISEASE_TERMS：面谈提纲会问“最近有没有失眠、焦虑”这类情况。
+ */
+export const LIBRARY_DISEASE_TERMS: readonly string[] = [
+  ...DISEASE_TERMS,
+  '三高',
+  '高血糖',
+  '血糖高',
+  '血压高',
+  '血脂高',
+  '肥胖',
+  '焦虑',
+  '失眠',
+  '关节炎',
+  '颈椎病',
+  '腰椎间盘',
+];
+
+/**
+ * 方案库条目里面向客户的文字（名称、食材、做法、动作要点、目标模板文字，规格 4.2）：
+ * 禁用词、疾病名称、具体药名和功效承诺。不查剂量：食谱的家庭常用量（“一碗”“两片”）是正常内容。
+ */
+export function checkLibraryText(text: string): WordingIssue[] {
+  const issues = [
+    ...findBannedTerms(text).map((b) => ({
+      category: 'banned_term' as const,
+      term: b.term,
+      index: b.index,
+    })),
+    ...asIssues('presumed_disease', findTerms(text, LIBRARY_DISEASE_TERMS)),
+    ...asIssues('drug_name', findDrugNames(text)),
+    ...asIssues('efficacy_claim', findTerms(text, EFFICACY_TERMS)),
+    ...findEfficacyPattern(text),
+  ];
+  // 词表和句式在同一处都命中（“降血糖”）时只报一次
+  const seen = new Set<string>();
+  return issues
+    .sort((a, b) => a.index - b.index || b.term.length - a.term.length)
+    .filter((i) => {
+      const key = `${i.category}@${i.index}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+/** 不看否定词：库条目里“不能降低血糖”这类说法同样不该出现 */
+function findEfficacyPattern(text: string): WordingIssue[] {
+  const { text: norm, origin } = normalized(text);
+  return [...norm.matchAll(new RegExp(EFFICACY_PATTERN.source, 'g'))].map((m) => ({
+    category: 'efficacy_claim' as const,
+    term: m[0],
+    index: origin[m.index] ?? 0,
+  }));
 }

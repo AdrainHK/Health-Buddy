@@ -53,7 +53,10 @@ export const LIBRARY_TAGS = [
 export const libraryTagSchema = z.enum(LIBRARY_TAGS);
 export type LibraryTag = z.infer<typeof libraryTagSchema>;
 
-/** 过敏原标签（Q16）：花生、坚果、乳制品、蛋、海鲜、大豆、麸质 */
+/**
+ * 过敏原标签（Q16）：花生、坚果、乳制品、蛋、海鲜、大豆、麸质、芝麻
+ * （芝麻由产品负责人 2026-10-27 确认加入；陈醋、香醋里的麸质不单独标）
+ */
 export const ALLERGENS = [
   'peanut',
   'tree_nut',
@@ -62,6 +65,7 @@ export const ALLERGENS = [
   'seafood',
   'soy',
   'gluten',
+  'sesame',
 ] as const;
 export const allergenSchema = z.enum(ALLERGENS);
 export type Allergen = z.infer<typeof allergenSchema>;
@@ -349,6 +353,8 @@ const adminMeta = {
   version: z.number().int().positive(),
   reviewedByLabel: z.string().nullable(),
   reviewedOn: z.iso.date().nullable(),
+  /** 最后修改人的显示名；只有平台管理员能看到（其他后台角色为 null） */
+  updatedByName: z.string().nullable(),
   updatedAt: z.iso.datetime(),
 };
 
@@ -373,8 +379,14 @@ export type Exercise = z.infer<typeof exerciseSchema>;
 /** 健管师看到的运动条目，含“给健管师看的注意事项” */
 export const exerciseManagerSchema = z.object({ ...exerciseContentSchema.shape, ...managerMeta });
 export type ExerciseManagerView = z.infer<typeof exerciseManagerSchema>;
-/** 以后客户端（M6）用的第三个 schema：不含 managerCautions */
-export const exerciseClientSchema = exerciseManagerSchema.omit({ managerCautions: true });
+/**
+ * 以后客户端（M6）用的第三个 schema：不含 managerCautions，也不含 sourceNote
+ * （来源说明只查禁用词，可能写着共识文件名里的疾病名称）
+ */
+export const exerciseClientSchema = exerciseManagerSchema.omit({
+  managerCautions: true,
+  sourceNote: true,
+});
 export type ExerciseClientView = z.infer<typeof exerciseClientSchema>;
 
 export const goalTemplateSchema = z.object({ ...goalFields, ...adminMeta });

@@ -21,6 +21,8 @@ COPY packages/shared/package.json packages/shared/
 COPY packages/ui/package.json packages/ui/
 COPY packages/ai-engine/package.json packages/ai-engine/
 COPY packages/skills/package.json packages/skills/
+COPY packages/experts/package.json packages/experts/
+COPY packages/plan-library/package.json packages/plan-library/
 COPY scripts/seed/package.json scripts/seed/
 COPY scripts/eval/package.json scripts/eval/
 RUN pnpm install --frozen-lockfile

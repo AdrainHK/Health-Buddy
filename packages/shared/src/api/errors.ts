@@ -20,6 +20,8 @@ export const API_ERROR_CODES = [
   'unsupported_media_type',
   /** 功能依赖的服务（对象存储、队列）还没有配置 */
   'not_configured',
+  /** 方案库条目含禁用词、疾病名称、药名或功效承诺（M5 规格 2.4），响应里标出位置，HTTP 400 */
+  'invalid_content',
   'internal_error',
 ] as const;
 

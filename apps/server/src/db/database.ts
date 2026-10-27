@@ -21,6 +21,14 @@ export function createDb(connectionString: string, maxConnections = 10): Db {
   });
 }
 
+export interface TenantOptions {
+  /**
+   * M5 方案库预览开关（hb.plan_library_preview）：打开时行级安全放行“待审定”的库条目。
+   * 只有仓储层在配置 PLAN_LIBRARY_PREVIEW=true 时传 true，正式环境永远不开。
+   */
+  planLibraryPreview?: boolean;
+}
+
 /**
  * 在一个事务里设置租户上下文并执行 fn。
  *
@@ -34,6 +42,7 @@ export async function withTenant<T>(
   db: Db,
   ctx: TenantContext,
   fn: (trx: TenantTransaction) => Promise<T>,
+  options: TenantOptions = {},
 ): Promise<T> {
   return db.transaction().execute(async (trx) => {
     await sql`
@@ -41,7 +50,8 @@ export async function withTenant<T>(
         set_config('app.user_id', ${ctx.userId}, true),
         set_config('app.role', ${ctx.role}, true),
         set_config('app.operator_id', ${ctx.operatorId ?? ''}, true),
-        set_config('app.org_id', ${ctx.orgId ?? ''}, true)
+        set_config('app.org_id', ${ctx.orgId ?? ''}, true),
+        set_config('hb.plan_library_preview', ${options.planLibraryPreview ? 'on' : ''}, true)
     `.execute(trx);
     return fn(trx);
   });

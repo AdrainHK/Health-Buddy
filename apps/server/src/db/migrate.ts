@@ -5,6 +5,7 @@ import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'node:crypto';
 import { hashPassword } from '../auth/password.js';
 import { APP_DB_ROLE } from '../config.js';
 import { MIGRATIONS } from './migrations/index.js';
+import { importPlanLibrarySeed, type PlanLibrarySeedResult } from './plan-library-seed.js';
 
 const provider: MigrationProvider = {
   getMigrations: () =>
@@ -76,9 +77,11 @@ export interface MigrateOptions {
 export interface MigrateResult {
   applied: string[];
   platformAdmin: 'created' | 'exists' | 'skipped';
+  /** 本次新导入的方案库种子条目数（已有的 code 不覆盖） */
+  planLibrarySeeded: PlanLibrarySeedResult;
 }
 
-/** 部署时运行：确保应用角色存在、执行未执行的迁移、初始化平台管理员。 */
+/** 部署时运行：确保应用角色存在、执行未执行的迁移、初始化平台管理员、导入方案库种子。 */
 export async function migrate(options: MigrateOptions): Promise<MigrateResult> {
   const db = ownerDb(options.ownerUrl);
   try {
@@ -95,7 +98,8 @@ export async function migrate(options: MigrateOptions): Promise<MigrateResult> {
     const platformAdmin = options.platformAdmin
       ? await bootstrapPlatformAdmin(db, options.platformAdmin)
       : 'skipped';
-    return { applied, platformAdmin };
+    const planLibrarySeeded = await importPlanLibrarySeed(db);
+    return { applied, platformAdmin, planLibrarySeeded };
   } finally {
     await db.destroy();
   }

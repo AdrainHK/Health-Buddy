@@ -19,6 +19,7 @@ import * as m0017 from './0017-twin-compute.js';
 import * as m0018 from './0018-twin-ai.js';
 import * as m0019 from './0019-task-title-source.js';
 import * as m0020 from './0020-plan-followup.js';
+import * as m0021 from './0021-sesame-allergen.js';
 
 export interface Migration {
   name: string;
@@ -47,4 +48,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { name: '0018-twin-ai', up: m0018.up },
   { name: '0019-task-title-source', up: m0019.up },
   { name: '0020-plan-followup', up: m0020.up },
+  { name: '0021-sesame-allergen', up: m0021.up },
 ];

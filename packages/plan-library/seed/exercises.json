@@ -1,0 +1,563 @@
+[
+  {
+    "code": "aerobic-brisk-walk",
+    "name": "健步走",
+    "category": "aerobic",
+    "intensity": "moderate",
+    "setting": ["outdoor"],
+    "equipment": [],
+    "steps": [
+      "先慢走 5 分钟热身",
+      "加快步速，步子比平时略大，手臂自然前后摆动",
+      "保持微微出汗、能说话但不能唱歌的速度",
+      "最后慢走 5 分钟放松"
+    ],
+    "keyPoints": ["抬头挺胸，目视前方", "脚跟先着地，再过渡到前脚掌", "穿合脚、有缓冲的运动鞋"],
+    "commonMistakes": ["一开始就走得太快", "低头看手机走路"],
+    "managerCautions": "近期有胸闷、胸痛、头晕或血压明显波动的客户，先请医生评估；运动中出现胸闷、气短、头晕立即停下休息。",
+    "met": 4.3,
+    "sourceNote": "运动处方中国专家共识的有氧运动建议；MET 为参考值，待运动顾问按 Compendium of Physical Activities 核对"
+  },
+  {
+    "code": "aerobic-easy-walk",
+    "name": "饭后散步",
+    "category": "aerobic",
+    "intensity": "low",
+    "setting": ["outdoor", "home"],
+    "equipment": [],
+    "steps": ["饭后休息半小时左右再出门", "用平常的步速散步", "走 10 到 30 分钟，按自己的感觉调整"],
+    "keyPoints": ["速度以轻松、不气喘为准", "天冷时注意保暖，天热时避开正午"],
+    "commonMistakes": ["吃完马上快走", "走得太久，第二天觉得很累"],
+    "managerCautions": "行走不稳或近期跌倒过的客户，建议有人陪同或在家中走廊走动；出现头晕、心慌立即停下。有心脏病、近期手术或严重骨关节问题的客户，先请医生评估再开始。",
+    "met": 2.8,
+    "sourceNote": "运动处方中国专家共识的日常身体活动建议；MET 为参考值，待运动顾问核对"
+  },
+  {
+    "code": "aerobic-march-in-place",
+    "name": "原地踏步",
+    "category": "aerobic",
+    "intensity": "low",
+    "setting": ["home"],
+    "equipment": [],
+    "steps": [
+      "站在椅子旁边，需要时可以扶着",
+      "交替抬起左右腿，膝盖抬到自己舒服的高度",
+      "手臂配合前后摆动",
+      "每做 3 到 5 分钟休息一会儿"
+    ],
+    "keyPoints": ["身体保持直立", "落地轻一些，减少对膝盖的冲击"],
+    "commonMistakes": ["弯腰驼背", "憋着气做"],
+    "managerCautions": "适合天气不好或不方便出门时；膝关节疼痛明显的客户降低抬腿高度，疼痛加重时停止并请医生评估。有心脏病、近期手术或严重骨关节问题的客户，先请医生评估再开始。",
+    "met": 3,
+    "sourceNote": "运动处方中国专家共识的有氧运动建议；MET 为参考值，待运动顾问核对"
+  },
+  {
+    "code": "aerobic-cycling",
+    "name": "休闲骑车",
+    "category": "aerobic",
+    "intensity": "moderate",
+    "setting": ["outdoor", "gym"],
+    "equipment": ["自行车或固定式单车"],
+    "steps": [
+      "调好座椅高度：脚踩到最低点时膝盖微微弯曲",
+      "先轻松骑 5 分钟热身",
+      "骑到身体微微发热、呼吸稍快但还能说话的程度",
+      "最后放慢速度骑 5 分钟"
+    ],
+    "keyPoints": ["户外骑行戴头盔，选车少的路段", "上身放松，不要耸肩"],
+    "commonMistakes": ["座椅太低，膝盖弯得太多", "一开始就用力蹬"],
+    "managerCautions": "平衡能力差或视力不好的客户优先选固定式单车；近期有胸闷胸痛、头晕的客户先请医生评估。",
+    "met": 4,
+    "sourceNote": "运动处方中国专家共识的有氧运动建议；MET 为参考值，待运动顾问核对"
+  },
+  {
+    "code": "aerobic-swimming",
+    "name": "水中行走或慢游",
+    "category": "aerobic",
+    "intensity": "moderate",
+    "setting": ["gym"],
+    "equipment": ["泳池"],
+    "steps": [
+      "下水前活动肩膀和腿",
+      "不会游泳可以在浅水区来回行走",
+      "会游泳的用自己熟悉的泳姿慢慢游，游一小段休息一会儿，不比速度",
+      "上岸后擦干保暖"
+    ],
+    "keyPoints": ["在有救生员的泳池进行", "水中运动对膝盖压力小"],
+    "commonMistakes": ["空腹或刚吃饱下水", "一次游太久"],
+    "managerCautions": "有心脏相关病史、癫痫发作史或近期有头晕的客户先请医生评估，不要单独下水。",
+    "met": 4.5,
+    "sourceNote": "运动处方中国专家共识的有氧运动建议；MET 为参考值，待运动顾问核对"
+  },
+  {
+    "code": "aerobic-tai-chi",
+    "name": "太极拳",
+    "category": "aerobic",
+    "intensity": "low",
+    "setting": ["outdoor", "home"],
+    "equipment": [],
+    "steps": [
+      "选平坦、不滑的场地",
+      "跟着熟悉的套路或老师练习，动作缓慢连贯",
+      "每次练 20 到 30 分钟，中间可以休息"
+    ],
+    "keyPoints": ["呼吸自然，配合动作", "膝盖不要超过脚尖太多，下蹲幅度量力而行"],
+    "commonMistakes": ["追求低架子，膝盖弯得太深", "憋气"],
+    "managerCautions": "膝关节疼痛的客户降低姿势高度；初学者建议跟着老师学，避免动作不当。有心脏病、近期手术或严重骨关节问题的客户，先请医生评估再开始。",
+    "met": 3,
+    "sourceNote": "运动处方中国专家共识的传统健身方式建议；MET 为参考值，待运动顾问核对"
+  },
+  {
+    "code": "aerobic-baduanjin",
+    "name": "八段锦",
+    "category": "aerobic",
+    "intensity": "low",
+    "setting": ["home", "outdoor"],
+    "equipment": [],
+    "steps": [
+      "站立，双脚与肩同宽",
+      "按八个动作的顺序依次练习，每个动作重复几次",
+      "全套做完约 12 到 15 分钟"
+    ],
+    "keyPoints": ["动作缓慢舒展，配合呼吸", "量力而行，弯腰、转身的幅度不必追求到位"],
+    "commonMistakes": ["动作太快", "腰部用力过猛"],
+    "managerCautions": "腰椎不适或平衡能力差的客户可以坐着练上肢动作；出现疼痛或头晕时停止。有心脏病、近期手术或严重骨关节问题的客户，先请医生评估再开始。",
+    "met": 3,
+    "sourceNote": "运动处方中国专家共识的传统健身方式建议；MET 为参考值，待运动顾问核对"
+  },
+  {
+    "code": "strength-wall-pushup",
+    "name": "扶墙俯卧撑",
+    "category": "strength",
+    "intensity": "low",
+    "setting": ["home"],
+    "equipment": [],
+    "steps": [
+      "面对墙站立，双手与肩同高、略宽于肩撑在墙上",
+      "身体保持一条直线，弯曲手肘让胸口靠近墙",
+      "推墙回到起始位置",
+      "做 8 到 12 次为一组，组间休息 1 分钟"
+    ],
+    "keyPoints": ["下去时吸气，推起时呼气", "腰不要塌下去"],
+    "commonMistakes": ["憋气用力", "只动脖子、不动手臂"],
+    "managerCautions": "肩关节疼痛的客户减小幅度或暂停；力量练习时不要憋气，血压控制不稳的客户先请医生评估。",
+    "met": null,
+    "sourceNote": "运动处方中国专家共识的抗阻练习建议，平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "strength-sit-to-stand",
+    "name": "坐站起立",
+    "category": "strength",
+    "intensity": "low",
+    "setting": ["home"],
+    "equipment": ["稳固的椅子"],
+    "steps": [
+      "坐在椅子前半部分，双脚平放在地上，与肩同宽",
+      "身体略向前倾，用腿的力量站起来",
+      "再慢慢坐下",
+      "做 8 到 12 次为一组，可以做 2 组"
+    ],
+    "keyPoints": ["站起时呼气，坐下时吸气", "膝盖和脚尖方向一致", "需要时可以用手扶椅子扶手"],
+    "commonMistakes": ["坐下时一下子跌坐", "膝盖向内扣"],
+    "managerCautions": "椅子要靠墙放稳；平衡能力差的客户身边要有人或有可扶的地方；膝关节疼痛明显时先请医生评估。",
+    "met": null,
+    "sourceNote": "运动处方中国专家共识的抗阻练习建议，平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "strength-glute-bridge",
+    "name": "臀桥",
+    "category": "strength",
+    "intensity": "low",
+    "setting": ["home"],
+    "equipment": ["瑜伽垫"],
+    "steps": [
+      "仰卧，屈膝，双脚平放在垫子上",
+      "收紧臀部，把臀部抬起，让肩、髋、膝在一条线上",
+      "停 2 秒后慢慢放下",
+      "做 10 到 12 次为一组"
+    ],
+    "keyPoints": ["抬起时呼气", "用臀部发力，不要用腰硬顶"],
+    "commonMistakes": ["抬得太高，腰部过度弯曲", "动作太快"],
+    "managerCautions": "腰部疼痛的客户减小幅度，疼痛加重时停止；孕期客户不做仰卧动作。有心脏病、近期手术或严重骨关节问题的客户，先请医生评估再开始。",
+    "met": null,
+    "sourceNote": "运动处方中国专家共识的抗阻练习建议，平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "strength-band-row",
+    "name": "弹力带坐姿划船",
+    "category": "strength",
+    "intensity": "low",
+    "setting": ["home", "gym"],
+    "equipment": ["弹力带"],
+    "steps": [
+      "坐在地上或椅子上，把弹力带套在脚底",
+      "双手握住弹力带两端，手臂向前伸直",
+      "弯曲手肘向后拉，肩胛骨向中间靠拢",
+      "慢慢回到起始位置，做 10 到 12 次为一组"
+    ],
+    "keyPoints": ["后背挺直", "拉的时候呼气"],
+    "commonMistakes": ["耸肩", "身体向后仰借力"],
+    "managerCautions": "使用前检查弹力带有无裂口；肩部疼痛的客户减小阻力或暂停。有心脏病、近期手术或严重骨关节问题的客户，先请医生评估再开始。",
+    "met": null,
+    "sourceNote": "运动处方中国专家共识的抗阻练习建议，平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "strength-heel-raise",
+    "name": "扶椅提踵",
+    "category": "strength",
+    "intensity": "low",
+    "setting": ["home"],
+    "equipment": ["稳固的椅子"],
+    "steps": [
+      "双手扶椅背站立",
+      "慢慢踮起脚尖，抬起脚跟",
+      "停 1 到 2 秒后慢慢放下",
+      "做 12 到 15 次为一组"
+    ],
+    "keyPoints": ["身体保持直立", "放下时有控制，不要砸地"],
+    "commonMistakes": ["身体前后晃动", "动作太快"],
+    "managerCautions": "足踝疼痛或近期扭伤的客户暂不做；平衡能力差的客户必须扶稳。有心脏病、近期手术或严重骨关节问题的客户，先请医生评估再开始。",
+    "met": null,
+    "sourceNote": "运动处方中国专家共识的抗阻练习建议，平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "strength-wall-sit",
+    "name": "靠墙静蹲",
+    "category": "strength",
+    "intensity": "moderate",
+    "setting": ["home"],
+    "equipment": [],
+    "steps": [
+      "背靠墙站立，双脚向前迈出约一步",
+      "沿墙慢慢下滑，膝盖弯到自己舒服的角度",
+      "保持 15 到 30 秒，自然呼吸",
+      "慢慢站起来，休息后重复 3 到 5 次"
+    ],
+    "keyPoints": ["膝盖不超过脚尖", "下蹲角度从浅到深，逐渐增加"],
+    "commonMistakes": ["憋气坚持", "一开始就蹲得很深"],
+    "managerCautions": "静力练习容易憋气，血压控制不稳的客户先请医生评估；膝关节疼痛加重时停止。",
+    "met": null,
+    "sourceNote": "运动处方中国专家共识的抗阻练习建议，平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "strength-bird-dog",
+    "name": "跪姿对侧伸展",
+    "category": "strength",
+    "intensity": "low",
+    "setting": ["home"],
+    "equipment": ["瑜伽垫"],
+    "steps": [
+      "双手双膝着地，手在肩下方，膝在髋下方",
+      "同时向前伸出右手、向后伸出左腿，保持身体平稳",
+      "停 2 到 3 秒后收回，换另一侧",
+      "每侧做 8 到 10 次"
+    ],
+    "keyPoints": ["腹部微微收紧，背部保持平直", "动作慢，以稳定为主"],
+    "commonMistakes": ["腿抬得太高，腰塌下去", "身体歪向一侧"],
+    "managerCautions": "膝盖跪地疼痛的客户在膝下多垫一层软垫；腰部疼痛加重时停止。有心脏病、近期手术或严重骨关节问题的客户，先请医生评估再开始。",
+    "met": null,
+    "sourceNote": "运动处方中国专家共识的核心稳定练习建议，平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "strength-lateral-raise",
+    "name": "侧平举",
+    "category": "strength",
+    "intensity": "low",
+    "setting": ["home", "gym"],
+    "equipment": ["小哑铃或装水的矿泉水瓶"],
+    "steps": [
+      "站立，双手各拿一个轻的重物，放在身体两侧",
+      "手臂微屈，向两侧抬起到与肩同高",
+      "慢慢放下",
+      "做 10 到 12 次为一组"
+    ],
+    "keyPoints": ["抬起时呼气", "重量从轻开始，能轻松完成 12 次再加"],
+    "commonMistakes": ["耸肩", "身体晃动借力"],
+    "managerCautions": "肩关节疼痛或活动受限的客户减小幅度或暂停；力量练习时不要憋气。有心脏病、近期手术或严重骨关节问题的客户，先请医生评估再开始。",
+    "met": null,
+    "sourceNote": "运动处方中国专家共识的抗阻练习建议，平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "strength-step-up",
+    "name": "台阶踏步",
+    "category": "strength",
+    "intensity": "moderate",
+    "setting": ["home", "outdoor"],
+    "equipment": ["一级稳固的台阶"],
+    "steps": [
+      "面对一级低台阶站立，旁边有扶手更好",
+      "右脚踏上台阶，左脚跟上，再依次下来",
+      "做 10 次后换左脚先上",
+      "每组之间休息 1 分钟"
+    ],
+    "keyPoints": ["整个脚掌踩在台阶上", "上台阶时呼气"],
+    "commonMistakes": ["台阶太高", "下台阶时太快"],
+    "managerCautions": "平衡能力差、膝关节疼痛或近期跌倒过的客户不做；近期有胸闷胸痛、头晕的客户先请医生评估。",
+    "met": null,
+    "sourceNote": "运动处方中国专家共识的抗阻练习建议，平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "flexibility-neck-shoulder",
+    "name": "颈肩放松拉伸",
+    "category": "flexibility",
+    "intensity": "low",
+    "setting": ["home"],
+    "equipment": [],
+    "steps": [
+      "坐直或站直，肩膀放松",
+      "头慢慢向右侧倾，感觉左侧颈部有拉伸感，停 15 到 30 秒",
+      "回正后换另一侧",
+      "双肩向后慢慢绕圈 5 到 10 次"
+    ],
+    "keyPoints": ["动作缓慢，只到有轻微拉伸感", "保持自然呼吸"],
+    "commonMistakes": ["快速甩头转圈", "用手用力拉头"],
+    "managerCautions": "拉伸时出现手臂发麻、头晕的客户立即停止，并请医生评估。有心脏病、近期手术或严重骨关节问题的客户，先请医生评估再开始。",
+    "met": null,
+    "sourceNote": "运动处方中国专家共识的柔韧练习建议，平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "flexibility-chest-opener",
+    "name": "扩胸拉伸",
+    "category": "flexibility",
+    "intensity": "low",
+    "setting": ["home"],
+    "equipment": [],
+    "steps": [
+      "站在门框旁，前臂贴住门框，手肘与肩同高",
+      "身体慢慢向前移，感觉胸前有拉伸感",
+      "停 15 到 30 秒，换另一侧"
+    ],
+    "keyPoints": ["后背挺直", "适合久坐办公后做"],
+    "commonMistakes": ["耸肩", "身体前倾太多"],
+    "managerCautions": "肩关节疼痛或活动受限的客户减小幅度。有心脏病、近期手术或严重骨关节问题的客户，先请医生评估再开始。",
+    "met": null,
+    "sourceNote": "运动处方中国专家共识的柔韧练习建议，平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "flexibility-seated-hamstring",
+    "name": "坐姿大腿后侧拉伸",
+    "category": "flexibility",
+    "intensity": "low",
+    "setting": ["home"],
+    "equipment": ["稳固的椅子"],
+    "steps": [
+      "坐在椅子前半部分，一条腿向前伸直，脚跟着地",
+      "背部挺直，身体从髋部慢慢前倾",
+      "感觉大腿后侧有拉伸感，停 15 到 30 秒",
+      "换另一侧"
+    ],
+    "keyPoints": ["前倾时背不要弓起来", "只到有轻微拉伸感"],
+    "commonMistakes": ["用力向下压", "憋气"],
+    "managerCautions": "腰部或坐骨附近疼痛、腿部发麻的客户停止并请医生评估。有心脏病、近期手术或严重骨关节问题的客户，先请医生评估再开始。",
+    "met": null,
+    "sourceNote": "运动处方中国专家共识的柔韧练习建议，平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "flexibility-calf-stretch",
+    "name": "小腿拉伸",
+    "category": "flexibility",
+    "intensity": "low",
+    "setting": ["home", "outdoor"],
+    "equipment": [],
+    "steps": [
+      "面对墙站立，双手扶墙",
+      "一条腿向后迈一步，脚跟踩地，前腿微屈",
+      "身体前移，感觉后腿小腿有拉伸感，停 15 到 30 秒",
+      "换另一侧"
+    ],
+    "keyPoints": ["后脚脚尖朝前", "走路或慢跑之后做"],
+    "commonMistakes": ["后脚跟抬起", "弹振式地压腿"],
+    "managerCautions": "小腿近期拉伤或足跟疼痛的客户暂不做。有心脏病、近期手术或严重骨关节问题的客户，先请医生评估再开始。",
+    "met": null,
+    "sourceNote": "运动处方中国专家共识的柔韧练习建议，平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "flexibility-cat-cow",
+    "name": "猫牛式伸展",
+    "category": "flexibility",
+    "intensity": "low",
+    "setting": ["home"],
+    "equipment": ["瑜伽垫"],
+    "steps": [
+      "双手双膝着地，手在肩下方，膝在髋下方",
+      "吸气时慢慢抬头、塌腰",
+      "呼气时低头、拱背",
+      "缓慢重复 8 到 10 次"
+    ],
+    "keyPoints": ["动作跟着呼吸走", "幅度以舒服为准"],
+    "commonMistakes": ["动作太快", "幅度过大"],
+    "managerCautions": "腰椎不适的客户减小幅度，疼痛加重时停止；膝盖不适的客户膝下垫软垫。有心脏病、近期手术或严重骨关节问题的客户，先请医生评估再开始。",
+    "met": null,
+    "sourceNote": "运动处方中国专家共识的柔韧练习建议，平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "balance-single-leg-stand",
+    "name": "扶椅单脚站",
+    "category": "balance",
+    "intensity": "low",
+    "setting": ["home"],
+    "equipment": ["稳固的椅子"],
+    "steps": [
+      "站在椅背后，双手扶椅背",
+      "慢慢抬起一只脚，保持 10 到 30 秒",
+      "放下后换另一只脚",
+      "熟练后改为一只手扶"
+    ],
+    "keyPoints": ["目视前方", "身体保持直立"],
+    "commonMistakes": ["一开始就松手", "憋气"],
+    "managerCautions": "近期跌倒过或站立时头晕的客户必须有人陪同；练习时身边不放杂物。有心脏病、近期手术或严重骨关节问题的客户，先请医生评估再开始。",
+    "met": null,
+    "sourceNote": "运动处方中国专家共识的平衡练习建议，平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "balance-heel-to-toe",
+    "name": "脚跟对脚尖走",
+    "category": "balance",
+    "intensity": "low",
+    "setting": ["home"],
+    "equipment": [],
+    "steps": [
+      "靠墙或沿着走廊站好，一只手可以扶墙",
+      "向前走时，前脚的脚跟贴着后脚的脚尖",
+      "走 10 到 20 步，转身走回来"
+    ],
+    "keyPoints": ["目视前方，不看脚下", "速度慢"],
+    "commonMistakes": ["走得太快", "身体左右摇晃时不扶墙"],
+    "managerCautions": "平衡能力差或近期跌倒过的客户必须扶墙并有人陪同。有心脏病、近期手术或严重骨关节问题的客户，先请医生评估再开始。",
+    "met": null,
+    "sourceNote": "运动处方中国专家共识的平衡练习建议，平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "balance-side-leg-raise",
+    "name": "扶椅侧抬腿",
+    "category": "balance",
+    "intensity": "low",
+    "setting": ["home"],
+    "equipment": ["稳固的椅子"],
+    "steps": [
+      "侧身站在椅子旁，一只手扶椅背",
+      "外侧的腿伸直，慢慢向侧面抬起",
+      "停 2 秒后慢慢放下",
+      "每侧做 10 次"
+    ],
+    "keyPoints": ["身体不要向一侧倾斜", "脚尖朝前"],
+    "commonMistakes": ["抬得太高，身体歪倒", "动作太快"],
+    "managerCautions": "髋关节置换术后或髋部疼痛的客户先请医生评估。",
+    "met": null,
+    "sourceNote": "运动处方中国专家共识的平衡练习建议，平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "balance-weight-shift",
+    "name": "左右重心转移",
+    "category": "balance",
+    "intensity": "low",
+    "setting": ["home"],
+    "equipment": ["稳固的椅子"],
+    "steps": [
+      "双脚分开与肩同宽，面对椅背站立",
+      "把身体重心慢慢移到右脚，左脚轻轻离地",
+      "停 5 秒后回到中间，再移到左边",
+      "左右各做 10 次"
+    ],
+    "keyPoints": ["动作缓慢有控制", "需要时扶椅背"],
+    "commonMistakes": ["靠扭腰移动重心", "憋气"],
+    "managerCautions": "站立时头晕或近期跌倒过的客户必须有人陪同。有心脏病、近期手术或严重骨关节问题的客户，先请医生评估再开始。",
+    "met": null,
+    "sourceNote": "运动处方中国专家共识的平衡练习建议，平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "relax-belly-breathing",
+    "name": "腹式呼吸",
+    "category": "relaxation",
+    "intensity": "low",
+    "setting": ["home"],
+    "equipment": [],
+    "steps": [
+      "坐着或躺着，一只手放在胸前，一只手放在肚子上",
+      "用鼻子慢慢吸气，感觉肚子鼓起来，胸口尽量不动",
+      "用嘴慢慢呼气，肚子收回去",
+      "重复 5 到 10 分钟"
+    ],
+    "keyPoints": ["呼气比吸气稍长一些", "不必刻意深吸，舒服就好"],
+    "commonMistakes": ["吸气太用力", "耸肩"],
+    "managerCautions": "练习中如果感到头晕、手脚发麻，恢复平常的呼吸；情绪困扰明显或持续的客户，建议转介心理咨询师。出现轻生、自伤念头等危机信号时按危机流程处理，放松练习不能代替。",
+    "met": null,
+    "sourceNote": "成人压力管理心理干预指南的放松训练建议，平台初稿，待心理顾问审定"
+  },
+  {
+    "code": "relax-muscle-relaxation",
+    "name": "渐进式肌肉放松",
+    "category": "relaxation",
+    "intensity": "low",
+    "setting": ["home"],
+    "equipment": [],
+    "steps": [
+      "找一个安静的地方坐好或躺好",
+      "从双脚开始，用力绷紧肌肉 5 秒，再一下子放松，感受放松后的感觉",
+      "依次做小腿、大腿、腹部、双手、手臂、肩膀和面部",
+      "全部做完约 10 到 15 分钟"
+    ],
+    "keyPoints": ["绷紧时不要憋气", "放松时注意身体的感觉"],
+    "commonMistakes": ["绷得太用力，引起抽筋", "做得太快"],
+    "managerCautions": "身体有疼痛或近期受伤的部位跳过；情绪困扰明显或持续的客户，建议转介心理咨询师。出现轻生、自伤念头等危机信号时按危机流程处理，放松练习不能代替。",
+    "met": null,
+    "sourceNote": "成人压力管理心理干预指南的放松训练建议，平台初稿，待心理顾问审定"
+  },
+  {
+    "code": "relax-body-scan",
+    "name": "身体扫描",
+    "category": "relaxation",
+    "intensity": "low",
+    "setting": ["home"],
+    "equipment": [],
+    "steps": [
+      "躺下或靠坐，闭上眼睛，自然呼吸",
+      "把注意力从头顶慢慢往下移，依次留意额头、肩膀、手臂、胸口、腹部、双腿和双脚的感觉",
+      "注意到哪里紧张，就想象随着呼气让那里松开",
+      "持续 10 分钟左右"
+    ],
+    "keyPoints": ["走神了没关系，把注意力带回来就好", "睡前练习时可以躺在床上"],
+    "commonMistakes": ["要求自己一定要放松", "边看手机边做"],
+    "managerCautions": "部分客户闭眼时会更紧张，可以睁眼看着一个固定点练习；情绪困扰明显或持续的客户，建议转介心理咨询师。出现轻生、自伤念头等危机信号时按危机流程处理，放松练习不能代替。",
+    "met": null,
+    "sourceNote": "成人压力管理心理干预指南的放松训练建议，平台初稿，待心理顾问审定"
+  },
+  {
+    "code": "relax-mindful-walk",
+    "name": "专注散步",
+    "category": "relaxation",
+    "intensity": "low",
+    "setting": ["outdoor"],
+    "equipment": [],
+    "steps": [
+      "用平常的步速散步，不看手机",
+      "留意脚踩在地上的感觉、周围的声音和风",
+      "想到烦心事时，把注意力带回到脚步上",
+      "走 10 到 20 分钟"
+    ],
+    "keyPoints": ["选安全、车少的路线", "不追求速度"],
+    "commonMistakes": ["边走边打电话", "在车多的路边练习"],
+    "managerCautions": "行走不稳的客户选平整的路面并有人陪同；情绪困扰明显或持续的客户，建议转介心理咨询师。出现轻生、自伤念头等危机信号时按危机流程处理，放松练习不能代替。",
+    "met": null,
+    "sourceNote": "成人压力管理心理干预指南的放松训练建议，平台初稿，待心理顾问审定"
+  },
+  {
+    "code": "relax-imagery",
+    "name": "想象放松",
+    "category": "relaxation",
+    "intensity": "low",
+    "setting": ["home"],
+    "equipment": [],
+    "steps": [
+      "坐好或躺好，闭上眼睛，慢慢呼吸几次",
+      "想象一个让自己感到安心的地方，比如海边、树林或家乡的小院",
+      "细细想象那里的颜色、声音、气味和温度",
+      "5 到 10 分钟后，慢慢睁开眼睛"
+    ],
+    "keyPoints": ["选自己真正觉得舒服的场景", "没有对错，想到什么都可以"],
+    "commonMistakes": ["强迫自己想象", "时间太长反而烦躁"],
+    "managerCautions": "有创伤经历的客户可能被某些场景引起不适，让客户自己选择场景；情绪困扰明显或持续的客户，建议转介心理咨询师。出现轻生、自伤念头等危机信号时按危机流程处理，放松练习不能代替。",
+    "met": null,
+    "sourceNote": "成人压力管理心理干预指南的放松训练建议，平台初稿，待心理顾问审定"
+  }
+]

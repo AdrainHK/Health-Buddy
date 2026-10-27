@@ -70,6 +70,7 @@ export const ALLERGEN_KEYWORDS: Readonly<Record<Allergen, readonly string[]>> = 
   ],
   soy: ['大豆', '黄豆', '豆制品', '豆浆', '豆腐', '豆干', '腐竹', 'soy', 'soya', 'tofu'],
   gluten: ['麸质', '小麦', '面筋', '麦麸', '大麦', '黑麦', 'gluten', 'wheat', 'barley', 'rye'],
+  sesame: ['芝麻', '麻酱', '香油', '麻油', 'sesame', 'tahini'],
 };
 
 /** 整条只是在说“没有过敏”（如“无过敏史”“否认药物食物过敏史”），不参与匹配 */

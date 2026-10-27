@@ -67,10 +67,22 @@ describe('后台登录和角色分流', () => {
     [
       '平台管理员',
       USERS.platform_admin,
-      ['危急指标设置', '孪生状态规则', '专家管理', '专家统计', '孪生统计'],
+      [
+        '危急指标设置',
+        '孪生状态规则',
+        '方案库',
+        '随访频次规则',
+        '专家管理',
+        '专家统计',
+        '孪生统计',
+      ],
     ],
-    ['协会管理员', USERS.operator_admin, ['危急指标设置', '孪生状态规则', '专家统计', '孪生统计']],
-    ['机构管理员', USERS.org_admin, ['危急指标设置', '孪生状态规则']],
+    [
+      '协会管理员',
+      USERS.operator_admin,
+      ['危急指标设置', '孪生状态规则', '方案库', '随访频次规则', '专家统计', '孪生统计'],
+    ],
+    ['机构管理员', USERS.org_admin, ['危急指标设置', '孪生状态规则', '方案库', '随访频次规则']],
   ])('%s的导航只列出能用的版块', async (_label, account, expected) => {
     mockApi(account, {
       'GET /critical-thresholds': () => json(200, { thresholds: makeThresholds() }),
