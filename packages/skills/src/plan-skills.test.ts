@@ -9,7 +9,7 @@ import {
 import type { SkillInput } from './framework.js';
 import type { PlanLibraryContext } from './plan-input.js';
 import { checkPlanClientText, checkPlanProfessionalText } from './wording.js';
-import { SKILLS, getSkill, skillSummaries } from './registry.js';
+import { SKILLS, getPlanTemplate, getSkill, skillSummaries } from './registry.js';
 import { visitScheduleEvalCases } from './visit-schedule/evals/cases.js';
 import { visitSchedule, validateVisitSchedule } from './visit-schedule/index.js';
 
@@ -93,6 +93,29 @@ describe('/随访计划', () => {
         input,
       ),
     ).toEqual([]);
+  });
+
+  it('“方案和随访”计划里，方案复评按同一次计划的方案草稿排，写明待方案生效', () => {
+    const message = visitSchedule.buildUserMessage({
+      ...input,
+      plan: {
+        ...evalCase.plan,
+        schedule: {
+          ...evalCase.plan.schedule!,
+          draftPlan: { cycleWeeks: 4, reviewDate: '2026-11-17', replacesCurrent: true },
+        },
+      },
+    });
+    expect(message).toContain('方案复评按本次刚生成的方案草稿排：周期 4 周，复评日期 2026-11-17');
+    expect(getPlanTemplate('plan-and-visits')).toMatchObject({
+      skills: ['care-plan', 'visit-schedule'],
+      readsTwin: true,
+    });
+    expect(skillSummaries().find((s) => s.id === 'plan-and-visits')).toMatchObject({
+      modes: ['plan'],
+      usesPlanOptions: true,
+      planSkills: ['care-plan', 'visit-schedule'],
+    });
   });
 
   it('评测用例至少 8 条，日期表都非空', () => {

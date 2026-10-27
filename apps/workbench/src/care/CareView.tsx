@@ -40,6 +40,7 @@ import {
 } from '../api/care';
 import { isAbortError } from '../api/http';
 import { PlainMarkdown } from '../artifacts/PlainMarkdown';
+import { useTwinActions } from '../twin/TwinActions';
 import { twinErrorKey } from '../twin/errors';
 import { formatNumber } from '../twin/format';
 import styles from '../twin/Twin.module.css';
@@ -76,6 +77,7 @@ export interface CareViewProps {
  */
 export function CareView({ client, refreshKey, onChanged }: CareViewProps) {
   const { t } = useTranslation();
+  const { planAndVisits } = useTwinActions();
   const clientId = client.id;
   const [data, setData] = useState<CareData | null>(null);
   const [error, setError] = useState<'notFound' | 'failed' | null>(null);
@@ -160,6 +162,12 @@ export function CareView({ client, refreshKey, onChanged }: CareViewProps) {
   return (
     <div className={styles.twin}>
       <Banner />
+      {planAndVisits && (
+        <div className={styles.cardActions}>
+          <Button onClick={() => planAndVisits(client)}>{t('twin.ai.planAndVisits')}</Button>
+          <span className={styles.muted}>{t('twin.ai.planAndVisitsNote')}</span>
+        </div>
+      )}
 
       <Section title={t('care.plan.title')}>
         {shown.current ? (

@@ -140,6 +140,8 @@ describe('界面文字走 i18n（验收标准 25）', () => {
       'skills.twin-review.name',
       'skills.visit-schedule.name',
       'skills.care-plan.name',
+      'skills.plan-and-visits.name',
+      'twin.ai.planAndVisits',
     ];
     for (const key of keys) expect(typeof lookup(key), key).toBe('string');
   });

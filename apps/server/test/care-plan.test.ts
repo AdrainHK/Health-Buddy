@@ -1,3 +1,9 @@
+import {
+  DEFAULT_VISIT_FREQUENCY_RULES,
+  addDaysIso,
+  dateInTimeZone,
+  scheduleVisits,
+} from '@health-buddy/shared';
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ExpertProvider, parseSse } from './expert-fixtures.js';
@@ -305,6 +311,85 @@ describe('/方案生成', () => {
     expect(text).not.toContain(lib.walk);
     expect(text).not.toContain(lib.steps);
     expect(await artifactsOf(task)).toHaveLength(1);
+  });
+
+  it('想一想“方案和随访”：先出计划，确认后起草方案和随访计划；方案复评按草稿周期排，方案生效后才写入日程', async () => {
+    const a1 = await as(f.users.managerA1.email);
+    const task = await newTask(a1, { clientId: f.clients.a1[0] });
+    const res = await send(a1, task, {
+      mode: 'plan',
+      content: '',
+      skillId: 'plan-and-visits',
+      planOptions: OPTIONS,
+    }).expect(200);
+    const plan = parseSse(res.text).find((e) => e.type === 'plan');
+    expect(plan?.type === 'plan' && plan.plan.steps).toEqual([
+      { kind: 'read_client' },
+      { kind: 'read_twin' },
+      { kind: 'run_skill', skillId: 'care-plan' },
+      { kind: 'run_skill', skillId: 'visit-schedule' },
+    ]);
+    expect(provider.calls).toHaveLength(0);
+
+    // 方案草稿周期 4 周：方案复评在今天 + 28 天（和后端同一个纯函数）
+    const now = new Date();
+    const rows = scheduleVisits({
+      now,
+      timeZone: 'Asia/Shanghai',
+      riskTier: null,
+      rules: DEFAULT_VISIT_FREQUENCY_RULES,
+      planReviewDate: addDaysIso(dateInTimeZone(now, 'Asia/Shanghai'), 28),
+      hasUrgentFollowUp: false,
+    }).visits;
+    expect(rows.some((r) => r.purpose === 'plan_review')).toBe(true);
+    provider.scripts.skill = [
+      reply(),
+      {
+        json: {
+          rows: rows.map((r) => ({ ...r, focus: '了解早餐调整的执行情况' })),
+          notes: [],
+          crisisSignal: false,
+        },
+      },
+    ];
+    const planId = plan?.type === 'plan' ? plan.plan.id : '';
+    // 跨租户访问被拒绝：别人确认这份计划 → 404，不调用模型、不生成草稿
+    for (const u of [f.users.managerA2, f.users.managerB1]) {
+      await (await as(u.email)).post(`/api/tasks/${task}/plans/${planId}/confirm`).expect(404);
+    }
+    expect(provider.calls).toHaveLength(0);
+    expect(await artifactsOf(task)).toHaveLength(0);
+    await a1.post(`/api/tasks/${task}/plans/${planId}/confirm`).expect(200);
+    const drafts = await artifactsOf(task);
+    expect(drafts.map((a) => a.kind).sort()).toEqual(['care_plan', 'visit_schedule']);
+    expect(drafts.find((a) => a.kind === 'care_plan')?.plan_options).toEqual(OPTIONS);
+    const schedulePrompt = JSON.stringify(provider.calls.at(-1)!.messages);
+    expect(schedulePrompt).toContain('方案复评按本次刚生成的方案草稿排：周期 4 周');
+
+    const approve = async (kind: string) => {
+      const id = drafts.find((a) => a.kind === kind)!.id;
+      const detail = (await a1.get(`/api/artifacts/${id}`).expect(200)).body.artifact;
+      const r = await a1
+        .post(`/api/artifacts/${id}/approve`)
+        .send({ version: detail.version, contentHash: detail.contentHash });
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+    };
+    const review = () =>
+      owner
+        .selectFrom('visits')
+        .select(['status', 'care_plan_id'])
+        .where('client_id', '=', f.clients.a1[0])
+        .where('purpose', '=', 'plan_review')
+        .execute();
+    // 随访计划先确认：方案复评这一行待方案生效
+    await approve('visit_schedule');
+    expect(await review()).toEqual([{ status: 'pending_plan', care_plan_id: null }]);
+    // 方案生效后，这一行转为待随访并挂到新方案上
+    await approve('care_plan');
+    const after = await review();
+    expect(after).toHaveLength(1);
+    expect(after[0]).toMatchObject({ status: 'planned' });
+    expect(after[0]!.care_plan_id).not.toBeNull();
   });
 
   it('客户资料太少（没有报告、近期监测和生活习惯）：409 no_plan_data，不调用模型', async () => {

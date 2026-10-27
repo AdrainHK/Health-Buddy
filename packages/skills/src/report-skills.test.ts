@@ -119,8 +119,9 @@ describe('M2 技能登记', () => {
     expect(skillSummaries().map((s) => s.id)).toEqual([
       ...SKILLS.map((s) => s.id),
       summary?.id,
-      // M4：孪生复盘
+      // M4：孪生复盘；M5：方案和随访
       'twin-review',
+      'plan-and-visits',
     ]);
   });
 

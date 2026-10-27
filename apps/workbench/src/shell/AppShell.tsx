@@ -357,6 +357,19 @@ export function AppShell({ account }: AppShellProps = {}) {
         });
       });
     },
+    planAndVisits: (client) => {
+      void openClientTask(client, t('twin.ai.planAndVisitsTaskTitle', { date: today() })).then(
+        (task) => {
+          if (!task) return;
+          setPrefill({
+            key: ++prefillSeq.current,
+            taskId: task.id,
+            mode: 'plan',
+            skillId: 'plan-and-visits',
+          });
+        },
+      );
+    },
   };
 
   const archiveTask = (task: Task, archived: boolean) => {

@@ -231,6 +231,10 @@
     "care-plan": {
       "name": "方案生成",
       "description": "根据档案和孪生起草饮食、运动、作息、心理方案；示例食谱和动作只从方案库里选，审核后才生效，可以复制或导出通俗版给客户"
+    },
+    "plan-and-visits": {
+      "name": "方案和随访",
+      "description": "先读取档案和数字孪生，确认计划后依次起草健康方案和随访计划，两份草稿分别审核；随访计划的方案复评按这份方案草稿的周期排，方案生效后才写入日程"
     }
   },
   "results": {
@@ -1364,7 +1368,10 @@
       "summarize": "生成孪生小结",
       "summarizeNote": "在对话区起草，只给健管师看",
       "taskTitle": "{{subject}}（{{date}}）",
-      "summaryTaskTitle": "孪生小结（{{date}}）"
+      "summaryTaskTitle": "孪生小结（{{date}}）",
+      "planAndVisits": "生成方案和随访计划",
+      "planAndVisitsNote": "在对话区先出计划，确认后起草方案和随访计划",
+      "planAndVisitsTaskTitle": "方案和随访（{{date}}）"
     }
   },
   "followUps": {

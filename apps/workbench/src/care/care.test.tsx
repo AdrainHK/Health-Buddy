@@ -16,6 +16,7 @@ import {
 } from '../test/careFixtures';
 import { CLIENTS, SKILL, ids, json, mockApi, setWideViewport } from '../test/mockApi';
 import { followUpList, makeFollowUp, tzQuery } from '../test/twinFixtures';
+import { TwinActionsContext } from '../twin/TwinActions';
 import { CareView } from './CareView';
 import { addDays, localToday } from './dates';
 
@@ -116,6 +117,23 @@ describe('客户 · 方案与随访（M5 规格 2.6）', () => {
     expect(await screen.findByText('还没有生效的方案')).toBeInTheDocument();
     expect(screen.getByText('没有历史方案')).toBeInTheDocument();
     expect(api.calls.some((c) => c.path.includes('adherence'))).toBe(false);
+  });
+
+  it('“生成方案和随访计划”：外壳提供操作时显示，点了把这位客户交给外壳；不提供时不显示', async () => {
+    mockApi(careRoutes());
+    const planAndVisits = vi.fn();
+    const user = userEvent.setup();
+    const { unmount } = render(
+      <TwinActionsContext.Provider value={{ planAndVisits }}>
+        <CareView client={CLIENT} />
+      </TwinActionsContext.Provider>,
+    );
+    await user.click(await screen.findByRole('button', { name: '生成方案和随访计划' }));
+    expect(planAndVisits).toHaveBeenCalledWith(CLIENT);
+    unmount();
+    render(<CareView client={CLIENT} />);
+    await screen.findByText('当前方案');
+    expect(screen.queryByRole('button', { name: '生成方案和随访计划' })).not.toBeInTheDocument();
   });
 
   it('别人的客户（404）：显示找不到，不显示任何方案内容', async () => {

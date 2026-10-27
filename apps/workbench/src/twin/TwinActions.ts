@@ -23,6 +23,8 @@ export interface TwinConsultRequest {
 export interface TwinActions {
   askExpert?: (request: TwinConsultRequest) => void;
   summarize?: (client: Pick<ClientSummary, 'id' | 'displayName'>) => void;
+  /** “生成方案和随访计划”（M5 规格 2.10）：想一想模式的“方案和随访”计划 */
+  planAndVisits?: (client: Pick<ClientSummary, 'id' | 'displayName'>) => void;
 }
 
 export const TwinActionsContext = createContext<TwinActions>({});
