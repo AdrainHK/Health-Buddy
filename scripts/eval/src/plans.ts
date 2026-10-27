@@ -232,8 +232,13 @@ export function gradeCarePlan(
       findings.push({ rule: 'library.no_examples', detail: '候选为空时要写“库中暂无合适的示例”' });
     }
   }
-  if (c.expect.refusal && !output.notes[0]?.trim().startsWith(c.expect.refusal)) {
-    findings.push({ rule: 'refusal.missing', detail: `notes 第一条不是“${c.expect.refusal}”` });
+  const refusals = [c.expect.refusal ?? []].flat();
+  const first = output.notes[0]?.trim() ?? '';
+  if (refusals.length && !refusals.some((r) => first.startsWith(r))) {
+    findings.push({
+      rule: 'refusal.missing',
+      detail: `notes 第一条不是“${refusals.join('”或“')}”`,
+    });
   }
   if (c.expect.crisisSignal !== undefined && output.crisisSignal !== c.expect.crisisSignal) {
     findings.push({ rule: 'crisis.signal', detail: `crisisSignal 应为 ${c.expect.crisisSignal}` });

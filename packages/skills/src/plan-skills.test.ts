@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import {
   carePlan,
   carePlanStructured,
@@ -7,7 +8,7 @@ import {
 } from './care-plan/index.js';
 import type { SkillInput } from './framework.js';
 import type { PlanLibraryContext } from './plan-input.js';
-import { getSkill, skillSummaries } from './registry.js';
+import { SKILLS, getSkill, skillSummaries } from './registry.js';
 import { visitScheduleEvalCases } from './visit-schedule/evals/cases.js';
 import { visitSchedule, validateVisitSchedule } from './visit-schedule/index.js';
 
@@ -371,6 +372,17 @@ describe('/方案生成', () => {
   it('带 /方案生成 的计划也带方案选项条', () => {
     for (const s of skillSummaries()) {
       if (s.planSkills.includes('care-plan')) expect(s.usesPlanOptions).toBe(true);
+    }
+  });
+});
+
+describe('技能的输出结构', () => {
+  it('不带数值范围（minimum/maximum）：Claude 的结构化输出不接受，范围由技能自己校验', () => {
+    for (const skill of SKILLS) {
+      const schema = JSON.stringify(z.toJSONSchema(skill.outputSchema, { io: 'output' }));
+      expect(schema, skill.id).not.toMatch(
+        /"(?:minimum|maximum|exclusiveMinimum|exclusiveMaximum)"/,
+      );
     }
   });
 });

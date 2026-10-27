@@ -240,7 +240,7 @@ export interface CarePlanEvalCase {
     clientMustNotContain?: string[];
     /** 专业版里要提到其中一个词（如转介、就医评估） */
     professionalMentions?: string[];
-    /** notes 第一条必须以这句固定的拒绝说明开头 */
-    refusal?: string;
+    /** notes 第一条必须以这句固定的拒绝说明开头；要求同时越了几条界时，以其中任一句开头都算 */
+    refusal?: string | string[];
   };
 }

@@ -59,14 +59,13 @@ export const carePlanOutputSchema = z.object({
       goals: z.array(goalOutputSchema),
     }),
   ),
-  recipes: z.array(
-    z.object({ day: z.number().int(), meal: z.enum(MEAL_TYPES), recipeId: z.string() }),
-  ),
+  // 整数用 z.number()：zod 的 .int() 会带上 minimum/maximum，Claude 的结构化输出不接受；整数和范围由 validateCarePlan 校验
+  recipes: z.array(z.object({ day: z.number(), meal: z.enum(MEAL_TYPES), recipeId: z.string() })),
   exercises: z.array(
     z.object({
       exerciseId: z.string(),
-      frequencyPerWeek: z.number().int(),
-      minutes: z.number().int(),
+      frequencyPerWeek: z.number(),
+      minutes: z.number(),
     }),
   ),
   overview: z.object({
@@ -139,7 +138,14 @@ export function validateCarePlan(output: CarePlanOutput, input: SkillInput): str
   for (const r of output.recipes) {
     const c = recipes.get(r.recipeId);
     const slot = `${r.day}:${r.meal}`;
-    if (!c || !c.mealTypes.includes(r.meal) || r.day < 1 || r.day > 7 || slots.has(slot)) {
+    if (
+      !c ||
+      !c.mealTypes.includes(r.meal) ||
+      !Number.isInteger(r.day) ||
+      r.day < 1 ||
+      r.day > 7 ||
+      slots.has(slot)
+    ) {
       issues.add('library_ref');
     }
     slots.add(slot);
@@ -153,6 +159,8 @@ export function validateCarePlan(output: CarePlanOutput, input: SkillInput): str
       (wanted.includes('exercise') || (wanted.includes('mind') && c.category === 'relaxation'));
     if (
       !allowed ||
+      !Number.isInteger(x.frequencyPerWeek) ||
+      !Number.isInteger(x.minutes) ||
       x.frequencyPerWeek < 1 ||
       x.frequencyPerWeek > 7 ||
       x.minutes < 1 ||

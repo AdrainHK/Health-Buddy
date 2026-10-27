@@ -723,6 +723,12 @@ export function checkPlanClientText(text: string): WordingIssue[] {
   ];
 }
 
+/**
+ * 专业版里“治疗”是正常的转介说法（“转介医生评估治疗”），不算功效承诺；
+ * “治好”“疗效”等仍然拦
+ */
+const PROFESSIONAL_EFFICACY_TERMS = EFFICACY_TERMS.filter((t) => t !== '治疗');
+
 /** 方案专业版（只给健管师）：禁用词、具体药名和用药建议、功效承诺 */
 export function checkPlanProfessionalText(text: string): WordingIssue[] {
   return [
@@ -732,7 +738,7 @@ export function checkPlanProfessionalText(text: string): WordingIssue[] {
       index: b.index,
     })),
     ...checkAdviceWording(text),
-    ...asIssues('efficacy_claim', findTerms(text, EFFICACY_TERMS)),
+    ...asIssues('efficacy_claim', findTerms(text, PROFESSIONAL_EFFICACY_TERMS)),
     ...findEfficacyPattern(text),
   ];
 }

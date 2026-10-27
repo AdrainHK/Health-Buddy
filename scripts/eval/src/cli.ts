@@ -214,6 +214,18 @@ const DETAIL_RULES = new Set([
   'twin.color_mismatch',
   'twin_ask.disease_name',
   'twin_ask.banned_term',
+  // M5 方案和随访：措辞检查命中的词表词、不该出现的字样、期望的拒绝说明、库引用的类别
+  'wording.banned_term',
+  'wording.presumed_disease',
+  'wording.judgment',
+  'wording.drug_name',
+  'wording.drug_advice',
+  'wording.twin_term',
+  'wording.risk_tier',
+  'wording.efficacy_claim',
+  'text.forbidden',
+  'client.forbidden',
+  'refusal.missing',
 ]);
 /** GitHub 注解的转义：先 %，再回车和换行 */
 const escapeAnnotation = (t: string) =>
