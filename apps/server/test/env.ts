@@ -29,6 +29,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     incompleteStorageVars: [],
     // 专家默认按正式环境处理（关闭预览）；专家相关的测试单独打开
     expertsPreview: false,
+    planLibraryPreview: false,
     ...overrides,
   };
 }

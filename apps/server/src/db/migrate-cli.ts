@@ -9,7 +9,7 @@ try {
     platformAdmin: config.platformAdmin,
   });
   console.log(
-    `迁移完成：新执行 ${result.applied.length} 个${result.applied.length ? `（${result.applied.join('、')}）` : ''}；平台管理员：${result.platformAdmin}`,
+    `迁移完成：新执行 ${result.applied.length} 个${result.applied.length ? `（${result.applied.join('、')}）` : ''}；平台管理员：${result.platformAdmin}；方案库新导入：食谱 ${result.planLibrarySeeded.recipes}、运动 ${result.planLibrarySeeded.exercises}、目标模板 ${result.planLibrarySeeded.goalTemplates}`,
   );
 } catch (err) {
   // 只打印错误类型和数据库错误码，不打印可能带数据的错误详情。

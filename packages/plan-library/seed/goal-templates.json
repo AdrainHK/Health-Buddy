@@ -1,0 +1,288 @@
+[
+  {
+    "code": "diet-vegetable-portions",
+    "section": "diet",
+    "text": "每天吃蔬菜 {portions} 份（一份约一捧），深色蔬菜占一半",
+    "params": [
+      { "name": "portions", "type": "int", "min": 3, "max": 6, "default": 4, "unit": "份" }
+    ],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "《中国居民膳食指南》蔬菜摄入原则；份数范围为平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "diet-breakfast-days",
+    "section": "diet",
+    "text": "每周吃早餐 {days} 天",
+    "params": [{ "name": "days", "type": "int", "min": 5, "max": 7, "default": 7, "unit": "天" }],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "《中国居民膳食指南》规律进餐原则；范围为平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "diet-whole-grain-meals",
+    "section": "diet",
+    "text": "每周有 {meals} 餐用杂粮或全谷物替换一部分白米白面",
+    "params": [{ "name": "meals", "type": "int", "min": 3, "max": 14, "default": 5, "unit": "餐" }],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "《中国居民膳食指南》谷类粗细搭配原则；范围为平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "diet-sugary-drinks",
+    "section": "diet",
+    "text": "每周喝含糖饮料不超过 {times} 次",
+    "params": [{ "name": "times", "type": "int", "min": 0, "max": 3, "default": 1, "unit": "次" }],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "《中国居民膳食指南》控糖原则；范围为平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "diet-dinner-time",
+    "section": "diet",
+    "text": "晚饭在 {time} 前吃完",
+    "params": [
+      { "name": "time", "type": "time", "min": "18:00", "max": "21:00", "default": "19:30" }
+    ],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "规律进餐的一般做法；时间范围为平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "diet-water-cups",
+    "section": "diet",
+    "text": "每天喝白开水或淡茶 {cups} 杯（一杯约 200 毫升）",
+    "params": [{ "name": "cups", "type": "int", "min": 6, "max": 9, "default": 7, "unit": "杯" }],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "《中国居民膳食指南》足量饮水原则；范围为平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "diet-fried-food",
+    "section": "diet",
+    "text": "每周吃油炸食物不超过 {times} 次",
+    "params": [{ "name": "times", "type": "int", "min": 0, "max": 3, "default": 1, "unit": "次" }],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "《中国居民膳食指南》少油原则；范围为平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "diet-eat-slowly",
+    "section": "diet",
+    "text": "每顿正餐吃 {minutes} 分钟以上，细嚼慢咽",
+    "params": [
+      { "name": "minutes", "type": "int", "min": 15, "max": 30, "default": 20, "unit": "分钟" }
+    ],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "饮食行为的一般做法；范围为平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "diet-salt-spoon-days",
+    "section": "diet",
+    "text": "每周有 {days} 天在家做饭时用限盐勺，少放酱料",
+    "params": [{ "name": "days", "type": "int", "min": 3, "max": 7, "default": 5, "unit": "天" }],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "《中国居民膳食指南》少盐原则；范围为平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "exercise-daily-steps",
+    "section": "exercise",
+    "text": "每天步行 {steps} 步",
+    "params": [
+      { "name": "steps", "type": "int", "min": 4000, "max": 10000, "default": 6000, "unit": "步" }
+    ],
+    "metric": "steps",
+    "metricParam": "steps",
+    "sourceNote": "运动处方中国专家共识的身体活动建议；步数范围为平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "exercise-weekly-moderate",
+    "section": "exercise",
+    "text": "每周中等强度活动 {minutes} 分钟（微微出汗、能说话但不能唱歌）",
+    "params": [
+      { "name": "minutes", "type": "int", "min": 60, "max": 300, "default": 150, "unit": "分钟" }
+    ],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "运动处方中国专家共识的有氧活动建议；范围为平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "exercise-strength-days",
+    "section": "exercise",
+    "text": "每周做 {days} 天力量练习",
+    "params": [{ "name": "days", "type": "int", "min": 1, "max": 3, "default": 2, "unit": "天" }],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "运动处方中国专家共识的抗阻练习建议；范围为平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "exercise-sitting-break",
+    "section": "exercise",
+    "text": "久坐时每 {minutes} 分钟起身活动一下",
+    "params": [
+      { "name": "minutes", "type": "int", "min": 30, "max": 90, "default": 60, "unit": "分钟" }
+    ],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "减少久坐的一般建议；范围为平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "exercise-stretch",
+    "section": "exercise",
+    "text": "每周做 {days} 天拉伸练习，每次 {minutes} 分钟",
+    "params": [
+      { "name": "days", "type": "int", "min": 2, "max": 7, "default": 3, "unit": "天" },
+      { "name": "minutes", "type": "int", "min": 5, "max": 20, "default": 10, "unit": "分钟" }
+    ],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "运动处方中国专家共识的柔韧练习建议；范围为平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "exercise-balance-days",
+    "section": "exercise",
+    "text": "每周做 {days} 天平衡练习，身边放好可以扶的椅子",
+    "params": [{ "name": "days", "type": "int", "min": 2, "max": 5, "default": 3, "unit": "天" }],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "运动处方中国专家共识的平衡练习建议；范围为平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "exercise-after-meal-walk",
+    "section": "exercise",
+    "text": "每周有 {days} 天在饭后半小时左右散步 {minutes} 分钟",
+    "params": [
+      { "name": "days", "type": "int", "min": 3, "max": 7, "default": 5, "unit": "天" },
+      { "name": "minutes", "type": "int", "min": 10, "max": 30, "default": 15, "unit": "分钟" }
+    ],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "日常身体活动的一般建议；范围为平台初稿，待运动顾问审定"
+  },
+  {
+    "code": "routine-bedtime",
+    "section": "routine",
+    "text": "每晚 {time} 前上床",
+    "params": [
+      { "name": "time", "type": "time", "min": "21:00", "max": "24:00", "default": "23:00" }
+    ],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "规律作息的一般做法；时间范围为平台初稿，待医学顾问审定"
+  },
+  {
+    "code": "routine-wake-time",
+    "section": "routine",
+    "text": "每天 {time} 前起床，周末也尽量保持",
+    "params": [
+      { "name": "time", "type": "time", "min": "05:30", "max": "09:00", "default": "07:00" }
+    ],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "规律作息的一般做法；时间范围为平台初稿，待医学顾问审定"
+  },
+  {
+    "code": "routine-sleep-hours",
+    "section": "routine",
+    "text": "每晚睡够 {hours} 小时",
+    "params": [
+      { "name": "hours", "type": "int", "min": 6, "max": 9, "default": 7, "unit": "小时" }
+    ],
+    "metric": "sleep_hours",
+    "metricParam": "hours",
+    "sourceNote": "成人睡眠时长的一般建议；范围为平台初稿，待医学顾问审定"
+  },
+  {
+    "code": "routine-screen-off",
+    "section": "routine",
+    "text": "睡前 {minutes} 分钟放下手机、平板等屏幕",
+    "params": [
+      { "name": "minutes", "type": "int", "min": 15, "max": 60, "default": 30, "unit": "分钟" }
+    ],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "睡眠卫生的一般做法；范围为平台初稿，待医学顾问审定"
+  },
+  {
+    "code": "routine-nap",
+    "section": "routine",
+    "text": "午休不超过 {minutes} 分钟",
+    "params": [
+      { "name": "minutes", "type": "int", "min": 10, "max": 30, "default": 20, "unit": "分钟" }
+    ],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "睡眠卫生的一般做法；范围为平台初稿，待医学顾问审定"
+  },
+  {
+    "code": "routine-caffeine",
+    "section": "routine",
+    "text": "{time} 以后不喝咖啡和浓茶",
+    "params": [
+      { "name": "time", "type": "time", "min": "12:00", "max": "17:00", "default": "14:00" }
+    ],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "睡眠卫生的一般做法；时间范围为平台初稿，待医学顾问审定"
+  },
+  {
+    "code": "routine-alcohol-free-days",
+    "section": "routine",
+    "text": "每周至少 {days} 天不喝酒",
+    "params": [{ "name": "days", "type": "int", "min": 4, "max": 7, "default": 7, "unit": "天" }],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "《中国居民膳食指南》限酒原则；范围为平台初稿，待医学顾问审定"
+  },
+  {
+    "code": "mind-relaxation-minutes",
+    "section": "mind",
+    "text": "每天做 {minutes} 分钟放松练习",
+    "params": [
+      { "name": "minutes", "type": "int", "min": 5, "max": 30, "default": 10, "unit": "分钟" }
+    ],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "成人压力管理心理干预指南的放松训练建议；范围为平台初稿，待心理顾问审定"
+  },
+  {
+    "code": "mind-social-times",
+    "section": "mind",
+    "text": "每周和家人朋友聊天或一起活动 {times} 次",
+    "params": [{ "name": "times", "type": "int", "min": 1, "max": 7, "default": 3, "unit": "次" }],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "成人压力管理心理干预指南的社会支持建议；范围为平台初稿，待心理顾问审定"
+  },
+  {
+    "code": "mind-hobby-minutes",
+    "section": "mind",
+    "text": "每周留出 {minutes} 分钟做自己喜欢的事",
+    "params": [
+      { "name": "minutes", "type": "int", "min": 60, "max": 420, "default": 120, "unit": "分钟" }
+    ],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "成人压力管理心理干预指南的积极活动建议；范围为平台初稿，待心理顾问审定"
+  },
+  {
+    "code": "mind-outdoor-days",
+    "section": "mind",
+    "text": "每周有 {days} 天到户外走一走、晒晒太阳",
+    "params": [{ "name": "days", "type": "int", "min": 2, "max": 7, "default": 4, "unit": "天" }],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "成人压力管理心理干预指南的积极活动建议；范围为平台初稿，待心理顾问审定"
+  },
+  {
+    "code": "mind-good-things",
+    "section": "mind",
+    "text": "每天睡前写下 {items} 件今天顺利的小事",
+    "params": [{ "name": "items", "type": "int", "min": 1, "max": 3, "default": 1, "unit": "件" }],
+    "metric": null,
+    "metricParam": null,
+    "sourceNote": "成人压力管理心理干预指南的积极心理练习建议；范围为平台初稿，待心理顾问审定"
+  }
+]

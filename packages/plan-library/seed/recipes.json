@@ -1,0 +1,1653 @@
+[
+  {
+    "code": "breakfast-oat-milk-egg",
+    "name": "牛奶燕麦粥配水煮蛋",
+    "mealTypes": ["breakfast"],
+    "ingredients": [
+      {
+        "name": "燕麦片（需煮的）",
+        "householdAmount": "半碗干燕麦"
+      },
+      {
+        "name": "牛奶",
+        "householdAmount": "一杯",
+        "overseasAlternative": "无乳糖牛奶"
+      },
+      {
+        "name": "鸡蛋",
+        "householdAmount": "一个"
+      },
+      {
+        "name": "小番茄",
+        "householdAmount": "一小把"
+      }
+    ],
+    "steps": [
+      "燕麦加水煮 5 分钟，再倒入牛奶煮开",
+      "鸡蛋冷水下锅，水开后再煮 8 分钟",
+      "小番茄洗净生吃"
+    ],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["high_fiber", "quality_protein", "low_sugar", "quick"],
+    "allergens": ["gluten", "dairy", "egg"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "breakfast-whole-wheat-bread-egg",
+    "name": "全麦面包夹蛋配黄瓜",
+    "mealTypes": ["breakfast"],
+    "ingredients": [
+      {
+        "name": "全麦面包",
+        "householdAmount": "两片"
+      },
+      {
+        "name": "鸡蛋",
+        "householdAmount": "一个"
+      },
+      {
+        "name": "黄瓜",
+        "householdAmount": "半根"
+      },
+      {
+        "name": "无糖酸奶",
+        "householdAmount": "一小杯"
+      }
+    ],
+    "steps": ["鸡蛋用不粘锅少油煎熟", "黄瓜切片，和鸡蛋一起夹在面包里", "配一小杯无糖酸奶"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["mixed_grains", "quality_protein", "quick", "low_sugar"],
+    "allergens": ["gluten", "egg", "dairy"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "breakfast-millet-pumpkin-porridge",
+    "name": "小米南瓜粥配鸡蛋",
+    "mealTypes": ["breakfast"],
+    "ingredients": [
+      {
+        "name": "小米",
+        "householdAmount": "小半碗"
+      },
+      {
+        "name": "南瓜",
+        "householdAmount": "拳头大一块"
+      },
+      {
+        "name": "鸡蛋",
+        "householdAmount": "一个"
+      },
+      {
+        "name": "凉拌菠菜",
+        "householdAmount": "一小碟"
+      }
+    ],
+    "steps": ["小米淘洗后和南瓜块一起加水煮 20 分钟", "鸡蛋煮熟", "菠菜焯水后加少许盐和醋拌匀"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["mixed_grains", "vegetable_rich", "low_oil"],
+    "allergens": ["egg"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "breakfast-soymilk-steamed-bun",
+    "name": "豆浆配杂粮馒头",
+    "mealTypes": ["breakfast"],
+    "ingredients": [
+      {
+        "name": "无糖豆浆",
+        "householdAmount": "一杯"
+      },
+      {
+        "name": "杂粮馒头",
+        "householdAmount": "一个（拳头大小）"
+      },
+      {
+        "name": "凉拌黄瓜",
+        "householdAmount": "一小碟"
+      }
+    ],
+    "steps": ["豆浆煮开后再小火煮几分钟", "馒头蒸热", "黄瓜拍碎，加少许盐、醋和蒜末拌匀"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["mixed_grains", "low_oil", "vegetarian", "quick"],
+    "allergens": ["soy", "gluten"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "breakfast-buckwheat-noodle-egg",
+    "name": "荞麦面汤配青菜蛋",
+    "mealTypes": ["breakfast"],
+    "ingredients": [
+      {
+        "name": "荞麦面条",
+        "householdAmount": "一小把（约一拳煮熟后的量）"
+      },
+      {
+        "name": "鸡蛋",
+        "householdAmount": "一个"
+      },
+      {
+        "name": "小青菜",
+        "householdAmount": "两三棵",
+        "overseasAlternative": "菠菜或小白菜"
+      }
+    ],
+    "steps": [
+      "水开后下荞麦面，煮到快熟时打入鸡蛋",
+      "放入青菜煮 1 分钟",
+      "加少许盐调味，不加浓缩汤料"
+    ],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["mixed_grains", "vegetable_rich", "low_oil"],
+    "allergens": ["gluten", "egg"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "breakfast-sweet-potato-milk",
+    "name": "蒸红薯配牛奶和鸡蛋",
+    "mealTypes": ["breakfast"],
+    "ingredients": [
+      {
+        "name": "红薯",
+        "householdAmount": "一个（拳头大小）"
+      },
+      {
+        "name": "牛奶",
+        "householdAmount": "一杯",
+        "overseasAlternative": "无乳糖牛奶"
+      },
+      {
+        "name": "鸡蛋",
+        "householdAmount": "一个"
+      }
+    ],
+    "steps": ["红薯洗净蒸 20 分钟", "鸡蛋蒸或煮熟", "牛奶加热后饮用"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["mixed_grains", "high_fiber", "low_oil", "quick"],
+    "allergens": ["dairy", "egg"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "breakfast-vegetable-egg-pancake",
+    "name": "西葫芦鸡蛋软饼",
+    "mealTypes": ["breakfast"],
+    "ingredients": [
+      {
+        "name": "西葫芦",
+        "householdAmount": "半根"
+      },
+      {
+        "name": "鸡蛋",
+        "householdAmount": "一个"
+      },
+      {
+        "name": "全麦面粉",
+        "householdAmount": "三四勺"
+      },
+      {
+        "name": "牛奶",
+        "householdAmount": "一杯"
+      }
+    ],
+    "steps": [
+      "西葫芦擦丝，加少许盐腌出水",
+      "加入鸡蛋和全麦面粉，调成稀糊",
+      "不粘锅刷薄油，摊成薄饼，两面煎熟",
+      "配一杯牛奶"
+    ],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["vegetable_rich", "mixed_grains", "quality_protein"],
+    "allergens": ["egg", "gluten", "dairy"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "breakfast-corn-yogurt",
+    "name": "玉米配无糖酸奶和坚果",
+    "mealTypes": ["breakfast"],
+    "ingredients": [
+      {
+        "name": "鲜玉米",
+        "householdAmount": "一根"
+      },
+      {
+        "name": "无糖酸奶",
+        "householdAmount": "一杯"
+      },
+      {
+        "name": "核桃仁",
+        "householdAmount": "两三个"
+      },
+      {
+        "name": "苹果",
+        "householdAmount": "半个"
+      }
+    ],
+    "steps": ["玉米蒸或煮 15 分钟", "苹果切块拌进酸奶", "撒上掰碎的核桃仁"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["mixed_grains", "high_fiber", "quick", "vegetarian"],
+    "allergens": ["dairy", "tree_nut"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "breakfast-tofu-pudding",
+    "name": "咸豆花配杂粮包",
+    "mealTypes": ["breakfast"],
+    "ingredients": [
+      {
+        "name": "嫩豆腐（豆花）",
+        "householdAmount": "一碗"
+      },
+      {
+        "name": "紫菜",
+        "householdAmount": "一小撮"
+      },
+      {
+        "name": "虾皮",
+        "householdAmount": "一小撮"
+      },
+      {
+        "name": "杂粮包子（素馅）",
+        "householdAmount": "一个"
+      }
+    ],
+    "steps": ["豆花蒸热", "撒上紫菜、虾皮和葱花，淋少许醋，少放酱料", "包子蒸热"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein", "mixed_grains", "low_oil"],
+    "allergens": ["soy", "seafood", "gluten"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "breakfast-mixed-grain-congee",
+    "name": "杂粮粥配蒸蛋",
+    "mealTypes": ["breakfast"],
+    "ingredients": [
+      {
+        "name": "大米、糙米、红豆混合",
+        "householdAmount": "小半碗"
+      },
+      {
+        "name": "鸡蛋",
+        "householdAmount": "一个"
+      },
+      {
+        "name": "清炒小油菜",
+        "householdAmount": "一小碟"
+      }
+    ],
+    "steps": [
+      "杂粮提前泡一晚，加水煮 40 分钟或用电饭锅预约",
+      "鸡蛋加温水打匀，蒸 10 分钟",
+      "油菜少油快炒"
+    ],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["mixed_grains", "high_fiber", "vegetable_rich"],
+    "allergens": ["egg"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "breakfast-dumpling-vegetable",
+    "name": "白菜猪肉水饺配拌菜",
+    "mealTypes": ["breakfast", "lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "白菜猪肉水饺",
+        "householdAmount": "八到十个"
+      },
+      {
+        "name": "凉拌木耳",
+        "householdAmount": "一小碟"
+      }
+    ],
+    "steps": ["水饺煮熟，蘸醋吃，少蘸酱油", "木耳泡发焯水，加蒜末、醋和少许盐拌匀"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["vegetable_rich", "quick"],
+    "allergens": ["gluten", "soy"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "breakfast-sandwich-chicken",
+    "name": "鸡胸肉生菜三明治",
+    "mealTypes": ["breakfast"],
+    "ingredients": [
+      {
+        "name": "全麦面包",
+        "householdAmount": "两片"
+      },
+      {
+        "name": "鸡胸肉",
+        "householdAmount": "一掌心大小薄片"
+      },
+      {
+        "name": "生菜",
+        "householdAmount": "两三片"
+      },
+      {
+        "name": "番茄",
+        "householdAmount": "两片"
+      }
+    ],
+    "steps": ["鸡胸肉提前一晚用少许盐和黑胡椒腌好，早上用不粘锅煎熟", "面包夹上生菜、番茄和鸡胸肉"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein", "mixed_grains", "quick"],
+    "allergens": ["gluten"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "breakfast-black-rice-soymilk",
+    "name": "黑米糊配蒸山药",
+    "mealTypes": ["breakfast"],
+    "ingredients": [
+      {
+        "name": "黑米、黄豆",
+        "householdAmount": "各一小把"
+      },
+      {
+        "name": "山药",
+        "householdAmount": "一段（约一拳）"
+      },
+      {
+        "name": "鸡蛋",
+        "householdAmount": "一个"
+      }
+    ],
+    "steps": ["黑米和黄豆泡好，用豆浆机打成米糊，不加糖", "山药去皮蒸 15 分钟", "鸡蛋煮熟"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["mixed_grains", "high_fiber", "low_sugar"],
+    "allergens": ["soy", "egg"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "breakfast-vegetable-egg-noodle",
+    "name": "番茄鸡蛋面",
+    "mealTypes": ["breakfast", "lunch"],
+    "ingredients": [
+      {
+        "name": "挂面",
+        "householdAmount": "一小把"
+      },
+      {
+        "name": "番茄",
+        "householdAmount": "一个"
+      },
+      {
+        "name": "鸡蛋",
+        "householdAmount": "一个"
+      },
+      {
+        "name": "小青菜",
+        "householdAmount": "两三棵"
+      }
+    ],
+    "steps": ["番茄切块少油炒出汁，加水煮开", "下面条，快熟时淋入蛋液、放入青菜", "加少许盐调味"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["vegetable_rich", "quick"],
+    "allergens": ["gluten", "egg"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "breakfast-taro-milk-oat",
+    "name": "芋头燕麦奶糊",
+    "mealTypes": ["breakfast"],
+    "ingredients": [
+      {
+        "name": "芋头",
+        "householdAmount": "两个小的"
+      },
+      {
+        "name": "燕麦片",
+        "householdAmount": "两三勺"
+      },
+      {
+        "name": "牛奶",
+        "householdAmount": "一杯"
+      },
+      {
+        "name": "鸡蛋",
+        "householdAmount": "一个"
+      }
+    ],
+    "steps": ["芋头蒸熟压成泥", "牛奶加燕麦煮 3 分钟，加入芋泥搅匀，不加糖", "鸡蛋煮熟"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["mixed_grains", "high_fiber", "low_sugar"],
+    "allergens": ["dairy", "gluten", "egg"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-steamed-fish",
+    "name": "清蒸鲈鱼",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "鲈鱼",
+        "householdAmount": "一条（两三人份）",
+        "overseasAlternative": "鳕鱼或其他白肉鱼"
+      },
+      {
+        "name": "葱、姜",
+        "householdAmount": "适量"
+      },
+      {
+        "name": "蒸鱼豉油",
+        "householdAmount": "一小勺"
+      }
+    ],
+    "steps": [
+      "鱼洗净，身上划几刀，铺上姜丝",
+      "水开后大火蒸 8 到 10 分钟",
+      "倒掉盘里的水，铺葱丝，淋少许蒸鱼豉油和热油"
+    ],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein", "low_oil"],
+    "allergens": ["seafood", "soy", "gluten"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-tomato-beef",
+    "name": "番茄炖牛肉",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "牛腩或牛腱",
+        "householdAmount": "每人一掌心大小"
+      },
+      {
+        "name": "番茄",
+        "householdAmount": "两三个"
+      },
+      {
+        "name": "洋葱",
+        "householdAmount": "半个"
+      },
+      {
+        "name": "胡萝卜",
+        "householdAmount": "半根"
+      }
+    ],
+    "steps": [
+      "牛肉切块焯水",
+      "番茄、洋葱少油炒软，加入牛肉和热水",
+      "小火炖 1 小时，加胡萝卜再炖 20 分钟，加少许盐"
+    ],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein", "vegetable_rich"],
+    "allergens": [],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-chicken-mushroom",
+    "name": "香菇蒸鸡",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "去皮鸡腿肉",
+        "householdAmount": "每人一掌心大小"
+      },
+      {
+        "name": "干香菇",
+        "householdAmount": "五六朵"
+      },
+      {
+        "name": "姜",
+        "householdAmount": "几片"
+      },
+      {
+        "name": "生抽",
+        "householdAmount": "一小勺"
+      }
+    ],
+    "steps": [
+      "鸡肉切块，香菇泡发切片",
+      "加姜丝、少许生抽和淀粉抓匀，腌 10 分钟",
+      "水开后蒸 20 分钟"
+    ],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein", "low_oil"],
+    "allergens": ["soy", "gluten"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-shrimp-broccoli",
+    "name": "西兰花炒虾仁",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "虾仁",
+        "householdAmount": "每人一小把"
+      },
+      {
+        "name": "西兰花",
+        "householdAmount": "半颗"
+      },
+      {
+        "name": "胡萝卜",
+        "householdAmount": "几片"
+      },
+      {
+        "name": "蒜",
+        "householdAmount": "两瓣"
+      }
+    ],
+    "steps": [
+      "西兰花掰小朵焯水 1 分钟",
+      "少油爆香蒜末，下虾仁炒到变色",
+      "加入西兰花和胡萝卜翻炒，加少许盐"
+    ],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein", "vegetable_rich", "quick", "low_oil"],
+    "allergens": ["seafood"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-tofu-vegetable-stew",
+    "name": "白菜豆腐炖粉丝",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "北豆腐",
+        "householdAmount": "半块"
+      },
+      {
+        "name": "大白菜",
+        "householdAmount": "四五片",
+        "overseasAlternative": "卷心菜"
+      },
+      {
+        "name": "粉丝",
+        "householdAmount": "一小把"
+      },
+      {
+        "name": "香菇",
+        "householdAmount": "三四朵"
+      }
+    ],
+    "steps": [
+      "豆腐切块，白菜切段",
+      "少油炒香菇和白菜梗，加水煮开",
+      "放豆腐和粉丝炖 10 分钟，加白菜叶和少许盐"
+    ],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["vegetarian", "quality_protein", "vegetable_rich", "low_oil"],
+    "allergens": ["soy"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-mixed-grain-rice",
+    "name": "二米饭（大米加小米或糙米）",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "大米",
+        "householdAmount": "每人小半碗生米"
+      },
+      {
+        "name": "小米或糙米",
+        "householdAmount": "每人一小把"
+      }
+    ],
+    "steps": [
+      "糙米提前泡 2 小时，小米不用泡",
+      "和大米一起放进电饭锅，水比平时略多一些",
+      "按煮饭键煮熟，每人盛一拳大小"
+    ],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["mixed_grains", "high_fiber", "vegetarian"],
+    "allergens": [],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-stir-fried-greens",
+    "name": "蒜蓉炒时蔬",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "当季绿叶菜（菜心、油麦菜、空心菜等）",
+        "householdAmount": "两大把",
+        "overseasAlternative": "菠菜、羽衣甘蓝或西兰花苗"
+      },
+      {
+        "name": "蒜",
+        "householdAmount": "三四瓣"
+      }
+    ],
+    "steps": ["青菜洗净沥干", "少油爆香蒜末，大火快炒青菜", "出锅前加少许盐"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["vegetable_rich", "vegetarian", "quick", "low_oil"],
+    "allergens": [],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-cold-cucumber-fungus",
+    "name": "黄瓜拌木耳",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "黄瓜",
+        "householdAmount": "一根"
+      },
+      {
+        "name": "干木耳",
+        "householdAmount": "一小把"
+      },
+      {
+        "name": "蒜、醋",
+        "householdAmount": "适量"
+      }
+    ],
+    "steps": ["木耳泡发后焯水 2 分钟", "黄瓜拍碎切段", "加蒜末、醋和少许盐拌匀，可加几滴香油"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["vegetable_rich", "vegetarian", "high_fiber", "low_oil", "quick"],
+    "allergens": [],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-pork-celery",
+    "name": "芹菜炒肉丝",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "猪里脊",
+        "householdAmount": "每人半掌心大小"
+      },
+      {
+        "name": "芹菜",
+        "householdAmount": "三四根"
+      },
+      {
+        "name": "胡萝卜",
+        "householdAmount": "小半根"
+      }
+    ],
+    "steps": [
+      "里脊切丝，加少许盐和淀粉抓匀",
+      "少油滑炒肉丝到变色盛出",
+      "炒芹菜和胡萝卜丝，倒回肉丝翻匀，加少许盐"
+    ],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein", "vegetable_rich", "high_fiber", "quick"],
+    "allergens": [],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-egg-tomato",
+    "name": "番茄炒蛋",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "鸡蛋",
+        "householdAmount": "两个（两人份）"
+      },
+      {
+        "name": "番茄",
+        "householdAmount": "两个"
+      },
+      {
+        "name": "葱",
+        "householdAmount": "少许"
+      }
+    ],
+    "steps": [
+      "鸡蛋打散，少油炒熟盛出",
+      "番茄切块炒出汁",
+      "倒回鸡蛋翻匀，加少许盐，不加糖或只加一点点"
+    ],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein", "vegetarian", "quick"],
+    "allergens": ["egg"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-fish-tofu-soup",
+    "name": "鱼片豆腐汤",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "草鱼或黑鱼片",
+        "householdAmount": "每人一掌心大小",
+        "overseasAlternative": "鳕鱼或罗非鱼"
+      },
+      {
+        "name": "嫩豆腐",
+        "householdAmount": "半盒"
+      },
+      {
+        "name": "姜",
+        "householdAmount": "几片"
+      },
+      {
+        "name": "小青菜",
+        "householdAmount": "两三棵"
+      }
+    ],
+    "steps": [
+      "鱼片用少许盐和姜丝腌 10 分钟",
+      "水开后放豆腐块煮 3 分钟",
+      "下鱼片和青菜，煮到鱼片变白，加少许盐和胡椒"
+    ],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein", "low_oil", "quick"],
+    "allergens": ["seafood", "soy"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-braised-chicken-potato",
+    "name": "土豆炖鸡块（少油版）",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "去皮鸡腿",
+        "householdAmount": "每人一掌心大小"
+      },
+      {
+        "name": "土豆",
+        "householdAmount": "一个（算作主食的一部分）"
+      },
+      {
+        "name": "青椒",
+        "householdAmount": "一个"
+      }
+    ],
+    "steps": [
+      "鸡块焯水",
+      "少油炒香葱姜，下鸡块翻炒，加热水炖 20 分钟",
+      "加土豆块再炖 15 分钟，最后放青椒和少许盐",
+      "吃了土豆的那餐，米饭相应少盛一些"
+    ],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein", "low_oil"],
+    "allergens": [],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-spinach-egg-soup",
+    "name": "菠菜蛋花汤",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "菠菜",
+        "householdAmount": "一大把"
+      },
+      {
+        "name": "鸡蛋",
+        "householdAmount": "一个"
+      },
+      {
+        "name": "虾皮",
+        "householdAmount": "一小撮（可不放）"
+      }
+    ],
+    "steps": ["菠菜焯水 30 秒后切段", "水开后放菠菜和虾皮", "淋入蛋液，加少许盐"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["vegetable_rich", "quick", "low_oil"],
+    "allergens": ["egg", "seafood"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-cabbage-vinegar",
+    "name": "醋溜白菜",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "大白菜",
+        "householdAmount": "四五片",
+        "overseasAlternative": "卷心菜"
+      },
+      {
+        "name": "醋",
+        "householdAmount": "一小勺"
+      },
+      {
+        "name": "干辣椒",
+        "householdAmount": "一两个（可不放）"
+      }
+    ],
+    "steps": [
+      "白菜帮斜切片，叶子撕块",
+      "少油炒香干辣椒，先炒白菜帮再炒叶子",
+      "沿锅边淋醋，加少许盐"
+    ],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["vegetable_rich", "vegetarian", "quick", "low_oil"],
+    "allergens": [],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-steamed-egg-custard",
+    "name": "虾仁蒸蛋",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "鸡蛋",
+        "householdAmount": "两个"
+      },
+      {
+        "name": "虾仁",
+        "householdAmount": "五六个"
+      },
+      {
+        "name": "温水",
+        "householdAmount": "约一碗"
+      }
+    ],
+    "steps": ["鸡蛋加温水和少许盐打匀，过筛", "放上虾仁，盖上盘子", "水开后中小火蒸 10 到 12 分钟"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein", "low_oil"],
+    "allergens": ["egg", "seafood"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-lean-meat-pepper",
+    "name": "青椒炒牛肉片",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "牛里脊",
+        "householdAmount": "每人半掌心大小"
+      },
+      {
+        "name": "青椒",
+        "householdAmount": "两个"
+      },
+      {
+        "name": "洋葱",
+        "householdAmount": "小半个"
+      }
+    ],
+    "steps": [
+      "牛肉逆纹切薄片，加少许盐和淀粉抓匀",
+      "少油大火快炒牛肉到变色盛出",
+      "炒青椒和洋葱，倒回牛肉翻匀"
+    ],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein", "vegetable_rich", "quick"],
+    "allergens": [],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-kelp-pork-rib-soup",
+    "name": "海带排骨汤",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "猪排骨",
+        "householdAmount": "每人三四块"
+      },
+      {
+        "name": "海带",
+        "householdAmount": "一段"
+      },
+      {
+        "name": "白萝卜",
+        "householdAmount": "小半根"
+      }
+    ],
+    "steps": ["排骨焯水", "加水和姜片炖 40 分钟", "加海带和萝卜再炖 20 分钟，撇去浮油，加少许盐"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein", "vegetable_rich"],
+    "allergens": [],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-garlic-eggplant-steamed",
+    "name": "蒜泥蒸茄子",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "长茄子",
+        "householdAmount": "一根"
+      },
+      {
+        "name": "蒜",
+        "householdAmount": "四五瓣"
+      },
+      {
+        "name": "生抽、醋",
+        "householdAmount": "各一小勺"
+      }
+    ],
+    "steps": ["茄子切条，水开后蒸 10 分钟", "蒜末加生抽、醋和几滴香油调成汁", "淋在茄子上拌匀"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["vegetable_rich", "vegetarian", "low_oil"],
+    "allergens": ["soy", "gluten"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-chicken-breast-salad",
+    "name": "鸡胸肉拌杂蔬",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "鸡胸肉",
+        "householdAmount": "每人一掌心大小"
+      },
+      {
+        "name": "生菜、紫甘蓝、黄瓜",
+        "householdAmount": "两大捧"
+      },
+      {
+        "name": "芝麻酱",
+        "householdAmount": "一小勺，用温水调稀"
+      }
+    ],
+    "steps": [
+      "鸡胸肉冷水下锅加姜片，水开后煮 10 分钟，放凉撕成条",
+      "蔬菜洗净切丝",
+      "淋上调稀的芝麻酱和少许醋拌匀"
+    ],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein", "vegetable_rich", "low_oil"],
+    "allergens": [],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-mapo-tofu-light",
+    "name": "家常豆腐（少油版）",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "北豆腐",
+        "householdAmount": "半块"
+      },
+      {
+        "name": "猪肉末",
+        "householdAmount": "一小勺"
+      },
+      {
+        "name": "青蒜或葱",
+        "householdAmount": "少许"
+      },
+      {
+        "name": "豆瓣酱",
+        "householdAmount": "半小勺"
+      }
+    ],
+    "steps": ["豆腐切块焯水", "少油炒肉末和豆瓣酱", "加水和豆腐煮 5 分钟，撒青蒜，不再额外加盐"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein"],
+    "allergens": ["soy", "gluten"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-salmon-pan",
+    "name": "香煎三文鱼配芦笋",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "三文鱼",
+        "householdAmount": "每人一掌心大小"
+      },
+      {
+        "name": "芦笋",
+        "householdAmount": "六七根",
+        "overseasAlternative": "西兰花或四季豆"
+      },
+      {
+        "name": "柠檬",
+        "householdAmount": "一角"
+      }
+    ],
+    "steps": [
+      "三文鱼用少许盐和黑胡椒腌 10 分钟",
+      "不粘锅不放油或少放油，鱼皮朝下煎 3 分钟，翻面再煎 2 分钟",
+      "芦笋焯水或一起煎熟，挤上柠檬汁"
+    ],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein", "vegetable_rich", "quick"],
+    "allergens": ["seafood"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-carrot-lamb-stew",
+    "name": "胡萝卜炖羊肉",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "羊腿肉",
+        "householdAmount": "每人一掌心大小"
+      },
+      {
+        "name": "胡萝卜",
+        "householdAmount": "一根"
+      },
+      {
+        "name": "白萝卜",
+        "householdAmount": "小半根"
+      }
+    ],
+    "steps": [
+      "羊肉切块焯水",
+      "加姜片和热水小火炖 1 小时",
+      "加胡萝卜和白萝卜再炖 20 分钟，撇去浮油，加少许盐"
+    ],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein", "vegetable_rich"],
+    "allergens": [],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-green-beans-garlic",
+    "name": "蒜香四季豆",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "四季豆",
+        "householdAmount": "两大把"
+      },
+      {
+        "name": "蒜",
+        "householdAmount": "三四瓣"
+      }
+    ],
+    "steps": [
+      "四季豆掐段，焯水 3 分钟，一定要煮熟透",
+      "少油炒香蒜末，下四季豆翻炒 3 分钟",
+      "加少许盐出锅"
+    ],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["vegetable_rich", "vegetarian", "high_fiber", "low_oil"],
+    "allergens": [],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-whole-wheat-noodle-bowl",
+    "name": "全麦鸡丝青菜面",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "全麦面条",
+        "householdAmount": "一小把"
+      },
+      {
+        "name": "鸡胸肉",
+        "householdAmount": "半掌心大小"
+      },
+      {
+        "name": "小青菜",
+        "householdAmount": "两三棵"
+      },
+      {
+        "name": "香菇",
+        "householdAmount": "两三朵"
+      }
+    ],
+    "steps": ["鸡胸肉煮熟撕丝", "用煮鸡的汤煮面条和香菇", "放入青菜和鸡丝，加少许盐"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["mixed_grains", "quality_protein", "vegetable_rich", "low_oil"],
+    "allergens": ["gluten"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-corn-rice",
+    "name": "玉米粒杂粮饭",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "大米",
+        "householdAmount": "每人小半碗生米"
+      },
+      {
+        "name": "鲜玉米粒",
+        "householdAmount": "一小把"
+      },
+      {
+        "name": "燕麦米或藜麦",
+        "householdAmount": "一小把"
+      }
+    ],
+    "steps": ["燕麦米提前泡 1 小时", "和大米、玉米粒一起煮熟", "每人盛一拳大小"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["mixed_grains", "high_fiber", "vegetarian"],
+    "allergens": ["gluten"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-loofah-egg",
+    "name": "丝瓜炒蛋",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "丝瓜",
+        "householdAmount": "一根",
+        "overseasAlternative": "西葫芦"
+      },
+      {
+        "name": "鸡蛋",
+        "householdAmount": "两个（两人份）"
+      }
+    ],
+    "steps": ["丝瓜去皮切滚刀块", "鸡蛋少油炒熟盛出", "炒丝瓜到变软出汁，倒回鸡蛋，加少许盐"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["vegetable_rich", "vegetarian", "quick"],
+    "allergens": ["egg"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-bok-choy-mushroom",
+    "name": "香菇油菜",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "小油菜",
+        "householdAmount": "两大把",
+        "overseasAlternative": "小白菜"
+      },
+      {
+        "name": "鲜香菇",
+        "householdAmount": "五六朵"
+      }
+    ],
+    "steps": ["油菜焯水 30 秒，摆盘", "少油炒香菇片，加少许水和盐，勾薄芡", "浇在油菜上"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["vegetable_rich", "vegetarian", "low_oil", "quick"],
+    "allergens": [],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-winter-melon-shrimp-soup",
+    "name": "冬瓜虾仁汤",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "冬瓜",
+        "householdAmount": "巴掌大一块"
+      },
+      {
+        "name": "虾仁",
+        "householdAmount": "每人五六个"
+      },
+      {
+        "name": "姜",
+        "householdAmount": "两片"
+      }
+    ],
+    "steps": ["冬瓜去皮切片", "水开后放冬瓜和姜片煮 5 分钟", "下虾仁煮到变色，加少许盐和葱花"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein", "low_oil", "quick"],
+    "allergens": ["seafood"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-potato-shreds",
+    "name": "醋溜土豆丝",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "土豆",
+        "householdAmount": "一个（算作主食的一部分）"
+      },
+      {
+        "name": "青椒",
+        "householdAmount": "半个"
+      },
+      {
+        "name": "醋",
+        "householdAmount": "一小勺"
+      }
+    ],
+    "steps": [
+      "土豆切细丝，用清水冲去淀粉",
+      "少油大火快炒土豆丝和青椒丝",
+      "淋醋，加少许盐，吃了这道菜那餐米饭少盛一些"
+    ],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["vegetarian", "quick", "low_oil"],
+    "allergens": [],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-cod-steamed-tofu",
+    "name": "豆腐蒸鳕鱼",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "鳕鱼",
+        "householdAmount": "每人一掌心大小"
+      },
+      {
+        "name": "嫩豆腐",
+        "householdAmount": "半盒"
+      },
+      {
+        "name": "葱、姜",
+        "householdAmount": "适量"
+      }
+    ],
+    "steps": ["豆腐切厚片铺盘，上面放鳕鱼和姜丝", "水开后蒸 8 分钟", "撒葱花，淋少许热油"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein", "low_oil"],
+    "allergens": ["seafood", "soy"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-lotus-root-stir-fry",
+    "name": "清炒藕片",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "莲藕",
+        "householdAmount": "一节"
+      },
+      {
+        "name": "胡萝卜",
+        "householdAmount": "几片"
+      },
+      {
+        "name": "木耳",
+        "householdAmount": "一小把"
+      }
+    ],
+    "steps": ["藕切薄片泡在清水里", "少油炒藕片、胡萝卜和木耳", "加少许醋和盐"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["vegetarian", "vegetable_rich", "high_fiber", "low_oil"],
+    "allergens": [],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-chicken-mixed-veg",
+    "name": "鸡丁炒杂蔬",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "鸡胸肉",
+        "householdAmount": "每人半掌心大小"
+      },
+      {
+        "name": "黄瓜、胡萝卜、玉米粒",
+        "householdAmount": "一大捧"
+      }
+    ],
+    "steps": [
+      "鸡肉切丁，加少许盐和淀粉抓匀",
+      "少油炒鸡丁到变色",
+      "加入蔬菜丁翻炒 3 分钟，加少许盐"
+    ],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein", "vegetable_rich", "quick"],
+    "allergens": [],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-tomato-tofu-soup",
+    "name": "番茄豆腐汤",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "番茄",
+        "householdAmount": "一个"
+      },
+      {
+        "name": "嫩豆腐",
+        "householdAmount": "半盒"
+      },
+      {
+        "name": "金针菇",
+        "householdAmount": "一小把"
+      }
+    ],
+    "steps": ["番茄切块少油炒出汁", "加水煮开，放豆腐和金针菇", "煮 5 分钟，加少许盐和葱花"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["vegetarian", "quality_protein", "low_oil", "quick"],
+    "allergens": ["soy"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-cauliflower-pork",
+    "name": "干锅花菜（少油版）",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "花菜",
+        "householdAmount": "半颗"
+      },
+      {
+        "name": "瘦五花或里脊",
+        "householdAmount": "几片"
+      },
+      {
+        "name": "青蒜",
+        "householdAmount": "一根"
+      }
+    ],
+    "steps": ["花菜掰小朵焯水 1 分钟", "少油把肉片煸出香味", "下花菜大火翻炒，加青蒜和少许盐"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["vegetable_rich", "high_fiber"],
+    "allergens": [],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-edamame-tofu-dry",
+    "name": "毛豆炒豆干",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "毛豆仁",
+        "householdAmount": "一小碗"
+      },
+      {
+        "name": "豆干",
+        "householdAmount": "两块"
+      },
+      {
+        "name": "红椒",
+        "householdAmount": "半个"
+      }
+    ],
+    "steps": ["毛豆煮 5 分钟到熟", "豆干切丁", "少油一起翻炒，加少许盐"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["vegetarian", "quality_protein", "high_fiber"],
+    "allergens": ["soy"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-steamed-pumpkin",
+    "name": "蒸南瓜",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "南瓜",
+        "householdAmount": "拳头大一两块（算作主食的一部分）"
+      }
+    ],
+    "steps": ["南瓜洗净切块，带皮也可以", "水开后蒸 15 分钟", "吃南瓜的那餐，米饭相应少盛一些"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["mixed_grains", "vegetarian", "low_oil", "quick"],
+    "allergens": [],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-duck-radish-soup",
+    "name": "萝卜老鸭汤（去皮去油）",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "鸭肉",
+        "householdAmount": "每人三四块，去皮"
+      },
+      {
+        "name": "白萝卜",
+        "householdAmount": "半根"
+      },
+      {
+        "name": "姜",
+        "householdAmount": "几片"
+      }
+    ],
+    "steps": [
+      "鸭肉去皮焯水",
+      "加姜片和水炖 1 小时",
+      "加萝卜再炖 20 分钟，放凉撇去表面的油，加少许盐"
+    ],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein", "vegetable_rich"],
+    "allergens": [],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-cold-tofu-scallion",
+    "name": "小葱拌豆腐",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "嫩豆腐",
+        "householdAmount": "半盒"
+      },
+      {
+        "name": "小葱",
+        "householdAmount": "两根"
+      }
+    ],
+    "steps": ["豆腐用开水烫一下，切块", "撒葱花，加少许盐和几滴香油拌匀"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["vegetarian", "quality_protein", "quick", "low_oil"],
+    "allergens": ["soy"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-shrimp-zucchini",
+    "name": "西葫芦炒虾仁",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "西葫芦",
+        "householdAmount": "一根"
+      },
+      {
+        "name": "虾仁",
+        "householdAmount": "每人一小把"
+      }
+    ],
+    "steps": ["西葫芦切片", "少油炒虾仁到变色盛出", "炒西葫芦到变软，倒回虾仁，加少许盐"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein", "vegetable_rich", "quick", "low_oil"],
+    "allergens": ["seafood"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "main-steamed-bun-whole-wheat",
+    "name": "全麦馒头",
+    "mealTypes": ["lunch", "dinner"],
+    "ingredients": [
+      {
+        "name": "全麦馒头或杂粮馒头",
+        "householdAmount": "一个（拳头大小）"
+      }
+    ],
+    "steps": ["买现成的或自家蒸好冷冻", "吃前蒸热 10 分钟", "作为一餐的主食，代替一碗白米饭"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["mixed_grains", "vegetarian", "quick", "low_oil"],
+    "allergens": ["gluten"],
+    "sourceNote": "按《中国居民膳食指南》原则编写的家常做法，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "snack-apple",
+    "name": "苹果",
+    "mealTypes": ["snack"],
+    "ingredients": [
+      {
+        "name": "苹果",
+        "householdAmount": "一个（拳头大小）"
+      }
+    ],
+    "steps": ["洗净直接吃，连皮吃更好", "放在两餐之间吃"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["high_fiber", "vegetarian", "quick"],
+    "allergens": [],
+    "sourceNote": "按《中国居民膳食指南》原则编写，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "snack-plain-yogurt-berries",
+    "name": "无糖酸奶配蓝莓",
+    "mealTypes": ["snack"],
+    "ingredients": [
+      {
+        "name": "无糖酸奶",
+        "householdAmount": "一小杯"
+      },
+      {
+        "name": "蓝莓",
+        "householdAmount": "一小把",
+        "overseasAlternative": "草莓或其他浆果"
+      }
+    ],
+    "steps": ["蓝莓洗净", "倒进酸奶里拌匀"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["low_sugar", "vegetarian", "quick"],
+    "allergens": ["dairy"],
+    "sourceNote": "按《中国居民膳食指南》原则编写，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "snack-nuts",
+    "name": "原味坚果",
+    "mealTypes": ["snack"],
+    "ingredients": [
+      {
+        "name": "原味核桃、杏仁、腰果等",
+        "householdAmount": "一小把（单手掌心能托住的量）"
+      }
+    ],
+    "steps": ["选原味、不加盐不加糖的", "每天一小把，不要边看电视边吃一大袋"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["vegetarian", "quick", "low_sugar"],
+    "allergens": ["tree_nut"],
+    "sourceNote": "按《中国居民膳食指南》原则编写，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "snack-cucumber-tomato",
+    "name": "黄瓜或小番茄",
+    "mealTypes": ["snack"],
+    "ingredients": [
+      {
+        "name": "黄瓜或小番茄",
+        "householdAmount": "一根黄瓜或一小把小番茄"
+      }
+    ],
+    "steps": ["洗净直接吃", "嘴馋时可以先吃这个"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["vegetable_rich", "vegetarian", "quick", "low_sugar"],
+    "allergens": [],
+    "sourceNote": "按《中国居民膳食指南》原则编写，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "snack-milk",
+    "name": "一杯牛奶",
+    "mealTypes": ["snack"],
+    "ingredients": [
+      {
+        "name": "纯牛奶",
+        "householdAmount": "一杯",
+        "overseasAlternative": "无乳糖牛奶"
+      }
+    ],
+    "steps": ["选纯牛奶，不选含糖的乳饮料", "不习惯喝牛奶的可以换成无糖酸奶"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein", "vegetarian", "quick"],
+    "allergens": ["dairy"],
+    "sourceNote": "按《中国居民膳食指南》原则编写，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "snack-boiled-egg",
+    "name": "水煮蛋",
+    "mealTypes": ["snack"],
+    "ingredients": [
+      {
+        "name": "鸡蛋",
+        "householdAmount": "一个"
+      }
+    ],
+    "steps": ["冷水下锅，水开后煮 8 分钟", "可以提前煮好放冰箱，两天内吃完"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["quality_protein", "quick"],
+    "allergens": ["egg"],
+    "sourceNote": "按《中国居民膳食指南》原则编写，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "snack-steamed-corn",
+    "name": "半根玉米",
+    "mealTypes": ["snack"],
+    "ingredients": [
+      {
+        "name": "鲜玉米",
+        "householdAmount": "半根"
+      }
+    ],
+    "steps": ["蒸或煮 15 分钟", "吃了加餐，下一顿主食少盛一些"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["mixed_grains", "high_fiber", "vegetarian"],
+    "allergens": [],
+    "sourceNote": "按《中国居民膳食指南》原则编写，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "snack-pear-kiwi",
+    "name": "梨或猕猴桃",
+    "mealTypes": ["snack"],
+    "ingredients": [
+      {
+        "name": "梨或猕猴桃",
+        "householdAmount": "梨半个或猕猴桃一个"
+      }
+    ],
+    "steps": ["洗净直接吃", "放在两餐之间吃"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["high_fiber", "vegetarian", "quick"],
+    "allergens": [],
+    "sourceNote": "按《中国居民膳食指南》原则编写，平台初稿，待营养顾问审定"
+  },
+  {
+    "code": "snack-peanuts-boiled",
+    "name": "水煮花生",
+    "mealTypes": ["snack"],
+    "ingredients": [
+      {
+        "name": "带壳花生",
+        "householdAmount": "一小把"
+      }
+    ],
+    "steps": ["花生洗净，加水和少许盐、八角煮 20 分钟", "比油炸花生更清淡"],
+    "nutritionPerServing": null,
+    "nutritionBasis": null,
+    "tags": ["vegetarian", "low_oil"],
+    "allergens": ["peanut"],
+    "sourceNote": "按《中国居民膳食指南》原则编写，平台初稿，待营养顾问审定"
+  }
+]

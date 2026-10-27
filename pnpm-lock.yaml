@@ -99,6 +99,9 @@ importers:
       '@health-buddy/experts':
         specifier: workspace:*
         version: link:../../packages/experts
+      '@health-buddy/plan-library':
+        specifier: workspace:*
+        version: link:../../packages/plan-library
       '@health-buddy/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -288,6 +291,25 @@ importers:
       '@health-buddy/ai-engine':
         specifier: workspace:*
         version: link:../ai-engine
+      '@health-buddy/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@health-buddy/skills':
+        specifier: workspace:*
+        version: link:../skills
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@types/node':
+        specifier: 22.20.5
+        version: 22.20.5
+      vitest:
+        specifier: 3.2.7
+        version: 3.2.7(@types/node@22.20.5)(jsdom@26.1.0)
+
+  packages/plan-library:
+    dependencies:
       '@health-buddy/shared':
         specifier: workspace:*
         version: link:../shared

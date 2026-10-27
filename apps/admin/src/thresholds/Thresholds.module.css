@@ -226,6 +226,10 @@
   box-shadow: var(--hb-shadow-lg);
 }
 
+.dialogWide {
+  max-width: 720px;
+}
+
 .dialogTitle {
   margin: 0 0 var(--hb-space-4);
   font-size: var(--hb-text-lg);

@@ -9,6 +9,8 @@ export class ApiError extends Error {
   constructor(
     readonly code: ApiErrorCode | 'network',
     readonly status: number,
+    /** 响应体里错误码以外的结构化细节（如方案库内容检查标出的位置），只有枚举值和位置 */
+    readonly details: Record<string, unknown> = {},
   ) {
     super(code);
     this.name = 'ApiError';
@@ -48,8 +50,10 @@ export async function apiRequest<T>(
   }
   if (!res.ok) {
     if (res.status === 401 && !path.startsWith('/auth/')) onUnauthenticated?.();
-    const parsed = apiErrorSchema.safeParse(await res.json().catch(() => null));
-    throw new ApiError(parsed.success ? parsed.data.error : 'internal_error', res.status);
+    const raw: unknown = await res.json().catch(() => null);
+    const parsed = apiErrorSchema.safeParse(raw);
+    const details = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+    throw new ApiError(parsed.success ? parsed.data.error : 'internal_error', res.status, details);
   }
   if (schema === null || res.status === 204) return undefined as T;
   return schema.parse(await res.json());

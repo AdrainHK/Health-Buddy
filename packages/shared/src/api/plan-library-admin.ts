@@ -82,3 +82,44 @@ export const libraryContentRejectionSchema = z.object({
   issues: z.array(z.object({ path: z.string(), term: z.string(), index: z.number().int() })),
 });
 export type LibraryContentRejection = z.infer<typeof libraryContentRejectionSchema>;
+
+/** 健管师看到的条目详情（GET /api/plan-library/:type/:id）。停用、草稿的条目 404 */
+export const recipeDetailResponseSchema = z.object({ item: recipeManagerSchema });
+export const exerciseDetailResponseSchema = z.object({ item: exerciseManagerSchema });
+export const goalTemplateDetailResponseSchema = z.object({ item: goalTemplateManagerSchema });
+
+/** 后台新增、修改、状态流转后返回的条目 */
+export const adminRecipeResponseSchema = z.object({ item: recipeSchema });
+export const adminExerciseResponseSchema = z.object({ item: exerciseSchema });
+export const adminGoalTemplateResponseSchema = z.object({ item: goalTemplateSchema });
+
+/**
+ * 条目的修改记录（只有平台管理员能看）。库条目不是客户数据，可以给出改前改后的原值；
+ * 只列内容和状态字段的变化，不列版本号、修改时间这类元数据。
+ */
+export const libraryItemChangeSchema = z.object({
+  field: z.string(),
+  before: z.unknown(),
+  after: z.unknown(),
+});
+export const libraryItemEventSchema = z.object({
+  id: z.string(),
+  action: z.enum(['created', 'updated', 'status_changed']),
+  actorName: z.string().nullable(),
+  status: libraryItemStatusSchema,
+  version: z.number().int().positive(),
+  changes: z.array(libraryItemChangeSchema),
+  createdAt: z.iso.datetime(),
+});
+export type LibraryItemEvent = z.infer<typeof libraryItemEventSchema>;
+export const libraryItemEventListResponseSchema = z.object({
+  events: z.array(libraryItemEventSchema),
+});
+export type LibraryItemEventListResponse = z.infer<typeof libraryItemEventListResponseSchema>;
+
+/** 后台列表的筛选（GET /api/admin/plan-library/:type）：平台管理员可按状态筛选 */
+export const adminLibraryListQuerySchema = z.object({
+  status: libraryItemStatusSchema.optional(),
+  q: z.string().trim().max(40).optional(),
+});
+export type AdminLibraryListQuery = z.infer<typeof adminLibraryListQuerySchema>;

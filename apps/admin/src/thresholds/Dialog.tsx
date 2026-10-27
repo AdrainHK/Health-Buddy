@@ -5,10 +5,12 @@ export interface DialogProps {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  /** 内容多的表单和详情（方案库条目）用宽一些的卡片 */
+  wide?: boolean;
 }
 
 /** 简单的模态框：遮罩 + 卡片，Esc 关闭。 */
-export function Dialog({ title, onClose, children }: DialogProps) {
+export function Dialog({ title, onClose, children, wide = false }: DialogProps) {
   const titleId = useId();
   return (
     <div
@@ -17,7 +19,12 @@ export function Dialog({ title, onClose, children }: DialogProps) {
         if (e.key === 'Escape') onClose();
       }}
     >
-      <div className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div
+        className={wide ? `${styles.dialog} ${styles.dialogWide}` : styles.dialog}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
         <h2 id={titleId} className={styles.dialogTitle}>
           {title}
         </h2>

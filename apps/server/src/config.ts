@@ -33,6 +33,11 @@ const envSchema = z.object({
    * 默认关闭：正式环境不开放专家中心和自动调用，/体检解读 保持 M2 的行为。
    */
   EXPERTS_PREVIEW: z.preprocess(emptyAsUnset, z.enum(['true', 'false']).default('false')),
+  /**
+   * 方案库预览开关（M5 规格 2.4、4.1）：种子条目经营养、运动顾问审定前状态为“待审定”，
+   * 只在预览环境可用。默认关闭：正式环境只能看到和引用已发布的条目。
+   */
+  PLAN_LIBRARY_PREVIEW: z.preprocess(emptyAsUnset, z.enum(['true', 'false']).default('false')),
 });
 
 /** 空字符串按“没有配置”处理：部署平台里留空的变量会以空字符串传进来 */
@@ -71,6 +76,8 @@ export interface AppConfig {
   incompleteStorageVars: string[];
   /** 专家预览开关：打开时 review 状态的专家可用（来源待确认） */
   expertsPreview: boolean;
+  /** 方案库预览开关：打开时待审定的库条目可用（顾问审定前） */
+  planLibraryPreview: boolean;
 }
 
 export const APP_DB_ROLE = 'hb_app';
@@ -108,6 +115,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     ...storageConfig(env),
     redisUrl: env.REDIS_URL,
     expertsPreview: env.EXPERTS_PREVIEW === 'true',
+    planLibraryPreview: env.PLAN_LIBRARY_PREVIEW === 'true',
   };
 }
 

@@ -1,0 +1,200 @@
+/* 方案库：表格、弹窗、表单沿用危急指标设置的样式，这里只放分类标签、状态和表单补充 */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hb-space-1);
+  border-bottom: 1px solid var(--hb-border);
+}
+
+.tab {
+  padding: var(--hb-space-2) var(--hb-space-3);
+  font: inherit;
+  font-size: var(--hb-text-sm);
+  color: var(--hb-text-2);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+
+.tab[aria-selected='true'] {
+  color: var(--hb-text);
+  font-weight: 500;
+  border-bottom-color: var(--hb-brand);
+}
+
+.tab:focus-visible {
+  outline: none;
+  box-shadow: var(--hb-focus-ring);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--hb-space-3);
+}
+
+.count {
+  margin: 0;
+  font-size: var(--hb-text-xs);
+  color: var(--hb-text-3);
+}
+
+.status {
+  display: inline-block;
+  padding: 0 var(--hb-space-2);
+  font-size: var(--hb-text-xs);
+  font-weight: 500;
+  border-radius: var(--hb-radius-full);
+  white-space: nowrap;
+  color: var(--hb-text-2);
+  background: var(--hb-surface-2);
+}
+
+.review {
+  color: var(--hb-warning);
+  background: color-mix(in oklab, var(--hb-warning) 14%, var(--hb-surface));
+}
+
+.published {
+  color: var(--hb-success);
+  background: color-mix(in oklab, var(--hb-success) 12%, var(--hb-surface));
+}
+
+.retired {
+  color: var(--hb-text-3);
+}
+
+.rowActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hb-space-1);
+}
+
+.textarea {
+  min-height: 88px;
+  padding: var(--hb-space-2) var(--hb-space-3);
+  font: inherit;
+  font-size: var(--hb-text-md);
+  color: var(--hb-text);
+  background: var(--hb-surface);
+  border: 1px solid var(--hb-border-strong);
+  border-radius: var(--hb-radius-md);
+  resize: vertical;
+}
+
+.textarea:focus {
+  outline: none;
+  border-color: var(--hb-brand);
+  box-shadow: var(--hb-focus-ring);
+}
+
+.fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-2);
+  min-width: 0;
+  margin: 0;
+  padding: var(--hb-space-3);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-md);
+}
+
+.fieldset legend {
+  padding: 0 var(--hb-space-1);
+  font-size: var(--hb-text-sm);
+  color: var(--hb-text-2);
+}
+
+.checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hb-space-2) var(--hb-space-4);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--hb-space-3);
+}
+
+.paramRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)) auto;
+  align-items: end;
+  gap: var(--hb-space-2);
+}
+
+.issues {
+  margin: 0;
+  padding-left: var(--hb-space-4);
+}
+
+/* 条目详情 */
+.detail {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--hb-space-2) var(--hb-space-4);
+  margin: 0 0 var(--hb-space-4);
+  font-size: var(--hb-text-sm);
+}
+
+.detailRow {
+  display: contents;
+}
+
+.detail dt {
+  color: var(--hb-text-3);
+}
+
+.detail dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.detail ol,
+.detail ul {
+  margin: 0;
+  padding-left: var(--hb-space-4);
+}
+
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-3);
+  margin: 0 0 var(--hb-space-4);
+  padding: 0;
+  list-style: none;
+  font-size: var(--hb-text-sm);
+}
+
+.history li {
+  padding-bottom: var(--hb-space-2);
+  border-bottom: 1px solid var(--hb-border);
+}
+
+.historyMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hb-space-2);
+  color: var(--hb-text-3);
+  font-size: var(--hb-text-xs);
+}
+
+.changes {
+  margin: var(--hb-space-1) 0 0;
+  padding-left: var(--hb-space-4);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  .detail {
+    grid-template-columns: 1fr;
+  }
+
+  .detail dd {
+    margin-bottom: var(--hb-space-2);
+  }
+}

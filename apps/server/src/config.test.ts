@@ -35,6 +35,15 @@ describe('config', () => {
     expect(() => loadConfig({ ...base, EXPERTS_PREVIEW: 'yes' })).toThrow(/EXPERTS_PREVIEW/);
   });
 
+  it('keeps the plan library preview off unless PLAN_LIBRARY_PREVIEW is exactly true', () => {
+    expect(loadConfig({ ...base }).planLibraryPreview).toBe(false);
+    expect(loadConfig({ ...base, PLAN_LIBRARY_PREVIEW: '' }).planLibraryPreview).toBe(false);
+    expect(loadConfig({ ...base, PLAN_LIBRARY_PREVIEW: 'true' }).planLibraryPreview).toBe(true);
+    expect(() => loadConfig({ ...base, PLAN_LIBRARY_PREVIEW: 'on' })).toThrow(
+      /PLAN_LIBRARY_PREVIEW/,
+    );
+  });
+
   it('requires both platform admin variables', () => {
     expect(loadConfig({ ...base, PLATFORM_ADMIN_EMAIL: 'a@x.com' }).platformAdmin).toBeUndefined();
   });

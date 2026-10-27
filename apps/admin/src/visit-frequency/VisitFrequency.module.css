@@ -1,0 +1,60 @@
+/* 随访频次规则：表格、弹窗、表单沿用危急指标设置的样式，这里只放版本号、补充规则和修改记录 */
+.version {
+  margin: var(--hb-space-1) 0 0;
+  font-size: var(--hb-text-xs);
+  color: var(--hb-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.rule {
+  margin: 0;
+  font-size: var(--hb-text-sm);
+  color: var(--hb-text);
+}
+
+.tierRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--hb-space-3);
+}
+
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-2);
+}
+
+.historyTitle {
+  margin: 0;
+  font-size: var(--hb-text-md);
+  font-weight: 600;
+}
+
+.events {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--hb-text-sm);
+}
+
+.events li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-1);
+  padding-bottom: var(--hb-space-2);
+  border-bottom: 1px solid var(--hb-border);
+}
+
+.eventMeta {
+  font-size: var(--hb-text-xs);
+  color: var(--hb-text-3);
+}
+
+@media (max-width: 720px) {
+  .tierRow {
+    grid-template-columns: 1fr;
+  }
+}

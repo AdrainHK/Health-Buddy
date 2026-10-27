@@ -389,5 +389,289 @@
     "bpm": "次/分",
     "steps": "步",
     "h": "小时"
+  },
+  "planLibrary": {
+    "nav": "方案库",
+    "title": "方案库",
+    "disclaimer": "种子内容是平台编写的初稿，发布前请由营养、运动顾问审定。",
+    "editHint": "全平台只有一套方案库。只有“已发布”的条目能被方案引用和出现在健管师的方案库里；内容只能在草稿状态下修改。",
+    "readOnlyHint": "方案库由平台统一维护。你可以浏览已发布的条目，不能修改。",
+    "tabsLabel": "方案库分类",
+    "tabs": {
+      "recipe": "食谱",
+      "exercise": "运动和放松练习",
+      "goal_template": "目标模板"
+    },
+    "statusFilter": "状态",
+    "allStatuses": "全部状态",
+    "search": "搜索名称",
+    "count": "共 {{count}} 条",
+    "loading": "正在加载…",
+    "loadFailed": "方案库加载失败",
+    "retry": "重试",
+    "empty": "没有符合条件的条目",
+    "add": "新增条目",
+    "saved": "已保存",
+    "statusChanged": "状态已更新",
+    "columns": {
+      "name": "名称",
+      "kind": "类别",
+      "status": "状态",
+      "version": "版本",
+      "updated": "最后修改",
+      "actions": "操作"
+    },
+    "status": {
+      "draft": "草稿",
+      "review": "待审定",
+      "published": "已发布",
+      "retired": "已停用"
+    },
+    "versionValue": "第 {{version}} 版",
+    "seedImport": "种子导入",
+    "actions": {
+      "view": "查看",
+      "viewItem": "查看 {{name}}",
+      "edit": "编辑",
+      "editItem": "编辑 {{name}}",
+      "submit": "送审",
+      "publish": "发布",
+      "retire": "停用",
+      "toDraft": "退回草稿",
+      "history": "修改记录",
+      "statusItem": "{{action}} {{name}}",
+      "historyItem": "{{name}} 的修改记录"
+    },
+    "meals": {
+      "breakfast": "早餐",
+      "lunch": "午餐",
+      "dinner": "晚餐",
+      "snack": "加餐"
+    },
+    "tags": {
+      "low_oil": "少油",
+      "low_salt": "少盐",
+      "high_fiber": "高纤维",
+      "quality_protein": "优质蛋白",
+      "mixed_grains": "粗细搭配",
+      "vegetable_rich": "蔬菜多",
+      "low_sugar": "少糖",
+      "quick": "做法简单",
+      "vegetarian": "素食"
+    },
+    "allergens": {
+      "peanut": "花生",
+      "tree_nut": "坚果",
+      "dairy": "乳制品",
+      "egg": "蛋",
+      "seafood": "海鲜",
+      "soy": "大豆",
+      "gluten": "麸质"
+    },
+    "noAllergens": "无",
+    "categories": {
+      "aerobic": "有氧",
+      "strength": "力量",
+      "flexibility": "柔韧",
+      "balance": "平衡",
+      "relaxation": "放松练习"
+    },
+    "intensities": {
+      "low": "低强度",
+      "moderate": "中等强度"
+    },
+    "settings": {
+      "home": "居家",
+      "outdoor": "户外",
+      "gym": "场馆"
+    },
+    "sections": {
+      "diet": "饮食",
+      "exercise": "运动",
+      "routine": "作息",
+      "mind": "心理"
+    },
+    "metrics": {
+      "none": "不关联",
+      "steps": "步数",
+      "sleep_hours": "睡眠时长"
+    },
+    "paramTypes": {
+      "int": "整数",
+      "time": "时间"
+    },
+    "fields": {
+      "code": "编码",
+      "name": "名称",
+      "mealTypes": "餐次",
+      "ingredients": "食材和家庭常用量",
+      "steps": "做法",
+      "tags": "特点标签",
+      "allergens": "过敏原",
+      "nutritionPerServing": "每份营养成分",
+      "nutritionBasis": "营养计算依据",
+      "sourceNote": "来源说明",
+      "category": "类别",
+      "intensity": "强度",
+      "setting": "场地",
+      "equipment": "器材",
+      "keyPoints": "动作要点",
+      "commonMistakes": "常见错误",
+      "managerCautions": "给健管师看的注意事项",
+      "met": "参考 MET 值",
+      "section": "部分",
+      "text": "模板文字",
+      "params": "参数",
+      "metric": "关联的监测指标",
+      "metricParam": "目标值参数",
+      "ingredientName": "名称",
+      "householdAmount": "家庭常用量",
+      "overseasAlternative": "海外常见替代",
+      "unit": "单位",
+      "energyKcal": "能量（千卡）",
+      "proteinG": "蛋白质（克）",
+      "fatG": "脂肪（克）",
+      "carbG": "碳水化合物（克）",
+      "fiberG": "膳食纤维（克）",
+      "sodiumMg": "钠（毫克）",
+      "reviewed": "审定",
+      "item": "第 {{n}} 项"
+    },
+    "view": {
+      "close": "关闭",
+      "none": "无",
+      "notFilled": "未填写",
+      "reviewedBy": "{{name}}，{{date}}",
+      "stepsList": "做法",
+      "paramRange": "{{name}}：{{min}}–{{max}}，默认 {{default}}",
+      "ingredient": "{{name}}：{{amount}}",
+      "alternative": "（海外常见替代：{{alt}}）",
+      "metricWithParam": "{{metric}}（目标值参数 {{param}}）",
+      "nutritionItem": "{{field}} {{value}}",
+      "nutritionSeparator": "；"
+    },
+    "form": {
+      "createTitle": "新增{{type}}",
+      "editTitle": "编辑{{type}}",
+      "draftHint": "新增的条目以草稿保存，送审并由顾问审定后才能发布。",
+      "codeHint": "小写字母开头，只用小写字母、数字、- 和 _，保存后不能修改",
+      "linesHint": "每行一条",
+      "ingredientsHint": "每行一种食材，格式：名称 | 家庭常用量 | 海外常见替代（可不填），如“糙米 | 一小把 | 藜麦”",
+      "allergensHint": "必须逐项核对；不含任何过敏原时不勾选",
+      "nutritionHint": "可不填；填写时六项都要填，并写明计算依据和版本",
+      "cautionsHint": "哪些情况先问医生；只给健管师看，不出现在给客户的方案里",
+      "textHint": "用 {参数名} 占位，如“每天步行 {steps} 步”",
+      "addParam": "添加参数",
+      "removeParam": "删除参数 {{n}}",
+      "paramName": "参数名",
+      "paramType": "类型",
+      "min": "最小值",
+      "max": "最大值",
+      "default": "默认值",
+      "cancel": "取消",
+      "save": "保存",
+      "saving": "正在保存…",
+      "invalidLines": "{{field}}格式不对，请按提示填写",
+      "invalidNumber": "{{field}}需要填写数字"
+    },
+    "publish": {
+      "title": "发布 {{name}}",
+      "body": "发布后健管师就能在方案里引用这个条目。请填写审定人和审定日期。",
+      "reviewer": "审定人（姓名或代号）",
+      "reviewedOn": "审定日期",
+      "confirm": "发布",
+      "working": "正在发布…",
+      "cancel": "取消",
+      "required": "请填写审定人和审定日期"
+    },
+    "history": {
+      "title": "修改记录：{{name}}",
+      "loading": "正在加载修改记录…",
+      "loadFailed": "修改记录加载失败",
+      "empty": "还没有修改记录",
+      "close": "关闭",
+      "system": "系统",
+      "actions": {
+        "created": "新增",
+        "updated": "修改内容",
+        "status_changed": "状态变化"
+      },
+      "change": "{{field}}：{{before}} → {{after}}",
+      "empty_value": "（空）"
+    },
+    "errors": {
+      "invalid_content": "内容没有通过检查（禁用词、疾病名称、药名或功效承诺），请修改标出的地方：",
+      "issue": "{{field}}：含“{{term}}”",
+      "version_mismatch": "条目已被修改过，请刷新后再试",
+      "not_draft": "只能修改草稿，请先退回草稿",
+      "invalid_transition": "当前状态不能这样流转，请刷新后再试",
+      "duplicate_code": "编码已被使用，请换一个",
+      "bad_request": "填写的内容不完整或格式不对",
+      "forbidden": "只有平台管理员可以修改方案库",
+      "network": "网络连接失败，请检查网络后重试",
+      "unknown": "操作失败，请稍后再试"
+    },
+    "separator": "、"
+  },
+  "visitFrequency": {
+    "nav": "随访频次规则",
+    "title": "随访频次规则",
+    "disclaimer": "默认频次是通用的初步做法，请由医学顾问审定。",
+    "editHint": "全平台只有一套规则。修改只影响以后生成的随访计划，不改已经排好的随访日期。",
+    "readOnlyHint": "规则由平台统一设置，全平台只有一套。你可以查看，不能修改。",
+    "version": "规则版本 {{version}}",
+    "loading": "正在加载规则…",
+    "loadFailed": "规则加载失败",
+    "retry": "重试",
+    "edit": "修改规则",
+    "saved": "已保存",
+    "columns": {
+      "tier": "风险分层",
+      "interval": "间隔",
+      "method": "默认方式"
+    },
+    "tiers": {
+      "high": "高",
+      "medium": "中",
+      "low": "低",
+      "none": "未分层"
+    },
+    "methods": {
+      "phone": "电话",
+      "wechat": "微信",
+      "in_person": "面谈",
+      "video": "视频"
+    },
+    "intervalValue": "每 {{days}} 天",
+    "firstVisit": "有 1、2 级未处理跟进项时，第一次随访不晚于 {{days}} 天后",
+    "firstVisitLabel": "有 1、2 级未处理跟进项时，第一次随访不晚于几天后",
+    "planReviewNote": "有生效方案时，周期结束那天另排一次“方案复评”；和按间隔排出的随访相隔不到 7 天时合并。日期落在周末时顺延到周一。",
+    "form": {
+      "title": "修改随访频次规则",
+      "intervalDays": "{{tier}}：间隔天数",
+      "method": "{{tier}}：默认方式",
+      "range": "{{min}}–{{max}} 天",
+      "cancel": "取消",
+      "save": "保存",
+      "saving": "正在保存…",
+      "invalid": "请填写范围内的整数"
+    },
+    "history": {
+      "title": "修改记录",
+      "loading": "正在加载修改记录…",
+      "loadFailed": "修改记录加载失败",
+      "empty": "还没有修改记录",
+      "system": "系统",
+      "entry": "{{target}}：{{before}} → {{after}}",
+      "firstVisit": "首次随访",
+      "days": "{{days}} 天",
+      "version": "版本 {{version}}"
+    },
+    "errors": {
+      "bad_request": "填写的数值超出范围",
+      "forbidden": "只有平台管理员可以修改规则",
+      "network": "网络连接失败，请检查网络后重试",
+      "unknown": "保存失败，请稍后再试"
+    }
   }
 }

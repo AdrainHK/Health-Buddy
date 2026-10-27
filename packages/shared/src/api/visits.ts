@@ -283,3 +283,32 @@ export type VisitFrequencyRulesResponse = z.infer<typeof visitFrequencyRulesResp
 
 /** 平台管理员修改（PATCH /api/admin/visit-frequency-rules）：整套替换 */
 export const updateVisitFrequencyRulesRequestSchema = visitFrequencyRulesSchema;
+
+/**
+ * 随访频次规则的修改记录（只有平台管理员能看）。target 是改的哪一行：一个风险分层，或
+ * “有 1、2 级未处理跟进项时首次随访不晚于几天”（first_visit）。规则不是客户数据，可以记原值。
+ */
+export const visitFrequencyRuleEventSchema = z.object({
+  id: z.string(),
+  target: z.enum(['high', 'medium', 'low', 'none', 'first_visit']),
+  actorName: z.string().nullable(),
+  rulesVersion: z.number().int().positive(),
+  before: z.object({
+    intervalDays: z.number().int().optional(),
+    defaultMethod: visitMethodSchema.optional(),
+    firstVisitWithinDays: z.number().int().optional(),
+  }),
+  after: z.object({
+    intervalDays: z.number().int().optional(),
+    defaultMethod: visitMethodSchema.optional(),
+    firstVisitWithinDays: z.number().int().optional(),
+  }),
+  createdAt: z.iso.datetime(),
+});
+export type VisitFrequencyRuleEvent = z.infer<typeof visitFrequencyRuleEventSchema>;
+export const visitFrequencyRuleEventListResponseSchema = z.object({
+  events: z.array(visitFrequencyRuleEventSchema),
+});
+export type VisitFrequencyRuleEventListResponse = z.infer<
+  typeof visitFrequencyRuleEventListResponseSchema
+>;

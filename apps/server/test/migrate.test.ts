@@ -10,7 +10,7 @@ describe('迁移和平台管理员初始化', () => {
 
   it('重复执行迁移是安全的', async () => {
     const result = await migrate({ ownerUrl: TEST_OWNER_URL, appPassword: TEST_APP_PASSWORD });
-    expect(result).toEqual({ applied: [], platformAdmin: 'skipped' });
+    expect(result).toMatchObject({ applied: [], platformAdmin: 'skipped' });
   });
 
   it('没有平台管理员时创建一个，之后不再改动', async () => {

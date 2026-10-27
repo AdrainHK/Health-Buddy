@@ -16,6 +16,7 @@
     "@aws-sdk/client-s3": "3.1143.0",
     "@health-buddy/ai-engine": "workspace:*",
     "@health-buddy/experts": "workspace:*",
+    "@health-buddy/plan-library": "workspace:*",
     "@health-buddy/shared": "workspace:*",
     "@health-buddy/skills": "workspace:*",
     "@napi-rs/canvas": "0.1.80",
