@@ -201,11 +201,16 @@ describe('专家库和专家中心提问（规格 2.2、2.3）', () => {
       sse.send({ type: 'done', messageId: ids.assistantMsg, reason: 'complete' });
       sse.close();
     });
-    expect(await screen.findByTestId(`expert-call-${ENDO.id}`)).toHaveTextContent(
-      '内分泌与代谢专家：已回复',
+    // 流里的事件是异步处理的：等状态更新完再检查（CI 上偶尔先看到“进行中”）
+    await waitFor(() =>
+      expect(screen.getByTestId(`expert-call-${ENDO.id}`)).toHaveTextContent(
+        '内分泌与代谢专家：已回复',
+      ),
     );
     expect(screen.getAllByText('已调用：内分泌与代谢专家').length).toBeGreaterThan(0);
-    expect(screen.getByTestId('assistant-text')).toHaveTextContent('合成专家回答');
+    await waitFor(() =>
+      expect(screen.getByTestId('assistant-text')).toHaveTextContent('合成专家回答'),
+    );
     // 专家的回答没有发给客户的入口（Q9）
     expect(screen.queryByRole('button', { name: /复制|导出/ })).not.toBeInTheDocument();
 
