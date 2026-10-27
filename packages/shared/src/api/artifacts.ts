@@ -250,6 +250,8 @@ export const approveRejectionSchema = z.object({
       'allergens_not_acknowledged',
       /** 随访计划的日期不合规（早于今天、超过 6 个月后、重复） */
       'schedule_mismatch',
+      /** 随访记录还没填随访日期或方式，或日期在今天之后 */
+      'record_incomplete',
     ]),
   ),
   bannedTerms: z.array(z.object({ term: z.string(), index: z.number().int() })).optional(),

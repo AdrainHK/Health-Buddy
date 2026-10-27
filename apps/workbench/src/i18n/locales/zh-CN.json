@@ -357,7 +357,8 @@
         "goal_param_out_of_range": "目标参数超出了模板允许的范围",
         "allergens_not_acknowledged": "请先勾选“已核对过敏原”",
         "schedule_mismatch": "随访日期不能早于今天、不能超过 6 个月后，也不能重复",
-        "unknown": "未通过确认检查，请刷新后重试"
+        "unknown": "未通过确认检查，请刷新后重试",
+        "record_incomplete": "随访记录还没有填随访日期或方式，或日期在今天之后"
       },
       "stale": "内容已在别处修改，已刷新",
       "returnDialog": {
@@ -1200,7 +1201,10 @@
         "status_change": "状态变化",
         "follow_up": "跟进项",
         "expert": "专家意见",
-        "artifact": "产物"
+        "artifact": "产物",
+        "care_plan": "方案",
+        "visit": "随访",
+        "visit_record": "随访记录"
       },
       "month": "{{year}} 年 {{month}} 月",
       "loadMore": "加载更早的",
@@ -1252,7 +1256,46 @@
         "approved": "确认",
         "copied": "复制通俗版",
         "exported": "导出"
-      }
+      },
+      "carePlan": "方案（{{sections}}）：{{action}}",
+      "carePlanEnded": "方案（{{sections}}）：{{action}} · {{reason}}",
+      "carePlanAction": {
+        "activated": "生效",
+        "ended": "结束",
+        "superseded": "被新方案替代"
+      },
+      "carePlanEndReasons": {
+        "cycle_completed": "周期结束",
+        "client_paused": "客户要求暂停",
+        "needs_medical_review": "需要先就医评估",
+        "other": "其他"
+      },
+      "planSections": {
+        "diet": "饮食",
+        "exercise": "运动",
+        "routine": "作息",
+        "mind": "心理"
+      },
+      "visit": "随访 · {{purpose}}（{{method}}）：{{action}}",
+      "visitAction": {
+        "done": "已完成",
+        "missed": "未联系上",
+        "cancelled": "已取消"
+      },
+      "visitPurposes": {
+        "routine": "常规随访",
+        "plan_review": "方案复评",
+        "follow_up": "跟进项回访",
+        "adhoc": "临时随访"
+      },
+      "visitMethods": {
+        "phone": "电话",
+        "wechat": "微信",
+        "in_person": "面谈",
+        "video": "视频"
+      },
+      "visitRecord": "随访记录（{{date}}，{{method}}）：{{excerpt}}",
+      "separator": "、"
     },
     "readings": {
       "title": "手动录入监测数据",

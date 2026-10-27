@@ -10,6 +10,9 @@ import {
   TWIN_RULE_METHODS,
   TWIN_RULE_SOURCES,
 } from '../health/twin.js';
+import { planSectionSchema } from '../plan/library.js';
+import { visitMethodSchema, visitPurposeSchema } from '../plan/visit-schedule.js';
+import { carePlanEndReasonSchema } from './care-plans.js';
 import { clientSummarySchema } from './clients.js';
 import { riskTierRecordSchema } from './risk-tiers.js';
 
@@ -344,6 +347,10 @@ export const TWIN_TIMELINE_TYPES = [
   'follow_up',
   'expert',
   'artifact',
+  // M5 规格 2.6、6.2：方案生效 / 结束 / 被替代，随访完成 / 未联系上 / 取消，随访记录确认
+  'care_plan',
+  'visit',
+  'visit_record',
 ] as const;
 export const twinTimelineTypeSchema = z.enum(TWIN_TIMELINE_TYPES);
 export type TwinTimelineType = z.infer<typeof twinTimelineTypeSchema>;
@@ -441,6 +448,33 @@ export const twinTimelineEventSchema = z.discriminatedUnion('type', [
     taskId: z.uuid(),
     kind: z.string(),
     action: z.enum(['approved', 'copied', 'exported']),
+  }),
+  // 方案：只显示部分和原因，不显示方案文字
+  z.object({
+    ...timelineBase,
+    type: z.literal('care_plan'),
+    planId: z.uuid(),
+    action: z.enum(['activated', 'ended', 'superseded']),
+    sections: z.array(planSectionSchema),
+    endReason: carePlanEndReasonSchema.nullable(),
+  }),
+  // 随访处理：不显示重点和备注
+  z.object({
+    ...timelineBase,
+    type: z.literal('visit'),
+    visitId: z.uuid(),
+    action: z.enum(['done', 'missed', 'cancelled']),
+    method: visitMethodSchema,
+    purpose: visitPurposeSchema,
+  }),
+  // 随访记录确认：日期、方式和摘要的前 50 字，点开跳到记录
+  z.object({
+    ...timelineBase,
+    type: z.literal('visit_record'),
+    recordId: z.uuid(),
+    visitDate: z.iso.date(),
+    method: visitMethodSchema,
+    excerpt: z.string(),
   }),
 ]);
 export type TwinTimelineEvent = z.infer<typeof twinTimelineEventSchema>;

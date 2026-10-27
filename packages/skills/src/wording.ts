@@ -612,3 +612,36 @@ function findEfficacyPattern(text: string): WordingIssue[] {
     index: origin[m.index] ?? 0,
   }));
 }
+
+// ---------- M5 方案通俗版（规格 2.3、5.4） ----------
+
+/**
+ * 方案通俗版里不能出现的孪生字样：状态颜色、预测（规格 2.3：出现就不能确认）。
+ * 状态名称（“需要留意”等）只给健管师看，也不进通俗版。
+ */
+export const CLIENT_TWIN_TERMS = [
+  '孪生',
+  '红色状态',
+  '黄色状态',
+  '绿色状态',
+  '状态为红',
+  '状态为黄',
+  '状态为绿',
+  '标记为红',
+  '标记为黄',
+  '标记为绿',
+  '需要尽快关注',
+  '预测',
+] as const;
+
+export function findClientTwinTerms(text: string): { term: string; index: number }[] {
+  return findTerms(text, CLIENT_TWIN_TERMS);
+}
+
+/** 通俗版里点名专家（“营养专家”“专家建议”）：专家意见原文和专家名称都不进通俗版 */
+export function findExpertMentions(
+  text: string,
+  expertNames: readonly string[],
+): { term: string; index: number }[] {
+  return findTerms(text, [...new Set([...expertNames, '专家'])]);
+}
