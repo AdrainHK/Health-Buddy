@@ -28,6 +28,7 @@ import { approveCarePlan, approveVisitRecord, approveVisitSchedule } from '../db
 import { renderPdf, renderPng } from './export-renderer.js';
 import {
   carePlanApproveReasons,
+  clientPlanTextReasons,
   isM5WritingKind,
   professionalOnlyKind,
   recordApproveReasons,
@@ -278,8 +279,9 @@ export class ArtifactsRepository {
       if (row.status !== 'approved') throw conflict();
       const text = deliverableText(row);
       // 标题会印在文件上、写进文件名，找不到技能或标题不合规就不导出
-      // 技能还没注册（M5 方案在第 5 步接入技能）时用固定的概括文字
-      const title = getSkill(row.skill_id)?.title ?? EXPORT_SUMMARIES[row.skill_id];
+      // 方案的标题和文件名一致用“健康方案”（M5 规格 2.3）；其他产物沿用技能标题
+      const title =
+        row.kind === 'care_plan' ? EXPORT_SUMMARIES['care-plan'] : getSkill(row.skill_id)?.title;
       if (!title || findBannedTerms(title).length) throw conflict();
       const date = shanghaiDate(new Date());
       const doc = { title, date, body: buildClientDeliverable(text) };
@@ -523,7 +525,8 @@ function deliverableText(row: ArtifactRow): string {
     !endsWithDisclaimer(text) ||
     countDisclaimers(text) !== 1 ||
     checkClientText(text, row.critical_flags).criticalValueMentions.length ||
-    checkClientText(text, row.critical_flags).riskTierMentions.length
+    checkClientText(text, row.critical_flags).riskTierMentions.length ||
+    (row.kind === 'care_plan' && clientPlanTextReasons(text).length)
   ) {
     throw conflict();
   }

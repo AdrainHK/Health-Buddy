@@ -231,6 +231,28 @@ describe('方案和随访产物的确认', () => {
       expect(await owner.selectFrom('care_plans').select('id').execute()).toEqual(before);
     });
 
+    it('做法和固定说法不误判；孪生颜色的其他写法、每一部分的通俗版也查', async () => {
+      const okText = `加姜片和热水小火炖 1 小时，早餐可以吃一颗鸡蛋，加入山药块。如在服用药物，用药调整由医生评估。\n\n${DISCLAIMER}`;
+      const ok = await draft(f.clients.a1[1], 'care_plan', plan(), okText);
+      const okRes = await approve(f.users.managerA1, ok);
+      expect(okRes.status, JSON.stringify(okRes.body)).toBe(200);
+      const variant = await draft(
+        f.clients.a1[1],
+        'care_plan',
+        plan(),
+        `您的状态是黄，记得多散步。\n\n${DISCLAIMER}`,
+      );
+      expect((await approve(f.users.managerA1, variant)).body.reasons).toContain(
+        'twin_in_client_text',
+      );
+      const sectionText = plan();
+      sectionText.sections[0]!.clientFacing = '可以吃点钙片';
+      const section = await draft(f.clients.a1[1], 'care_plan', sectionText, CLIENT_TEXT);
+      expect((await approve(f.users.managerA1, section)).body.reasons).toContain(
+        'drug_in_client_text',
+      );
+    });
+
     it('引用的库条目必须已发布；目标参数必须在模板范围内', async () => {
       const out = await draft(
         f.clients.a1[1],
@@ -350,14 +372,57 @@ describe('方案和随访产物的确认', () => {
 
     it('跨租户：别的健管师确认、修改都是 404，不写任何行', async () => {
       const id = await draft(f.clients.a1[1], 'care_plan', plan(), CLIENT_TEXT);
+      const others = {
+        visit_schedule: await draft(f.clients.a1[1], 'visit_schedule', {
+          rows: [{ dueDate: dayOffset(5), method: 'phone', purpose: 'routine', focus: null }],
+        }),
+        visit_record: await draft(f.clients.a1[1], 'visit_record', {
+          visitDate: dayOffset(0),
+          method: 'phone',
+          summary: '合成',
+          feedback: [],
+          planProgress: [],
+          agreements: [],
+          attentionPoints: [],
+          historySuggestions: [],
+          openQuestions: [],
+        }),
+      };
       const before = await owner.selectFrom('care_plans').select('id').execute();
+      const visitsBefore = await owner.selectFrom('visits').select('id').execute();
+      const recordsBefore = await owner.selectFrom('visit_records').select('id').execute();
+      const artifactBefore = await owner
+        .selectFrom('artifacts')
+        .select(['structured', 'content'])
+        .where('id', '=', id)
+        .executeTakeFirstOrThrow();
       for (const u of [f.users.managerA2, f.users.managerA3, f.users.managerB1]) {
         const agent = await as(u);
+        for (const target of [id, others.visit_schedule, others.visit_record]) {
+          await agent
+            .post(`/api/artifacts/${target}/approve`)
+            .send({ version: 1, contentHash: 'x' })
+            .expect(404);
+        }
         await agent
-          .post(`/api/artifacts/${id}/approve`)
-          .send({ version: 1, contentHash: 'x' })
+          .patch(`/api/artifacts/${id}`)
+          .send({
+            version: 1,
+            contentHash: 'x',
+            content: { professional: '越权', clientFacing: CLIENT_TEXT },
+            structured: plan({ recipes: [] }),
+          })
           .expect(404);
       }
+      expect(await owner.selectFrom('visits').select('id').execute()).toEqual(visitsBefore);
+      expect(await owner.selectFrom('visit_records').select('id').execute()).toEqual(recordsBefore);
+      expect(
+        await owner
+          .selectFrom('artifacts')
+          .select(['structured', 'content'])
+          .where('id', '=', id)
+          .executeTakeFirstOrThrow(),
+      ).toEqual(artifactBefore);
       for (const u of [f.users.orgAdminA, f.users.operatorAdminA, f.users.platform]) {
         const agent = await as(u);
         await agent

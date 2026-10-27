@@ -29,6 +29,8 @@ import {
 } from './twin-input.js';
 import {
   checkLibraryText,
+  findClientDrugIssues,
+  findClientTwinTerms,
   checkSpokenWording,
   checkTwinJudgments,
   checkTwinWording,
@@ -675,6 +677,39 @@ describe('方案库条目的措辞检查（M5 规格 4.2）', () => {
       '两面煎熟',
     ]) {
       expect(checkLibraryText(text), text).toEqual([]);
+    }
+  });
+});
+
+describe('方案通俗版的检查（M5 规格 2.3）', () => {
+  it('药名、用药建议、保健品都拦；做法里的姜片、鸡蛋、山药不拦；规定的固定说法不拦', () => {
+    expect(findClientDrugIssues('每天按时吃二甲双胍').map((i) => i.category)).toContain(
+      'drug_name',
+    );
+    expect(findClientDrugIssues('降压药可以减半').map((i) => i.term)).toContain('用药建议');
+    expect(findClientDrugIssues('可以吃点钙片').map((i) => i.term)).toEqual(['钙片']);
+    for (const ok of [
+      '加姜片和热水小火炖 1 小时',
+      '早餐可以吃一颗鸡蛋',
+      '加入山药块再煮十分钟',
+      '如在服用药物，用药调整由医生评估。',
+    ]) {
+      expect(findClientDrugIssues(ok), ok).toEqual([]);
+    }
+  });
+
+  it('孪生状态颜色的各种写法都拦；日常的颜色和“需要留意”不拦', () => {
+    for (const bad of [
+      '您的状态是黄',
+      '状态显示为红',
+      '当前为黄',
+      '心血管黄（需要留意）',
+      '亮了黄灯',
+    ]) {
+      expect(findClientTwinTerms(bad).length, bad).toBeGreaterThan(0);
+    }
+    for (const ok of ['多吃绿叶菜和红薯', '需要留意盐的用量', '状态不错，继续保持散步']) {
+      expect(findClientTwinTerms(ok), ok).toEqual([]);
     }
   });
 });

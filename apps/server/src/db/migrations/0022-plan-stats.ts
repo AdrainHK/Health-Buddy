@@ -8,7 +8,7 @@ import { APP_DB_ROLE } from '../../config.js';
  *   其他角色拒绝。
  * - plan_goal_template_metrics：方案执行情况要知道目标模板关联的监测指标和参数；模板以后被停用时
  *   健管师按行级安全看不到它，执行情况就算不出来。模板不是客户数据，这个函数只返回指标相关的列，
- *   只给健管师用。
+ *   只给健管师用，并且只返回本人负责的客户的方案里引用过的模板。
  */
 export async function up(db: Kysely<unknown>): Promise<void> {
   const app = sql.id(APP_DB_ROLE);
@@ -98,7 +98,14 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       end if;
       return query
         select g.id, g.params, g.metric, g.metric_param from plan_goal_templates g
-        where g.id = any (p_ids);
+        where g.id = any (p_ids)
+          -- 只返回本人负责的客户的方案里引用过的模板（草稿、从未发布的模板查不到）
+          and exists (
+            select 1 from care_plans p
+            where p.manager_id = app_user_id()
+              and p.snapshot -> 'libraryVersions'
+                  @> jsonb_build_array(jsonb_build_object('type', 'goal_template', 'id', g.id::text))
+          );
     end
     $$;
     revoke all on function plan_goal_template_metrics(uuid[]) from public;

@@ -2,6 +2,7 @@ import { EXPERTS } from '@health-buddy/experts';
 import {
   allergenConflicts,
   carePlanStructuredSchema,
+  findBannedTerms,
   validateGoalParams,
   visitRecordStructuredSchema,
   visitScheduleStructuredSchema,
@@ -10,9 +11,8 @@ import {
   type GoalParam,
 } from '@health-buddy/shared';
 import {
+  findClientDrugIssues,
   findClientTwinTerms,
-  findDrugAdvice,
-  findDrugNames,
   findExpertMentions,
 } from '@health-buddy/skills';
 import { badRequest } from '../common/api-error.js';
@@ -133,19 +133,20 @@ export async function carePlanApproveReasons(
   row: { client_id: string | null; structured: unknown; content: { clientFacing: string } },
   acknowledgedAllergens: boolean,
 ): Promise<RejectReason[]> {
-  const reasons: RejectReason[] = [];
-  const text = row.content.clientFacing;
-  if (findDrugNames(text).length || findDrugAdvice(text).some((i) => i.term === '用药建议')) {
-    reasons.push('drug_in_client_text');
-  }
-  if (findClientTwinTerms(text).length) reasons.push('twin_in_client_text');
-  if (findExpertMentions(text, EXPERT_NAMES).length) reasons.push('expert_in_client_text');
   const parsed = carePlanStructuredSchema.safeParse(row.structured);
-  if (!parsed.success) {
-    reasons.push('library_item_unavailable');
-    return reasons;
+  // 每一部分的通俗版文字也是给客户的（以后渲染和伴侣读取用），和整份通俗版一起查
+  const sectionTexts = parsed.success ? parsed.data.sections.map((x) => x.clientFacing) : [];
+  const reasons = new Set<RejectReason>(clientPlanTextReasons(row.content.clientFacing));
+  for (const t of sectionTexts) {
+    for (const r of clientPlanTextReasons(t)) reasons.add(r);
+    if (findBannedTerms(t).length) reasons.add('banned_terms');
   }
-  reasons.push(...(await carePlanLibraryProblems(trx, parsed.data)));
+  if (!parsed.success) {
+    // 结构化内容读不出来（不应发生）：不误报成库条目问题
+    reasons.add('schedule_mismatch');
+    return [...reasons];
+  }
+  for (const r of await carePlanLibraryProblems(trx, parsed.data)) reasons.add(r);
   if (!acknowledgedAllergens && row.client_id) {
     const recipeIds = [...new Set(parsed.data.recipes.map((r) => r.recipeId))];
     if (recipeIds.length) {
@@ -165,9 +166,21 @@ export async function carePlanApproveReasons(
         history.map((h) => h.content),
         recipes.map((r) => ({ id: r.id, allergens: r.allergens as never })),
       );
-      if (conflicts.length) reasons.push('allergens_not_acknowledged');
+      if (conflicts.length) reasons.add('allergens_not_acknowledged');
     }
   }
+  return [...reasons];
+}
+
+/**
+ * 方案通俗版文字的 M5 检查（规格 2.3）：药名、用药建议和保健品，孪生颜色和预测，专家名称。
+ * 复制和导出前也再查一遍（已审核内容数据库层不能改，那里是多一道保险）。
+ */
+export function clientPlanTextReasons(text: string): RejectReason[] {
+  const reasons: RejectReason[] = [];
+  if (findClientDrugIssues(text).length) reasons.push('drug_in_client_text');
+  if (findClientTwinTerms(text).length) reasons.push('twin_in_client_text');
+  if (findExpertMentions(text, EXPERT_NAMES).length) reasons.push('expert_in_client_text');
   return reasons;
 }
 

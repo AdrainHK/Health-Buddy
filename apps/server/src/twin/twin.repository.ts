@@ -787,37 +787,44 @@ export class TwinRepository {
 
       // M5：方案生效、结束、被替代（只显示部分和原因，不显示方案文字）
       if (types.has('care_plan')) {
-        const rows = await trx
+        // 生效和结束（被替代）各按自己的时间排序、截取，很早生效、最近才结束的方案不会漏掉结束事件
+        const activated = await trx
           .selectFrom('care_plans')
-          .select(['id', 'sections', 'status', 'end_reason', 'approved_at', 'ended_at'])
+          .select(['id', 'sections', 'approved_at'])
           .where('client_id', '=', clientId)
-          .where((eb) => eb.or([eb('approved_at', '<', before), eb('ended_at', '<', before)]))
+          .where('approved_at', '<', before)
           .orderBy('approved_at', 'desc')
           .limit(n)
           .execute();
-        for (const r of rows) {
-          const sections = r.sections as PlanSection[];
-          if (r.approved_at < before)
-            events.push({
-              type: 'care_plan',
-              id: `care_plan:${r.id}:activated`,
-              at: iso(r.approved_at),
-              planId: r.id,
-              action: 'activated',
-              sections,
-              endReason: null,
-            });
-          if (r.ended_at && r.ended_at < before && r.status !== 'active')
-            events.push({
-              type: 'care_plan',
-              id: `care_plan:${r.id}:${r.status}`,
-              at: iso(r.ended_at),
-              planId: r.id,
-              action: r.status,
-              sections,
-              endReason: r.end_reason,
-            });
-        }
+        for (const r of activated)
+          events.push({
+            type: 'care_plan',
+            id: `care_plan:${r.id}:activated`,
+            at: iso(r.approved_at),
+            planId: r.id,
+            action: 'activated',
+            sections: r.sections as PlanSection[],
+            endReason: null,
+          });
+        const closed = await trx
+          .selectFrom('care_plans')
+          .select(['id', 'sections', 'status', 'end_reason', 'ended_at'])
+          .where('client_id', '=', clientId)
+          .where('status', '!=', 'active')
+          .where('ended_at', '<', before)
+          .orderBy('ended_at', 'desc')
+          .limit(n)
+          .execute();
+        for (const r of closed)
+          events.push({
+            type: 'care_plan',
+            id: `care_plan:${r.id}:${r.status}`,
+            at: iso(r.ended_at!),
+            planId: r.id,
+            action: r.status as 'ended' | 'superseded',
+            sections: r.sections as PlanSection[],
+            endReason: r.end_reason,
+          });
       }
 
       // M5：随访完成、未联系上、取消（不显示重点和备注）
