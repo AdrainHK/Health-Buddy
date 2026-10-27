@@ -38,6 +38,7 @@ describe('方案和随访接口', () => {
     f.users.managerB1,
     f.users.orgAdminA,
     f.users.operatorAdminA,
+    f.users.operatorAdminB,
     f.users.platform,
   ];
 
@@ -333,6 +334,10 @@ describe('方案和随访接口', () => {
           .expect(404);
         if ([f.users.managerA2, f.users.managerA3, f.users.managerB1].includes(u)) {
           await agent.get(`/api/visits?clientId=${f.clients.a1[0]}`).expect(404);
+          const all = visitListResponseSchema.parse(
+            (await agent.get('/api/visits').expect(200)).body,
+          );
+          expect(all.visits.map((v) => v.clientId)).not.toContain(f.clients.a1[0]);
           const today = todayVisitsResponseSchema.parse(
             (await agent.get('/api/visits/today').expect(200)).body,
           );
@@ -546,6 +551,19 @@ describe('方案和随访接口', () => {
           .expect(404);
       }
       expect(await owner.selectFrom('visit_materials').select('id').execute()).toEqual(before);
+      // 越权上传带了“已告知客户”，也不写同意记录
+      const consents = await owner
+        .selectFrom('client_record_consents')
+        .select('confirmed_by')
+        .where('client_id', '=', f.clients.a1[0])
+        .execute();
+      expect(consents.map((c) => c.confirmed_by)).toEqual([f.users.managerA1.id]);
+      // 关联别的健管师的随访 → 404
+      const otherVisit = await addVisit(f.clients.a2, dayOffset(3));
+      await m
+        .post(`/api/clients/${f.clients.a1[0]}/visit-materials`)
+        .send({ text, visitId: otherVisit })
+        .expect(404);
       // 本人可以删除
       await m.delete(`/api/visit-materials/${id}`).expect(204);
       await m.delete(`/api/visit-materials/${id}`).expect(404);

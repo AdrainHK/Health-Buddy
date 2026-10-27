@@ -8,7 +8,7 @@ import {
 import { DB } from '../db/db.provider.js';
 import { withTenant, type Db, type TenantContext, type TenantTransaction } from '../db/database.js';
 import { visitMaterialsPurgeDue } from '../db/plan-functions.js';
-import { clientVisible } from '../twin/twin.repository.js';
+import { clientVisible, ownClient } from '../twin/twin.repository.js';
 import type { MaterialCipher } from './material-cipher.js';
 
 /**
@@ -34,7 +34,8 @@ export class VisitMaterialsRepository {
     cipher: MaterialCipher,
   ): Promise<CreateMaterialResult> {
     return withTenant(this.db, ctx, async (trx) => {
-      if (!(await clientVisible(trx, clientId))) return 'not_found';
+      // 锁住客户行（共享锁），和并发的转出串行
+      if (!(await ownClient(trx, ctx, clientId))) return 'not_found';
       if (input.visitId) {
         const visit = await trx
           .selectFrom('visits')
@@ -75,7 +76,7 @@ export class VisitMaterialsRepository {
           client_id: clientId,
           visit_id: input.visitId ?? null,
           kind: input.source ?? 'paste',
-          text_encrypted: cipher.encrypt(text),
+          text_encrypted: cipher.encrypt(text, clientId),
           char_count: Array.from(text).length,
           uploaded_by: ctx.userId,
         })

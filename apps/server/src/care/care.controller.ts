@@ -221,7 +221,8 @@ export class CareController {
     const clientId = parseId(id);
     if (!this.cipher) throw notConfigured();
     const raw = (body as { text?: unknown } | null)?.text;
-    if (typeof raw === 'string' && Array.from(raw.trim()).length > VISIT_MATERIAL_TEXT_MAX) {
+    // 和契约的 zod 校验同一种计数方式（UTF-16 长度），不会出现 413 和 400 对不上
+    if (typeof raw === 'string' && raw.trim().length > VISIT_MATERIAL_TEXT_MAX) {
       throw payloadTooLarge('text_too_long');
     }
     const parsed = createVisitMaterialRequestSchema.safeParse(body);

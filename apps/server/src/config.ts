@@ -46,10 +46,7 @@ const envSchema = z.object({
     emptyAsUnset,
     z
       .string()
-      .refine(
-        (v) => Buffer.from(v, 'base64').length === 32,
-        'VISIT_MATERIAL_KEY 必须是 32 字节的 base64',
-      )
+      .regex(/^[A-Za-z0-9+/]{43}=$/, 'VISIT_MATERIAL_KEY 必须是 32 字节的 base64')
       .optional(),
   ),
 });

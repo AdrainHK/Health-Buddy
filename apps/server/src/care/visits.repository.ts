@@ -11,7 +11,7 @@ import {
 import { DB } from '../db/db.provider.js';
 import { withTenant, type Db, type TenantContext, type TenantTransaction } from '../db/database.js';
 import { addDays, daysBetween, localDate } from '../twin/time-zone.js';
-import { clientVisible } from '../twin/twin.repository.js';
+import { clientVisible, ownClient } from '../twin/twin.repository.js';
 import { dateText, iso, managerTimeZone } from './common.js';
 
 /**
@@ -40,7 +40,8 @@ export class VisitsRepository {
   list(ctx: TenantContext, query: VisitListQuery): Promise<Visit[] | undefined> {
     return withTenant(this.db, ctx, async (trx) => {
       if (query.clientId && !(await clientVisible(trx, query.clientId))) return undefined;
-      let q = selectVisits(trx);
+      // 行级安全之外再显式限定本人（纵深防御）
+      let q = selectVisits(trx).where('visits.manager_id', '=', ctx.userId);
       if (query.clientId) q = q.where('client_id', '=', query.clientId);
       if (query.status) q = q.where('status', '=', query.status);
       // date 列按 YYYY-MM-DD 文本比较（不转 JS Date，避免时区挪一天）
@@ -59,6 +60,7 @@ export class VisitsRepository {
       const rows = await selectVisits(trx)
         .innerJoin('clients', 'clients.id', 'visits.client_id')
         .select('clients.display_name')
+        .where('visits.manager_id', '=', ctx.userId)
         .where('visits.status', 'in', ['planned', 'missed'])
         .where('visits.due_date', '<=', date as never)
         .limit(LIST_LIMIT)
@@ -87,7 +89,8 @@ export class VisitsRepository {
     tzFallback?: string,
   ): Promise<VisitWriteResult> {
     return withTenant(this.db, ctx, async (trx) => {
-      if (!(await clientVisible(trx, clientId))) return 'not_found';
+      // 锁住客户行（共享锁），和并发的转出串行（同 M4 的写入）
+      if (!(await ownClient(trx, ctx, clientId))) return 'not_found';
       const tz = await managerTimeZone(trx, ctx, tzFallback);
       if (!dateInRange(input.dueDate, localDate(new Date(), tz))) return 'invalid_date';
       if (input.followUpItemId) {

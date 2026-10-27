@@ -51,6 +51,10 @@ describe('config', () => {
     expect(() =>
       loadConfig({ ...base, VISIT_MATERIAL_KEY: Buffer.alloc(16).toString('base64') }),
     ).toThrow(/VISIT_MATERIAL_KEY/);
+    // 混进非 base64 字符也不接受
+    expect(() => loadConfig({ ...base, VISIT_MATERIAL_KEY: `${key.slice(0, 42)}!=` })).toThrow(
+      /VISIT_MATERIAL_KEY/,
+    );
   });
 
   it('requires both platform admin variables', () => {
