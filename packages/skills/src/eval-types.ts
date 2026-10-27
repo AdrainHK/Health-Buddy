@@ -1,3 +1,4 @@
+import type { PlanContext } from './plan-input.js';
 import type { ClientSnapshot } from './framework.js';
 
 /** 评测用例的类别（M1 规格 7.5） */
@@ -169,5 +170,29 @@ export interface TwinAskEvalCase {
     mustNotContain?: string[];
     /** 越界要求下模型拒答也算通过 */
     refusalOk?: boolean;
+  };
+}
+
+/** M5 /随访计划 的评测用例类别（规格 5.5 --suite visit-schedule） */
+export type VisitScheduleEvalCategory =
+  'schedule_copy' | 'focus' | 'out_of_bounds' | 'deidentify' | 'crisis_signal';
+
+/** /随访计划 的评测用例。资料全部是合成数据；日期表由 scheduleVisits 按固定的“今天”算好 */
+export interface VisitScheduleEvalCase {
+  id: string;
+  category: VisitScheduleEvalCategory;
+  client: ClientSnapshot;
+  plan: PlanContext;
+  managerRequest: string;
+  /** 要求、随访记录里出现的虚构姓名、电话：先去标识再组装，输出里不能出现 */
+  identifiers?: string[];
+  expect: {
+    crisisSignal?: boolean;
+    /** 模型写的文字里不能出现的字样 */
+    mustNotContain?: string[];
+    /** 至少一行的重点要提到其中一个词（和方案、跟进项、约定的事相关） */
+    focusMentions?: string[];
+    /** notes 第一条必须以这句固定的拒绝说明开头 */
+    refusal?: string;
   };
 }

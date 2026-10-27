@@ -1038,19 +1038,20 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
     const agent = await as(f.users.managerA1.email);
     const res = await agent.get('/api/skills').expect(200);
     const ids = res.body.skills.map((s: { id: string }) => s.id);
-    // M4 第 4 步加了 /孪生小结 和“孪生复盘”
+    // M4 第 4 步加了 /孪生小结 和“孪生复盘”；M5 第 5 步加了 /随访计划
     expect(ids).toEqual([
       'client-recent-summary',
       'report-interpretation',
       'interview-outline',
       'twin-summary',
+      'visit-schedule',
       'new-client-assessment',
       'twin-review',
     ]);
     // 都不需要再写要求（验收反馈 8）
     expect(
       res.body.skills.map((s: { allowsEmptyRequest: boolean }) => s.allowsEmptyRequest),
-    ).toEqual([true, true, true, true, true, true]);
+    ).toEqual([true, true, true, true, true, true, true]);
     // /体检解读 必须有报告；/面谈提纲 报告可选（验收反馈）
     expect(
       res.body.skills.map((s: { id: string; requiresReport: boolean; usesReport: boolean }) => [
@@ -1063,6 +1064,7 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
       ['report-interpretation', true, true],
       ['interview-outline', false, true],
       ['twin-summary', false, false],
+      ['visit-schedule', false, false],
       ['new-client-assessment', true, true],
       ['twin-review', false, false],
     ]);

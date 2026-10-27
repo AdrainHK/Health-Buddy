@@ -127,12 +127,16 @@ describe('界面文字走 i18n（验收标准 25）', () => {
       'steps.readTwin',
       'steps.computeForecast',
       'steps.generateTwinSummary',
+      'steps.readCarePlan',
+      'steps.scheduleVisits',
+      'steps.generateVisitSchedule',
       'skills.client-recent-summary.name',
       'skills.report-interpretation.name',
       'skills.interview-outline.name',
       'skills.new-client-assessment.name',
       'skills.twin-summary.name',
       'skills.twin-review.name',
+      'skills.visit-schedule.name',
     ];
     for (const key of keys) expect(typeof lookup(key), key).toBe('string');
   });

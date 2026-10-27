@@ -24,6 +24,7 @@ export {
 } from './interview-outline/index.js';
 export * from './report-input.js';
 export * from './twin-input.js';
+export * from './plan-input.js';
 export * from './numbers.js';
 export {
   twinSummary,
@@ -63,3 +64,10 @@ export {
   type ReportSample,
   type ReportSampleRow,
 } from './report-extraction/evals/cases.js';
+export {
+  visitSchedule,
+  validateVisitSchedule,
+  visitScheduleTexts,
+  type VisitScheduleOutput,
+} from './visit-schedule/index.js';
+export { visitScheduleEvalCases } from './visit-schedule/evals/cases.js';

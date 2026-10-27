@@ -47,6 +47,8 @@ import {
   withAskNotice,
   type SkillDefinition,
   type WordingIssue,
+  planFreeTexts,
+  redactPlanContext,
 } from '@health-buddy/skills';
 import { LLM_GATEWAY, type AppGateway } from '../ai/gateway.provider.js';
 import type { TenantContext } from '../db/database.js';
@@ -649,7 +651,8 @@ export class GenerationService {
   ): Promise<void> {
     try {
       // 读孪生的技能（/孪生小结、孪生复盘）：读档案 → 读数字孪生 → 技能
-      const readsTwin = skillIds.some((id) => getSkill(id)?.usesTwin);
+      // M5 方案和随访技能同样先读孪生（规格 2.7）
+      const readsTwin = skillIds.some((id) => getSkill(id)?.usesTwin || getSkill(id)?.planContext);
       const plan = await this.repo.createPlan(ctx, turn.assistantMessageId, [
         { kind: 'read_client' },
         ...(readsTwin ? [{ kind: 'read_twin' as const }] : []),
@@ -686,11 +689,15 @@ export class GenerationService {
         return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
       const usesReport = run.skills.some(skillUsesReport);
       const usesTwin = run.skills.some((s) => s.usesTwin);
-      const client = usesTwin
-        ? await this.readTwinClient(ctx, run.clientId, steps)
-        : usesReport
-          ? await this.readReport(ctx, run.clientId, steps, run.reportId ?? null, run.skills)
-          : await this.readClient(ctx, run.clientId, steps, run.reportId ?? null);
+      // M5 方案和随访技能：读档案 → 读数字孪生 → 读当前方案（→ 排随访日期）
+      const planKind = run.skills.find((s) => s.planContext)?.planContext;
+      const client = planKind
+        ? await this.readPlanClient(ctx, run.clientId, steps, planKind)
+        : usesTwin
+          ? await this.readTwinClient(ctx, run.clientId, steps)
+          : usesReport
+            ? await this.readReport(ctx, run.clientId, steps, run.reportId ?? null, run.skills)
+            : await this.readClient(ctx, run.clientId, steps, run.reportId ?? null);
       if (!client) return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
 
       // 心理危机和疑似急症信号不只依赖模型判断：健管师的原话、退回原因、本任务之前的消息里有关键词也算
@@ -700,6 +707,7 @@ export class GenerationService {
         run.returnReason ?? '',
         ...(await this.repo.managerTexts(ctx, run.taskId)),
         ...twinFreeTexts(client.snapshot.twin),
+        ...planFreeTexts(client.plan),
       ];
       const crisis = detectCrisisKeywords(signalTexts);
       const emergencyKeywords = detectEmergencyKeywords(signalTexts);
@@ -723,6 +731,7 @@ export class GenerationService {
         managerRequest: redact(run.managerRequest),
         returnReason: run.returnReason === undefined ? undefined : redact(run.returnReason),
         riskTierCriteria: this.riskTierCriteria,
+        ...(client.plan ? { plan: redactPlanContext(client.plan, redact) } : {}),
       };
 
       for (const skill of run.skills) {
@@ -781,11 +790,14 @@ export class GenerationService {
                   EXPERTS.map((e) => e.meta.name),
                 )
               : [];
+          // M5：结构校验（随访日期和输入一致、条目在候选里、参数在范围里），只记类别
+          const invalid = skill.validateOutput?.(data as never, skillInput) ?? [];
           const categories: string[] = [
             ...wordingCategories(wording),
             ...(mentions.length ? ['expert_mention'] : []),
+            ...invalid,
           ];
-          return { wording, mentions, categories };
+          return { wording, mentions, invalid, categories };
         };
         let issues = result.status === 'ok' ? check(result.data) : undefined;
         if (issues?.categories.length) {
@@ -795,6 +807,7 @@ export class GenerationService {
           const note = [
             issues.wording.length ? (skill.correctionNote?.(issues.wording) ?? '') : '',
             issues.mentions.length ? EXPERT_MENTION_NOTE : '',
+            issues.invalid.length ? (skill.validationNote?.(issues.invalid) ?? '') : '',
           ]
             .filter(Boolean)
             .join('\n\n');
@@ -854,6 +867,7 @@ export class GenerationService {
           consultationId: used?.consultationId ?? null,
           emergencySignal: emergency,
           crisisSignal,
+          ...(rendered.structured === undefined ? {} : { structured: rendered.structured }),
         });
         if (!artifact) {
           await steps.finish(step, 'failed');
@@ -1117,6 +1131,47 @@ export class GenerationService {
     const detect = await steps.start('detect_critical', 'steps.detectCritical');
     await steps.finish(detect, 'done');
     return { ...client, snapshot: { ...client.snapshot, twin } };
+  }
+
+  /**
+   * 方案和随访技能（M5 规格 2.7）：读档案 → 读数字孪生 → 读当前方案 → 排随访日期（/随访计划）→
+   * 识别危急指标。客户看不到时步骤失败，返回 undefined
+   */
+  private async readPlanClient(
+    ctx: TenantContext,
+    clientId: string,
+    steps: StepRunner,
+    kind: NonNullable<SkillDefinition['planContext']>,
+  ): Promise<ClientContext | undefined> {
+    const read = await steps.start('read_client', 'steps.readClient');
+    const client = await this.repo.clientContext(ctx, clientId, null, {
+      detail: true,
+      latestReport: false,
+    });
+    if (!client) {
+      await steps.finish(read, 'failed');
+      return undefined;
+    }
+    await steps.finish(read, 'done');
+    const twin = await this.readTwin(ctx, clientId, [], steps);
+    if (!twin) return undefined;
+    const readPlan = await steps.start('read_care_plan', 'steps.readCarePlan');
+    const schedule = kind === 'visit_schedule';
+    const plan = await this.repo.planContext(ctx, clientId, {
+      schedule,
+      riskTier: client.snapshot.riskTier?.tier ?? null,
+      hasUrgentFollowUp: twin.followUps.some((f) => f.severity <= 2),
+      // 账号没设置时区时按北京时间（和确认随访计划时的日期校验一致）
+      tzFallback: 'Asia/Shanghai',
+    });
+    await steps.finish(readPlan, 'done');
+    if (schedule) {
+      const step = await steps.start('schedule_visits', 'steps.scheduleVisits');
+      await steps.finish(step, 'done');
+    }
+    const detect = await steps.start('detect_critical', 'steps.detectCritical');
+    await steps.finish(detect, 'done');
+    return { ...client, snapshot: { ...client.snapshot, twin }, plan };
   }
 
   /** 读档案、识别危急指标，两步都推给前端 */

@@ -11,6 +11,7 @@ import {
   type SkillEvalCase,
   type TwinAskEvalCase,
   type TwinSummaryEvalCase,
+  type VisitScheduleEvalCase,
 } from '@health-buddy/skills';
 import type { ExpertEvalCase, RoutingEvalCase, SynthesisEvalCase } from '@health-buddy/experts';
 import { runAskOnce } from './ask.js';
@@ -19,6 +20,7 @@ import { runExtractionOnce } from './extraction.js';
 import { describeError, gradeRecentSummary, type Finding } from './graders.js';
 import { judgeClientText } from './judge.js';
 import { runPlanOnce, runReportSkillOnce } from './report-skills.js';
+import { runVisitScheduleOnce } from './plans.js';
 import { runTwinAskOnce, runTwinSummaryOnce } from './twin.js';
 
 export interface RunResult {
@@ -273,6 +275,22 @@ export async function runTwinSummaryEval(options: {
           i + 1,
           options.useJudge ?? false,
         ),
+    ),
+  );
+  return runPool(jobs, 3);
+}
+
+/** /随访计划 评测（M5 规格 5.5） */
+export async function runVisitScheduleEval(options: {
+  gateway: LlmGateway;
+  provider: ProviderName;
+  cases: readonly VisitScheduleEvalCase[];
+  runs: number;
+}): Promise<RunResult[]> {
+  const jobs = options.cases.flatMap((c) =>
+    Array.from(
+      { length: options.runs },
+      (_, i) => () => runVisitScheduleOnce(options.gateway, EVAL_CTX, options.provider, c, i + 1),
     ),
   );
   return runPool(jobs, 3);

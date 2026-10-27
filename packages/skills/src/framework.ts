@@ -18,6 +18,7 @@ import {
   type RiskTierSuggestion,
 } from '@health-buddy/shared';
 import type { z } from 'zod';
+import type { PlanContext } from './plan-input.js';
 import type { TwinSnapshot } from './twin-input.js';
 import type { WordingIssue } from './wording.js';
 
@@ -143,6 +144,11 @@ export interface SkillInput {
    * 通俗版可以改写其中的生活方式建议，但不出现专家名称和专家结论。没有调用专家时为空。
    */
   expertDigest?: string | undefined;
+  /**
+   * 方案和随访（M5 规格 5.2）：当前方案摘要、最近的随访记录（跟进项在孪生资料里）；
+   * /随访计划 还有后端算好的随访日期。只给声明了 planContext 的技能组装
+   */
+  plan?: PlanContext | undefined;
 }
 
 /** 技能输出渲染后的产物内容。clientFacing 还没有拼接免责声明。 */
@@ -153,6 +159,11 @@ export interface SkillArtifact {
   crisisSignal: boolean;
   /** 建议分层（只有 /体检解读，规格 2.7）；只给健管师看 */
   riskTierSuggestion?: RiskTierSuggestion | null;
+  /**
+   * 结构化内容（M5：随访计划的日程、方案的条目和目标、随访记录），写进 artifacts.structured；
+   * 由后端按 kind 的 schema 再校验
+   */
+  structured?: unknown;
 }
 
 export interface SkillDefinition<S extends z.ZodType = z.ZodType> extends SkillMeta {
@@ -193,6 +204,18 @@ export interface SkillDefinition<S extends z.ZodType = z.ZodType> extends SkillM
    * 有输入以外的数值时带纠正说明重试一次，仍不合格不保存草稿
    */
   numberCheckTexts?(output: z.output<S>): string[];
+  /**
+   * 方案和随访的上下文（M5 规格 5.2）：后端组装 SkillInput.plan，执行步骤加“正在读取数字孪生”
+   * “正在读取当前方案”；visit_schedule 再加“正在排随访日期”（日期由后端算，Q17）
+   */
+  planContext?: 'visit_schedule';
+  /**
+   * 结构校验（M5 规格 5.2）：随访行数和日期必须和输入一致、条目必须在候选里、参数必须在范围里。
+   * 返回不合格的类别（不带内容）；有问题时带 validationNote 重试一次，仍不合格不保存草稿
+   */
+  validateOutput?(output: z.output<S>, input: SkillInput): string[];
+  /** 结构校验没通过时附在用户消息后面的纠正说明 */
+  validationNote?(categories: readonly string[]): string;
   /** 把客户资料和健管师的要求组装成用户消息 */
   buildUserMessage(input: SkillInput): string;
   /** 把模型输出渲染成产物。input 是这次的输入，用来由后端确定性地写出数值表 */
