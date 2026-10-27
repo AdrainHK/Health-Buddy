@@ -104,7 +104,7 @@ function libraryOf(input?: SkillInput): PlanLibraryContext | null {
  * 结构校验（5.2、5.4 第 5 条）。返回不合格的类别：
  * section_mismatch（部分和选项不一致）、goal_invalid（模板不在候选、部分不对、参数超范围）、
  * library_ref（条目不在候选、餐次不对、同一餐两份、次数时长超范围、心理部分选了非放松练习）、
- * exercise_restricted（有运动安全规则却选了动作）
+ * exercise_restricted（有运动安全规则却选了动作、设了运动目标，或没写需要先就医评估的原因）
  */
 export function validateCarePlan(output: CarePlanOutput, input: SkillInput): string[] {
   const lib = libraryOf(input);
@@ -163,19 +163,28 @@ export function validateCarePlan(output: CarePlanOutput, input: SkillInput): str
   }
   if (
     lib.exerciseRestriction &&
-    output.exercises.some((x) => exercises.get(x.exerciseId)?.category !== 'relaxation')
+    (!output.overview.medicalReview?.trim() ||
+      output.sections.some((s) => s.section === 'exercise' && s.goals.length > 0) ||
+      output.exercises.some((x) => exercises.get(x.exerciseId)?.category !== 'relaxation'))
   ) {
     issues.add('exercise_restricted');
   }
   return [...issues];
 }
 
+/**
+ * 只选了心理又有危机信号：方案至少要有一部分，心理部分只给健管师一句处理提示，通俗版留空
+ * （不给客户任何心理相关的内容，5.3、红线 4）
+ */
 const CRISIS_MIND_SECTION: CarePlanStructured['sections'][number] = {
   section: 'mind',
   professional: '请先按危机提示处理，暂不安排心理部分的内容。',
-  clientFacing: '请和您的健管师先聊一聊近况。',
+  clientFacing: '',
   goals: [],
 };
+
+/** 运动安全规则（Q8）下运动部分给客户的固定说法 */
+export const EXERCISE_MEDICAL_REVIEW = '建议先就医评估再开始运动。';
 
 /**
  * 方案草稿的结构化内容（artifacts.structured），健管师可以在编辑器里替换条目、改参数。
@@ -188,14 +197,17 @@ export function carePlanStructured(output: CarePlanOutput, input?: SkillInput): 
     lib?.exercises.filter((e) => e.category === 'relaxation').map((e) => e.id) ?? [],
   );
   const order = (s: PlanSection) => PLAN_SECTIONS.indexOf(s);
+  const restricted = Boolean(lib?.exerciseRestriction);
   const sections = output.sections
     .filter((s) => !(output.crisisSignal && s.section === 'mind'))
     .sort((a, b) => order(a.section) - order(b.section))
     .map((s) => ({
       section: s.section,
       professional: s.professional.trim(),
-      clientFacing: s.clientFacing.trim(),
-      goals: s.goals.flatMap((g) => {
+      // 运动安全规则：运动部分的通俗版由后端固定成一句，不给强度、频率和时长
+      clientFacing:
+        restricted && s.section === 'exercise' ? EXERCISE_MEDICAL_REVIEW : s.clientFacing.trim(),
+      goals: (restricted && s.section === 'exercise' ? [] : s.goals).flatMap((g) => {
         const t = templates.get(g.templateId);
         return t ? [{ templateId: g.templateId, params: goalParamValues(t, g.params) }] : [];
       }),
@@ -207,9 +219,11 @@ export function carePlanStructured(output: CarePlanOutput, input?: SkillInput): 
     recipes: [...output.recipes].sort(
       (a, b) => a.day - b.day || MEAL_TYPES.indexOf(a.meal) - MEAL_TYPES.indexOf(b.meal),
     ),
-    exercises: output.crisisSignal
-      ? output.exercises.filter((x) => !relaxation.has(x.exerciseId))
-      : output.exercises,
+    exercises: output.exercises.filter(
+      (x) =>
+        !(output.crisisSignal && relaxation.has(x.exerciseId)) &&
+        !(restricted && !relaxation.has(x.exerciseId)),
+    ),
   };
 }
 
@@ -229,9 +243,11 @@ function clientText(structured: CarePlanStructured, lib: PlanLibraryContext | nu
   const exercises = new Map(lib?.exercises.map((e) => [e.id, e]) ?? []);
   const parts: string[] = [];
   for (const s of structured.sections) {
+    // 危机信号下只留给健管师的心理部分：通俗版不出现
+    if (!s.clientFacing && !s.goals.length) continue;
     const lines = [`## ${PLAN_SECTION_ZH[s.section]}`, s.clientFacing];
     const goals = s.goals.flatMap((g) => goalLine(templates.get(g.templateId), g.params) ?? []);
-    if (goals.length) lines.push('', '**每天的小目标**', ...goals.map((g) => `- ${g}`));
+    if (goals.length) lines.push('', '**行为小目标**', ...goals.map((g) => `- ${g}`));
     if (s.section === 'diet' && structured.recipes.length) {
       lines.push('', '**示例食谱**');
       for (const r of structured.recipes) {
@@ -351,7 +367,8 @@ const VALIDATION_NOTE: Record<string, string> = {
     '有行为目标不在“目标模板”里、放错了部分，或参数超出模板写明的范围；只能用目标模板的 id，参数在范围内',
   library_ref:
     '有食谱或动作不在候选里、餐次不对、同一天同一餐有两份，或次数时长超出范围；只能用候选的 id',
-  exercise_restricted: '有运动安全规则时 exercises 只能是空数组（心理部分的放松练习除外）',
+  exercise_restricted:
+    '有运动安全规则时 exercises 只能有心理部分的放松练习，运动部分不设目标，overview.medicalReview 必须写明需要先就医评估的原因',
 };
 
 const WORDING_NOTE: Partial<Record<WordingCategory, string>> = {

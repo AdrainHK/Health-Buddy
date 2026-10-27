@@ -711,6 +711,8 @@ export class GenerationService {
         ...(await this.repo.managerTexts(ctx, run.taskId)),
         ...twinFreeTexts(client.snapshot.twin),
         ...planFreeTexts(client.plan),
+        // 方案和随访技能：健康史里写的危机、急症描述也算（M5 规格 5.4 第 7 条）
+        ...(client.plan ? (client.snapshot.healthHistory ?? []).map((h) => h.content) : []),
       ];
       const crisis = detectCrisisKeywords(signalTexts);
       const emergencyKeywords = detectEmergencyKeywords(signalTexts);

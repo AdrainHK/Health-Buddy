@@ -225,7 +225,7 @@ export function describeLibrary(lib: PlanLibraryContext): string {
   if (lib.libraryEmpty) {
     lines.push(
       '',
-      '方案库待审定，暂时没有可用的食谱和动作：饮食和运动只写原则，不给示例，写明“方案库待审定”。',
+      '方案库待审定，暂时没有可用的食谱和动作：饮食和运动只写原则，不给示例；通俗版写“库中暂无合适的示例”，专业版写明“方案库待审定”。',
     );
   }
   if (lib.exerciseRestriction) {

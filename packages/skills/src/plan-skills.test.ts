@@ -287,17 +287,27 @@ describe('/方案生成', () => {
     ).toEqual(['library_ref']);
   });
 
-  it('运动安全规则：选了运动动作拦下，放松练习可以', () => {
+  it('运动安全规则：选了运动动作、设了运动目标、没写就医原因都拦下；放松练习可以', () => {
     const input = planInput({ exerciseRestriction: '有危急指标' });
     expect(validateCarePlan(carePlanOutput(), input)).toContain('exercise_restricted');
-    expect(
-      validateCarePlan(
-        carePlanOutput({
-          exercises: [{ exerciseId: 'x-breath', frequencyPerWeek: 7, minutes: 5 }],
-        }),
-        input,
+    const ok = carePlanOutput({
+      sections: carePlanOutput().sections.map((s) =>
+        s.section === 'exercise' ? { ...s, goals: [] } : s,
       ),
-    ).not.toContain('exercise_restricted');
+      exercises: [{ exerciseId: 'x-breath', frequencyPerWeek: 7, minutes: 5 }],
+      overview: { ...carePlanOutput().overview, medicalReview: '有危急指标，运动前先就医评估。' },
+    });
+    expect(validateCarePlan(ok, input)).toEqual([]);
+    expect(
+      validateCarePlan({ ...ok, overview: { ...ok.overview, medicalReview: null } }, input),
+    ).toEqual(['exercise_restricted']);
+    // 渲染时后端再兜底：运动部分固定成一句，没有动作和目标
+    const rendered = carePlan.render(carePlanOutput(), input);
+    const structured = rendered.structured as ReturnType<typeof carePlanStructured>;
+    const exercise = structured.sections.find((s) => s.section === 'exercise')!;
+    expect(exercise).toMatchObject({ clientFacing: '建议先就医评估再开始运动。', goals: [] });
+    expect(structured.exercises.map((x) => x.exerciseId)).toEqual(['x-breath']);
+    expect(rendered.clientFacing).not.toContain('健步走');
   });
 
   it('心理危机：可以不写心理部分；渲染时去掉心理部分和放松练习，专业版置顶危机提示', () => {
@@ -319,7 +329,12 @@ describe('/方案生成', () => {
       mindOnly,
     );
     expect(onlyMind.sections).toHaveLength(1);
-    expect(onlyMind.sections[0]!.clientFacing).toContain('健管师');
+    expect(onlyMind.sections[0]!.clientFacing).toBe('');
+    const mindRendered = carePlan.render(
+      carePlanOutput({ crisisSignal: true, sections: [], recipes: [], exercises: [] }),
+      mindOnly,
+    );
+    expect(mindRendered.clientFacing).toBe('');
   });
 
   it('渲染：结构化内容按部分和日期排好；通俗版写库里的做法，注意事项只在专业版', () => {
