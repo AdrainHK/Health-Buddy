@@ -52,7 +52,7 @@ export const COMPANION_SCRIPTS_SNAPSHOT_0024: Readonly<Record<string, string>> =
   critical_value: '这个数值需要尽快告诉医生，我已经通知您的健管师了。',
   handoff: '这个问题需要健管师或医生来回答，我已经帮您转给您的健管师了。',
   fallback: '这个问题我回答不好，已经帮您转给健管师了。',
-  paused: '伴侣已暂停，请联系你的健管师。',
+  paused: '伴侣已暂停，请联系您的健管师。',
   rate_limited: '今天聊得很多了，休息一下吧。',
   asr_retry: '我没听清，您能再说一遍吗？',
   handoff_reply_intro: '您的健管师回复了您之前问的问题。',

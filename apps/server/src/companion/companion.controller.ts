@@ -14,7 +14,6 @@ import {
   bindCompanionDeviceRequestSchema,
   companionScriptKindSchema,
   companionScriptMax,
-  findBannedTerms,
   timeZoneSchema,
   importDeviceBatchRequestSchema,
   recordCompanionConsentRequestSchema,
@@ -30,6 +29,7 @@ import {
   type DeviceBatchListResponse,
 } from '@health-buddy/shared';
 import { HttpStatus } from '@nestjs/common';
+import { checkCompanionScript } from '@health-buddy/skills';
 import { z } from 'zod';
 import type { ResolvedSession } from '../auth/auth.repository.js';
 import { CurrentSession } from '../auth/decorators.js';
@@ -213,7 +213,7 @@ function parseKind(kind: string): CompanionScriptKind {
  * - GET、POST /api/admin/companion/device-batches：出厂批次（N2）；已存在的序列号 409
  * - GET /api/admin/companion/scripts：每种固定话术和告知书模板的当前版本
  * - GET /api/admin/companion/scripts/:kind/versions：修改记录
- * - PUT /api/admin/companion/scripts/:kind：保存新版本；含禁用词 400 invalid_content
+ * - PUT /api/admin/companion/scripts/:kind：保存新版本；不符合念给客户听的标准（禁用词、判断、药名、必须保留的内容等）400 invalid_content
  */
 @Controller('admin/companion')
 export class CompanionAdminController {
@@ -265,10 +265,10 @@ export class CompanionAdminController {
     const k = parseKind(kind);
     const { text } = parse(updateCompanionScriptRequestSchema, body);
     if (text.length > companionScriptMax(k)) throw badRequest();
-    const issues = findBannedTerms(text);
+    const issues = checkCompanionScript(k, text);
     if (issues.length) {
       throw new ApiException(HttpStatus.BAD_REQUEST, 'invalid_content', {
-        issues: issues.map((i) => ({ term: i.term, index: i.index })),
+        issues: issues.map((i) => ({ category: i.category, term: i.term, index: i.index })),
       });
     }
     return this.repo.saveScript(session, k, text);

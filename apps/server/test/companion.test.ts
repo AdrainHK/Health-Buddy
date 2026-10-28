@@ -267,6 +267,18 @@ describe('伴侣设备和设置接口', () => {
       .put('/api/admin/companion/scripts/crisis')
       .send({ text: '长'.repeat(301) })
       .expect(400);
+    // 危机话术删掉 120 不能保存；转交话术不能代健管师承诺
+    await platform
+      .put('/api/admin/companion/scripts/crisis')
+      .send({ text: '请马上联系家人。' })
+      .expect(400)
+      .expect((r) =>
+        expect(r.body.issues).toEqual([{ category: 'missing_required', term: '120', index: 0 }]),
+      );
+    await platform
+      .put('/api/admin/companion/scripts/handoff')
+      .send({ text: '已经转给健管师了，她会给您打电话。' })
+      .expect(400);
     const saved = await platform
       .put('/api/admin/companion/scripts/crisis')
       .send({ text: '请马上联系家人，或拨打 120。' })
