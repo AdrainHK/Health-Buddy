@@ -240,6 +240,58 @@ describe('/随访话术、/随访记录', () => {
       );
     });
 
+    it('只有模型标出危机信号（素材里没有关键词）：草稿同样标为危机，审核栏醒目提示', async () => {
+      const a1 = await as(f.users.managerA1.email);
+      const material = await upload(a1, f.clients.a1[0], '合成通话笔记：客户说最近不太想见人。');
+      const task = await newTask(a1, { clientId: f.clients.a1[0] });
+      provider.scripts.skill = recordReply({ crisisSignal: true });
+      await send(a1, task, {
+        mode: 'craft',
+        content: '',
+        skillId: 'visit-record',
+        materialRefs: [material],
+      }).expect(200);
+      expect((await artifactsOf(task))[0]).toMatchObject({ crisis_signal: true });
+    });
+
+    it('跨租户访问被拒绝：别的健管师、别的运营商的随访，已清理的素材，别的租户 @ 本人素材 → 404', async () => {
+      const a1 = await as(f.users.managerA1.email);
+      const a2 = await as(f.users.managerA2.email);
+      const b1 = await as(f.users.managerB1.email);
+      const mine = await upload(a1, f.clients.a1[0], '合成通话笔记');
+      const purged = await upload(a1, f.clients.a1[0], '合成通话笔记');
+      await owner
+        .updateTable('visit_materials')
+        .set({ purged_at: new Date() })
+        .where('id', '=', purged)
+        .execute();
+      const a2Visit = await addVisit(a2, f.clients.a2, '别人的随访');
+      const b1Visit = await addVisit(b1, f.clients.b1, '别的运营商的随访');
+      const task = await newTask(a1, { clientId: f.clients.a1[0] });
+      for (const visitId of [a2Visit, b1Visit]) {
+        await send(a1, task, {
+          mode: 'craft',
+          content: '',
+          skillId: 'visit-script',
+          visitId,
+        }).expect(404);
+      }
+      await send(a1, task, {
+        mode: 'craft',
+        content: '',
+        skillId: 'visit-record',
+        materialRefs: [purged],
+      }).expect(404);
+      const b1Task = await newTask(b1, { clientId: f.clients.b1 });
+      await send(b1, b1Task, {
+        mode: 'craft',
+        content: '',
+        skillId: 'visit-record',
+        materialRefs: [mine],
+      }).expect(404);
+      expect(provider.calls).toHaveLength(0);
+    });
+
     it('跨租户访问被拒绝：别人的素材、别的客户的素材、别人的任务 → 404，不调用模型', async () => {
       const a1 = await as(f.users.managerA1.email);
       const a2 = await as(f.users.managerA2.email);

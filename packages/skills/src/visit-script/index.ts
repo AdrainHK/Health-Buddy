@@ -7,8 +7,8 @@ import { appendRequest, describeReportClient } from '../report-input.js';
 import { TWIN_PROMPT_RULES, describeTwin } from '../twin-input.js';
 import {
   checkPlanClientText,
+  checkRecordWording,
   checkTwinJudgments,
-  checkWhyWording,
   wordingCategories,
   type WordingCategory,
   type WordingIssue,
@@ -188,7 +188,7 @@ export const visitScript: SkillDefinition<typeof visitScriptOutputSchema> = {
       }
     }
     for (const t of visitScriptManagerTexts(output)) {
-      issues.push(...checkWhyWording(t), ...checkTwinJudgments(t));
+      issues.push(...checkRecordWording(t), ...checkTwinJudgments(t));
     }
     return issues;
   },

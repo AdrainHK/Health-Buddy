@@ -921,7 +921,8 @@ export class GenerationService {
           riskTierSuggestion: rendered.riskTierSuggestion ?? null,
           consultationId: used?.consultationId ?? null,
           emergencySignal: emergency,
-          crisisSignal,
+          // 模型自己标出的危机信号也要让审核栏醒目提示（M5 规格 2.9 第 5 条）
+          crisisSignal: crisisSignal || rendered.crisisSignal,
           ...(rendered.structured === undefined ? {} : { structured: rendered.structured }),
           ...(skill.planContext === 'care_plan'
             ? { planOptions: client.plan?.library?.options ?? planOptionsSchema.parse({}) }

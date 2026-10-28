@@ -214,6 +214,32 @@ describe('/随访记录', () => {
     }
   });
 
+  it('客户说的饮食份量不算剂量；用药情况可以有药名，但不能有病名和 AI 给的用药建议', () => {
+    const ok = record({
+      summary: '客户说晚饭米饭换成了半碗杂粮饭，每周喝三次白酒，每次二两左右。',
+      feedback: [
+        { topic: 'diet', items: ['客户说每天喝一杯牛奶'] },
+        { topic: 'medication', items: ['客户说降压药每天一片，最近隔一天吃一次'] },
+      ],
+    });
+    expect(visitRecord.checkOutput!(ok, input())).toEqual([]);
+    const bad = (items: string[]) =>
+      visitRecord.checkOutput!(record({ feedback: [{ topic: 'medication', items }] }), input()).map(
+        (i) => i.category,
+      );
+    expect(bad(['建议继续服用降压药'])).toContain('drug_advice');
+    expect(bad(['客户说因为糖尿病在吃二甲双胍'])).toContain('presumed_disease');
+    const history = (category: 'lifestyle' | 'past_history', content: string) =>
+      visitRecord.checkOutput!(
+        record({ historySuggestions: [{ category, content }] }),
+        input(),
+      ).map((i) => i.category);
+    expect(history('lifestyle', '有糖尿病')).toContain('presumed_disease');
+    expect(history('past_history', '建议把氨氯地平减成半片')).toEqual(
+      expect.arrayContaining(['drug_name', 'drug_advice']),
+    );
+  });
+
   it('日期校验：格式不对或晚于今天（留一天时区余量）不合格；null 可以', () => {
     expect(validateVisitRecord(record(), input())).toEqual([]);
     expect(validateVisitRecord(record({ visitDate: null }), input())).toEqual([]);

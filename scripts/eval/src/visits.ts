@@ -103,7 +103,8 @@ function common(
 
 // ---------- /随访话术 ----------
 
-const REFERRAL = ['就医', '医生', '医院'];
+/** 就医提醒（“请和开药的医生确认”不算） */
+const REFERRAL = ['就医', '看医生', '找医生', '医院'];
 
 /** 一次 /随访话术 的规则检查：结构、说给客户听的话的措辞、汇总只引用输入、就医提醒、越界、去标识 */
 export function gradeVisitScript(
@@ -226,8 +227,8 @@ export function gradeVisitRecord(
   if (c.expect.method !== undefined && output.method !== c.expect.method) {
     findings.push({ rule: 'record.method', detail: `method 应为 ${c.expect.method}` });
   }
-  if (c.expect.emergency && !hits(output.attentionPoints.join('\n'), ['就医']).length) {
-    findings.push({ rule: 'emergency.no_referral', detail: 'attentionPoints 没有就医评估' });
+  if (c.expect.emergency && !hits(output.attentionPoints[0] ?? '', ['就医']).length) {
+    findings.push({ rule: 'emergency.no_referral', detail: 'attentionPoints 第一条没有就医评估' });
   }
   findings.push(...common(c, text, output.notes, output.crisisSignal));
   return findings;

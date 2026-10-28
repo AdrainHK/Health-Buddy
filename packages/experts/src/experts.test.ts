@@ -17,7 +17,7 @@ import {
   statusAllowed,
   type ExpertDefinition,
 } from './framework.js';
-import { buildConsultationInput, knownNumbers } from './input.js';
+import { buildConsultationInput, detectEmergencyKeywords, knownNumbers } from './input.js';
 import {
   consultationDigest,
   expertMentions,
@@ -600,6 +600,7 @@ describe('consultation input', () => {
     });
     expect(emergency.emergencyDetected).toBe(true);
     expect(emergency.userContent).toContain('没有关联客户');
+    expect(detectEmergencyKeywords(['客户说这两周有几次胸口闷痛'])).toBe(true);
   });
 });
 

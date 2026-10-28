@@ -1,6 +1,5 @@
 import {
   DISCLAIMER,
-  findBannedTerms,
   VISIT_FEEDBACK_TOPICS,
   VISIT_METHODS,
   isIsoDate,
@@ -23,7 +22,7 @@ import {
 } from '../plan-input.js';
 import { appendRequest, describeReportClient } from '../report-input.js';
 import {
-  checkWhyWording,
+  checkRecordWording,
   wordingCategories,
   type WordingCategory,
   type WordingIssue,
@@ -149,14 +148,6 @@ export function visitRecordStructured(output: VisitRecordOutput): VisitRecordStr
   });
 }
 
-function bannedIssues(text: string): WordingIssue[] {
-  return findBannedTerms(text).map((b) => ({
-    category: 'banned_term' as const,
-    term: b.term,
-    index: b.index,
-  }));
-}
-
 function list(items: readonly string[]): string[] {
   return items.length ? items.map((i) => `- ${i}`) : ['- 没有提到'];
 }
@@ -247,15 +238,18 @@ export const visitRecord: SkillDefinition<typeof visitRecordOutputSchema> = {
 
   checkOutput(output) {
     const issues: WordingIssue[] = [];
-    for (const t of visitRecordOtherTexts(output)) issues.push(...checkWhyWording(t));
-    // 客户自己说的用药情况：可以有药名和“减少了”，只查禁用词
-    for (const t of visitRecordMedicationTexts(output)) issues.push(...bannedIssues(t));
-    // 健康史条目：可以有客户说的病名、药名，但不能有禁用词和“疑似”“风险”这类判断说法
+    for (const t of visitRecordOtherTexts(output)) issues.push(...checkRecordWording(t));
+    // 客户自己说的用药情况：可以有药名和“自行减少了”，不能有病名和 AI 给的用药建议
+    for (const t of visitRecordMedicationTexts(output)) {
+      issues.push(...checkRecordWording(t, { drug: true }));
+    }
+    // 健康史条目：既往史、家族史可以有病名，用药史可以有药名，其余照常检查
     for (const h of output.historySuggestions) {
       issues.push(
-        ...checkWhyWording(h.content).filter(
-          (i) => i.category === 'banned_term' || i.category === 'judgment',
-        ),
+        ...checkRecordWording(h.content, {
+          disease: h.category === 'past_history' || h.category === 'family_history',
+          drug: h.category === 'medication',
+        }),
       );
     }
     return issues;
