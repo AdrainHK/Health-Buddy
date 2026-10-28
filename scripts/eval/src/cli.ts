@@ -17,6 +17,8 @@
  *
  *   pnpm eval --suite care-plan
  *   pnpm eval --suite visit-schedule
+ *   pnpm eval --suite visit-script
+ *   pnpm eval --suite visit-record
  *                                  M5：/随访计划（日期照抄、重点相关、措辞和越界指令）
  *
  *   pnpm eval --suite expert --show-failures  未通过用例的模型输出打进日志（合成数据）
@@ -45,6 +47,8 @@ import {
   twinAskEvalCases,
   twinSummaryEvalCases,
   visitScheduleEvalCases,
+  visitScriptEvalCases,
+  visitRecordEvalCases,
   carePlanEvalCases,
 } from '@health-buddy/skills';
 import {
@@ -59,6 +63,8 @@ import {
   runTwinAskEval,
   runTwinSummaryEval,
   runCarePlanEval,
+  runVisitRecordEval,
+  runVisitScriptEval,
   runVisitScheduleEval,
   summarize,
   type RunResult,
@@ -115,6 +121,8 @@ const twinSummaryCases = pick('twin-summary', twinSummaryEvalCases);
 // M5：/方案生成、/随访计划（规格 5.5）
 const carePlanCases = pick('care-plan', carePlanEvalCases);
 const visitScheduleCases = pick('visit-schedule', visitScheduleEvalCases);
+const visitScriptCases = pick('visit-script', visitScriptEvalCases);
+const visitRecordCases = pick('visit-record', visitRecordEvalCases);
 const twinConsultCases = pick('twin-consult', twinConsultEvalCases);
 const expertSynthesisCases = pick('expert-synthesis', synthesisEvalCases);
 const useJudge = !process.argv.includes('--no-judge');
@@ -131,7 +139,7 @@ const all: RunResult[] = [];
 for (const provider of providers) {
   const gateway = createGateway({ ...config, defaultProvider: provider, routes: {} });
   console.log(
-    `\n${provider}（${config.defaultModels[provider]}）：${cases.length + askCases.length + extractionCases.length + interpretationCases.length + outlineCases.length + planCases.length + expertCases.length + expertRoutingCases.length + expertSynthesisCases.length + twinSummaryCases.length + twinConsultCases.length + twinAskCases.length + visitScheduleCases.length + carePlanCases.length} 个用例 × ${runs} 次`,
+    `\n${provider}（${config.defaultModels[provider]}）：${cases.length + askCases.length + extractionCases.length + interpretationCases.length + outlineCases.length + planCases.length + expertCases.length + expertRoutingCases.length + expertSynthesisCases.length + twinSummaryCases.length + twinConsultCases.length + twinAskCases.length + visitScheduleCases.length + carePlanCases.length + visitScriptCases.length + visitRecordCases.length} 个用例 × ${runs} 次`,
   );
   const results = [
     ...(await runEval({ gateway, provider, cases, runs, useJudge })),
@@ -161,6 +169,14 @@ for (const provider of providers) {
     ...(await runTwinSummaryEval({ gateway, provider, cases: twinSummaryCases, runs, useJudge })),
     ...(await runVisitScheduleEval({ gateway, provider, cases: visitScheduleCases, runs })),
     ...(await runCarePlanEval({ gateway, provider, cases: carePlanCases, runs })),
+    ...(await runVisitScriptEval({ gateway, provider, cases: visitScriptCases, runs })),
+    ...(await runVisitRecordEval({
+      gateway,
+      provider,
+      cases: visitRecordCases,
+      runs,
+      useJudge,
+    })),
     ...(await runExpertEval({ gateway, provider, cases: twinConsultCases, runs, useJudge })),
   ];
   all.push(...results);
@@ -226,6 +242,13 @@ const DETAIL_RULES = new Set([
   'text.forbidden',
   'client.forbidden',
   'refusal.missing',
+  // M5 随访话术和随访记录：多出来的数值（合成数据）、缺少的健康史类别、期望的日期和方式
+  'summary.invented_numbers',
+  'record.invented_numbers',
+  'history.missing',
+  'history.unexpected',
+  'record.visit_date',
+  'record.method',
 ]);
 /** GitHub 注解的转义：先 %，再回车和换行 */
 const escapeAnnotation = (t: string) =>

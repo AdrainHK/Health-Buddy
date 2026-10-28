@@ -244,3 +244,86 @@ export interface CarePlanEvalCase {
     refusal?: string | string[];
   };
 }
+
+/** M5 /随访话术 的评测用例类别（规格 5.5 --suite visit-script） */
+export type VisitScriptEvalCategory =
+  | 'summary_grounded'
+  | 'client_wording'
+  | 'critical'
+  | 'out_of_bounds'
+  | 'deidentify'
+  | 'crisis_signal';
+
+/** /随访话术 的评测用例。资料全部是合成数据 */
+export interface VisitScriptEvalCase {
+  id: string;
+  category: VisitScriptEvalCategory;
+  client: ClientSnapshot;
+  plan: PlanContext;
+  managerRequest: string;
+  /** 要求、随访记录、随访重点里出现的虚构姓名、电话：先去标识再组装，输出里不能出现 */
+  identifiers?: string[];
+  /**
+   * 家属、朋友的虚构姓名：和线上一样不做确定性去标识（只有客户本人的姓名在档案里），
+   * 靠提示词规则，输出里不能出现
+   */
+  otherNames?: string[];
+  expect: {
+    crisisSignal?: boolean;
+    /** 资料里有危急指标：reminders 第一条要有就医提醒 */
+    referral?: boolean;
+    /** 模型写的文字里不能出现的字样 */
+    mustNotContain?: string[];
+    /** 说给客户听的话里不能出现的字样（汇总里可以有，如孪生状态的变化） */
+    spokenMustNotContain?: string[];
+    /** 问题或 why 里至少提到其中一个词（和方案、约定的事、随访重点相关） */
+    questionMentions?: string[];
+    /** notes 第一条必须以这句固定的拒绝说明开头；越了几条界时，以其中任一句开头都算 */
+    refusal?: string | string[];
+  };
+}
+
+/** M5 /随访记录 的评测用例类别（规格 5.5 --suite visit-record） */
+export type VisitRecordEvalCategory =
+  | 'faithful'
+  | 'medication'
+  | 'self_question'
+  | 'deidentify'
+  | 'crisis_signal'
+  | 'emergency'
+  | 'history'
+  | 'out_of_bounds';
+
+/** /随访记录 的评测用例。素材全部是合成数据；姓名、电话是虚构的，只用来检查去标识化 */
+export interface VisitRecordEvalCase {
+  id: string;
+  category: VisitRecordEvalCategory;
+  client: ClientSnapshot;
+  plan: PlanContext;
+  managerRequest: string;
+  /** 素材、要求里出现的客户本人的虚构姓名、电话：先去标识再组装，输出里不能出现 */
+  identifiers?: string[];
+  /**
+   * 家属、朋友的虚构姓名：和线上一样不做确定性去标识（只有客户本人的姓名在档案里），
+   * 靠提示词规则，输出里不能出现
+   */
+  otherNames?: string[];
+  expect: {
+    crisisSignal?: boolean;
+    /** 素材里有急症描述：attentionPoints 里要有就医评估 */
+    emergency?: boolean;
+    /** 模型写的文字里不能出现的字样 */
+    mustNotContain?: string[];
+    /** 记录里至少提到其中一个词（素材里说过的事） */
+    mentions?: string[];
+    /** “用药情况”一组必须有内容（客户说过用药情况） */
+    medicationRecorded?: boolean;
+    /** 建议更新健康史：必须有这一类；空数组表示一条都不能有 */
+    historyCategories?: string[];
+    /** 期望的日期和方式（素材写明时照抄；null 表示素材没写，不能猜） */
+    visitDate?: string | null;
+    method?: string | null;
+    /** notes 第一条必须以这句固定的拒绝说明开头；越了几条界时，以其中任一句开头都算 */
+    refusal?: string | string[];
+  };
+}

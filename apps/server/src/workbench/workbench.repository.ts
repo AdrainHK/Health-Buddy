@@ -36,6 +36,7 @@ import {
 } from '../tasks/tasks.repository.js';
 import { loadTwinSnapshot } from '../twin/twin.repository.js';
 import type { PlanContext } from '@health-buddy/skills';
+import { MaterialCipher } from '../care/material-cipher.js';
 import { loadPlanContext, type PlanContextOptions } from './plan-context.js';
 
 const readOnly = () => conflict({ reasons: ['read_only'] });
@@ -95,6 +96,10 @@ export interface RegenerationContext {
   excludedExperts?: string[];
   /** /方案生成 的方案选项：提出计划或发消息时的选项，退回重写时用上一版草稿的 */
   planOptions?: PlanOptions | null;
+  /** /随访记录 @ 的随访素材（发消息时的，退回重写时用上一版草稿的） */
+  materialIds?: string[];
+  /** 关联的那一次随访（“准备随访”“记录随访”） */
+  visitId?: string | null;
 }
 
 /** 重新请专家、补请专家：按原调用的问题和报告再请一次（M3 规格 6.4） */
@@ -132,6 +137,10 @@ export interface NewArtifact {
   structured?: unknown;
   /** M5：方案草稿的选项（部分、周期）；数据库要求 care_plan 必须有，其他产物没有 */
   planOptions?: PlanOptions | null;
+  /** M5：关联的随访（随访记录确认时把它标为已完成） */
+  visitId?: string | null;
+  /** M5：/随访记录 整理的素材（确认后 30 天删除原文） */
+  materialIds?: string[];
 }
 
 /**
@@ -140,10 +149,17 @@ export interface NewArtifact {
  */
 @Injectable()
 export class WorkbenchRepository {
+  /** 随访素材原文的解密（/随访记录）；没有配置 VISIT_MATERIAL_KEY 时为空，素材也上传不了 */
+  private readonly materialCipher: MaterialCipher | null;
+
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
-  ) {}
+  ) {
+    this.materialCipher = config.visitMaterialKey
+      ? new MaterialCipher(config.visitMaterialKey)
+      : null;
+  }
 
   /**
    * 发消息前只读地核对引用（M4 合规审核 T5）：任务、@ 的客户和报告、孪生项、跟进项都要是本人的，
@@ -158,6 +174,8 @@ export class WorkbenchRepository {
       reportRefs: string[];
       twinRefs?: TwinRef[];
       followUpItemId?: string;
+      materialRefs?: string[];
+      visitId?: string;
     },
   ): Promise<void> {
     return withTenant(this.db, ctx, async (trx) => {
@@ -179,6 +197,7 @@ export class WorkbenchRepository {
         if (!clientId) throw notFound();
         await checkTwinRefs(trx, ctx, clientId, twinRefs, input.followUpItemId);
       }
+      await checkVisitRefs(trx, clientId, input.materialRefs ?? [], input.visitId);
     });
   }
 
@@ -219,6 +238,10 @@ export class WorkbenchRepository {
       requiresPlanData?: boolean;
       /** /方案生成 的选项，记在这条消息上（确认计划、退回重写时沿用） */
       planOptions?: PlanOptions | null;
+      /** /随访记录 @ 的随访素材：必须是任务关联客户的、本人上传的、原文还在 */
+      materialRefs?: string[];
+      /** 关联的那一次随访：必须是任务关联客户的 */
+      visitId?: string;
       /** “请专家看看”：只用于生成任务标题 */
       twinConsult?: boolean;
     },
@@ -276,6 +299,8 @@ export class WorkbenchRepository {
       if (input.requiresPlanData && clientId && !(await hasPlanData(trx, clientId))) {
         throw noPlanData();
       }
+      // 素材和随访都按任务关联的客户校验（行级安全只看得到本人上传的素材）
+      await checkVisitRefs(trx, clientId, input.materialRefs ?? [], input.visitId);
       if (!claim(task.id)) throw conflict({ reasons: ['busy'] });
 
       await closeStaleTurns(trx, task.id);
@@ -306,6 +331,7 @@ export class WorkbenchRepository {
           excluded_experts: input.excludedExperts ?? [],
           twin_refs: JSON.stringify(twinRefs),
           plan_options: input.planOptions ? JSON.stringify(input.planOptions) : null,
+          material_refs: input.materialRefs ?? [],
           status: 'complete',
           created_at: new Date(now),
         })
@@ -477,6 +503,8 @@ export class WorkbenchRepository {
           'source_report_id',
           'consultation_id',
           'plan_options',
+          'visit_id',
+          'material_ids',
         ])
         .where('id', '=', artifactId)
         .forUpdate()
@@ -543,6 +571,9 @@ export class WorkbenchRepository {
         requestMessageId: request?.id ?? null,
         // 方案沿用上一版草稿的选项（部分、周期）
         planOptions: (artifact.plan_options as PlanOptions | null) ?? null,
+        // 随访记录沿用上一版整理的素材和关联的随访
+        materialIds: artifact.material_ids ?? [],
+        visitId: artifact.visit_id,
       };
     });
   }
@@ -797,10 +828,26 @@ export class WorkbenchRepository {
     return withTenant(this.db, ctx, (trx) => loadTwinSnapshot(trx, ctx, clientId, focus));
   }
 
-  /** 方案和随访技能的上下文（M5 规格 5.2）：当前方案、最近的随访记录，/随访计划 还有排好的日期 */
-  planContext(ctx: TenantContext, clientId: string, options: PlanContextOptions) {
+  /**
+   * 方案和随访技能的上下文（M5 规格 5.2）：当前方案、最近的随访记录，/随访计划 还有排好的日期，
+   * /随访记录 还有 @ 的素材（在这里解密，原文只在内存里）
+   */
+  planContext(
+    ctx: TenantContext,
+    clientId: string,
+    options: Omit<PlanContextOptions, 'materials'> & { materialIds?: readonly string[] },
+  ) {
+    const { materialIds, ...rest } = options;
+    const cipher = this.materialCipher;
+    if (materialIds?.length && !cipher) throw new Error('visit material key is not configured');
+    const full: PlanContextOptions = {
+      ...rest,
+      ...(materialIds?.length && cipher
+        ? { materials: { ids: materialIds, decrypt: (d, c) => cipher.decrypt(d, c) } }
+        : {}),
+    };
     // 方案库预览开关打开时，候选里含待审定的条目（行级安全按会话设置放行）
-    return withTenant(this.db, ctx, (trx) => loadPlanContext(trx, ctx, clientId, options), {
+    return withTenant(this.db, ctx, (trx) => loadPlanContext(trx, ctx, clientId, full), {
       planLibraryPreview: this.config.planLibraryPreview,
     });
   }
@@ -1008,6 +1055,8 @@ export class WorkbenchRepository {
           crisis_signal: data.crisisSignal ?? false,
           ...(data.structured === undefined ? {} : { structured: JSON.stringify(data.structured) }),
           ...(data.planOptions ? { plan_options: JSON.stringify(data.planOptions) } : {}),
+          ...(data.visitId ? { visit_id: data.visitId } : {}),
+          ...(data.materialIds?.length ? { material_ids: data.materialIds } : {}),
         })
         .execute();
       await trx
@@ -1129,6 +1178,39 @@ export function ageBand(birthYear: number | null, now = new Date()): string | nu
 const noVerifiedReport = () => conflict({ reasons: ['no_verified_report'] });
 const noTwinData = () => conflict({ reasons: ['no_twin_data'] });
 const noPlanData = () => conflict({ reasons: ['no_plan_data'] });
+
+/**
+ * @ 的随访素材、关联的随访都要是任务关联客户的（素材还要是本人上传的、原文还在，行级安全只看得到本人的）；
+ * 不是一律 404，在占用任务、调用任何模型之前
+ */
+async function checkVisitRefs(
+  trx: TenantTransaction,
+  clientId: string | null,
+  materialRefs: readonly string[],
+  visitId: string | undefined,
+): Promise<void> {
+  if (!materialRefs.length && !visitId) return;
+  if (!clientId) throw notFound();
+  if (materialRefs.length) {
+    const rows = await trx
+      .selectFrom('visit_materials')
+      .select('id')
+      .where('id', 'in', [...materialRefs])
+      .where('client_id', '=', clientId)
+      .where('purged_at', 'is', null)
+      .execute();
+    if (rows.length !== new Set(materialRefs).size) throw notFound();
+  }
+  if (visitId) {
+    const visit = await trx
+      .selectFrom('visits')
+      .select('id')
+      .where('id', '=', visitId)
+      .where('client_id', '=', clientId)
+      .executeTakeFirst();
+    if (!visit) throw notFound();
+  }
+}
 
 /**
  * @ 的孪生项和“请专家看看”的跟进项（M4 规格 2.8、7.2）：客户必须是任务关联、本人服务的客户

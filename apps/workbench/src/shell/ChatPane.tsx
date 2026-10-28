@@ -66,6 +66,8 @@ export interface ComposerPrefill {
   twinRefs?: TwinRef[];
   twinConsult?: boolean;
   followUpItemId?: string;
+  /** “准备随访”“记录随访”（M5 规格 2.8、2.9）：关联的那一次随访 */
+  visitId?: string;
 }
 
 export interface ChatPaneProps {
@@ -132,6 +134,10 @@ interface Draft {
   followUpItemId?: string | null;
   /** /方案生成 的方案选项（M5 规格 2.2），只在技能带选项条时发送 */
   planOptions?: PlanOptions;
+  /** /随访记录 勾选的随访素材（M5 规格 2.9） */
+  materialRefs?: string[];
+  /** 关联的那一次随访 */
+  visitId?: string | null;
   /**
    * 不是从输入框发出的（识别卡片上的“生成解读”、核对后自动解读）：
    * 发送时不清空、失败时也不恢复输入框，健管师正在输入的内容不受影响。
@@ -145,6 +151,8 @@ type ErrorKey =
   | 'readOnly'
   | 'noVerifiedReport'
   | 'noTwinData'
+  | 'noPlanData'
+  | 'noMaterials'
   | 'badRequest'
   | 'notFound'
   | 'conflict'
@@ -184,6 +192,9 @@ function errorKey(err: unknown): ErrorKey {
     if (err.reasons.includes('no_verified_report')) return 'noVerifiedReport';
     // /孪生小结：这位客户还没有孪生数据（M4 规格 2.7）
     if (err.reasons.includes('no_twin_data')) return 'noTwinData';
+    // /方案生成：资料太少（M5 规格 2.2）；/随访记录：没有勾选素材（2.9）
+    if (err.reasons.includes('no_plan_data')) return 'noPlanData';
+    if (err.reasons.includes('no_materials')) return 'noMaterials';
     return 'conflict';
   }
   if (err.status === 400) return 'badRequest';
@@ -250,6 +261,9 @@ export function ChatPane({
   const [followUpItemId, setFollowUpItemId] = useState<string | null>(null);
   /** /方案生成 的方案选项：同一个任务里保留上次的选择 */
   const [planOptions, setPlanOptions] = useState<PlanOptions>(DEFAULT_PLAN_OPTIONS);
+  /** /随访记录 勾选的素材、关联的随访（只对这一条消息生效） */
+  const [materialRefs, setMaterialRefs] = useState<string[]>([]);
+  const [visitId, setVisitId] = useState<string | null>(null);
   /** @ 列表里的孪生项：当前客户的四个方面，加上有预测的指标 */
   const [twinMetrics, setTwinMetrics] = useState<string[]>([]);
   /** 当前客户的报告：已核对的可以 @，还没核对完的列出来但不能选 */
@@ -442,6 +456,8 @@ export function ChatPane({
     setTwinRefs(prefill.twinRefs ?? []);
     setTwinConsult(Boolean(prefill.twinConsult));
     setFollowUpItemId(prefill.followUpItemId ?? null);
+    setVisitId(prefill.visitId ?? null);
+    setMaterialRefs([]);
     setExpertRefs([]);
     setExcludedExperts([]);
     inputRef.current?.focus();
@@ -471,6 +487,8 @@ export function ChatPane({
     setTwinRefs([]);
     setTwinConsult(false);
     setFollowUpItemId(null);
+    setMaterialRefs([]);
+    setVisitId(null);
   };
 
   const restoreComposer = (draft: Draft) => {
@@ -484,6 +502,8 @@ export function ChatPane({
     setTwinConsult(Boolean(draft.twinConsult));
     setFollowUpItemId(draft.followUpItemId ?? null);
     if (draft.planOptions) setPlanOptions(draft.planOptions);
+    setMaterialRefs(draft.materialRefs ?? []);
+    setVisitId(draft.visitId ?? null);
   };
 
   const nextLocalId = () => `${LOCAL_PREFIX}${++localSeq.current}`;
@@ -688,6 +708,10 @@ export function ChatPane({
             ...(draft.skill?.usesPlanOptions && draft.planOptions
               ? { planOptions: draft.planOptions }
               : {}),
+            ...(draft.skill?.usesMaterials && draft.materialRefs?.length
+              ? { materialRefs: draft.materialRefs }
+              : {}),
+            ...(draft.skill && draft.visitId ? { visitId: draft.visitId } : {}),
           },
           options,
         ),
@@ -1163,6 +1187,12 @@ export function ChatPane({
           readOnly={readOnly}
           uploading={materialOpen && !readOnly}
           onCloseUpload={() => setMaterialTaskId(null)}
+          selectable={Boolean(skill?.usesMaterials)}
+          selected={materialRefs}
+          onSelect={(ids, linked) => {
+            setMaterialRefs(ids);
+            setVisitId((v) => v ?? linked);
+          }}
         />
       )}
       <Composer
@@ -1193,6 +1223,8 @@ export function ChatPane({
             twinConsult,
             followUpItemId,
             planOptions,
+            materialRefs,
+            visitId,
           })
         }
         canSendEmpty={canSendEmpty({ text, mode, skill, client, report, twinRefs, twinConsult })}

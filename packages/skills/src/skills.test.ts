@@ -159,6 +159,8 @@ describe('guardrails', () => {
   it('detects crisis keywords without relying on the model', () => {
     expect(detectCrisisKeywords(['帮我写小结', '她说最近活着 没意思'])).toBe(true);
     expect(detectCrisisKeywords(['帮我写小结，她最近睡得少'])).toBe(false);
+    expect(detectCrisisKeywords(['客户说觉得活着没什么意思'])).toBe(true);
+    expect(detectCrisisKeywords(['有时候想一了百了'])).toBe(true);
     for (const phrase of ['活不下去了', '她说想死', '攒了一些安眠药', '不想拖累家人', '写了遗书']) {
       expect(detectCrisisKeywords([phrase]), phrase).toBe(true);
     }

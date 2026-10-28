@@ -1038,7 +1038,7 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
     const agent = await as(f.users.managerA1.email);
     const res = await agent.get('/api/skills').expect(200);
     const ids = res.body.skills.map((s: { id: string }) => s.id);
-    // M4 第 4 步加了 /孪生小结 和“孪生复盘”；M5 第 5 步加了 /方案生成、/随访计划和“方案和随访”
+    // M4 第 4 步加了 /孪生小结 和“孪生复盘”；M5 第 5、6 步加了 /方案生成、/随访计划、/随访话术、/随访记录和“方案和随访”
     expect(ids).toEqual([
       'client-recent-summary',
       'report-interpretation',
@@ -1046,6 +1046,8 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
       'twin-summary',
       'care-plan',
       'visit-schedule',
+      'visit-script',
+      'visit-record',
       'new-client-assessment',
       'twin-review',
       'plan-and-visits',
@@ -1053,7 +1055,7 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
     // 都不需要再写要求（验收反馈 8）
     expect(
       res.body.skills.map((s: { allowsEmptyRequest: boolean }) => s.allowsEmptyRequest),
-    ).toEqual([true, true, true, true, true, true, true, true, true]);
+    ).toEqual([true, true, true, true, true, true, true, true, true, true, true]);
     // /体检解读 必须有报告；/面谈提纲 报告可选（验收反馈）
     expect(
       res.body.skills.map((s: { id: string; requiresReport: boolean; usesReport: boolean }) => [
@@ -1068,6 +1070,8 @@ describe('体检解读、面谈提纲、建议分层和多步计划', () => {
       ['twin-summary', false, false],
       ['care-plan', false, false],
       ['visit-schedule', false, false],
+      ['visit-script', false, false],
+      ['visit-record', false, false],
       ['new-client-assessment', true, true],
       ['twin-review', false, false],
       ['plan-and-visits', false, false],

@@ -1,6 +1,7 @@
 import {
   VISIT_MATERIAL_CONSENT_REQUIRED,
   VISIT_MATERIAL_TEXT_MAX,
+  VISIT_MATERIALS_PER_RECORD_MAX,
   type Visit,
   type VisitMaterial,
 } from '@health-buddy/shared';
@@ -28,6 +29,13 @@ export interface VisitMaterialsProps {
   /** 上传表单是否打开（输入框里点了“上传随访素材”） */
   uploading: boolean;
   onCloseUpload: () => void;
+  /**
+   * /随访记录（2.9）：卡片上可以勾选要整理的素材（最多 3 份）。onSelect 带上第一份勾选的素材关联的随访，
+   * 记录确认时把那一次随访标为已完成
+   */
+  selectable?: boolean;
+  selected?: readonly string[];
+  onSelect?: (ids: string[], visitId: string | null) => void;
 }
 
 interface State {
@@ -46,6 +54,9 @@ export function VisitMaterials({
   readOnly,
   uploading,
   onCloseUpload,
+  selectable = false,
+  selected = [],
+  onSelect,
 }: VisitMaterialsProps) {
   const { t } = useTranslation();
   const [state, setState] = useState<State | null>(null);
@@ -79,6 +90,12 @@ export function VisitMaterials({
   const visitDate = new Map(state?.visits.map((v) => [v.id, v.dueDate]) ?? []);
   const usable = (state?.materials ?? []).filter((m) => !m.purged && !m.consumedArtifactId);
 
+  const toggle = (m: VisitMaterial, on: boolean) => {
+    const ids = on ? [...selected, m.id] : selected.filter((id) => id !== m.id);
+    const first = usable.find((x) => x.id === ids[0]);
+    onSelect?.(ids.slice(0, VISIT_MATERIALS_PER_RECORD_MAX), first?.visitId ?? null);
+  };
+
   const remove = (m: VisitMaterial) => {
     setDeleting(m.id);
     setError(null);
@@ -98,6 +115,17 @@ export function VisitMaterials({
         <ul className={care.materialList} aria-label={t('care.materials.list')}>
           {usable.map((m) => (
             <li key={m.id} className={care.materialCard}>
+              {selectable && !readOnly && (
+                <input
+                  type="checkbox"
+                  aria-label={t('care.materials.select', { date: m.createdAt.slice(0, 10) })}
+                  checked={selected.includes(m.id)}
+                  disabled={
+                    !selected.includes(m.id) && selected.length >= VISIT_MATERIALS_PER_RECORD_MAX
+                  }
+                  onChange={(e) => toggle(m, e.target.checked)}
+                />
+              )}
               <MessageSquareText size={16} aria-hidden />
               <span className={care.materialText}>
                 {t('care.materials.card', {
@@ -123,6 +151,9 @@ export function VisitMaterials({
             </li>
           ))}
         </ul>
+      )}
+      {selectable && usable.length > 0 && !readOnly && (
+        <p className={styles.muted}>{t('care.materials.selectHint')}</p>
       )}
       {error && (
         <p className={styles.error} role="alert">

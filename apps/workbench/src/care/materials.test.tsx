@@ -154,6 +154,42 @@ describe('随访素材', () => {
     await waitFor(() => expect(api.callsTo('GET', LIST).length).toBeGreaterThan(1));
   });
 
+  it('/随访记录：可以勾选要整理的素材，带上第一份关联的随访；不选技能时没有勾选框', async () => {
+    mockApi(
+      routes(
+        [material(), material({ id: 'a7000000-0000-4000-8000-000000000002', visitId: null })],
+        true,
+      ),
+    );
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    const { rerender } = render(
+      <VisitMaterials
+        clientId={ids.clientA}
+        readOnly={false}
+        uploading={false}
+        onCloseUpload={() => {}}
+        selectable
+        selected={[]}
+        onSelect={onSelect}
+      />,
+    );
+    const boxes = await screen.findAllByRole('checkbox', { name: '整理这份（2026-10-15）' });
+    expect(boxes).toHaveLength(2);
+    expect(screen.getByText('勾选要整理成记录的素材，最多 3 份')).toBeInTheDocument();
+    await user.click(boxes[0]!);
+    expect(onSelect).toHaveBeenLastCalledWith([MATERIAL_ID], careIds.visit1);
+    rerender(
+      <VisitMaterials
+        clientId={ids.clientA}
+        readOnly={false}
+        uploading={false}
+        onCloseUpload={() => {}}
+      />,
+    );
+    expect(screen.queryByRole('checkbox')).toBeNull();
+  });
+
   it('只读任务：只显示卡片，不能删除和上传', async () => {
     mockApi(routes([material()], true));
     render(<VisitMaterials clientId={ids.clientA} readOnly uploading onCloseUpload={() => {}} />);

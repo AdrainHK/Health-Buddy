@@ -80,4 +80,22 @@ export {
   validateCarePlan,
   type CarePlanOutput,
 } from './care-plan/index.js';
+export {
+  visitScript,
+  validateVisitScript,
+  visitScriptManagerTexts,
+  visitScriptSpokenTexts,
+  VISIT_SCRIPT_DONT_SAY,
+  type VisitScriptOutput,
+} from './visit-script/index.js';
+export {
+  visitRecord,
+  validateVisitRecord,
+  visitRecordMedicationTexts,
+  visitRecordOtherTexts,
+  visitRecordStructured,
+  type VisitRecordOutput,
+} from './visit-record/index.js';
 export { carePlanEvalCases } from './care-plan/evals/cases.js';
+export { visitScriptEvalCases } from './visit-script/evals/cases.js';
+export { visitRecordEvalCases } from './visit-record/evals/cases.js';

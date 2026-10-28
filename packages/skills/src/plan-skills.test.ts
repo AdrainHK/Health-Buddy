@@ -419,6 +419,7 @@ describe('方案的功效检查', () => {
         .map((i) => i.term);
     expect(terms('每天保证睡眠 7 小时，白天保证饮水。')).toEqual([]);
     expect(terms('坚持下去保证见效。')).toEqual(['保证', '见效']);
+    expect(terms('每天保证血糖规律。')).toContain('保证');
     expect(terms('睡前做助眠放松。')).toEqual(['助眠']);
     expect(
       checkPlanProfessionalText('建议转介医生评估治疗。').filter(

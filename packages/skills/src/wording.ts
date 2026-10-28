@@ -455,6 +455,45 @@ function findTwinDrugAdvice(text: string): WordingIssue[] {
   return out;
 }
 
+// ---------- M5 /随访记录、/随访话术给健管师看的部分 ----------
+
+/** 建议的说法：AI 自己给的建议（“建议继续服用”“最好减半”），不是客户说的 */
+const SUGGESTION = '建议|应该|应当|最好|不妨|推荐';
+const QUOTED_DRUG_ADVICE = new RegExp(
+  `(?:${SUGGESTION})${SAME_CLAUSE}{0,10}?(?:${TWIN_DRUG_TARGETS})|(?:${TWIN_DRUG_TARGETS})${SAME_CLAUSE}{0,10}?(?:${SUGGESTION})`,
+);
+
+/**
+ * 随访记录、随访话术的汇总和“为什么问”（M5 规格 2.8、2.9，只给健管师）：禁用词、判断说法、
+ * 疾病名称、药名、用药建议和药物剂量。“半碗杂粮饭”“每次二两”是客户说的饮食，不算剂量。
+ * quoted 是照抄客户说的事实：disease 允许病名（既往史、家族史），drug 允许药名和
+ * “自行减少了”这类描述（用药情况、用药史），但仍不能有 AI 自己给的用药建议。
+ */
+export function checkRecordWording(
+  text: string,
+  quoted: { disease?: boolean; drug?: boolean } = {},
+): WordingIssue[] {
+  const issues: WordingIssue[] = [
+    ...findBannedTerms(text).map((b) => ({
+      category: 'banned_term' as const,
+      term: b.term,
+      index: b.index,
+    })),
+    ...asIssues('judgment', findTerms(text, JUDGMENT_PHRASES)),
+  ];
+  if (!quoted.disease) issues.push(...asIssues('presumed_disease', findDiseaseTerms(text)));
+  if (quoted.drug) {
+    const { text: norm, origin } = normalized(text);
+    const advice = QUOTED_DRUG_ADVICE.exec(norm);
+    if (advice) {
+      issues.push({ category: 'drug_advice', term: '用药建议', index: origin[advice.index] ?? 0 });
+    }
+  } else {
+    issues.push(...asIssues('drug_name', findDrugNames(text)), ...findTwinDrugAdvice(text));
+  }
+  return issues;
+}
+
 /**
  * /孪生小结 模型写的每一段文字（专业版，只给健管师）：禁用词、疾病名称、状态结论、预测的确定说法、
  * 疾病风险说法，以及用药建议和剂量。命中时带纠正说明重试一次，仍不合格不保存草稿。
@@ -703,8 +742,9 @@ export function findClientDrugIssues(text: string): WordingIssue[] {
 }
 
 /** “保证睡眠时间”“保证饮水”这类生活安排不是功效承诺：方案的功效检查前遮掉这里的“保证” */
+/** 中间夹着指标的（“保证血糖规律”“保证血压充足”）照样算承诺 */
 const ROUTINE_ASSURE =
-  /保证(?=[^，。；,.;]{0,4}(?:睡眠|休息|饮水|喝水|水分|充足|规律|作息|早餐|三餐|蔬菜|蛋白))/g;
+  /保证(?![^，。；,.;]{0,4}(?:血糖|血压|血脂|尿酸|体重|指标))(?=[^，。；,.;]{0,4}(?:睡眠|休息|饮水|喝水|水分|充足|规律|作息|早餐|三餐|蔬菜|蛋白))/g;
 const maskRoutineAssure = (text: string) => text.replace(ROUTINE_ASSURE, '　　');
 
 /**

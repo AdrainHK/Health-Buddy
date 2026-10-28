@@ -93,70 +93,7 @@ export class CarePlansRepository {
   ): Promise<AdherenceResponse | null | undefined> {
     return withTenant(this.db, ctx, async (trx) => {
       if (!(await clientVisible(trx, clientId))) return undefined;
-      const plan = await trx
-        .selectFrom('care_plans')
-        .select(['id', 'snapshot'])
-        .where('client_id', '=', clientId)
-        .where('status', '=', 'active')
-        .executeTakeFirst();
-      if (!plan) return null;
-      const tz = await managerTimeZone(trx, ctx, tzFallback);
-      const goals = (plan.snapshot as CarePlanSnapshot).structured.sections.flatMap((s) => s.goals);
-      const templateIds = [...new Set(goals.map((g) => g.templateId))];
-      // 模板以后被停用时健管师看不到它，经数据库函数读指标相关的列
-      const templates = await planGoalTemplateMetrics(trx, templateIds);
-      const byId = new Map(templates.map((t) => [t.id, t]));
-      const tracked: { key: string; metric: 'steps' | 'sleep_hours'; target: number }[] = [];
-      const untracked = new Set<string>();
-      for (const g of goals) {
-        const t = byId.get(g.templateId);
-        const target = t?.metric_param ? g.params[t.metric_param] : undefined;
-        const param = (t?.params as GoalParam[] | undefined)?.find(
-          (p) => p.name === t?.metric_param,
-        );
-        if (t?.metric && typeof target === 'number' && param?.type === 'int') {
-          tracked.push({ key: g.templateId, metric: t.metric, target });
-        } else {
-          untracked.add(g.templateId);
-        }
-      }
-      const now = new Date();
-      const readings = tracked.length
-        ? await trx
-            .selectFrom('monitoring_readings')
-            .select(['metric', 'value', 'measured_at'])
-            .where('client_id', '=', clientId)
-            .where('metric', 'in', [...new Set(tracked.map((g) => g.metric))])
-            .where(
-              'measured_at',
-              '>=',
-              new Date(now.getTime() - ADHERENCE_LOOKBACK_DAYS * 86_400_000),
-            )
-            .execute()
-        : [];
-      const results = adherence({
-        now,
-        timeZone: tz,
-        goals: tracked,
-        readings: readings.map((r) => ({
-          metric: r.metric,
-          value: Number(r.value),
-          measuredAt: r.measured_at,
-        })),
-      });
-      return {
-        planId: plan.id,
-        asOf: localDate(now, tz),
-        timeZone: tz,
-        goals: results.map((r) => ({
-          templateId: r.key,
-          metric: r.metric,
-          target: r.target,
-          hasData: r.hasData,
-          windows: r.windows,
-        })),
-        untrackedTemplateIds: [...untracked],
-      };
+      return planAdherenceIn(trx, ctx, clientId, tzFallback);
     });
   }
 }
@@ -204,5 +141,75 @@ function toSummary(r: {
     endReason: r.end_reason,
     approvedAt: r.approved_at.toISOString(),
     endedAt: iso(r.ended_at),
+  };
+}
+
+/**
+ * 当前方案的执行情况（2.6、Q10），在调用方的事务里算（/随访话术 的上下文也用）。
+ * 没有生效方案返回 null
+ */
+export async function planAdherenceIn(
+  trx: TenantTransaction,
+  ctx: TenantContext,
+  clientId: string,
+  tzFallback?: string,
+): Promise<AdherenceResponse | null> {
+  const plan = await trx
+    .selectFrom('care_plans')
+    .select(['id', 'snapshot'])
+    .where('client_id', '=', clientId)
+    .where('status', '=', 'active')
+    .executeTakeFirst();
+  if (!plan) return null;
+  const tz = await managerTimeZone(trx, ctx, tzFallback);
+  const goals = (plan.snapshot as CarePlanSnapshot).structured.sections.flatMap((s) => s.goals);
+  const templateIds = [...new Set(goals.map((g) => g.templateId))];
+  // 模板以后被停用时健管师看不到它，经数据库函数读指标相关的列
+  const templates = await planGoalTemplateMetrics(trx, templateIds);
+  const byId = new Map(templates.map((t) => [t.id, t]));
+  const tracked: { key: string; metric: 'steps' | 'sleep_hours'; target: number }[] = [];
+  const untracked = new Set<string>();
+  for (const g of goals) {
+    const t = byId.get(g.templateId);
+    const target = t?.metric_param ? g.params[t.metric_param] : undefined;
+    const param = (t?.params as GoalParam[] | undefined)?.find((p) => p.name === t?.metric_param);
+    if (t?.metric && typeof target === 'number' && param?.type === 'int') {
+      tracked.push({ key: g.templateId, metric: t.metric, target });
+    } else {
+      untracked.add(g.templateId);
+    }
+  }
+  const now = new Date();
+  const readings = tracked.length
+    ? await trx
+        .selectFrom('monitoring_readings')
+        .select(['metric', 'value', 'measured_at'])
+        .where('client_id', '=', clientId)
+        .where('metric', 'in', [...new Set(tracked.map((g) => g.metric))])
+        .where('measured_at', '>=', new Date(now.getTime() - ADHERENCE_LOOKBACK_DAYS * 86_400_000))
+        .execute()
+    : [];
+  const results = adherence({
+    now,
+    timeZone: tz,
+    goals: tracked,
+    readings: readings.map((r) => ({
+      metric: r.metric,
+      value: Number(r.value),
+      measuredAt: r.measured_at,
+    })),
+  });
+  return {
+    planId: plan.id,
+    asOf: localDate(now, tz),
+    timeZone: tz,
+    goals: results.map((r) => ({
+      templateId: r.key,
+      metric: r.metric,
+      target: r.target,
+      hasData: r.hasData,
+      windows: r.windows,
+    })),
+    untrackedTemplateIds: [...untracked],
   };
 }

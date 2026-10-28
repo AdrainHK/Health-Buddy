@@ -214,7 +214,9 @@ export interface SkillDefinition<S extends z.ZodType = z.ZodType> extends SkillM
    * “正在读取当前方案”；visit_schedule 再加“正在排随访日期”（日期由后端算，Q17），
    * care_plan 再加“正在选择食谱和动作”（候选库条目、目标模板和方案选项由后端组装）
    */
-  planContext?: 'visit_schedule' | 'care_plan';
+  planContext?: 'visit_schedule' | 'care_plan' | 'visit_script' | 'visit_record';
+  /** /随访记录：要 @ 随访素材（最多 3 份），没有素材时不生成（M5 规格 2.9） */
+  usesMaterials?: boolean;
   /**
    * 结构校验（M5 规格 5.2）：随访行数和日期必须和输入一致、条目必须在候选里、参数必须在范围里。
    * 返回不合格的类别（不带内容）；有问题时带 validationNote 重试一次，仍不合格不保存草稿

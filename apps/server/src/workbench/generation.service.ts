@@ -708,7 +708,10 @@ export class GenerationService {
         ...new Set(run.skills.flatMap((s) => (s.planContext ? [s.planContext] : []))),
       ];
       const client = planKinds.length
-        ? await this.readPlanClient(ctx, run.clientId, steps, planKinds, run.planOptions ?? null)
+        ? await this.readPlanClient(ctx, run.clientId, steps, planKinds, run.planOptions ?? null, {
+            materialIds: run.materialIds ?? [],
+            visitId: run.visitId ?? null,
+          })
         : usesTwin
           ? await this.readTwinClient(ctx, run.clientId, steps)
           : usesReport
@@ -918,10 +921,19 @@ export class GenerationService {
           riskTierSuggestion: rendered.riskTierSuggestion ?? null,
           consultationId: used?.consultationId ?? null,
           emergencySignal: emergency,
-          crisisSignal,
+          // 模型自己标出的危机信号也要让审核栏醒目提示（M5 规格 2.9 第 5 条）
+          crisisSignal: crisisSignal || rendered.crisisSignal,
           ...(rendered.structured === undefined ? {} : { structured: rendered.structured }),
           ...(skill.planContext === 'care_plan'
             ? { planOptions: client.plan?.library?.options ?? planOptionsSchema.parse({}) }
+            : {}),
+          // 随访话术、随访记录关联的那一次随访；记录还要记下整理的素材（确认后 30 天删除原文）
+          ...((skill.planContext === 'visit_script' || skill.planContext === 'visit_record') &&
+          run.visitId
+            ? { visitId: run.visitId }
+            : {}),
+          ...(skill.usesMaterials && run.materialIds?.length
+            ? { materialIds: run.materialIds }
             : {}),
         });
         if (!artifact) {
@@ -1218,7 +1230,20 @@ export class GenerationService {
     steps: StepRunner,
     kinds: NonNullable<SkillDefinition['planContext']>[],
     planOptions: PlanOptions | null,
+    visitRefs: { materialIds: readonly string[]; visitId: string | null } = {
+      materialIds: [],
+      visitId: null,
+    },
   ): Promise<ClientContext | undefined> {
+    const schedule = kinds.includes('visit_schedule');
+    const makesPlan = kinds.includes('care_plan');
+    const script = kinds.includes('visit_script');
+    const record = kinds.includes('visit_record');
+    // /随访记录：正在读取随访素材 → 正在读取客户档案 → 正在读取当前方案（不读孪生，规格 2.9）
+    if (record) {
+      const step = await steps.start('read_visit_materials', 'steps.readVisitMaterials');
+      await steps.finish(step, 'done');
+    }
     const read = await steps.start('read_client', 'steps.readClient');
     const client = await this.repo.clientContext(ctx, clientId, null, {
       detail: true,
@@ -1229,11 +1254,9 @@ export class GenerationService {
       return undefined;
     }
     await steps.finish(read, 'done');
-    const twin = await this.readTwin(ctx, clientId, [], steps);
-    if (!twin) return undefined;
+    const twin = record ? null : await this.readTwin(ctx, clientId, [], steps);
+    if (twin === undefined) return undefined;
     const readPlan = await steps.start('read_care_plan', 'steps.readCarePlan');
-    const schedule = kinds.includes('visit_schedule');
-    const makesPlan = kinds.includes('care_plan');
     const options = planOptions ?? planOptionsSchema.parse({});
     const plan = await this.repo.planContext(ctx, clientId, {
       schedule,
@@ -1249,12 +1272,20 @@ export class GenerationService {
             },
           }
         : {}),
+      // /随访话术：执行情况和下一次随访；/随访记录：关联的随访和素材
+      ...(script ? { adherence: true } : {}),
+      ...(script || record ? { visit: { visitId: visitRefs.visitId, nextOpen: script } } : {}),
+      ...(record ? { materialIds: visitRefs.materialIds } : {}),
       riskTier: client.snapshot.riskTier?.tier ?? null,
-      hasUrgentFollowUp: twin.followUps.some((f) => f.severity <= 2),
+      hasUrgentFollowUp: Boolean(twin?.followUps.some((f) => f.severity <= 2)),
       // 账号没设置时区时按北京时间（和确认随访计划时的日期校验一致）
       tzFallback: 'Asia/Shanghai',
     });
     await steps.finish(readPlan, 'done');
+    if (script) {
+      const step = await steps.start('read_visit_records', 'steps.readVisitRecords');
+      await steps.finish(step, 'done');
+    }
     if (makesPlan) {
       const step = await steps.start('select_library_items', 'steps.selectLibraryItems');
       await steps.finish(step, 'done');
@@ -1265,7 +1296,7 @@ export class GenerationService {
     }
     const detect = await steps.start('detect_critical', 'steps.detectCritical');
     await steps.finish(detect, 'done');
-    return { ...client, snapshot: { ...client.snapshot, twin }, plan };
+    return { ...client, snapshot: { ...client.snapshot, ...(twin ? { twin } : {}) }, plan };
   }
 
   /** 读档案、识别危急指标，两步都推给前端 */
