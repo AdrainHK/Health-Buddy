@@ -18,6 +18,8 @@ import { DbModule } from './db/db.provider.js';
 import { ExpertsModule } from './experts/experts.module.js';
 import { CareModule } from './care/care.module.js';
 import { CompanionModule } from './companion/companion.module.js';
+import type { VoiceOptions } from './companion/voice/device-session.js';
+import { VOICE_OPTIONS } from './companion/voice/voice-gateway.js';
 import { HealthController } from './health/health.controller.js';
 import { PlanLibraryModule } from './plan-library/plan-library.module.js';
 import { SkillsController } from './skills/skills.controller.js';
@@ -33,6 +35,8 @@ export interface AppOptions {
   reportInfra?: ReportInfraOverrides;
   /** 测试用：注入合成的风险分层标准（线上还没有确认的标准，见 risk-tier-criteria.ts） */
   riskTierCriteria?: string | null;
+  /** 测试用：伴侣语音通道的时间参数（帧间隔、超时、端点检测） */
+  voice?: Partial<VoiceOptions>;
 }
 
 @Module({})
@@ -72,12 +76,14 @@ export class AppModule {
         ...(options.reportInfra
           ? [{ provide: REPORT_INFRA_OVERRIDES, useValue: options.reportInfra }]
           : []),
+        ...(options.voice ? [{ provide: VOICE_OPTIONS, useValue: options.voice }] : []),
       ],
       exports: [
         APP_CONFIG,
         RISK_TIER_CRITERIA,
         ...(options.llmProviders ? [LLM_PROVIDERS] : []),
         ...(options.reportInfra ? [REPORT_INFRA_OVERRIDES] : []),
+        ...(options.voice ? [VOICE_OPTIONS] : []),
       ],
     };
   }

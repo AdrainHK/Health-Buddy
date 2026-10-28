@@ -42,7 +42,7 @@ export function parseDeviceLines(
 
 /**
  * 伴侣“福宝”的出厂设备批次（M6 规格 2.10、N2）。只有平台管理员。
- * 平台只看每批的数量和绑定数，看不到设备绑给了谁；设备密钥和激活码导入后只存哈希。
+ * 平台只看每批的数量和绑定数，看不到设备绑给了谁；设备密钥导入后加密保存，激活码只存哈希。
  */
 export function DeviceBatchesPage() {
   const { t } = useTranslation();
@@ -201,6 +201,8 @@ function ImportDialog({
           );
         } else if (err instanceof ApiError && err.code === 'bad_request') {
           setError(t('deviceBatches.errors.format'));
+        } else if (err instanceof ApiError && err.code === 'not_configured') {
+          setError(t('deviceBatches.errors.notConfigured'));
         } else {
           setError(t('deviceBatches.errors.unknown'));
         }

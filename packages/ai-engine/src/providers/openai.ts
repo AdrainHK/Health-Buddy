@@ -1,4 +1,4 @@
-import OpenAI from 'openai';
+import OpenAI, { toFile } from 'openai';
 import type {
   ChatMessage,
   ContentPart,
@@ -6,9 +6,15 @@ import type {
   GatewayRequest,
   Provider,
   ResolvedRoute,
+  SynthesizeRequest,
+  SynthesizeResult,
+  TranscribeRequest,
+  TranscribeResult,
 } from '../types.js';
 
 const DEFAULT_MAX_OUTPUT_TOKENS = 16000;
+/** 伴侣默认音色：温和的女声 */
+const DEFAULT_VOICE = 'coral';
 
 /** ChatGPT 适配器，使用 Responses API 流式输出。 */
 export class OpenAIProvider implements Provider {
@@ -74,6 +80,50 @@ export class OpenAIProvider implements Provider {
       },
       model: response.model,
     };
+  }
+
+  async transcribe(
+    request: TranscribeRequest,
+    route: ResolvedRoute,
+    signal?: AbortSignal,
+  ): Promise<TranscribeResult> {
+    // 文件名是固定的占位名
+    const file = await toFile(request.audio, 'speech.ogg', { type: request.mediaType });
+    const result = await this.client.audio.transcriptions.create(
+      {
+        file,
+        model: route.model,
+        response_format: 'json',
+        ...(request.language ? { language: request.language } : {}),
+      },
+      signal ? { signal } : undefined,
+    );
+    const usage =
+      result.usage?.type === 'tokens'
+        ? { inputTokens: result.usage.input_tokens, outputTokens: result.usage.output_tokens }
+        : { inputTokens: 0, outputTokens: 0 };
+    return { text: result.text, usage, model: route.model };
+  }
+
+  async synthesize(
+    request: SynthesizeRequest,
+    route: ResolvedRoute,
+    signal?: AbortSignal,
+  ): Promise<SynthesizeResult> {
+    const response = await this.client.audio.speech.create(
+      {
+        model: route.model,
+        input: request.text,
+        voice: request.voice ?? DEFAULT_VOICE,
+        response_format: 'opus',
+        ...(request.speed ? { speed: request.speed } : {}),
+        ...(request.instructions ? { instructions: request.instructions } : {}),
+      },
+      signal ? { signal } : undefined,
+    );
+    const audio = new Uint8Array(await response.arrayBuffer());
+    // 合成接口不返回 token 数
+    return { audio, usage: { inputTokens: 0, outputTokens: 0 }, model: route.model };
   }
 }
 

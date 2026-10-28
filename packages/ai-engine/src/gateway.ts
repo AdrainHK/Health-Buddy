@@ -10,6 +10,12 @@ import type {
   GatewayRequest,
   Provider,
   ProviderName,
+  ResolvedRoute,
+  Route,
+  SynthesizeRequest,
+  SynthesizeResult,
+  TranscribeRequest,
+  TranscribeResult,
   Usage,
   UsageRecord,
 } from './types.js';
@@ -27,6 +33,7 @@ export interface GatewayOptions<C extends CallContext = CallContext> {
 }
 
 const STRUCTURED_ATTEMPTS = 2;
+const NO_USAGE: Usage = { inputTokens: 0, outputTokens: 0 };
 
 /** usage 是所有尝试（含结构不合格重试）的合计，provider 是这次实际用的厂商 */
 export type StructuredResult<T> =
@@ -69,82 +76,131 @@ export class LlmGateway<C extends CallContext = CallContext> {
   ): AsyncGenerator<GatewayEvent, void, undefined> {
     const route = resolveRoute(this.options.config, request.route);
     const provider = this.options.providers[route.provider];
-    const started = this.now();
-    const base = {
-      route: request.route,
-      provider: route.provider,
-      operatorId: ctx.operatorId,
-      userId: ctx.userId,
-      ...(request.expertId ? { expertId: request.expertId } : {}),
-    };
-
-    let finished = false;
-    const finish = async (
-      outcome: UsageRecord['outcome'],
-      model: string,
-      usage: Usage,
-      errorType?: string,
-      detail?: { status?: number | undefined; code?: string | undefined },
-    ) => {
-      finished = true;
-      const record: UsageRecord = {
-        ...base,
-        model,
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-        costUsd: estimateCostUsd(model, usage.inputTokens, usage.outputTokens),
-        durationMs: this.now() - started,
-        outcome,
-        ...(errorType ? { errorType } : {}),
-      };
-      const fields = {
-        route: record.route,
-        provider: record.provider,
-        model: record.model,
-        outcome: record.outcome,
-        durationMs: record.durationMs,
-        inputTokens: record.inputTokens,
-        outputTokens: record.outputTokens,
-        errorType: record.errorType ?? null,
-        ...(record.expertId ? { expertId: record.expertId } : {}),
-        ...(detail?.status ? { status: detail.status } : {}),
-        ...(detail?.code ? { code: detail.code } : {}),
-      };
-      if (outcome === 'error') this.options.logger?.error('llm call failed', fields);
-      else this.options.logger?.info('llm call', fields);
-      try {
-        await this.options.recordUsage?.(record, ctx);
-      } catch {
-        // 计量失败不影响业务，只记一条不含数据的日志
-        this.options.logger?.error('llm usage record failed', { route: record.route });
-      }
-    };
+    const call = this.startCall(ctx, request.route, route, request.expertId);
 
     if (!provider) {
-      await finish('error', route.model, { inputTokens: 0, outputTokens: 0 }, 'not_configured');
+      await call.finish('error', route.model, NO_USAGE, 'not_configured');
       throw new GatewayError('not_configured');
     }
 
     try {
       for await (const event of provider.stream(request, route, signal)) {
         if (event.type === 'done') {
-          await finish(event.finishReason, event.model, event.usage);
+          await call.finish(event.finishReason, event.model, event.usage);
         }
         yield event;
       }
     } catch (err) {
       const classified = classifyError(err);
-      if (!finished)
-        await finish('error', route.model, { inputTokens: 0, outputTokens: 0 }, classified.kind, {
+      if (!call.finished)
+        await call.finish('error', route.model, NO_USAGE, classified.kind, {
           status: classified.status,
           code: classified.code,
         });
       throw classified;
     } finally {
       // 调用方提前停止读取（例如用户关掉页面）
-      if (!finished)
-        await finish('error', route.model, { inputTokens: 0, outputTokens: 0 }, 'aborted');
+      if (!call.finished) await call.finish('error', route.model, NO_USAGE, 'aborted');
     }
+  }
+
+  /** 语音识别（M6 伴侣）。音频和识别出的文字都不进日志和计量。 */
+  transcribe(ctx: C, request: TranscribeRequest, signal?: AbortSignal): Promise<TranscribeResult> {
+    return this.once(ctx, request.route, (provider, route) =>
+      provider.transcribe?.(request, route, signal),
+    );
+  }
+
+  /** 语音合成（M6 伴侣）。合成的文字不进日志和计量。 */
+  synthesize(ctx: C, request: SynthesizeRequest, signal?: AbortSignal): Promise<SynthesizeResult> {
+    return this.once(ctx, request.route, (provider, route) =>
+      provider.synthesize?.(request, route, signal),
+    );
+  }
+
+  /** 一次性（非流式）调用的公共部分：选厂商、计量、错误归类 */
+  private async once<T extends { usage: Usage; model: string }>(
+    ctx: C,
+    routeName: Route,
+    run: (provider: Provider, route: ResolvedRoute) => Promise<T> | undefined,
+  ): Promise<T> {
+    const route = resolveRoute(this.options.config, routeName);
+    const provider = this.options.providers[route.provider];
+    const call = this.startCall(ctx, routeName, route);
+    const pending = provider ? run(provider, route) : undefined;
+    if (!pending) {
+      await call.finish('error', route.model, NO_USAGE, 'not_configured');
+      throw new GatewayError('not_configured');
+    }
+    let result: T;
+    try {
+      result = await pending;
+    } catch (err) {
+      const classified = classifyError(err);
+      await call.finish('error', route.model, NO_USAGE, classified.kind, {
+        status: classified.status,
+        code: classified.code,
+      });
+      throw classified;
+    }
+    await call.finish('complete', result.model, result.usage);
+    return result;
+  }
+
+  /** 开始一次调用：返回结束时写日志和计量的函数（只写一次） */
+  private startCall(ctx: C, routeName: Route, route: ResolvedRoute, expertId?: string) {
+    const started = this.now();
+    const base = {
+      route: routeName,
+      provider: route.provider,
+      operatorId: ctx.operatorId,
+      userId: ctx.userId,
+      ...(expertId ? { expertId } : {}),
+    };
+    const call = {
+      finished: false,
+      finish: async (
+        outcome: UsageRecord['outcome'],
+        model: string,
+        usage: Usage,
+        errorType?: string,
+        detail?: { status?: number | undefined; code?: string | undefined },
+      ) => {
+        call.finished = true;
+        const record: UsageRecord = {
+          ...base,
+          model,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          costUsd: estimateCostUsd(model, usage.inputTokens, usage.outputTokens),
+          durationMs: this.now() - started,
+          outcome,
+          ...(errorType ? { errorType } : {}),
+        };
+        const fields = {
+          route: record.route,
+          provider: record.provider,
+          model: record.model,
+          outcome: record.outcome,
+          durationMs: record.durationMs,
+          inputTokens: record.inputTokens,
+          outputTokens: record.outputTokens,
+          errorType: record.errorType ?? null,
+          ...(record.expertId ? { expertId: record.expertId } : {}),
+          ...(detail?.status ? { status: detail.status } : {}),
+          ...(detail?.code ? { code: detail.code } : {}),
+        };
+        if (outcome === 'error') this.options.logger?.error('llm call failed', fields);
+        else this.options.logger?.info('llm call', fields);
+        try {
+          await this.options.recordUsage?.(record, ctx);
+        } catch {
+          // 计量失败不影响业务，只记一条不含数据的日志
+          this.options.logger?.error('llm usage record failed', { route: record.route });
+        }
+      },
+    };
+    return call;
   }
 
   /**

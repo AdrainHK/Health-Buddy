@@ -10,7 +10,8 @@
     "migrate": "node --enable-source-maps dist/db/migrate-cli.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "twin:compute": "node --enable-source-maps dist/twin/compute-cli.js"
+    "twin:compute": "node --enable-source-maps dist/twin/compute-cli.js",
+    "companion:sim": "node --enable-source-maps dist/companion/voice/simulator-cli.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1143.0",
@@ -32,11 +33,13 @@
     "ioredis": "6.0.0",
     "kysely": "0.29.6",
     "multer": "2.4.0",
+    "opusscript": "0.1.1",
     "pdf-lib": "1.17.1",
     "pdfkit": "0.17.2",
     "pg": "8.23.1",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
+    "ws": "8.18.3",
     "zod": "4.6.7"
   },
   "devDependencies": {
@@ -50,6 +53,7 @@
     "@types/pdfkit": "0.17.6",
     "@types/pg": "8.23.1",
     "@types/supertest": "6.0.3",
+    "@types/ws": "8.18.1",
     "supertest": "7.3.1",
     "unplugin-swc": "1.6.0",
     "vitest": "3.2.7"

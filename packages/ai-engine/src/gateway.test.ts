@@ -327,4 +327,57 @@ describe('LlmGateway.completeStructured', () => {
     });
     expect(provider.calls).toHaveLength(1);
   });
+
+  describe('speech', () => {
+    it('transcribes and records usage without the audio or the text', async () => {
+      const { gateway, provider, records, logs } = setup();
+      provider.speech = { transcript: '我今天走了五千步' };
+      const result = await gateway.transcribe(
+        { operatorId: 'op-1', userId: null },
+        { route: 'speech_to_text', audio: new Uint8Array([1, 2, 3]), mediaType: 'audio/ogg' },
+      );
+      expect(result.text).toBe('我今天走了五千步');
+      expect(records).toEqual([
+        expect.objectContaining({
+          route: 'speech_to_text',
+          model: 'gpt-4o-mini-transcribe',
+          userId: null,
+          outcome: 'complete',
+        }),
+      ]);
+      expect(JSON.stringify(logs)).not.toContain('五千步');
+    });
+
+    it('synthesizes and classifies provider errors', async () => {
+      const { gateway, provider, records } = setup();
+      provider.speech = { synthesize: () => new Uint8Array([9]) };
+      const ok = await gateway.synthesize(ctx, { route: 'text_to_speech', text: '你好' });
+      expect([...ok.audio]).toEqual([9]);
+      provider.speech = { failWith: Object.assign(new Error('boom'), { status: 500 }) };
+      await expect(
+        gateway.synthesize(ctx, { route: 'text_to_speech', text: '你好' }),
+      ).rejects.toBeInstanceOf(GatewayError);
+      expect(records.map((r) => r.outcome)).toEqual(['complete', 'error']);
+    });
+
+    it('reports not_configured when the provider has no speech support', async () => {
+      const records: UsageRecord[] = [];
+      const bare = { name: 'openai' as const, stream: new MockProvider().stream };
+      const gateway = new LlmGateway({
+        config: loadGatewayConfig({}),
+        providers: { openai: bare },
+        recordUsage: (r) => {
+          records.push(r);
+        },
+      });
+      await expect(
+        gateway.transcribe(ctx, {
+          route: 'speech_to_text',
+          audio: new Uint8Array(),
+          mediaType: 'audio/ogg',
+        }),
+      ).rejects.toMatchObject({ kind: 'not_configured' });
+      expect(records[0]).toMatchObject({ outcome: 'error', errorType: 'not_configured' });
+    });
+  });
 });

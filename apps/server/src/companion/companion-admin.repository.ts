@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { APP_CONFIG, type AppConfig } from '../config.js';
 import {
   COMPANION_SCRIPT_KINDS,
   type CompanionScript,
@@ -9,18 +10,32 @@ import {
 import { companionDeviceBatchStats, companionExistingSerials } from '../db/companion-functions.js';
 import { DB } from '../db/db.provider.js';
 import { withTenant, type Db, type TenantContext } from '../db/database.js';
-import { hashActivationCode, hashDeviceSecret, mapLimited } from './device-credentials.js';
+import {
+  DeviceSecretCipher,
+  hashActivationCode,
+  hashDeviceSecret,
+  mapLimited,
+} from './device-credentials.js';
 
 /**
  * 平台端：出厂设备批次、固定话术和线下告知书模板（M6 规格 2.10、N2、Q22、N4）。
  * 平台看不到设备绑给了谁，只经统计函数看每批的绑定数。
  */
 
-export type ImportBatchResult = DeviceBatch | { duplicates: string[] };
+export type ImportBatchResult = DeviceBatch | { duplicates: string[] } | 'not_configured';
 
 @Injectable()
 export class CompanionAdminRepository {
-  constructor(@Inject(DB) private readonly db: Db) {}
+  private readonly cipher: DeviceSecretCipher | null;
+
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Inject(APP_CONFIG) config: AppConfig,
+  ) {
+    this.cipher = config.companionDeviceKey
+      ? new DeviceSecretCipher(config.companionDeviceKey)
+      : null;
+  }
 
   batches(ctx: TenantContext): Promise<DeviceBatch[]> {
     return withTenant(this.db, ctx, async (trx) => {
@@ -40,6 +55,8 @@ export class CompanionAdminRepository {
     ctx: TenantContext,
     body: ImportDeviceBatchRequest,
   ): Promise<ImportBatchResult> {
+    const cipher = this.cipher;
+    if (!cipher) return 'not_configured';
     const serials = body.devices.map((d) => d.serialNo);
     const existing = await withTenant(this.db, ctx, async (trx) => {
       return companionExistingSerials(trx, serials);
@@ -49,6 +66,7 @@ export class CompanionAdminRepository {
     const rows = await mapLimited(body.devices, 4, async (d) => ({
       serial_no: d.serialNo,
       secret_hash: hashDeviceSecret(d.deviceSecret),
+      secret_encrypted: cipher.encrypt(d.deviceSecret, d.serialNo),
       activation_code_hash: await hashActivationCode(d.activationCode),
     }));
     return withTenant(this.db, ctx, async (trx) => {

@@ -19,7 +19,7 @@ describe('伴侣设备和设置接口', () => {
   let f: Fixtures;
 
   const as = (email: string) => loginAs(app, email);
-  const secret = () => randomBytes(24).toString('base64url');
+  const secret = () => randomBytes(32).toString('hex');
   const devices = [
     { serialNo: 'HB-TEST-0001', deviceSecret: secret(), activationCode: 'ABCD1234' },
     { serialNo: 'HB-TEST-0002', deviceSecret: secret(), activationCode: 'EFGH5678' },

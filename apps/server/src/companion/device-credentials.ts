@@ -1,9 +1,17 @@
-import { createHash } from 'node:crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from 'node:crypto';
 import { hash, verify } from '@node-rs/argon2';
 
 /**
  * 伴侣设备的凭据（M6 规格 3.2、N2）。
- * - 设备密钥是厂商烧录的高熵随机串：存 SHA-256，设备每次连接按哈希查找。
+ * - 设备密钥是厂商烧录在 eFuse 里的 256 位 HMAC 密钥（xiaozhi 激活 v2）。服务器要用它验证设备的
+ *   HMAC，所以用 COMPANION_DEVICE_KEY 加密保存（DeviceSecretCipher）；另存 SHA-256 防止重复导入。
  * - 激活码印在设备背面、位数少：存 argon2id（含盐）。参数比登录密码轻，平台一次导入上千台时不至于太慢；
  *   绑定接口另有失败次数限制（BindAttemptLimiter）。
  * 密钥和激活码的原文都不进日志、不进数据库。
@@ -96,4 +104,71 @@ export class BindAttemptLimiter {
       this.failures.delete(oldest);
     }
   }
+}
+
+/**
+ * 设备密钥的加密：AES-256-GCM，格式为 版本(1 字节) + IV(12) + 认证标签(16) + 密文(32)。
+ * 序列号作为附加认证数据：密文挪到别的设备行就解不开。错误信息里不带密钥。
+ */
+const CIPHER_VERSION = 1;
+const IV_BYTES = 12;
+const TAG_BYTES = 16;
+
+export class DeviceSecretCipher {
+  constructor(private readonly key: Buffer) {
+    if (key.length !== 32) throw new Error('companion device key must be 32 bytes');
+  }
+
+  /** secretHex：64 位十六进制 */
+  encrypt(secretHex: string, serialNo: string): Buffer {
+    const iv = randomBytes(IV_BYTES);
+    const cipher = createCipheriv('aes-256-gcm', this.key, iv);
+    cipher.setAAD(Buffer.from(serialNo, 'utf8'));
+    const body = Buffer.concat([cipher.update(Buffer.from(secretHex, 'hex')), cipher.final()]);
+    return Buffer.concat([Buffer.from([CIPHER_VERSION]), iv, cipher.getAuthTag(), body]);
+  }
+
+  /** 解不开（密钥换了、密文被挪动）时 undefined */
+  decrypt(data: Buffer, serialNo: string): Buffer | undefined {
+    if (data.length < 1 + IV_BYTES + TAG_BYTES || data[0] !== CIPHER_VERSION) return undefined;
+    try {
+      const decipher = createDecipheriv('aes-256-gcm', this.key, data.subarray(1, 1 + IV_BYTES));
+      decipher.setAAD(Buffer.from(serialNo, 'utf8'));
+      decipher.setAuthTag(data.subarray(1 + IV_BYTES, 1 + IV_BYTES + TAG_BYTES));
+      return Buffer.concat([
+        decipher.update(data.subarray(1 + IV_BYTES + TAG_BYTES)),
+        decipher.final(),
+      ]);
+    } catch {
+      return undefined;
+    }
+  }
+}
+
+/** 激活挑战：32 字节随机数的十六进制（设备按字符串原样参与 HMAC） */
+export function newChallenge(): string {
+  return randomBytes(32).toString('hex');
+}
+
+/** 设备令牌：32 字节随机数，base64url；库里只存 SHA-256 */
+export function newDeviceToken(): { token: string; hash: Buffer } {
+  const token = randomBytes(32).toString('base64url');
+  return { token, hash: hashDeviceToken(token) };
+}
+
+export function hashDeviceToken(token: string): Buffer {
+  return createHash('sha256').update(token, 'utf8').digest();
+}
+
+/** xiaozhi 激活 v2：hmac = hex(HMAC-SHA256(key0, challenge)) */
+export function deviceHmac(secret: Buffer, challenge: string): string {
+  return createHmac('sha256', secret).update(challenge, 'utf8').digest('hex');
+}
+
+export function verifyDeviceHmac(secret: Buffer, challenge: string, hmacHex: string): boolean {
+  if (!/^[0-9a-fA-F]{64}$/.test(hmacHex)) return false;
+  return timingSafeEqual(
+    Buffer.from(deviceHmac(secret, challenge), 'hex'),
+    Buffer.from(hmacHex, 'hex'),
+  );
 }

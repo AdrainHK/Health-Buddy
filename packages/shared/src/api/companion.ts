@@ -27,6 +27,7 @@ export type CompanionStatus = z.infer<typeof companionStatusSchema>;
 /** 语速（N17：默认比正常稍慢）和音量 */
 export const COMPANION_VOICE_SPEEDS = ['slow', 'medium', 'fast'] as const;
 export const companionVoiceSpeedSchema = z.enum(COMPANION_VOICE_SPEEDS);
+export type CompanionVoiceSpeed = (typeof COMPANION_VOICE_SPEEDS)[number];
 export const COMPANION_VOLUMES = ['low', 'medium', 'high'] as const;
 export const companionVolumeSchema = z.enum(COMPANION_VOLUMES);
 export const COMPANION_DEFAULT_VOICE_SPEED = 'slow';
@@ -47,8 +48,14 @@ export const companionActivationCodeSchema = z
   .string()
   .transform((s) => s.replace(/[\s-]/g, '').toUpperCase())
   .pipe(z.string().regex(/^[A-Z0-9]{6,32}$/));
-/** 设备密钥：烧录在设备里，只在平台导入批次时出现 */
-export const companionDeviceSecretSchema = z.string().regex(/^[A-Za-z0-9_-]{32,128}$/);
+/**
+ * 设备密钥：厂商烧录在设备 eFuse 里的 256 位 HMAC 密钥（xiaozhi 激活 v2，规格 3.2），
+ * 64 位十六进制，只在平台导入批次时出现
+ */
+export const companionDeviceSecretSchema = z
+  .string()
+  .regex(/^[0-9a-fA-F]{64}$/)
+  .transform((s) => s.toLowerCase());
 
 /** 序列号只显示后 4 位（规格 2.8） */
 export function serialLast4(serialNo: string): string {

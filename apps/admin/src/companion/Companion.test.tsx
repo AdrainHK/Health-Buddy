@@ -13,7 +13,7 @@ const scripts = Object.entries(COMPANION_DEFAULT_SCRIPTS).map(([kind, text]) => 
   text,
   updatedAt: NOW,
 }));
-const SECRET = 'x'.repeat(32);
+const SECRET = 'ab'.repeat(32);
 
 function renderAs(user: CurrentUser, hash: string, routes: Parameters<typeof mockApi>[1] = {}) {
   window.location.hash = hash;

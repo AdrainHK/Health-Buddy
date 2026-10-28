@@ -32,6 +32,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     planLibraryPreview: false,
     // 测试专用的素材加密密钥，不是任何环境的真实密钥
     visitMaterialKey: Buffer.alloc(32, 7),
+    companionDeviceKey: Buffer.alloc(32, 9),
     ...overrides,
   };
 }

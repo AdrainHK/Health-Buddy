@@ -55,7 +55,9 @@ export interface ClientsTable {
 export interface LlmUsageTable {
   id: Generated<string>;
   operator_id: string | null;
-  user_id: string;
+  /** 迁移 0026：伴侣设备发起的调用没有用户，记 device_id（只经 record_companion_llm_usage 写） */
+  user_id: string | null;
+  device_id: ColumnType<string | null, never, never>;
   route: string;
   provider: 'openai' | 'anthropic';
   model: string;
@@ -932,6 +934,8 @@ export interface CompanionDevicesTable {
   serial_no: string;
   secret_hash: Buffer;
   activation_code_hash: string;
+  /** 迁移 0026：设备 HMAC 密钥的密文（COMPANION_DEVICE_KEY 加密）；应用只能写入，不能读 */
+  secret_encrypted: ColumnType<never, Buffer | undefined, never>;
   batch_id: string;
   status: ColumnType<'stock' | 'bound' | 'active' | 'paused' | 'revoked', undefined, never>;
   operator_id: ColumnType<string | null, undefined, never>;
