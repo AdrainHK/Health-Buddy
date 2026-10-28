@@ -787,3 +787,107 @@ export function checkPlanProfessionalText(text: string): WordingIssue[] {
     ...findEfficacyPattern(text),
   ];
 }
+
+// ---------- M6 伴侣固定话术（规格 2.2–2.5、2.10、5.3、5.4） ----------
+
+/** 话术里不能出现的数值评价（福宝不评价高低，规格 5.3 第 3 条） */
+export const COMPANION_JUDGMENT_TERMS = [
+  ...JUDGMENT_PHRASES,
+  '偏高',
+  '偏低',
+  '正常',
+  '异常',
+] as const;
+/** 危机、急症、危急指标话术里不能有安抚性否认（规格 2.5） */
+export const COMPANION_REASSURANCE_TERMS = [
+  '没事',
+  '不要紧',
+  '别担心',
+  '不严重',
+  '不用担心',
+  '没关系',
+] as const;
+/** 不能代健管师承诺（规格 5.3 第 10 条） */
+export const COMPANION_MANAGER_PROMISE =
+  /(?:健管师|他|她)?(?:会|马上|今天|很快|立刻)(?:给您|给你|联系|回复|打电话|来电)/;
+/** 推荐具体医院（规格 5.3 第 5 条） */
+const HOSPITAL_RECOMMENDATION = /(?:去|到)[^，。；,.;]{0,8}(?:医院|诊所)(?:看|就诊|挂号)/;
+
+export type CompanionScriptIssueCategory =
+  | WordingCategory
+  | 'reassurance'
+  | 'manager_promise'
+  | 'hospital'
+  | 'missing_required'
+  | 'placeholder';
+
+export interface CompanionScriptIssue {
+  category: CompanionScriptIssueCategory;
+  term: string;
+  index: number;
+}
+
+/** 必须保留的内容（规格 Q22、N9）：删掉就不能保存 */
+const COMPANION_REQUIRED: Readonly<Record<string, readonly string[]>> = {
+  crisis: ['120', '家人'],
+  emergency: ['120'],
+  intro: ['不是医生'],
+  daily_intro: ['不是医生'],
+};
+
+const SAFETY_KINDS = new Set(['crisis', 'emergency', 'critical_value']);
+const PROMISE_KINDS = new Set(['handoff', 'fallback', 'critical_value', 'handoff_reply_intro']);
+
+/**
+ * 平台保存伴侣固定话术时的检查（合规复审 B1、B2）。固定话术不经模型、不经审核，念给所有客户听，
+ * 检查不比福宝回答的输出检查松：禁用词、疾病名称、判断和数值评价、药名和用药建议、剂量、功效承诺、
+ * 孪生字样、专家、医院推荐；按种类再查安抚性否认、代健管师承诺、必须保留的内容和占位符。
+ * 告知书模板（notice）是打印的长文，只查禁用词。
+ */
+export function checkCompanionScript(kind: string, text: string): CompanionScriptIssue[] {
+  const banned = findBannedTerms(text).map((b) => ({
+    category: 'banned_term' as const,
+    term: b.term,
+    index: b.index,
+  }));
+  if (kind === 'notice') return banned;
+  const { text: norm } = normalized(text);
+  const issues: CompanionScriptIssue[] = [
+    ...banned,
+    ...asIssues('presumed_disease', findTerms(text, LIBRARY_DISEASE_TERMS)),
+    ...asIssues('judgment', findTerms(text, COMPANION_JUDGMENT_TERMS)),
+    ...findClientDrugIssues(text),
+    ...asIssues('twin_term', findClientTwinTerms(text)),
+    ...asIssues('efficacy_claim', findTerms(text, EFFICACY_TERMS)),
+    ...findEfficacyPattern(text),
+    ...asIssues('judgment', findTerms(text, ['专家'])),
+  ];
+  const dose = findDoseMatch(norm);
+  if (dose) issues.push({ category: 'drug_advice', term: dose.text, index: dose.index });
+  const hospital = HOSPITAL_RECOMMENDATION.exec(norm);
+  if (hospital) issues.push({ category: 'hospital', term: hospital[0], index: hospital.index });
+  if (SAFETY_KINDS.has(kind)) {
+    for (const found of findTerms(text, COMPANION_REASSURANCE_TERMS)) {
+      issues.push({ category: 'reassurance', ...found });
+    }
+  }
+  if (PROMISE_KINDS.has(kind)) {
+    const promise = COMPANION_MANAGER_PROMISE.exec(norm);
+    if (promise)
+      issues.push({ category: 'manager_promise', term: promise[0], index: promise.index });
+  }
+  for (const required of COMPANION_REQUIRED[kind] ?? []) {
+    if (!text.includes(required))
+      issues.push({ category: 'missing_required', term: required, index: 0 });
+  }
+  const placeholders = [...text.matchAll(/\{[^}]*\}|[{}]/g)];
+  const expected = kind === 'reminder_measurement' ? ['{metric}'] : [];
+  if (placeholders.map((m) => m[0]).join() !== expected.join()) {
+    issues.push({
+      category: 'placeholder',
+      term: placeholders.map((m) => m[0]).join('') || '{metric}',
+      index: placeholders[0]?.index ?? 0,
+    });
+  }
+  return issues.sort((a, b) => a.index - b.index);
+}

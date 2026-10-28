@@ -1,4 +1,5 @@
 import {
+  COMPANION_DEFAULT_SCRIPTS,
   DEFAULT_CRITICAL_RULES,
   DEFAULT_TWIN_STATUS_RULES,
   DEFAULT_VISIT_FREQUENCY_RULES,
@@ -104,6 +105,13 @@ export async function seedFixtures(db: Owner): Promise<Fixtures> {
     values (${DEFAULT_VISIT_FREQUENCY_RULES.firstVisitWithinDays})
   `.execute(db);
   await sql`update visit_frequency_version set version = 1, bumped_xact = null`.execute(db);
+  // 伴侣固定话术第 1 版由迁移写入（created_by 引用 users，truncate users 时级联清空），补回来
+  await sql`truncate companion_scripts`.execute(db);
+  for (const [kind, text] of Object.entries(COMPANION_DEFAULT_SCRIPTS)) {
+    await sql`insert into companion_scripts (kind, version, text) values (${kind}, 1, ${text})`.execute(
+      db,
+    );
+  }
   const passwordHash = await hashPassword(PASSWORD);
 
   const op = async (name: string, slug: string, status = 'active') =>

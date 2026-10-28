@@ -17,6 +17,7 @@ import { APP_CONFIG, type AppConfig } from './config.js';
 import { DbModule } from './db/db.provider.js';
 import { ExpertsModule } from './experts/experts.module.js';
 import { CareModule } from './care/care.module.js';
+import { CompanionModule } from './companion/companion.module.js';
 import { HealthController } from './health/health.controller.js';
 import { PlanLibraryModule } from './plan-library/plan-library.module.js';
 import { SkillsController } from './skills/skills.controller.js';
@@ -54,6 +55,7 @@ export class AppModule {
         TwinModule,
         PlanLibraryModule,
         CareModule,
+        CompanionModule,
       ],
       controllers: [HealthController, SkillsController],
       providers: [

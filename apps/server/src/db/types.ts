@@ -46,6 +46,10 @@ export interface ClientsTable {
   birth_year: number | null;
   is_synthetic: Generated<boolean>;
   created_at: Timestamp;
+  /** M6 伴侣设置（迁移 0024） */
+  companion_name_for_client: Generated<string | null>;
+  companion_voice_speed: Generated<'slow' | 'medium' | 'fast'>;
+  companion_volume: Generated<'low' | 'medium' | 'high'>;
 }
 
 export interface LlmUsageTable {
@@ -702,6 +706,10 @@ export interface Database {
   visit_records: VisitRecordsTable;
   visit_record_addenda: VisitRecordAddendaTable;
   visit_events: VisitEventsTable;
+  companion_device_batches: CompanionDeviceBatchesTable;
+  companion_devices: CompanionDevicesTable;
+  companion_consents: CompanionConsentsTable;
+  companion_scripts: CompanionScriptsTable;
 }
 
 // ---------- M5 方案和随访（迁移 0020） ----------
@@ -896,4 +904,58 @@ export interface VisitEventsTable extends ClientScoped {
   action:
     'created' | 'rescheduled' | 'done' | 'missed' | 'cancelled' | 'superseded' | 'plan_activated';
   created_at: Timestamp;
+}
+
+// ---------- M6 伴侣设备、同意、固定话术（迁移 0024） ----------
+
+export interface CompanionDeviceBatchesTable {
+  id: Generated<string>;
+  name: string;
+  device_count: number;
+  imported_by: string;
+  imported_at: ColumnType<Date, undefined, never>;
+}
+
+/** 应用只能插入库存设备（平台导入）；绑定、解绑、暂停只经 SECURITY DEFINER 函数 */
+export interface CompanionDevicesTable {
+  id: Generated<string>;
+  serial_no: string;
+  secret_hash: Buffer;
+  activation_code_hash: string;
+  batch_id: string;
+  status: ColumnType<'stock' | 'bound' | 'active' | 'paused' | 'revoked', undefined, never>;
+  operator_id: ColumnType<string | null, undefined, never>;
+  org_id: ColumnType<string | null, undefined, never>;
+  manager_id: ColumnType<string | null, undefined, never>;
+  client_id: ColumnType<string | null, undefined, never>;
+  bound_by: ColumnType<string | null, undefined, never>;
+  bound_at: ColumnType<Date | null, undefined, never>;
+  activated_at: ColumnType<Date | null, undefined, never>;
+  last_seen_at: ColumnType<Date | null, undefined, never>;
+  firmware_version: ColumnType<string | null, undefined, never>;
+  created_at: ColumnType<Date, undefined, never>;
+}
+
+/** 只能追加；租户列由触发器从客户行填 */
+export interface CompanionConsentsTable {
+  id: Generated<string>;
+  operator_id: ColumnType<string, string | undefined, never>;
+  org_id: ColumnType<string | null, string | null | undefined, never>;
+  manager_id: ColumnType<string, string | undefined, never>;
+  client_id: ColumnType<string, string, never>;
+  action: ColumnType<'consent' | 'revoke', 'consent' | 'revoke', never>;
+  notice_version: ColumnType<number | null, number | null, never>;
+  effective_on: ColumnType<Date, Date | string, never>;
+  recorded_by: ColumnType<string, string, never>;
+  created_at: ColumnType<Date, undefined, never>;
+}
+
+/** 每次保存一个新版本，版本号由触发器加一 */
+export interface CompanionScriptsTable {
+  id: Generated<string>;
+  kind: ColumnType<string, string, never>;
+  version: ColumnType<number, undefined, never>;
+  text: ColumnType<string, string, never>;
+  created_by: ColumnType<string | null, string, never>;
+  created_at: ColumnType<Date, undefined, never>;
 }
