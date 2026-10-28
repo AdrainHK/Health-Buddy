@@ -17,11 +17,13 @@ import {
   copyArtifactText,
   downloadBlob,
   exportArtifact,
+  syncArtifactToCompanion,
   returnArtifact,
   reviseArtifact,
   updateArtifact,
 } from '../api/artifacts';
 import { isAbortError } from '../api/http';
+import { displayDateTime } from '../twin/errors';
 import {
   AllergenPanel,
   FollowUpResolvePanel,
@@ -81,10 +83,11 @@ type Notice =
   | { kind: 'saved' }
   | { kind: 'approved' }
   | { kind: 'copied' }
+  | { kind: 'synced' }
   | { kind: 'exported'; filename: string }
   | { kind: 'revised' };
 
-type Busy = 'save' | 'approve' | 'copy' | 'png' | 'pdf' | 'revise' | 'return' | null;
+type Busy = 'save' | 'approve' | 'copy' | 'png' | 'pdf' | 'sync' | 'revise' | 'return' | null;
 
 interface ReturnProgress {
   steps: TaskStep[];
@@ -447,6 +450,14 @@ export function ArtifactView({
       const file = await exportArtifact(artifact.id, format);
       downloadBlob(file);
       setNotice({ kind: 'exported', filename: file.filename });
+      onChanged();
+    });
+
+  const syncToCompanion = () =>
+    run('sync', async () => {
+      const next = await syncArtifactToCompanion(artifact.id);
+      onDetail(next);
+      setNotice({ kind: 'synced' });
       onChanged();
     });
 
@@ -928,6 +939,24 @@ export function ArtifactView({
                     ? t('results.artifacts.review.exporting')
                     : t('results.artifacts.review.exportPdf')}
                 </Button>
+                {detail.companion &&
+                  (detail.companion.syncedAt ? (
+                    <span className={styles.companionNote}>
+                      {t('results.artifacts.review.syncedAt', {
+                        time: displayDateTime(detail.companion.syncedAt),
+                      })}
+                    </span>
+                  ) : detail.companion.available ? (
+                    <Button disabled={readOnly || working} onClick={syncToCompanion}>
+                      {busy === 'sync'
+                        ? t('results.artifacts.review.syncing')
+                        : t('results.artifacts.review.syncToCompanion')}
+                    </Button>
+                  ) : (
+                    <span className={styles.companionNote}>
+                      {t('results.artifacts.review.companionUnavailable')}
+                    </span>
+                  ))}
               </>
             )}
             <Button variant="ghost" disabled={readOnly || working} onClick={revise}>

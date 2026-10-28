@@ -6,6 +6,7 @@ import {
   DISCLAIMER,
   findBannedTerms,
   endsWithDisclaimer,
+  isCompanionDeliveryKind,
   type ApproveArtifactRequest,
   type ApproveRejection,
   type Artifact,
@@ -25,6 +26,7 @@ import { withTenant, type Db, type TenantContext, type TenantTransaction } from 
 import { selectArtifactSummary, toArtifactSummary } from '../tasks/tasks.repository.js';
 import { localDate, isValidTimeZone } from '../twin/time-zone.js';
 import { approveCarePlan, approveVisitRecord, approveVisitSchedule } from '../db/plan-functions.js';
+import { syncArtifactToCompanion } from '../db/companion-functions.js';
 import { renderPdf, renderPng } from './export-renderer.js';
 import {
   carePlanApproveReasons,
@@ -262,6 +264,30 @@ export class ArtifactsRepository {
   }
 
   /**
+   * 已审核的方案、报告解读同步给伴侣“福宝”（M6 规格 2.8、N12，红线 3）：通俗版先做和复制、导出相同的检查，
+   * 再由数据库函数重新校验归属、已审核、种类、客户已绑定设备，并保存快照、记一条记录。
+   * 同步过的再点一次不重复。
+   */
+  syncToCompanion(ctx: TenantContext, id: string): Promise<ArtifactDetailResponse | undefined> {
+    return this.write(ctx, async (trx) => {
+      const row = await loadArtifact(trx, id, 'share');
+      if (!row) return undefined;
+      if (row.detached) throw readOnly();
+      if (!isCompanionDeliveryKind(row.kind)) throw conflict({ reasons: ['wrong_kind'] });
+      if (row.status !== 'approved') throw conflict({ reasons: ['not_approved'] });
+      if (!isClientFacing(row)) throw notClientFacing();
+      const text = deliverableText(row);
+      const result = await syncArtifactToCompanion(trx, row.id, text);
+      if (result === 'not_found') return undefined;
+      if (result === 'no_companion' || result === 'not_approved' || result === 'wrong_kind') {
+        throw conflict({ reasons: [result] });
+      }
+      if (result !== 'ok' && result !== 'already') throw conflict();
+      return buildDetail(trx, row);
+    });
+  }
+
+  /**
    * 导出已审核产物的通俗版（图片或 PDF），并记一条导出记录（谁、什么时候、什么格式，不记内容）。
    * 检查和复制相同，另外标题也要合规；文件在同一个事务里生成，生成失败就不留记录。
    */
@@ -462,6 +488,7 @@ async function buildDetail(
     .execute();
   // 当前这一版在版本列表里，标题用的报告日期和文件名从那里取
   const self = versions.find((v) => v.id === row.id);
+  const companion = await companionState(trx, row);
   return {
     artifact: {
       ...toArtifactSummary({
@@ -484,6 +511,7 @@ async function buildDetail(
       planOptions: (row.plan_options as PlanOptions | null) ?? null,
     },
     sourceReport: await sourceReport(trx, row),
+    companion,
     hints: clientTextHints(row),
     versions: versions.map(toArtifactSummary),
     events: events.map((e): ArtifactEvent => ({
@@ -573,6 +601,28 @@ function shanghaiDate(d: Date): string {
 const notClientFacing = () => conflict({ reasons: ['not_client_facing'] });
 
 /** 技能有没有通俗版。找不到技能时按有通俗版处理，检查只会更严 */
+/** 同步给伴侣的状态（M6 规格 2.8）：只有方案和报告解读、关联了客户时才有 */
+async function companionState(
+  trx: TenantTransaction,
+  row: Pick<ArtifactRow, 'id' | 'kind' | 'client_id'>,
+): Promise<ArtifactDetailResponse['companion']> {
+  if (!row.client_id || !isCompanionDeliveryKind(row.kind)) return null;
+  const device = await trx
+    .selectFrom('companion_devices')
+    .select('status')
+    .where('client_id', '=', row.client_id)
+    .executeTakeFirst();
+  const delivery = await trx
+    .selectFrom('companion_deliveries')
+    .select('sent_at')
+    .where('artifact_id', '=', row.id)
+    .executeTakeFirst();
+  return {
+    available: device !== undefined && ['bound', 'active', 'paused'].includes(device.status),
+    syncedAt: delivery ? delivery.sent_at.toISOString() : null,
+  };
+}
+
 function isClientFacing(row: Pick<ArtifactRow, 'skill_id' | 'kind'>): boolean {
   // M5 的随访计划、话术、记录只有专业版（规格 2.7、2.8、2.9），不论技能是否已经注册
   if (professionalOnlyKind(row.kind)) return false;

@@ -116,6 +116,20 @@ export class ArtifactsController {
     });
   }
 
+  /**
+   * 已审核的方案、报告解读同步给伴侣“福宝”（M6 规格 2.8、N12）。别人的产物 404；未审核、不是方案或解读、
+   * 客户没有绑定设备或已撤回同意 409（后端和数据库函数双重校验，红线 3）。同步过的再点一次不重复。
+   */
+  @Post(':id/sync-to-companion')
+  @HttpCode(200)
+  async syncToCompanion(
+    @CurrentSession() session: ResolvedSession,
+    @Param('id') id: string,
+  ): Promise<ArtifactDetailResponse> {
+    requireManager(session);
+    return found(await this.artifacts.syncToCompanion(session, parseId(id)));
+  }
+
   /** 复制通俗版。会记一条复制记录，所以用 POST，并且不允许缓存。 */
   @Post(':id/copy')
   @HttpCode(200)

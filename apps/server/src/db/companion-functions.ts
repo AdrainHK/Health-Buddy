@@ -87,3 +87,19 @@ export async function companionDeviceBatchStats(
   `.execute(trx);
   return rows;
 }
+
+/**
+ * 已审核产物同步给伴侣（规格 2.8，红线 3）：函数里重新校验归属、已审核、种类、客户已绑定设备、
+ * 快照和产物通俗版一致。ok / already / not_found / not_approved / wrong_kind / no_companion /
+ * content_mismatch
+ */
+export async function syncArtifactToCompanion(
+  trx: TenantTransaction,
+  artifactId: string,
+  content: string,
+): Promise<string> {
+  const { rows } = await sql<{ r: string }>`
+    select sync_artifact_to_companion(${artifactId}::uuid, ${content}) as r
+  `.execute(trx);
+  return rows[0]?.r ?? 'not_found';
+}
