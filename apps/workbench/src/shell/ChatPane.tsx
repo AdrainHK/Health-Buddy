@@ -14,6 +14,7 @@ import {
   type Task,
   type TaskMode,
   type TaskPlan,
+  type LibraryRef,
   type TwinRef,
 } from '@health-buddy/shared';
 import { FileText, Menu, PanelRightClose, PanelRightOpen } from 'lucide-react';
@@ -25,7 +26,13 @@ import { confirmPlan, sendMessage, type StreamOptions } from '../api/stream';
 import { DuplicateFileError, listReports, listUploads, uploadReport } from '../api/reports';
 import { createTask, getTask, stopTask } from '../api/workbench';
 import { getTwin } from '../api/twin';
-import { Composer, type ReportOption, type TwinItemOption } from '../chat/Composer';
+import { listExercises, listRecipes } from '../api/care';
+import {
+  Composer,
+  type LibraryItemOption,
+  type ReportOption,
+  type TwinItemOption,
+} from '../chat/Composer';
 import {
   conversationReducer,
   emptyConversation,
@@ -128,6 +135,8 @@ interface Draft {
   excludedExperts?: string[];
   /** @ 的孪生项（M4 规格 2.8），只能在问一问里用 */
   twinRefs?: TwinRef[];
+  /** @ 的方案库条目（M5 规格 2.11），只能在问一问里用 */
+  libraryRefs?: LibraryRef[];
   /** “请专家看看”（2.6 之二）：按孪生项请专家，可以不写问题 */
   twinConsult?: boolean;
   /** 从跟进项发起的“请专家看看” */
@@ -257,6 +266,10 @@ export function ChatPane({
   const [excludedExperts, setExcludedExperts] = useState<string[]>([]);
   /** @ 的孪生项、“请专家看看”和发起它的跟进项（M4），只对这一条消息生效 */
   const [twinRefs, setTwinRefs] = useState<TwinRef[]>([]);
+  /** @ 的方案库条目（M5 规格 2.11）；条目列表在第一次打开 @ 列表时才读取 */
+  const [libraryRefs, setLibraryRefs] = useState<LibraryRef[]>([]);
+  const [libraryOptions, setLibraryOptions] = useState<LibraryItemOption[] | null>(null);
+  const libraryLoading = useRef(false);
   const [twinConsult, setTwinConsult] = useState(false);
   const [followUpItemId, setFollowUpItemId] = useState<string | null>(null);
   /** /方案生成 的方案选项：同一个任务里保留上次的选择 */
@@ -344,6 +357,7 @@ export function ChatPane({
     setExpertRefs([]);
     setExcludedExperts([]);
     setTwinRefs([]);
+    setLibraryRefs([]);
     setTwinConsult(false);
     setFollowUpItemId(null);
     setUploads([]);
@@ -454,6 +468,7 @@ export function ChatPane({
     setMode(prefill.mode);
     setSkill(prefill.skillId ? (skills.find((s) => s.id === prefill.skillId) ?? null) : null);
     setTwinRefs(prefill.twinRefs ?? []);
+    setLibraryRefs([]);
     setTwinConsult(Boolean(prefill.twinConsult));
     setFollowUpItemId(prefill.followUpItemId ?? null);
     setVisitId(prefill.visitId ?? null);
@@ -485,6 +500,7 @@ export function ChatPane({
     setExpertRefs([]);
     setExcludedExperts([]);
     setTwinRefs([]);
+    setLibraryRefs([]);
     setTwinConsult(false);
     setFollowUpItemId(null);
     setMaterialRefs([]);
@@ -499,6 +515,7 @@ export function ChatPane({
     setExpertRefs(draft.expertRefs ?? []);
     setExcludedExperts(draft.excludedExperts ?? []);
     setTwinRefs(draft.twinRefs ?? []);
+    setLibraryRefs(draft.libraryRefs ?? []);
     setTwinConsult(Boolean(draft.twinConsult));
     setFollowUpItemId(draft.followUpItemId ?? null);
     if (draft.planOptions) setPlanOptions(draft.planOptions);
@@ -626,6 +643,10 @@ export function ChatPane({
     // @孪生项 只能在问一问里用（M4 规格 2.8），提示已显示在输入框上方
     const twin = draft.twinRefs ?? [];
     if (twin.length && (draft.mode !== 'ask' || draft.skill)) return;
+    // @方案库条目 同样只能在问一问里用（M5 规格 2.11）
+    const library = draft.libraryRefs ?? [];
+    if (library.length && (draft.mode !== 'ask' || draft.skill)) return;
+    if (library.length && (refs.length || draft.twinConsult)) return;
     const consult = Boolean(draft.twinConsult) && twin.length > 0;
     const linkedClientId = task?.clientId ?? null;
     if (twin.length && !draft.client && !linkedClientId) {
@@ -676,6 +697,7 @@ export function ChatPane({
       ...(refs.length ? { expertRefs: refs } : {}),
       ...(excluded.length ? { excludedExperts: excluded } : {}),
       ...(twin.length ? { twinRefs: twin } : {}),
+      ...(library.length ? { libraryRefs: library } : {}),
       status: 'complete',
     };
     const assistant: ViewMessage = {
@@ -703,6 +725,7 @@ export function ChatPane({
             ...(refs.length ? { expertRefs: refs } : {}),
             ...(excluded.length ? { excludedExperts: excluded } : {}),
             ...(twin.length ? { twinRefs: twin } : {}),
+            ...(library.length ? { libraryRefs: library } : {}),
             ...(consult ? { twinConsult: true } : {}),
             ...(consult && draft.followUpItemId ? { followUpItemId: draft.followUpItemId } : {}),
             ...(draft.skill?.usesPlanOptions && draft.planOptions
@@ -929,14 +952,49 @@ export function ChatPane({
     if (notice?.kind === 'needClient' && !next?.requiresClient) setNotice(null);
   };
 
+  // @ 列表里的方案库条目：第一次打开 @ 列表时读一次（只有健管师能看到的条目，后端再校验）
+  const loadLibrary = () => {
+    if (libraryOptions !== null || libraryLoading.current) return;
+    libraryLoading.current = true;
+    Promise.all([listRecipes({}), listExercises({})])
+      .then(([recipes, exercises]) =>
+        setLibraryOptions([
+          ...recipes.map((r) => ({
+            ref: { type: 'recipe' as const, id: r.id },
+            label: r.name,
+            description: t('chat.library.recipe', {
+              meals: r.mealTypes
+                .map((m) => t(`library.meals.${m}`))
+                .join(t('chat.library.separator')),
+            }),
+          })),
+          ...exercises.map((e) => ({
+            ref: { type: 'exercise' as const, id: e.id },
+            label: e.name,
+            description: t('chat.library.exercise', {
+              category: t(`library.categories.${e.category}`),
+            }),
+          })),
+        ]),
+      )
+      .catch(() => setLibraryOptions([]))
+      .finally(() => {
+        libraryLoading.current = false;
+      });
+  };
+
   const conflict = modeConflict(skill, mode);
   const expertIssue = expertConflict(expertRefs, skill, mode);
-  const twinIssue = twinRefs.length > 0 && (mode !== 'ask' || skill !== null);
+  const askOnlyRefs = mode !== 'ask' || skill !== null;
+  const twinIssue = twinRefs.length > 0 && askOnlyRefs;
+  const libraryIssue = libraryRefs.length > 0 && askOnlyRefs;
+  // 请专家的问一问不读库条目（M5 规格 2.11）
+  const libraryWithExperts = libraryRefs.length > 0 && (expertRefs.length > 0 || twinConsult);
   let noticeNode: ReactNode = null;
-  if (twinIssue) {
+  if (twinIssue || libraryIssue) {
     noticeNode = (
       <>
-        <span role="alert">{t('chat.twin.needAsk')}</span>
+        <span role="alert">{t(twinIssue ? 'chat.twin.needAsk' : 'chat.library.needAsk')}</span>
         <Button
           variant="ghost"
           onClick={() => {
@@ -948,6 +1006,8 @@ export function ChatPane({
         </Button>
       </>
     );
+  } else if (libraryWithExperts) {
+    noticeNode = <span role="alert">{t('chat.library.noExperts')}</span>;
   } else if (conflict === null && expertIssue === 'skillNoExperts') {
     noticeNode = <span role="alert">{t('chat.experts.skillNoExperts')}</span>;
   } else if (conflict === null && expertIssue === 'needAsk') {
@@ -1220,6 +1280,7 @@ export function ChatPane({
             expertRefs,
             excludedExperts,
             twinRefs,
+            libraryRefs,
             twinConsult,
             followUpItemId,
             planOptions,
@@ -1243,6 +1304,11 @@ export function ChatPane({
         twinItems={boundExpertId ? EMPTY : twinItems}
         twinRefs={twinRefs}
         {...(!readOnly && !boundExpertId ? { onTwinRefsChange: changeTwinRefs } : {})}
+        libraryItems={libraryOptions ?? EMPTY}
+        libraryRefs={libraryRefs}
+        {...(!readOnly && mode === 'ask' && !skill
+          ? { onLibraryRefsChange: setLibraryRefs, onMentionOpen: loadLibrary }
+          : {})}
         {...(materialClientId && !readOnly && task
           ? { onUploadMaterial: () => setMaterialTaskId(task.id) }
           : {})}

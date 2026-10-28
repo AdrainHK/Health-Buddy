@@ -253,7 +253,13 @@ describe('对话和生成接口', () => {
       e.type === 'step' && e.step.status === 'running' ? [e.step.kind] : [],
     );
     // M4 规格 2.9：读档案时一并读取数字孪生
-    expect(kinds).toEqual(['read_client', 'detect_critical', 'read_twin', 'answer']);
+    expect(kinds).toEqual([
+      'read_client',
+      'detect_critical',
+      'read_twin',
+      'read_care_plan',
+      'answer',
+    ]);
     const text = events.flatMap((e) => (e.type === 'text' ? [e.delta] : [])).join('');
     expect(text.startsWith('**危急指标提醒**')).toBe(true);
     expect(text).toContain('收缩压 185 mmHg');

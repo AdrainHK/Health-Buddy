@@ -111,6 +111,15 @@ describe('M5 契约', () => {
         libraryRefs: [{ type: 'goal_template', id: ID(1) }],
       }).success,
     ).toBe(false);
+    // 请专家的问一问不读库条目
+    expect(
+      sendMessageRequestSchema.safeParse({
+        mode: 'ask',
+        content: '问',
+        expertRefs: ['nutrition'],
+        libraryRefs: [{ type: 'recipe', id: ID(1) }],
+      }).success,
+    ).toBe(false);
   });
 
   it('确认：跟进项最多 20 个且不重复；旧产物缺少新字段时按空处理', () => {

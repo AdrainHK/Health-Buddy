@@ -3,9 +3,14 @@ import type { ExpressionBuilder } from 'kysely';
 import {
   detectCriticalFlags,
   isKnownTwinRef,
+  type Allergen,
   type ArtifactSummary,
+  type ExerciseCategory,
+  type LibraryTag,
+  type MealType,
   type CriticalFlag,
   type IndicatorCode,
+  type LibraryRef,
   type Observation,
   type PlanOptions,
   type PlanStep,
@@ -63,7 +68,33 @@ export interface PreparedTurn {
   twinRefs: TwinRef[];
   /** 从跟进项发起的“请专家看看”，已校验是这位客户、本人的跟进项 */
   followUpItemId: string | null;
+  /** @ 引用的库条目（M5 规格 2.11），已校验当前健管师能看到 */
+  libraryRefs: LibraryRef[];
 }
+
+/** 问一问 @ 的库条目的内容（库条目不是客户数据） */
+export type LibraryItemRow =
+  | {
+      type: 'recipe';
+      id: string;
+      name: string;
+      mealTypes: MealType[];
+      tags: LibraryTag[];
+      allergens: Allergen[];
+      ingredients: { name: string; householdAmount: string }[];
+      steps: string[];
+      energyKcal: number | null;
+    }
+  | {
+      type: 'exercise';
+      id: string;
+      name: string;
+      category: ExerciseCategory;
+      intensity: 'low' | 'moderate';
+      steps: string[];
+      keyPoints: string[];
+      managerCautions: string;
+    };
 
 export interface ClientContext {
   snapshot: ClientSnapshot;
@@ -176,29 +207,129 @@ export class WorkbenchRepository {
       followUpItemId?: string;
       materialRefs?: string[];
       visitId?: string;
+      libraryRefs?: LibraryRef[];
     },
   ): Promise<void> {
-    return withTenant(this.db, ctx, async (trx) => {
-      const task = await trx
-        .selectFrom('tasks')
-        .select('client_id')
-        .where('id', '=', input.taskId)
-        .executeTakeFirst();
-      if (!task) throw notFound();
-      const ref = input.clientRefs[0];
-      if (ref && task.client_id && ref !== task.client_id) throw notFound();
-      if (ref && !task.client_id && !(await clientVisible(trx, ref))) throw notFound();
-      const clientId = task.client_id ?? ref ?? null;
-      const reportId = input.reportRefs[0];
-      if (reportId && (!clientId || !(await reportOfClient(trx, reportId, clientId))))
-        throw notFound();
-      const twinRefs = input.twinRefs ?? [];
-      if (twinRefs.length || input.followUpItemId) {
-        if (!clientId) throw notFound();
-        await checkTwinRefs(trx, ctx, clientId, twinRefs, input.followUpItemId);
-      }
-      await checkVisitRefs(trx, clientId, input.materialRefs ?? [], input.visitId);
-    });
+    return withTenant(
+      this.db,
+      ctx,
+      async (trx) => {
+        const task = await trx
+          .selectFrom('tasks')
+          .select('client_id')
+          .where('id', '=', input.taskId)
+          .executeTakeFirst();
+        if (!task) throw notFound();
+        const ref = input.clientRefs[0];
+        if (ref && task.client_id && ref !== task.client_id) throw notFound();
+        if (ref && !task.client_id && !(await clientVisible(trx, ref))) throw notFound();
+        const clientId = task.client_id ?? ref ?? null;
+        const reportId = input.reportRefs[0];
+        if (reportId && (!clientId || !(await reportOfClient(trx, reportId, clientId))))
+          throw notFound();
+        const twinRefs = input.twinRefs ?? [];
+        if (twinRefs.length || input.followUpItemId) {
+          if (!clientId) throw notFound();
+          await checkTwinRefs(trx, ctx, clientId, twinRefs, input.followUpItemId);
+        }
+        await checkVisitRefs(trx, clientId, input.materialRefs ?? [], input.visitId);
+        await checkLibraryRefs(trx, input.libraryRefs ?? []);
+      },
+      this.libraryVisibility(),
+    );
+  }
+
+  /** 客户的健康史（问一问只用来比对过敏原和运动安全规则，不进提示词）；看不到的客户为空 */
+  clientHealthHistory(ctx: TenantContext, clientId: string): Promise<HealthHistoryEntry[]> {
+    return withTenant(this.db, ctx, (trx) => healthHistory(trx, clientId));
+  }
+
+  /** 方案库预览开关打开时，待审定的条目也能 @（行级安全按会话设置放行，同 /方案生成 的候选） */
+  private libraryVisibility() {
+    return { planLibraryPreview: this.config.planLibraryPreview };
+  }
+
+  /**
+   * 问一问 @ 的库条目的内容（M5 规格 2.11）：按当前健管师能看到的条目读（行级安全和预览开关），
+   * 按 @ 的顺序；发消息后被停用的条目不在里面
+   */
+  libraryItems(ctx: TenantContext, refs: readonly LibraryRef[]): Promise<LibraryItemRow[]> {
+    if (!refs.length) return Promise.resolve([]);
+    return withTenant(
+      this.db,
+      ctx,
+      async (trx) => {
+        const recipeIds = refs.filter((r) => r.type === 'recipe').map((r) => r.id);
+        const exerciseIds = refs.filter((r) => r.type === 'exercise').map((r) => r.id);
+        const [recipes, exercises] = await Promise.all([
+          recipeIds.length
+            ? trx
+                .selectFrom('plan_library_recipes')
+                .select([
+                  'id',
+                  'name',
+                  'meal_types',
+                  'tags',
+                  'allergens',
+                  'ingredients',
+                  'steps',
+                  'nutrition_per_serving',
+                ])
+                .where('id', 'in', recipeIds)
+                .execute()
+            : [],
+          exerciseIds.length
+            ? trx
+                .selectFrom('plan_library_exercises')
+                .select([
+                  'id',
+                  'name',
+                  'category',
+                  'intensity',
+                  'steps',
+                  'key_points',
+                  'manager_cautions',
+                ])
+                .where('id', 'in', exerciseIds)
+                .execute()
+            : [],
+        ]);
+        const byId = new Map<string, LibraryItemRow>();
+        for (const r of recipes) {
+          byId.set(r.id, {
+            type: 'recipe',
+            id: r.id,
+            name: r.name,
+            mealTypes: r.meal_types as MealType[],
+            tags: r.tags as LibraryTag[],
+            allergens: r.allergens as Allergen[],
+            ingredients: (r.ingredients as { name: string; householdAmount: string }[]).map(
+              (i) => ({ name: i.name, householdAmount: i.householdAmount }),
+            ),
+            steps: r.steps as string[],
+            energyKcal:
+              (r.nutrition_per_serving as { energyKcal?: number } | null)?.energyKcal ?? null,
+          });
+        }
+        for (const e of exercises) {
+          byId.set(e.id, {
+            type: 'exercise',
+            id: e.id,
+            name: e.name,
+            category: e.category as ExerciseCategory,
+            intensity: e.intensity as 'low' | 'moderate',
+            steps: e.steps as string[],
+            keyPoints: e.key_points as string[],
+            managerCautions: e.manager_cautions,
+          });
+        }
+        return refs.flatMap((r) => {
+          const item = byId.get(r.id);
+          return item && item.type === r.type ? [item] : [];
+        });
+      },
+      this.libraryVisibility(),
+    );
   }
 
   /**
@@ -244,132 +375,143 @@ export class WorkbenchRepository {
       visitId?: string;
       /** “请专家看看”：只用于生成任务标题 */
       twinConsult?: boolean;
+      /** 问一问 @ 的库条目：必须是当前健管师能看到的条目 */
+      libraryRefs?: LibraryRef[];
     },
     claim: (taskId: string) => boolean,
   ): Promise<PreparedTurn> {
-    return withTenant(this.db, ctx, async (trx) => {
-      const task = await lockTask(trx, input.taskId);
-      let clientId = task.client_id;
-      const ref = input.clientRefs[0];
-      if (ref) {
-        // 每个任务只关联一位客户（Q6）；看不到的客户和别的客户都按“不存在”处理
-        if (clientId && ref !== clientId) throw notFound();
-        if (!clientId) {
-          // 锁住客户行：同时进行的转出要等这里提交后才执行，触发器就能看到并断开这个任务；
-          // 转出已经提交的话，等锁后重新按行级安全判断，读不到，返回 404
-          if (!(await clientVisible(trx, ref, true))) throw notFound();
-          await trx
-            .updateTable('tasks')
-            .set({ client_id: ref })
-            .where('id', '=', task.id)
-            .execute();
-          clientId = ref;
+    return withTenant(
+      this.db,
+      ctx,
+      async (trx) => {
+        const task = await lockTask(trx, input.taskId);
+        let clientId = task.client_id;
+        const ref = input.clientRefs[0];
+        if (ref) {
+          // 每个任务只关联一位客户（Q6）；看不到的客户和别的客户都按“不存在”处理
+          if (clientId && ref !== clientId) throw notFound();
+          if (!clientId) {
+            // 锁住客户行：同时进行的转出要等这里提交后才执行，触发器就能看到并断开这个任务；
+            // 转出已经提交的话，等锁后重新按行级安全判断，读不到，返回 404
+            if (!(await clientVisible(trx, ref, true))) throw notFound();
+            await trx
+              .updateTable('tasks')
+              .set({ client_id: ref })
+              .where('id', '=', task.id)
+              .execute();
+            clientId = ref;
+          }
         }
-      }
-      if (input.requiresClient && !clientId) throw badRequest();
-      // @ 引用的报告必须是任务关联客户的已核对报告，并且对当前健管师可见（规格 2.6）；
-      // 待核对的识别结果不在 health_reports 里，同样按“不存在”处理
-      const reportId = input.reportRefs[0] ?? null;
-      if (reportId) {
-        if (!clientId) throw notFound();
-        const report = await trx
-          .selectFrom('health_reports')
-          .select('id')
-          .where('id', '=', reportId)
-          .where('client_id', '=', clientId)
-          .executeTakeFirst();
-        if (!report) throw notFound();
-      }
-      // 用报告的技能没有 @ 报告时用最近一份已核对报告；一份都没有时，必须要报告的技能提示
-      // 先上传并核对（规格 2.6），报告可选的技能（/面谈提纲）按档案生成
-      const usesReport = input.requiresReport || Boolean(input.usesReport);
-      const usedReportId =
-        reportId ?? (usesReport && clientId ? await latestReportId(trx, clientId) : null);
-      if (input.requiresReport && !usedReportId) throw noVerifiedReport();
-      // 孪生项、跟进项都按任务关联的客户校验（行级安全只看得到本人的客户和跟进项）；
-      // 不通过一律 404，在占用任务、调用任何模型之前（M4 规格 7.2）
-      const twinRefs = input.twinRefs ?? [];
-      if (twinRefs.length || input.followUpItemId) {
-        if (!clientId) throw notFound();
-        await checkTwinRefs(trx, ctx, clientId, twinRefs, input.followUpItemId);
-      }
-      if (input.requiresTwinData && clientId && !(await hasTwinData(trx, clientId))) {
-        throw noTwinData();
-      }
-      if (input.requiresPlanData && clientId && !(await hasPlanData(trx, clientId))) {
-        throw noPlanData();
-      }
-      // 素材和随访都按任务关联的客户校验（行级安全只看得到本人上传的素材）
-      await checkVisitRefs(trx, clientId, input.materialRefs ?? [], input.visitId);
-      if (!claim(task.id)) throw conflict({ reasons: ['busy'] });
+        if (input.requiresClient && !clientId) throw badRequest();
+        // @ 引用的报告必须是任务关联客户的已核对报告，并且对当前健管师可见（规格 2.6）；
+        // 待核对的识别结果不在 health_reports 里，同样按“不存在”处理
+        const reportId = input.reportRefs[0] ?? null;
+        if (reportId) {
+          if (!clientId) throw notFound();
+          const report = await trx
+            .selectFrom('health_reports')
+            .select('id')
+            .where('id', '=', reportId)
+            .where('client_id', '=', clientId)
+            .executeTakeFirst();
+          if (!report) throw notFound();
+        }
+        // 用报告的技能没有 @ 报告时用最近一份已核对报告；一份都没有时，必须要报告的技能提示
+        // 先上传并核对（规格 2.6），报告可选的技能（/面谈提纲）按档案生成
+        const usesReport = input.requiresReport || Boolean(input.usesReport);
+        const usedReportId =
+          reportId ?? (usesReport && clientId ? await latestReportId(trx, clientId) : null);
+        if (input.requiresReport && !usedReportId) throw noVerifiedReport();
+        // 孪生项、跟进项都按任务关联的客户校验（行级安全只看得到本人的客户和跟进项）；
+        // 不通过一律 404，在占用任务、调用任何模型之前（M4 规格 7.2）
+        const twinRefs = input.twinRefs ?? [];
+        if (twinRefs.length || input.followUpItemId) {
+          if (!clientId) throw notFound();
+          await checkTwinRefs(trx, ctx, clientId, twinRefs, input.followUpItemId);
+        }
+        if (input.requiresTwinData && clientId && !(await hasTwinData(trx, clientId))) {
+          throw noTwinData();
+        }
+        if (input.requiresPlanData && clientId && !(await hasPlanData(trx, clientId))) {
+          throw noPlanData();
+        }
+        // 素材和随访都按任务关联的客户校验（行级安全只看得到本人上传的素材）
+        await checkVisitRefs(trx, clientId, input.materialRefs ?? [], input.visitId);
+        const libraryRefs = input.libraryRefs ?? [];
+        await checkLibraryRefs(trx, libraryRefs);
+        if (!claim(task.id)) throw conflict({ reasons: ['busy'] });
 
-      await closeStaleTurns(trx, task.id);
-      // 发了新消息，之前没确认的计划视为“修改计划”
-      await trx
-        .updateTable('task_plans')
-        .set({ status: 'revised' })
-        .where('status', '=', 'proposed')
-        .where('message_id', 'in', (eb) =>
-          eb.selectFrom('task_messages').select('id').where('task_id', '=', task.id),
-        )
-        .execute();
+        await closeStaleTurns(trx, task.id);
+        // 发了新消息，之前没确认的计划视为“修改计划”
+        await trx
+          .updateTable('task_plans')
+          .set({ status: 'revised' })
+          .where('status', '=', 'proposed')
+          .where('message_id', 'in', (eb) =>
+            eb.selectFrom('task_messages').select('id').where('task_id', '=', task.id),
+          )
+          .execute();
 
-      const now = Date.now();
-      const scope = tenantScope(ctx);
-      const manager = await trx
-        .insertInto('task_messages')
-        .values({
-          ...scope,
-          task_id: task.id,
-          role: 'manager',
+        const now = Date.now();
+        const scope = tenantScope(ctx);
+        const manager = await trx
+          .insertInto('task_messages')
+          .values({
+            ...scope,
+            task_id: task.id,
+            role: 'manager',
+            mode: input.mode,
+            content: input.content,
+            skill_id: input.skillId ?? null,
+            client_refs: clientId && ref ? [clientId] : [],
+            report_refs: reportId ? [reportId] : [],
+            expert_refs: input.expertRefs ?? [],
+            excluded_experts: input.excludedExperts ?? [],
+            twin_refs: JSON.stringify(twinRefs),
+            plan_options: input.planOptions ? JSON.stringify(input.planOptions) : null,
+            material_refs: input.materialRefs ?? [],
+            library_refs: JSON.stringify(libraryRefs),
+            status: 'complete',
+            created_at: new Date(now),
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        const assistant = await insertAssistant(
+          trx,
+          ctx,
+          task.id,
+          input.mode,
+          input.skillId,
+          now + 1,
+        );
+        await trx
+          .updateTable('tasks')
+          .set({ updated_at: new Date() })
+          .where('id', '=', task.id)
+          .execute();
+        // 任务还没有标题时按这一轮生成标题（如“为王测试生成近况小结”），健管师改过名的不动
+        await applyAutoTitle(trx, task, clientId, {
           mode: input.mode,
+          skillId: input.skillId ?? null,
           content: input.content,
-          skill_id: input.skillId ?? null,
-          client_refs: clientId && ref ? [clientId] : [],
-          report_refs: reportId ? [reportId] : [],
-          expert_refs: input.expertRefs ?? [],
-          excluded_experts: input.excludedExperts ?? [],
-          twin_refs: JSON.stringify(twinRefs),
-          plan_options: input.planOptions ? JSON.stringify(input.planOptions) : null,
-          material_refs: input.materialRefs ?? [],
-          status: 'complete',
-          created_at: new Date(now),
-        })
-        .returning('id')
-        .executeTakeFirstOrThrow();
-      const assistant = await insertAssistant(
-        trx,
-        ctx,
-        task.id,
-        input.mode,
-        input.skillId,
-        now + 1,
-      );
-      await trx
-        .updateTable('tasks')
-        .set({ updated_at: new Date() })
-        .where('id', '=', task.id)
-        .execute();
-      // 任务还没有标题时按这一轮生成标题（如“为王测试生成近况小结”），健管师改过名的不动
-      await applyAutoTitle(trx, task, clientId, {
-        mode: input.mode,
-        skillId: input.skillId ?? null,
-        content: input.content,
-        twinConsult: Boolean(input.twinConsult),
-        twinRefs,
-        expertIds: task.expert_id ? [task.expert_id] : (input.expertRefs ?? []),
-      });
-      return {
-        taskId: task.id,
-        clientId,
-        reportId: usedReportId,
-        managerMessageId: manager.id,
-        assistantMessageId: assistant,
-        expertId: task.expert_id,
-        twinRefs,
-        followUpItemId: input.followUpItemId ?? null,
-      };
-    });
+          twinConsult: Boolean(input.twinConsult),
+          twinRefs,
+          expertIds: task.expert_id ? [task.expert_id] : (input.expertRefs ?? []),
+        });
+        return {
+          taskId: task.id,
+          clientId,
+          reportId: usedReportId,
+          managerMessageId: manager.id,
+          assistantMessageId: assistant,
+          expertId: task.expert_id,
+          twinRefs,
+          followUpItemId: input.followUpItemId ?? null,
+          libraryRefs,
+        };
+      },
+      this.libraryVisibility(),
+    );
   }
 
   /** 确认计划（规格 3.3）：计划必须是这个任务里待确认的那份 */
@@ -1178,6 +1320,34 @@ export function ageBand(birthYear: number | null, now = new Date()): string | nu
 const noVerifiedReport = () => conflict({ reasons: ['no_verified_report'] });
 const noTwinData = () => conflict({ reasons: ['no_twin_data'] });
 const noPlanData = () => conflict({ reasons: ['no_plan_data'] });
+
+/**
+ * 问一问 @ 的库条目（M5 规格 2.11）：当前健管师能看到的条目（已发布；预览环境含待审定，行级安全
+ * 和预览开关决定）。看不到的一律 404，在占用任务、调用任何模型之前
+ */
+async function checkLibraryRefs(
+  trx: TenantTransaction,
+  refs: readonly LibraryRef[],
+): Promise<void> {
+  const recipeIds = refs.filter((r) => r.type === 'recipe').map((r) => r.id);
+  const exerciseIds = refs.filter((r) => r.type === 'exercise').map((r) => r.id);
+  if (recipeIds.length) {
+    const rows = await trx
+      .selectFrom('plan_library_recipes')
+      .select('id')
+      .where('id', 'in', recipeIds)
+      .execute();
+    if (rows.length !== new Set(recipeIds).size) throw notFound();
+  }
+  if (exerciseIds.length) {
+    const rows = await trx
+      .selectFrom('plan_library_exercises')
+      .select('id')
+      .where('id', 'in', exerciseIds)
+      .execute();
+    if (rows.length !== new Set(exerciseIds).size) throw notFound();
+  }
+}
 
 /**
  * @ 的随访素材、关联的随访都要是任务关联客户的（素材还要是本人上传的、原文还在，行级安全只看得到本人的）；

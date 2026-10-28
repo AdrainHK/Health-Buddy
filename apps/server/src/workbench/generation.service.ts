@@ -26,12 +26,15 @@ import {
   type TaskStep,
   type TaskStreamEvent,
   type TwinRef,
+  allergenConflicts,
   planOptionsSchema,
+  type LibraryRef,
   type PlanOptions,
 } from '@health-buddy/shared';
 import {
   ASK_NOTICE,
   askSystemPrompt,
+  asksAboutLibrary,
   buildAskUserContent,
   buildSystemPrompt,
   CRISIS_HEADER,
@@ -53,6 +56,9 @@ import {
   PLAN_SECTION_ZH,
   planFreeTexts,
   redactPlanContext,
+  type AskLibraryItem,
+  type AskPlanExtras,
+  type ClientSnapshot,
 } from '@health-buddy/skills';
 import { LLM_GATEWAY, type AppGateway } from '../ai/gateway.provider.js';
 import type { TenantContext } from '../db/database.js';
@@ -544,6 +550,8 @@ export class GenerationService {
       managerMessageId: string;
       /** @ 引用的孪生项（M4 规格 2.8），回答以它们为主 */
       twinRefs?: readonly TwinRef[];
+      /** @ 引用的库条目（M5 规格 2.11），已校验能看到 */
+      libraryRefs?: readonly LibraryRef[];
     },
     request: { mode: TaskMode; content: string },
     io: TurnIo,
@@ -570,8 +578,22 @@ export class GenerationService {
       if (client && !twin)
         return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
 
-      const step = await steps.start('answer', 'steps.answer');
       const redact = (t: string) => redactClientIdentity(t, client?.identifiers ?? []);
+      // M5 规格 2.11：读当前方案、执行情况和最近的随访记录；问到吃什么、怎么运动时读候选条目；
+      // @食谱、@动作 时读这个条目
+      const extras = await this.readAskPlan(
+        ctx,
+        turn.clientId && client ? { id: turn.clientId, snapshot: client.snapshot } : null,
+        turn.libraryRefs ?? [],
+        request.content,
+        steps,
+      );
+      const askExtras: AskPlanExtras = {
+        ...extras,
+        ...(extras.plan ? { plan: redactPlanContext(extras.plan, redact) } : {}),
+      };
+
+      const step = await steps.start('answer', 'steps.answer');
       // 手动调整的理由、跟进备注也去标识（M4 规格 5.4 第 6 条）
       const snapshot = client
         ? redactAskClient({ ...client.snapshot, twin: twin ?? null }, redact)
@@ -582,7 +604,7 @@ export class GenerationService {
         content: redact(m.content),
       }));
       const question = redact(request.content);
-      const userContent = buildAskUserContent(snapshot, question);
+      const userContent = buildAskUserContent(snapshot, question, askExtras);
 
       // 固定的提醒由后端拼在开头，不依赖模型；模型拒答时也保留
       // 孪生里手动调整理由、跟进备注的原文（去标识之前）也算（M4 规格 5.4 第 7 条）
@@ -590,6 +612,8 @@ export class GenerationService {
         request.content,
         ...(await this.repo.managerTexts(ctx, turn.taskId)),
         ...twinFreeTexts(twin),
+        // 随访记录的原文（去标识之前）里的危机、急症描述也算
+        ...(extras.plan ? planFreeTexts(extras.plan) : []),
       ];
       const crisis = detectCrisisKeywords(signalTexts);
       const emergency = detectEmergencyKeywords(signalTexts);
@@ -604,7 +628,7 @@ export class GenerationService {
         ctx,
         {
           route: 'chat',
-          system: askSystemPrompt(snapshot),
+          system: askSystemPrompt(snapshot, askExtras),
           messages: [...history, { role: 'user', content: userContent }],
           maxOutputTokens: 4000,
         },
@@ -650,6 +674,82 @@ export class GenerationService {
       await steps.failRunning();
       await this.fail(ctx, messageId, withAskNotice(text), err, io);
     }
+  }
+
+  /**
+   * 问一问读方案和方案库（M5 规格 2.11）：引用了客户时读当前方案、执行情况、最近的随访记录，
+   * 问到吃什么、怎么运动时再读按过敏史和运动安全规则筛过的候选条目；@ 的库条目读全部内容，
+   * 过敏原冲突和运动安全规则由后端算好写进资料。客户资料里有疑似急症信号时运动按需先就医评估处理。
+   */
+  private async readAskPlan(
+    ctx: TenantContext,
+    client: { id: string; snapshot: ClientSnapshot } | null,
+    libraryRefs: readonly LibraryRef[],
+    question: string,
+    steps: StepRunner,
+  ): Promise<AskPlanExtras> {
+    const extras: AskPlanExtras = {};
+    // 问一问的客户资料不带健康史；过敏史和运动安全规则要看健康史，只在这里比对，不进提示词
+    const snapshot = client
+      ? {
+          ...client.snapshot,
+          healthHistory: await this.repo.clientHealthHistory(ctx, client.id),
+        }
+      : null;
+    const allergyTexts = snapshot ? allergyTextsOf(snapshot) : [];
+    let restriction = snapshot ? exerciseRestriction(snapshot) : null;
+    if (client) {
+      const read = await steps.start('read_care_plan', 'steps.readCarePlan');
+      const { library, ...plan } = await this.repo.planContext(ctx, client.id, {
+        schedule: false,
+        adherence: true,
+        ...(asksAboutLibrary(question)
+          ? {
+              library: {
+                options: planOptionsSchema.parse({}),
+                allergyTexts,
+                restriction,
+              },
+            }
+          : {}),
+        riskTier: null,
+        hasUrgentFollowUp: false,
+        tzFallback: 'Asia/Shanghai',
+      });
+      await steps.finish(read, 'done');
+      extras.plan = plan;
+      // 问题、随访记录、健康史里有疑似急症信号时，运动一律按需先就医评估处理（候选和 @ 的动作都是）
+      const emergency = detectEmergencyKeywords([
+        question,
+        ...plan.recentRecords.flatMap((r) => [r.summary, ...r.agreements]),
+        ...(snapshot?.healthHistory ?? []).map((h) => h.content),
+      ]);
+      if (emergency && !restriction) restriction = '有疑似急症信号';
+      if (library) {
+        extras.candidates =
+          restriction && !library.exerciseRestriction
+            ? restrictExercise(library, restriction)
+            : library;
+        restriction = extras.candidates.exerciseRestriction;
+      }
+    } else if (detectEmergencyKeywords([question])) {
+      restriction = '有疑似急症信号';
+    }
+    if (libraryRefs.length) {
+      const rows = await this.repo.libraryItems(ctx, libraryRefs);
+      extras.libraryItems = rows.map((row): AskLibraryItem => {
+        if (row.type === 'recipe') {
+          const conflicts = allergenConflicts(allergyTexts, [row]).map((c) => c.allergen);
+          return { ...row, conflicts: [...new Set(conflicts)] };
+        }
+        return { ...row, restriction };
+      });
+    }
+    if (extras.candidates || extras.libraryItems?.length) {
+      const step = await steps.start('select_library_items', 'steps.readLibraryItems');
+      await steps.finish(step, 'done');
+    }
+    return extras;
   }
 
   /**

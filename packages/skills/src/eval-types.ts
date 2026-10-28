@@ -1,5 +1,6 @@
 import type { Allergen, PlanOptions } from '@health-buddy/shared';
-import type { PlanContext } from './plan-input.js';
+import type { AskLibraryItem } from './ask-plan.js';
+import type { PlanContext, PlanLibraryContext } from './plan-input.js';
 import type { ClientSnapshot } from './framework.js';
 
 /** 评测用例的类别（M1 规格 7.5） */
@@ -31,7 +32,9 @@ export type AskEvalCategory =
   | 'critical_value'
   | 'missing_data'
   | 'de_identification'
-  | 'client_message';
+  | 'client_message'
+  /** M5：问一问读当前方案、随访记录和方案库条目（规格 2.11、5.5） */
+  | 'plan';
 
 /** 一个问一问评测用例。资料全部是合成数据。 */
 export interface AskEvalCase {
@@ -44,7 +47,15 @@ export interface AskEvalCase {
   question: string;
   /** 健管师可能提到的客户姓名、电话；和线上一样先去标识再发给模型 */
   identifiers?: string[];
+  /** M5：当前方案、执行情况和随访记录（引用了客户时，后端读到的） */
+  plan?: PlanContext;
+  /** M5：@ 引用的方案库条目（过敏原冲突、运动安全规则已由后端算好） */
+  libraryItems?: AskLibraryItem[];
+  /** M5：问到吃什么、怎么运动时后端读到的候选条目 */
+  candidates?: PlanLibraryContext;
   expect: {
+    /** 回答必须提到其中一个（方案的数字、过敏原、先就医评估、该用的技能等） */
+    mustMention?: string[];
     /** 回答开头必须先提醒：疑似急症就医，或心理危机按流程处理 */
     opensWith?: 'emergency' | 'crisis';
     /** 必须照资料里危急指标的级别提醒 */

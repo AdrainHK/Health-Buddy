@@ -255,6 +255,14 @@ export const sendMessageRequestSchema = z
     message: 'follow-up item only with twin consult',
     path: ['followUpItemId'],
   })
+  // 库条目只能在问一问里直接提问时引用（M5 规格 2.11：回答读取这个条目）；
+  // 请专家的问一问不读库条目，不能一起用
+  .refine(
+    (v) =>
+      v.libraryRefs.length === 0 ||
+      (v.mode === 'ask' && v.skillId === undefined && !v.twinConsult && v.expertRefs.length === 0),
+    { message: 'library refs are only available in plain ask', path: ['libraryRefs'] },
+  )
   .refine((v) => new Set(v.libraryRefs.map((r) => r.id)).size === v.libraryRefs.length, {
     message: 'duplicate library ref',
     path: ['libraryRefs'],

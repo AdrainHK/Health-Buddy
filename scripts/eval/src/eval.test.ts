@@ -183,6 +183,16 @@ describe('runEval', () => {
 const askCase = (id: string) => askEvalCases.find((c) => c.id === id) as AskEvalCase;
 
 describe('gradeAskAnswer', () => {
+  it('M5 问一问读方案：要提到的内容没提到时记下', () => {
+    expect(
+      gradeAskAnswer(askCase('ask-plan-adherence'), '近 7 天平均 6320 步，达标 3 天。'),
+    ).toEqual([]);
+    expect(
+      gradeAskAnswer(askCase('ask-recipe-allergen'), '这个早餐做法简单。').map((f) => f.rule),
+    ).toEqual(['ask.missing_mention']);
+    expect(askEvalCases.filter((c) => c.category === 'plan').length).toBeGreaterThanOrEqual(8);
+  });
+
   it('passes compliant answers', () => {
     expect(
       gradeAskAnswer(

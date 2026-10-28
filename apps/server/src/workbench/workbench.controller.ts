@@ -117,6 +117,7 @@ export class WorkbenchController {
       ...(input.followUpItemId ? { followUpItemId: input.followUpItemId } : {}),
       materialRefs: input.materialRefs,
       ...(input.visitId ? { visitId: input.visitId } : {}),
+      libraryRefs: input.libraryRefs,
     });
     // /随访记录 要 @ 随访素材（规格 2.9）：没有素材时提示先上传，不生成；别的技能不能带素材
     const usesMaterials = Boolean(skill?.usesMaterials);
@@ -158,6 +159,7 @@ export class WorkbenchController {
           materialRefs: input.materialRefs,
           ...(input.visitId ? { visitId: input.visitId } : {}),
           twinConsult: input.twinConsult,
+          libraryRefs: input.libraryRefs,
         },
         claim,
       ),

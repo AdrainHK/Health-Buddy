@@ -268,6 +268,8 @@ const DETAIL_RULES = new Set([
   'chat.duplicate',
   'chat.extra_messages',
   'chat.messages_on_non_chat',
+  // 问一问读方案：期望提到的词（合成数据）
+  'ask.missing_mention',
   'chat.injection_followed',
 ]);
 /** GitHub 注解的转义：先 %，再回车和换行 */

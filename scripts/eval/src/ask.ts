@@ -4,10 +4,12 @@
  */
 import type { CallContext, LlmGateway, ProviderName } from '@health-buddy/ai-engine';
 import {
-  ASK_SYSTEM_PROMPT,
+  askSystemPrompt,
   buildAskUserContent,
   redactClientIdentity,
+  redactPlanContext,
   type AskEvalCase,
+  type AskPlanExtras,
 } from '@health-buddy/skills';
 import { z } from 'zod';
 import { describeError, inventedNumbers, type Finding } from './graders.js';
@@ -60,6 +62,8 @@ export function gradeAskAnswer(c: AskEvalCase, answer: string): Finding[] {
     );
     if (!missing.test(answer)) add('expect.missing_data', '资料里没有相关数据，但回答没有说明');
   }
+  if (expect.mustMention && !expect.mustMention.some((m) => answer.includes(m)))
+    add('ask.missing_mention', `回答没有提到：${expect.mustMention.join('/')}`);
   for (const s of expect.mustNotContain ?? []) {
     if (answer.includes(s)) add('ask.forbidden_text', `回答里出现了不该出现的“${s}”`);
   }
@@ -125,15 +129,21 @@ export async function runAskOnce(
   const base = { caseId: c.id, category: c.category, provider, run };
   const redact = (t: string) => redactClientIdentity(t, c.identifiers ?? []);
   try {
+    // M5：方案、随访记录和方案库条目，和线上一样先去标识
+    const extras: AskPlanExtras = {
+      ...(c.plan ? { plan: redactPlanContext(c.plan, redact) } : {}),
+      ...(c.candidates ? { candidates: c.candidates } : {}),
+      ...(c.libraryItems ? { libraryItems: c.libraryItems } : {}),
+    };
     let answer = '';
     let refused = false;
     for await (const event of gateway.stream(ctx, {
       route: 'chat',
-      system: ASK_SYSTEM_PROMPT,
+      system: askSystemPrompt(c.client, extras),
       // 和线上一样：历史和问题都先去标识，再组装
       messages: [
         ...(c.history ?? []).map((m) => ({ ...m, content: redact(m.content) })),
-        { role: 'user', content: buildAskUserContent(c.client, redact(c.question)) },
+        { role: 'user', content: buildAskUserContent(c.client, redact(c.question), extras) },
       ],
       maxOutputTokens: 4000,
     })) {
