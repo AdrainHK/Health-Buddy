@@ -1043,7 +1043,8 @@ export class GenerationService {
         forced: options.forced,
         excluded: options.excluded,
         sectionHits,
-        question,
+        // 复用比较的是健管师消息原文（不是拼出来的问题）；方案部分已在请求键里
+        question: run.managerRequest,
       });
       if (recent) return reuse(recent, 'steps.reuseRecentExperts', new Date(recent.createdAt));
     }

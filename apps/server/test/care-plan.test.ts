@@ -266,6 +266,49 @@ describe('/方案生成', () => {
     expect(content.clientFacing).not.toContain('专家');
   });
 
+  it('专家预览开启：10 分钟内同样的方案选项复用专家意见；部分不同时重新请', async () => {
+    const a1 = await loginAs(preview, f.users.managerA1.email);
+    const task = await newTask(a1, { clientId: f.clients.a1[0] });
+    previewProvider.scripts.skill = reply();
+    const body = {
+      mode: 'craft',
+      content: '早上没时间做饭',
+      skillId: 'care-plan',
+      planOptions: OPTIONS,
+    };
+    await send(a1, task, body).expect(200);
+    const experts = () => previewProvider.routes().filter((r) => r.startsWith('expert:')).length;
+    const first = experts();
+    expect(first).toBeGreaterThan(0);
+    const res = await send(a1, task, body).expect(200);
+    expect(experts()).toBe(first);
+    expect(res.text).toContain('steps.reuseRecentExperts');
+    previewProvider.scripts.skill = reply({ sections: [reply().json.sections[0]], exercises: [] });
+    await send(a1, task, { ...body, planOptions: { sections: ['diet'], cycleWeeks: 4 } }).expect(
+      200,
+    );
+    expect(experts()).toBeGreaterThan(first);
+  });
+
+  it('专家预览开启：别人的任务、别人的客户 → 404，不请专家、不写调用记录', async () => {
+    const a1 = await loginAs(preview, f.users.managerA1.email);
+    const task = await newTask(a1, { clientId: f.clients.a1[0] });
+    for (const u of [f.users.managerA2, f.users.managerB1]) {
+      const other = await loginAs(preview, u.email);
+      await send(other, task, { mode: 'craft', content: '', skillId: 'care-plan' }).expect(404);
+    }
+    const t = await newTask(a1);
+    await send(a1, t, {
+      mode: 'craft',
+      content: '',
+      skillId: 'care-plan',
+      clientRefs: [f.clients.b1],
+    }).expect(404);
+    expect(previewProvider.calls).toHaveLength(0);
+    const rows = await owner.selectFrom('expert_consultations').select('id').execute();
+    expect(rows).toHaveLength(0);
+  });
+
   it('专家预览开启：运动康复专家建议尽快就医时，运动部分按安全规则处理', async () => {
     const a1 = await loginAs(preview, f.users.managerA1.email);
     const task = await newTask(a1, { clientId: f.clients.a1[0] });

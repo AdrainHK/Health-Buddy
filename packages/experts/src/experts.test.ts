@@ -768,6 +768,20 @@ describe('rendering for managers only', () => {
     expect(professional).not.toContain('晚餐少吃甜食');
     expect(rewritable).toContain('- 晚餐少吃甜食。');
     expect(rewritable).not.toMatch(/复查|快走|内分泌科|nutrition/);
+    // “需尽快就医”的转介同样不给可改写的建议（M5 规格 2.5）
+    const referred = consultationDigest(
+      [
+        {
+          expertId: 'exercise-rehab',
+          opinion: {
+            ...calm,
+            referral: { needed: true, urgency: 'urgent' as const, to: '心内科医生', reason: null },
+          },
+        },
+      ],
+      (id) => id,
+    );
+    expect(referred.split('第二部分')[1]).not.toContain('晚餐少吃甜食');
     // 有信号的意见都没有可改写的建议时写“没有”
     const none = consultationDigest([{ expertId: 'nutrition', opinion }], (id) => id);
     expect(none.split('第二部分')[1]).toContain('（没有）');
