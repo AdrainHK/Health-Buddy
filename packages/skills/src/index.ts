@@ -97,3 +97,5 @@ export {
   type VisitRecordOutput,
 } from './visit-record/index.js';
 export { carePlanEvalCases } from './care-plan/evals/cases.js';
+export { visitScriptEvalCases } from './visit-script/evals/cases.js';
+export { visitRecordEvalCases } from './visit-record/evals/cases.js';

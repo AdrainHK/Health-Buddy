@@ -13,6 +13,8 @@ import {
   type TwinSummaryEvalCase,
   type CarePlanEvalCase,
   type VisitScheduleEvalCase,
+  type VisitRecordEvalCase,
+  type VisitScriptEvalCase,
 } from '@health-buddy/skills';
 import type { ExpertEvalCase, RoutingEvalCase, SynthesisEvalCase } from '@health-buddy/experts';
 import { runAskOnce } from './ask.js';
@@ -23,6 +25,7 @@ import { judgeClientText } from './judge.js';
 import { runPlanOnce, runReportSkillOnce } from './report-skills.js';
 import { runCarePlanOnce, runVisitScheduleOnce } from './plans.js';
 import { runTwinAskOnce, runTwinSummaryOnce } from './twin.js';
+import { runVisitRecordOnce, runVisitScriptOnce } from './visits.js';
 
 export interface RunResult {
   caseId: string;
@@ -37,7 +40,10 @@ export interface RunResult {
 /**
  * 只记录、不算失败的规则：评审模型拒答（未评）。汇总里照样列出，方便看有多少次没评上。
  */
-export const INFO_RULES: ReadonlySet<string> = new Set(['judge.twin.unavailable']);
+export const INFO_RULES: ReadonlySet<string> = new Set([
+  'judge.twin.unavailable',
+  'judge.record.unavailable',
+]);
 
 /** 这次运行是否通过：没有问题，或只有 INFO_RULES 里的记录 */
 export function runPassed(r: Pick<RunResult, 'findings'>): boolean {
@@ -308,6 +314,47 @@ export async function runCarePlanEval(options: {
     Array.from(
       { length: options.runs },
       (_, i) => () => runCarePlanOnce(options.gateway, EVAL_CTX, options.provider, c, i + 1),
+    ),
+  );
+  return runPool(jobs, 3);
+}
+
+/** /随访话术 评测（M5 规格 5.5，--suite visit-script） */
+export async function runVisitScriptEval(options: {
+  gateway: LlmGateway;
+  provider: ProviderName;
+  cases: readonly VisitScriptEvalCase[];
+  runs: number;
+}): Promise<RunResult[]> {
+  const jobs = options.cases.flatMap((c) =>
+    Array.from(
+      { length: options.runs },
+      (_, i) => () => runVisitScriptOnce(options.gateway, EVAL_CTX, options.provider, c, i + 1),
+    ),
+  );
+  return runPool(jobs, 3);
+}
+
+/** /随访记录 评测（M5 规格 5.5，--suite visit-record）：规则检查，开了评审时部分类别加大模型评审 */
+export async function runVisitRecordEval(options: {
+  gateway: LlmGateway;
+  provider: ProviderName;
+  cases: readonly VisitRecordEvalCase[];
+  runs: number;
+  useJudge?: boolean;
+}): Promise<RunResult[]> {
+  const jobs = options.cases.flatMap((c) =>
+    Array.from(
+      { length: options.runs },
+      (_, i) => () =>
+        runVisitRecordOnce(
+          options.gateway,
+          EVAL_CTX,
+          options.provider,
+          c,
+          i + 1,
+          options.useJudge ?? false,
+        ),
     ),
   );
   return runPool(jobs, 3);

@@ -85,7 +85,10 @@ export function visitRecordMedicationTexts(output: VisitRecordOutput): string[] 
   return output.feedback.filter((f) => f.topic === 'medication').flatMap((f) => f.items);
 }
 
-/** 其余模型写的文字（不能点名药物、不能下疾病判断） */
+/**
+ * 其余模型写的文字（不能点名药物、不能出现疾病名称）。建议更新健康史的条目照抄客户说的事实
+ * （“父亲有高血压”“长期服用氨氯地平”），不在这里，见 checkOutput
+ */
 export function visitRecordOtherTexts(output: VisitRecordOutput): string[] {
   return [
     output.summary,
@@ -93,8 +96,6 @@ export function visitRecordOtherTexts(output: VisitRecordOutput): string[] {
     ...output.planProgress,
     ...output.agreements,
     ...output.attentionPoints,
-    // 用药史的条目照抄客户说的事实（可以有药名），同用药情况一样只查禁用词
-    ...output.historySuggestions.filter((h) => h.category !== 'medication').map((h) => h.content),
     ...output.openQuestions,
     ...output.notes,
   ];
@@ -148,6 +149,14 @@ export function visitRecordStructured(output: VisitRecordOutput): VisitRecordStr
   });
 }
 
+function bannedIssues(text: string): WordingIssue[] {
+  return findBannedTerms(text).map((b) => ({
+    category: 'banned_term' as const,
+    term: b.term,
+    index: b.index,
+  }));
+}
+
 function list(items: readonly string[]): string[] {
   return items.length ? items.map((i) => `- ${i}`) : ['- 没有提到'];
 }
@@ -155,9 +164,9 @@ function list(items: readonly string[]): string[] {
 const WORDING_NOTE: Partial<Record<WordingCategory, string>> = {
   banned_term: '记录里出现了禁用词（如“诊断”“筛查”“治愈”“根治”“确诊”）',
   presumed_disease:
-    '记录里把客户的描述写成了疾病名称；改写成“客户询问……相关问题”或照抄客户说的感受',
+    '疾病名称只能出现在“建议更新健康史”的既往史、家族史条目里；其他地方改写成“客户询问……相关问题”“客户提到家族史（见建议更新健康史）”或照抄客户说的感受',
   judgment: '记录里用了“疑似”“患有”“风险”这类判断说法',
-  drug_name: '药名只能出现在“用药情况”一组；其他地方写“用药调整请客户与医生确认”',
+  drug_name: '药名只能出现在“用药情况”一组和用药史条目里；其他地方写“用药调整请客户与医生确认”',
   drug_advice: '记录里出现了用药建议或剂量；客户说的用药只记录在“用药情况”一组，不评价',
 };
 
@@ -240,17 +249,13 @@ export const visitRecord: SkillDefinition<typeof visitRecordOutputSchema> = {
     const issues: WordingIssue[] = [];
     for (const t of visitRecordOtherTexts(output)) issues.push(...checkWhyWording(t));
     // 客户自己说的用药情况：可以有药名和“减少了”，只查禁用词
-    const quoted = [
-      ...visitRecordMedicationTexts(output),
-      ...output.historySuggestions.filter((h) => h.category === 'medication').map((h) => h.content),
-    ];
-    for (const t of quoted) {
+    for (const t of visitRecordMedicationTexts(output)) issues.push(...bannedIssues(t));
+    // 健康史条目：可以有客户说的病名、药名，但不能有禁用词和“疑似”“风险”这类判断说法
+    for (const h of output.historySuggestions) {
       issues.push(
-        ...findBannedTerms(t).map((b) => ({
-          category: 'banned_term' as const,
-          term: b.term,
-          index: b.index,
-        })),
+        ...checkWhyWording(h.content).filter(
+          (i) => i.category === 'banned_term' || i.category === 'judgment',
+        ),
       );
     }
     return issues;

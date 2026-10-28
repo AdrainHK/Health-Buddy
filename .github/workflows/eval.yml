@@ -43,6 +43,7 @@ jobs:
           - twin-summary,twin-consult
           - visit-schedule
           - care-plan
+          - visit-script,visit-record
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

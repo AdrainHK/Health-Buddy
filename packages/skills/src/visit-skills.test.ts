@@ -192,8 +192,19 @@ describe('/随访记录', () => {
     expect(structured).toMatchObject({ visitDate: null, method: null });
   });
 
-  it('措辞检查：药名只能出现在用药情况；疾病判断和用药建议拦下', () => {
+  it('措辞检查：药名只能出现在用药情况和用药史；病名只能出现在健康史；疾病判断和用药建议拦下', () => {
     expect(visitRecord.checkOutput!(record(), input())).toEqual([]);
+    const history = record({
+      historySuggestions: [
+        { category: 'family_history', content: '父亲有高血压' },
+        { category: 'medication', content: '长期服用氨氯地平' },
+      ],
+    });
+    expect(visitRecord.checkOutput!(history, input())).toEqual([]);
+    const judged = record({
+      historySuggestions: [{ category: 'past_history', content: '疑似糖尿病' }],
+    });
+    expect(visitRecord.checkOutput!(judged, input()).map((i) => i.category)).toEqual(['judgment']);
     const bad = record({
       summary: '客户疑似患有糖尿病，建议把氨氯地平减半。',
     });
