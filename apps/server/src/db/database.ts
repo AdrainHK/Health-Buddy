@@ -51,7 +51,41 @@ export async function withTenant<T>(
         set_config('app.role', ${ctx.role}, true),
         set_config('app.operator_id', ${ctx.operatorId ?? ''}, true),
         set_config('app.org_id', ${ctx.orgId ?? ''}, true),
-        set_config('hb.plan_library_preview', ${options.planLibraryPreview ? 'on' : ''}, true)
+        set_config('hb.plan_library_preview', ${options.planLibraryPreview ? 'on' : ''}, true),
+        set_config('app.device_id', '', true),
+        set_config('app.client_id', '', true)
+    `.execute(trx);
+    return fn(trx);
+  });
+}
+
+/** 伴侣设备的会话上下文（M6 规格 3.4）：后端用设备令牌查出设备和它绑定的客户后才有 */
+export interface DeviceContext {
+  deviceId: string;
+  clientId: string;
+  operatorId: string;
+  orgId: string | null;
+}
+
+/**
+ * 以设备身份执行：app.role = companion_device，只能读写 client_id = app_client_id() 的行。
+ * 已有的业务表都没有给这个角色的策略（默认拒绝）；没有 app.user_id。
+ */
+export async function withDevice<T>(
+  db: Db,
+  ctx: DeviceContext,
+  fn: (trx: TenantTransaction) => Promise<T>,
+): Promise<T> {
+  return db.transaction().execute(async (trx) => {
+    await sql`
+      select
+        set_config('app.user_id', '', true),
+        set_config('app.role', 'companion_device', true),
+        set_config('app.operator_id', ${ctx.operatorId}, true),
+        set_config('app.org_id', ${ctx.orgId ?? ''}, true),
+        set_config('hb.plan_library_preview', '', true),
+        set_config('app.device_id', ${ctx.deviceId}, true),
+        set_config('app.client_id', ${ctx.clientId}, true)
     `.execute(trx);
     return fn(trx);
   });
