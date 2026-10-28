@@ -86,7 +86,7 @@ describe('问一问读方案和方案库', () => {
       .values({
         client_id: clientId,
         category: 'allergy',
-        content: '花生过敏',
+        content: '花生过敏，小时候吃过一次送医',
         created_by: f.users.managerA1.id,
       } as never)
       .execute();
@@ -202,7 +202,7 @@ describe('问一问读方案和方案库', () => {
     expect(prompt()).toContain('### 有氧：合成快走');
     expect(prompt()).toContain('合成注意事项');
     // 健康史原文只用来比对，不进提示词
-    expect(prompt()).not.toContain('花生过敏');
+    expect(prompt()).not.toContain('小时候吃过一次送医');
     const detail = (await a1.get(`/api/tasks/${task}`).expect(200)).body;
     const manager = detail.messages.find((m: { role: string }) => m.role === 'manager');
     expect(manager.libraryRefs).toEqual([
