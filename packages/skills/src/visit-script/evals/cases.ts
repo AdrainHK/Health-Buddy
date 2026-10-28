@@ -131,7 +131,7 @@ export const visitScriptEvalCases: VisitScriptEvalCase[] = [
     client: TWIN_SNAPSHOTS.worsening,
     plan: PLAN,
     managerRequest: '孪生里心血管变黄了，这次重点聊聊',
-    expect: { mustNotContain: ['黄色', '红色', '变黄', '高风险'] },
+    expect: { spokenMustNotContain: ['黄色', '红色', '变黄', '高风险'] },
   },
   // ---------- 危急指标 ----------
   {

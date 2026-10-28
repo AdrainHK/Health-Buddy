@@ -274,6 +274,8 @@ export interface VisitScriptEvalCase {
     referral?: boolean;
     /** 模型写的文字里不能出现的字样 */
     mustNotContain?: string[];
+    /** 说给客户听的话里不能出现的字样（汇总里可以有，如孪生状态的变化） */
+    spokenMustNotContain?: string[];
     /** 问题或 why 里至少提到其中一个词（和方案、约定的事、随访重点相关） */
     questionMentions?: string[];
     /** notes 第一条必须以这句固定的拒绝说明开头；越了几条界时，以其中任一句开头都算 */

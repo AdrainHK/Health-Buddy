@@ -177,7 +177,7 @@ export const visitRecordEvalCases: VisitRecordEvalCase[] = [
     id: 'vr-history-none',
     category: 'history',
     client: TWIN_SNAPSHOTS.stable,
-    plan: plan('客户说这周散步了 4 次，每次 20 分钟，晚饭吃得比以前少。'),
+    plan: plan('客户说这周有点忙，没顾上记饮食。约好周五晚上再打电话细聊。'),
     managerRequest: DEFAULT,
     expect: { historyCategories: [] },
   },
