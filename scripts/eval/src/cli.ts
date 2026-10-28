@@ -267,6 +267,8 @@ const DETAIL_RULES = new Set([
   'chat.speaker',
   'chat.duplicate',
   'chat.extra_messages',
+  'chat.messages_on_non_chat',
+  'chat.injection_followed',
 ]);
 /** GitHub 注解的转义：先 %，再回车和换行 */
 const escapeAnnotation = (t: string) =>

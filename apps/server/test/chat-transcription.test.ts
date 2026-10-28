@@ -128,10 +128,19 @@ describe('聊天截图转写', () => {
       expect(res.status).toBe(422);
       expect(res.body).toMatchObject({ error: 'transcription_failed', reasons: [reason] });
     }
-    provider.queue.push({ error: new Error('upstream exploded') });
+    const logs = [
+      vi.spyOn(Logger.prototype, 'log'),
+      vi.spyOn(Logger.prototype, 'warn'),
+      vi.spyOn(Logger.prototype, 'error'),
+    ];
+    provider.queue.push({ error: new Error('upstream exploded 合成截图原文') });
     const res = await transcribe(a1, f.clients.a1[0], undefined, true);
     expect(res.status).toBe(422);
-    expect(res.body.reasons).toEqual(['error']);
+    expect(res.body).toEqual({ error: 'transcription_failed', reasons: ['error'] });
+    const logged = logs.flatMap((l) => l.mock.calls.map((c) => String(c[0]))).join('\n');
+    expect(logged).toContain('failed:error');
+    expect(logged).not.toContain('合成截图原文');
+    for (const l of logs) l.mockRestore();
   });
 
   it('跨租户访问被拒绝：别人的客户、别的运营商的客户 → 404；非健管师 → 404；都不调用模型', async () => {
