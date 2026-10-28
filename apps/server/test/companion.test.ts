@@ -142,7 +142,9 @@ describe('伴侣设备和设置接口', () => {
       .post(`${a2Url}/device`)
       .send({ serialNo: 'HB-TEST-0001', activationCode: 'ABCD1234' })
       .expect(409)
-      .expect((r) => expect(r.body).toEqual({ error: 'conflict', reason: 'device_unavailable' }));
+      .expect((r) =>
+        expect(r.body).toEqual({ error: 'conflict', reasons: ['device_unavailable'] }),
+      );
     expect(await snapshot()).toEqual(before);
   });
 
@@ -217,14 +219,14 @@ describe('伴侣设备和设置接口', () => {
       agent.post(`${url}/device`).send(body);
     await bind(a1, { serialNo: 'HB-TEST-0001', activationCode: 'ABCD1234' })
       .expect(409)
-      .expect((r) => expect(r.body).toMatchObject({ reason: 'no_consent' }));
+      .expect((r) => expect(r.body).toMatchObject({ reasons: ['no_consent'] }));
     await consent(a1).expect(200);
     await bind(a1, { serialNo: 'HB-TEST-0001', activationCode: 'WRONG999' })
       .expect(409)
-      .expect((r) => expect(r.body).toMatchObject({ reason: 'device_unavailable' }));
+      .expect((r) => expect(r.body).toMatchObject({ reasons: ['device_unavailable'] }));
     await bind(a1, { serialNo: 'HB-NOPE-9999', activationCode: 'ABCD1234' })
       .expect(409)
-      .expect((r) => expect(r.body).toMatchObject({ reason: 'device_unavailable' }));
+      .expect((r) => expect(r.body).toMatchObject({ reasons: ['device_unavailable'] }));
     // 激活码录入时允许空格、连字符和小写
     const ok = await bind(a1, { serialNo: 'HB-TEST-0001', activationCode: 'abcd-1234' }).expect(
       200,
@@ -234,7 +236,7 @@ describe('伴侣设备和设置接口', () => {
     expect(JSON.stringify(ok.body)).not.toContain('HB-TEST-0001');
     await bind(a1, { serialNo: 'HB-TEST-0002', activationCode: 'EFGH5678' })
       .expect(409)
-      .expect((r) => expect(r.body).toMatchObject({ reason: 'already_bound' }));
+      .expect((r) => expect(r.body).toMatchObject({ reasons: ['already_bound'] }));
 
     // 别的协会的健管师拿到序列号和激活码也绑不上，响应和激活码错一样
     const b1 = await as(f.users.managerB1.email);
@@ -242,7 +244,9 @@ describe('伴侣设备和设置接口', () => {
     await consent(b1, bUrl).expect(200);
     await bind(b1, { serialNo: 'HB-TEST-0001', activationCode: 'ABCD1234' }, bUrl)
       .expect(409)
-      .expect((r) => expect(r.body).toEqual({ error: 'conflict', reason: 'device_unavailable' }));
+      .expect((r) =>
+        expect(r.body).toEqual({ error: 'conflict', reasons: ['device_unavailable'] }),
+      );
   });
 
   it('绑定失败太多次 429', async () => {
@@ -312,7 +316,7 @@ describe('伴侣设备和设置接口', () => {
         ],
       })
       .expect(409);
-    expect(dup.body).toMatchObject({ reason: 'duplicate_serials', serials: ['HB-TEST-0001'] });
+    expect(dup.body).toMatchObject({ reasons: ['duplicate_serials'], serials: ['HB-TEST-0001'] });
     await platform
       .post('/api/admin/companion/device-batches')
       .send({ name: '同批重复', devices: [devices[0], devices[0]] })

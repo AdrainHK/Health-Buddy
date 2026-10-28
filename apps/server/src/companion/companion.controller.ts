@@ -151,10 +151,10 @@ export class CompanionController {
     if (result === 'not_found') throw notFound();
     if (result === 'unavailable') {
       this.bindLimiter.recordFailure(session.userId);
-      throw conflict({ reason: 'device_unavailable' });
+      throw conflict({ reasons: ['device_unavailable'] });
     }
-    if (result === 'already_bound') throw conflict({ reason: 'already_bound' });
-    if (result === 'no_consent') throw conflict({ reason: 'no_consent' });
+    if (result === 'already_bound') throw conflict({ reasons: ['already_bound'] });
+    if (result === 'no_consent') throw conflict({ reasons: ['no_consent'] });
     return result;
   }
 
@@ -236,7 +236,7 @@ export class CompanionAdminController {
     if (new Set(serials).size !== serials.length) throw badRequest();
     const result = await this.repo.importBatch(session, data);
     if ('duplicates' in result)
-      throw conflict({ reason: 'duplicate_serials', serials: result.duplicates });
+      throw conflict({ reasons: ['duplicate_serials'], serials: result.duplicates });
     return result;
   }
 
@@ -284,7 +284,7 @@ function consentResult(
 ): CompanionOverview {
   if (result === 'not_found') throw notFound();
   if (result === 'unknown_notice' || result === 'future_date') throw badRequest();
-  if (result === 'not_consented') throw conflict({ reason: 'not_consented' });
+  if (result === 'not_consented') throw conflict({ reasons: ['not_consented'] });
   return result;
 }
 
@@ -292,7 +292,7 @@ function deviceResult(
   result: Awaited<ReturnType<CompanionRepository['unbind']>>,
 ): CompanionOverview {
   if (result === 'not_found') throw notFound();
-  if (result === 'no_device') throw conflict({ reason: 'no_device' });
-  if (result === 'invalid_state') throw conflict({ reason: 'invalid_state' });
+  if (result === 'no_device') throw conflict({ reasons: ['no_device'] });
+  if (result === 'invalid_state') throw conflict({ reasons: ['invalid_state'] });
   return result;
 }

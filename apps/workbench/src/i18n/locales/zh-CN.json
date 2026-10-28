@@ -1085,6 +1085,7 @@
       "label": "客户视图",
       "twin": "孪生",
       "care": "方案与随访",
+      "companion": "伴侣",
       "record": "档案"
     },
     "disclaimer": "仅供参考，非医疗诊断",
@@ -1921,6 +1922,104 @@
       "soy": "大豆",
       "gluten": "麸质",
       "sesame": "芝麻"
+    }
+  },
+  "companion": {
+    "loading": "正在读取伴侣信息…",
+    "loadFailed": "伴侣信息读取失败，请稍后重试。",
+    "notFound": "找不到这位客户，可能已经转给其他健管师。",
+    "retry": "重试",
+    "cancel": "取消",
+    "banner": "福宝是放在客户家里的 AI 语音伴侣，不是医生。绑定设备前，请先向客户本人线下告知并取得同意。",
+    "status": {
+      "unbound": "未绑定",
+      "pending_activation": "待激活",
+      "active": "已开通",
+      "paused": "已暂停",
+      "revoked": "客户已撤回同意"
+    },
+    "device": {
+      "title": "设备",
+      "status": "状态",
+      "serial": "序列号",
+      "serialLast4": "尾号 {{last4}}",
+      "online": "在线",
+      "onlineNow": "在线",
+      "lastSeen": "最后在线 {{time}}",
+      "neverSeen": "还没有连接过",
+      "boundAt": "绑定时间",
+      "firmware": "固件版本",
+      "pendingHint": "设备通电联网后会自动激活，激活时福宝会播放开场白。",
+      "revokedHint": "客户已撤回同意：唤醒设备时福宝只播放暂停提示。重新记录同意后恢复。",
+      "pause": "暂停",
+      "resume": "恢复",
+      "unbind": "解绑设备",
+      "unbindConfirm": "解绑后设备立即连不上，客户的数据留在客户名下。确定解绑吗？",
+      "unbindYes": "确定解绑"
+    },
+    "bind": {
+      "title": "绑定设备",
+      "none": "这位客户还没有绑定设备。",
+      "needConsent": "请先在下方记录线下告知和同意，再绑定设备。",
+      "serial": "序列号",
+      "code": "激活码",
+      "hint": "序列号和激活码印在设备背面。激活码不区分大小写，可以带空格或短横线。",
+      "required": "请填写序列号和激活码。",
+      "submit": "绑定",
+      "binding": "正在绑定…"
+    },
+    "consent": {
+      "title": "线下告知和同意",
+      "state": "状态",
+      "active": "已同意",
+      "revokedOn": "已于 {{date}} 撤回",
+      "version": "告知书版本",
+      "versionValue": "第 {{version}} 版",
+      "date": "同意日期",
+      "none": "还没有记录同意。",
+      "outdated": "平台已发布新版告知书，请向客户重新告知后再记录一次。",
+      "noticeTitle": "查看告知书全文（第 {{version}} 版）",
+      "noNotice": "平台还没有发布告知书模板，暂时不能记录同意。",
+      "confirm": "我已按第 {{version}} 版告知书向客户本人线下告知，并取得客户同意",
+      "dateLabel": "告知并取得同意的日期",
+      "record": "记录同意",
+      "incomplete": "请勾选确认并填写日期（不能晚于今天）。",
+      "revoke": "记录客户撤回同意",
+      "revokeHint": "撤回后福宝立即停用，只播放暂停提示；聊天记录和福宝记得的事 7 天后删除。",
+      "revokeDate": "客户撤回的日期",
+      "revokeYes": "确定撤回"
+    },
+    "settings": {
+      "title": "伴侣设置",
+      "name": "福宝怎么称呼客户（不超过 {{max}} 个字）",
+      "namePlaceholder": "如：王阿姨",
+      "nameHint": "客户在对话里说了想怎么被称呼后，以客户说的为准。",
+      "voiceSpeed": "语速",
+      "volume": "音量",
+      "speeds": {
+        "slow": "慢",
+        "medium": "中",
+        "fast": "快"
+      },
+      "volumes": {
+        "low": "小",
+        "medium": "中",
+        "high": "大"
+      },
+      "save": "保存设置"
+    },
+    "errors": {
+      "device_unavailable": "序列号或激活码不可用，请核对设备背面的信息。",
+      "already_bound": "这位客户已经绑定了一台设备，请先解绑。",
+      "no_consent": "请先记录线下告知和同意。",
+      "not_consented": "这位客户当前没有有效的同意，不需要撤回。",
+      "no_device": "这位客户没有绑定设备。",
+      "invalid_state": "当前状态下不能这样操作，请刷新后重试。",
+      "badRequest": "填写的内容不正确，请检查后重试。",
+      "notFound": "找不到这位客户，可能已经转给其他健管师。",
+      "tooMany": "绑定失败次数太多，请 15 分钟后再试。",
+      "network": "网络连接失败，请稍后重试。",
+      "unknown": "操作没有成功，请稍后重试。"
     }
   }
 }
