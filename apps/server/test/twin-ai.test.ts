@@ -301,7 +301,13 @@ describe('孪生 AI：孪生小结、@孪生项、请专家看看', () => {
         { kind: 'domain', code: 'metabolic' },
       ],
     }).expect(200);
-    expect(stepKinds(res.text)).toEqual(['read_client', 'detect_critical', 'read_twin', 'answer']);
+    expect(stepKinds(res.text)).toEqual([
+      'read_client',
+      'detect_critical',
+      'read_twin',
+      'read_care_plan',
+      'answer',
+    ]);
     expect(await artifactsOf(task)).toHaveLength(0);
     const call = prodProvider.calls.at(-1)!;
     expect(call.route).toBe('chat');

@@ -1,6 +1,7 @@
 export * from './ask.js';
 export * from './framework.js';
 export * from './guardrails.js';
+export * from './ask-plan.js';
 export * from './indicators.js';
 export * from './registry.js';
 export {

@@ -4,10 +4,18 @@
  */
 import { ASK_DISCLAIMER } from '@health-buddy/shared';
 import type { CriticalFlag } from '@health-buddy/shared';
+import {
+  ASK_PLAN_RULES,
+  describeAskPlan,
+  describeLibraryCandidates,
+  describeLibraryItems,
+  type AskLibraryItem,
+} from './ask-plan.js';
 import { describeClient } from './client-recent-summary/index.js';
 import type { ClientSnapshot } from './framework.js';
 import { CRISIS_NOTICE } from './guardrails.js';
 import { indicatorName } from './indicators.js';
+import type { PlanContext, PlanLibraryContext } from './plan-input.js';
 import { SKILLS } from './registry.js';
 import { TWIN_PROMPT_RULES, describeTwin, redactTwin } from './twin-input.js';
 
@@ -34,15 +42,36 @@ export const ASK_SYSTEM_PROMPT = `你是协助健康管理师（下称“健管�
 7. 不写可以原样转发给客户的成段话术或通知；需要发给客户的内容，建议健管师用技能生成草稿并审核。疑似急症、心理危机时，可以给出简短的就医或求助指引，供健管师马上转告。
 8. 回答简洁，先列要点，再给依据。不使用“诊断”“确诊”这类断言。不写免责声明，系统会统一加上。`;
 
+/** 问一问读到的方案、随访和方案库资料（M5 规格 2.11），都已去标识 */
+export interface AskPlanExtras {
+  /** 当前方案、执行情况、最近的随访记录（引用了客户时） */
+  plan?: PlanContext;
+  /** @食谱、@动作 引用的条目 */
+  libraryItems?: readonly AskLibraryItem[];
+  /** 问到吃什么、怎么运动时，按过敏史和运动安全规则筛过的候选条目 */
+  candidates?: PlanLibraryContext;
+}
+
 /**
- * 问一问发给模型的用户消息：引用了客户时先附上客户资料。
+ * 问一问发给模型的用户消息：引用了客户时先附上客户资料，再附方案、随访和库条目。
  * question 和 client 都必须已经去标识（后端负责），评测也走这里，保证测的是线上用的提示词。
  */
-export function buildAskUserContent(client: ClientSnapshot | undefined, question: string): string {
-  if (!client) return question;
-  // M4 规格 2.9：读取客户档案时，孪生的状态和预测作为档案的一部分放进上下文
-  const twin = client.twin ? `\n\n${describeTwin(client.twin)}` : '';
-  return `${describeClient({ client, managerRequest: '' })}${twin}\n\n## 健管师的问题\n${question}`;
+export function buildAskUserContent(
+  client: ClientSnapshot | undefined,
+  question: string,
+  extras: AskPlanExtras = {},
+): string {
+  const parts: string[] = [];
+  if (client) {
+    parts.push(describeClient({ client, managerRequest: '' }));
+    // M4 规格 2.9：读取客户档案时，孪生的状态和预测作为档案的一部分放进上下文
+    if (client.twin) parts.push(describeTwin(client.twin));
+  }
+  if (extras.plan) parts.push(describeAskPlan(extras.plan));
+  if (extras.candidates) parts.push(describeLibraryCandidates(extras.candidates));
+  if (extras.libraryItems?.length) parts.push(describeLibraryItems(extras.libraryItems));
+  if (!parts.length) return question;
+  return `${parts.join('\n\n')}\n\n## 健管师的问题\n${question}`;
 }
 
 /**
@@ -58,9 +87,14 @@ ${TWIN_PROMPT_RULES}
 2. 引用的是一个方面时，这个方面的指标在资料里有预测的，同样写出预测和它的依据、80% 区间、不确定性（“不确定性高”照写）。健管师问的是会不会得病、是不是某病前期时，也先写状态、历次数值和预测，再说明不能据此判断、需要医生评估。
 3. 问到的时间点资料里没有预测（如问半年后，资料只有 3 个月后的预测）时，写明资料里没有这个时间点的预测、不自己外推；同时照写资料里已有的预测（时间点、中间值、80% 区间、不确定性）。`;
 
-/** 问一问的系统提示词：资料里有孪生时用带孪生规则的版本 */
-export function askSystemPrompt(client: ClientSnapshot | undefined): string {
-  return client?.twin ? ASK_TWIN_SYSTEM_PROMPT : ASK_SYSTEM_PROMPT;
+/** 问一问的系统提示词：资料里有孪生时用带孪生规则的版本；读到方案、随访或库条目时加上相应规则 */
+export function askSystemPrompt(
+  client: ClientSnapshot | undefined,
+  extras: AskPlanExtras = {},
+): string {
+  const base = client?.twin ? ASK_TWIN_SYSTEM_PROMPT : ASK_SYSTEM_PROMPT;
+  const readsPlan = Boolean(extras.plan || extras.candidates || extras.libraryItems?.length);
+  return readsPlan ? `${base}\n\n${ASK_PLAN_RULES}` : base;
 }
 
 /** 问一问的孪生资料去标识：手动调整理由、跟进备注里的姓名和联系方式（5.4 第 6 条） */

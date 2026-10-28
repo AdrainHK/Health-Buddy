@@ -1,10 +1,12 @@
 import { IconButton } from '@health-buddy/ui';
 import {
+  LIBRARY_REFS_MAX,
   TASK_MODES,
   TWIN_REFS_MAX,
   twinRefKey,
   type ClientSummary,
   type ExpertSummary,
+  type LibraryRef,
   type SkillSummary,
   type TaskMode,
   type TwinRef,
@@ -13,6 +15,7 @@ import {
   Activity,
   ArrowUp,
   AtSign,
+  BookOpen,
   FileText,
   MessageSquareText,
   Paperclip,
@@ -93,6 +96,14 @@ export interface TwinItemOption {
   label: string;
 }
 
+/** @ 列表里的方案库条目（M5 规格 2.11）：食谱、运动和放松练习 */
+export interface LibraryItemOption {
+  ref: LibraryRef;
+  label: string;
+  /** 类别和餐次，如“食谱 · 早餐” */
+  description: string;
+}
+
 export interface ComposerProps {
   inputRef: RefObject<HTMLTextAreaElement | null>;
   text: string;
@@ -138,6 +149,13 @@ export interface ComposerProps {
   /** 这条消息引用的孪生项（最多 TWIN_REFS_MAX 个） */
   twinRefs?: readonly TwinRef[];
   onTwinRefsChange?: (refs: TwinRef[]) => void;
+  /** 可以 @ 的方案库条目（只在问一问里列出） */
+  libraryItems?: readonly LibraryItemOption[];
+  /** 这条消息引用的库条目（最多 LIBRARY_REFS_MAX 个） */
+  libraryRefs?: readonly LibraryRef[];
+  onLibraryRefsChange?: (refs: LibraryRef[]) => void;
+  /** 打开 @ 列表时调用（方案库条目在第一次打开时才读取） */
+  onMentionOpen?: () => void;
 }
 
 /** 输入框：模式切换、/ 技能和 @ 客户补全、发送和停止 */
@@ -173,6 +191,10 @@ export function Composer({
   twinItems = [],
   twinRefs = [],
   onTwinRefsChange,
+  libraryItems = [],
+  libraryRefs = [],
+  onLibraryRefsChange,
+  onMentionOpen,
 }: ComposerProps) {
   const { t } = useTranslation();
   const skillName = useSkillName();
@@ -251,6 +273,22 @@ export function Composer({
                 select: full ? () => {} : pick(() => onTwinRefsChange?.([...twinRefs, item.ref])),
               };
             }),
+          ...(onLibraryRefsChange ? libraryItems : [])
+            .filter((item) => !libraryRefs.some((r) => r.id === item.ref.id))
+            .filter((item) => item.label.toLowerCase().includes(query))
+            .map((item, i) => {
+              const full = libraryRefs.length >= LIBRARY_REFS_MAX;
+              return {
+                id: `library:${item.ref.id}`,
+                label: item.label,
+                description: full ? t('chat.library.max') : item.description,
+                ...(full ? { disabled: true } : {}),
+                ...(i === 0 ? { group: t('chat.library.group') } : {}),
+                select: full
+                  ? () => {}
+                  : pick(() => onLibraryRefsChange?.([...libraryRefs, item.ref])),
+              };
+            }),
         ];
   const activeIndex = Math.min(active, Math.max(options.length - 1, 0));
   const menuOpen = trigger !== null;
@@ -258,7 +296,9 @@ export function Composer({
   const onChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
     onTextChange(value);
-    setTrigger(detectTrigger(value, e.target.selectionStart ?? value.length));
+    const next = detectTrigger(value, e.target.selectionStart ?? value.length);
+    if (next?.kind === 'client' && trigger?.kind !== 'client') onMentionOpen?.();
+    setTrigger(next);
     setActive(0);
   };
 
@@ -332,7 +372,12 @@ export function Composer({
 
       {expertBar && <div className={styles.notice}>{expertBar}</div>}
 
-      {(skill || client || report || expertRefs.length > 0 || twinRefs.length > 0) && (
+      {(skill ||
+        client ||
+        report ||
+        expertRefs.length > 0 ||
+        twinRefs.length > 0 ||
+        libraryRefs.length > 0) && (
         <div className={styles.chips}>
           {skill && (
             <Chip
@@ -384,6 +429,20 @@ export function Composer({
                 label={name}
                 removeLabel={t('chat.twin.removeTwin', { name })}
                 onRemove={() => onTwinRefsChange?.(twinRefs.filter((r) => twinRefKey(r) !== key))}
+                disabled={disabled}
+              />
+            );
+          })}
+          {libraryRefs.map((ref) => {
+            const name =
+              libraryItems.find((i) => i.ref.id === ref.id)?.label ?? t('chat.library.item');
+            return (
+              <Chip
+                key={ref.id}
+                icon={<BookOpen size={12} />}
+                label={name}
+                removeLabel={t('chat.library.remove', { name })}
+                onRemove={() => onLibraryRefsChange?.(libraryRefs.filter((r) => r.id !== ref.id))}
                 disabled={disabled}
               />
             );

@@ -163,6 +163,16 @@
       "answeredBy": "专家意见：{{names}}",
       "suggestion": "请 @{{name}} 看看"
     },
+    "library": {
+      "group": "方案库",
+      "max": "一条消息最多引用 3 个方案库条目",
+      "remove": "移除方案库条目 {{name}}",
+      "item": "方案库条目",
+      "needAsk": "@方案库条目 需要在问一问模式下使用，请移除技能或切换模式",
+      "recipe": "食谱 · {{meals}}",
+      "exercise": "运动 · {{category}}",
+      "separator": "、"
+    },
     "twin": {
       "group": "孪生项",
       "max": "一条消息最多引用 3 个孪生项",
@@ -199,6 +209,7 @@
     "scheduleVisits": "排随访日期",
     "generateVisitSchedule": "生成随访计划",
     "selectLibraryItems": "选择食谱和动作",
+    "readLibraryItems": "读取方案库条目",
     "generateCarePlan": "生成方案",
     "readVisitRecords": "正在读取随访记录",
     "readVisitMaterials": "正在读取随访素材",
