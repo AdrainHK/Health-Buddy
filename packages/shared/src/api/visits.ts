@@ -166,12 +166,39 @@ export const VISIT_MATERIALS_DAILY_MAX = 100;
 /** 素材原文保留天数（Q23） */
 export const VISIT_MATERIAL_RETENTION_DAYS = 30;
 
+/** 素材来源：粘贴、本地读出的 .txt、聊天截图转写（健管师核对后上传） */
+export const VISIT_MATERIAL_SOURCES = ['paste', 'txt', 'screenshot'] as const;
+export type VisitMaterialSource = (typeof VISIT_MATERIAL_SOURCES)[number];
+
+/** 聊天截图：一次最多 9 张，单张不超过 20 MB（同报告原件），原图不保存 */
+export const CHAT_SCREENSHOT_LIMITS = { maxFiles: 9, maxFileBytes: 20 * 1024 * 1024 } as const;
+
+/**
+ * 截图转写的结果（POST /api/clients/:id/visit-materials/transcribe）：只返回文字，不保存任何东西；
+ * 健管师核对、修改后再用 source = screenshot 上传
+ */
+export const chatTranscriptionResponseSchema = z.object({
+  text: z.string(),
+  imageCount: z.number().int().positive(),
+});
+export type ChatTranscriptionResponse = z.infer<typeof chatTranscriptionResponseSchema>;
+
+/** 转写失败的原因（422 transcription_failed） */
+export const CHAT_TRANSCRIPTION_FAILURES = [
+  'not_a_chat',
+  'unreadable',
+  'refused',
+  'timeout',
+  'error',
+] as const;
+export type ChatTranscriptionFailure = (typeof CHAT_TRANSCRIPTION_FAILURES)[number];
+
 /** 素材列表项：不含原文 */
 export const visitMaterialSchema = z.object({
   id: z.uuid(),
   clientId: z.uuid(),
   visitId: z.uuid().nullable(),
-  kind: z.enum(['paste', 'txt']),
+  kind: z.enum(VISIT_MATERIAL_SOURCES),
   charCount: z.number().int().nonnegative(),
   /** 已整理成记录的那份产物 */
   consumedArtifactId: z.uuid().nullable(),
@@ -184,11 +211,12 @@ export const visitMaterialSchema = z.object({
 export type VisitMaterial = z.infer<typeof visitMaterialSchema>;
 
 /**
- * 上传素材：粘贴的文字，或工作台在本地读出的 .txt 文件内容（source = txt；后端不解析文件）
+ * 上传素材：粘贴的文字，工作台在本地读出的 .txt 文件内容（source = txt；后端不解析文件），
+ * 或健管师核对过的截图转写文字（source = screenshot）
  */
 export const createVisitMaterialRequestSchema = z.object({
   text: z.string().trim().min(1).max(VISIT_MATERIAL_TEXT_MAX),
-  source: z.enum(['paste', 'txt']).default('paste'),
+  source: z.enum(VISIT_MATERIAL_SOURCES).default('paste'),
   visitId: z.uuid().optional(),
   /** 第一次为这位客户上传时必须为 true（已告知客户，Q24）；以后不再询问 */
   consentConfirmed: z.boolean().optional(),

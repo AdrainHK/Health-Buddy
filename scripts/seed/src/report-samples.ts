@@ -20,9 +20,12 @@ const FONT_CANDIDATES = [
   '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
 ];
 const FAMILY = 'HBReportSample';
+/** 合成样本用的字体族名（聊天截图样本共用） */
+export const SAMPLE_FONT_FAMILY = FAMILY;
 let fontPath: string | null | undefined;
 
-function findFont(): string | null {
+/** 找到并注册中文字体；没有时返回 null */
+export function findFont(): string | null {
   if (fontPath !== undefined) return fontPath;
   const custom = process.env.REPORT_SAMPLE_FONT;
   fontPath = [...(custom ? [custom] : []), ...FONT_CANDIDATES].find((p) => existsSync(p)) ?? null;

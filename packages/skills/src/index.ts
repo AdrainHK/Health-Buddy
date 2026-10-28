@@ -57,6 +57,25 @@ export {
   type ExtractionContentPart,
 } from './report-extraction/index.js';
 export {
+  CHAT_TRANSCRIPTION_PROMPT,
+  CHAT_TRANSCRIPTION_CATEGORIES,
+  CHAT_TRANSCRIPTION_FORMAT_NAME,
+  CHAT_SPEAKERS,
+  chatTranscriptionOutputSchema,
+  buildChatTranscriptionContent,
+  renderChatTranscript,
+  type ChatSpeaker,
+  type ChatScreenshotInput,
+  type ChatTranscriptionOutput,
+} from './chat-transcription/index.js';
+export {
+  chatTranscriptionEvalCases,
+  type ChatSample,
+  type ChatSampleLine,
+  type ChatTranscriptionEvalCase,
+  type ChatTranscriptionEvalCategory,
+} from './chat-transcription/evals/cases.js';
+export {
   reportExtractionEvalCases,
   CODED_PANEL,
   type ExtractionEvalCase,

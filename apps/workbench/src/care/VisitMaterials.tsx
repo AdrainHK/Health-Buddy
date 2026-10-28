@@ -1,9 +1,13 @@
 import {
+  CHAT_SCREENSHOT_LIMITS,
+  CHAT_TRANSCRIPTION_FAILURES,
   VISIT_MATERIAL_CONSENT_REQUIRED,
   VISIT_MATERIAL_TEXT_MAX,
   VISIT_MATERIALS_PER_RECORD_MAX,
+  type ChatTranscriptionFailure,
   type Visit,
   type VisitMaterial,
+  type VisitMaterialSource,
 } from '@health-buddy/shared';
 import { Button, IconButton } from '@health-buddy/ui';
 import { MessageSquareText, X } from 'lucide-react';
@@ -14,6 +18,7 @@ import {
   deleteVisitMaterial,
   listVisitMaterials,
   listVisits,
+  transcribeScreenshots,
 } from '../api/care';
 import { ApiError, isAbortError } from '../api/http';
 import styles from '../twin/Twin.module.css';
@@ -22,6 +27,34 @@ import { localToday } from './dates';
 
 /** 只读本地的 .txt 文件，内容在浏览器里读出后作为文字上传（Q21），后端不解析文件 */
 const TXT_ACCEPT = '.txt,text/plain';
+/** 聊天截图：只收图片（后端按文件头再判断一次），原图不保存 */
+const SCREENSHOT_ACCEPT = 'image/png,image/jpeg,image/heic,.heic';
+
+type ScreenshotError =
+  | ChatTranscriptionFailure
+  | 'tooMany'
+  | 'tooLarge'
+  | 'unsupported'
+  | 'notConfigured'
+  | 'notFound'
+  | 'busy';
+
+function screenshotError(err: unknown): ScreenshotError | 'consent' {
+  if (!(err instanceof ApiError)) return 'error';
+  if (err.code === 'transcription_failed') {
+    const reason = err.reasons.find((r): r is ChatTranscriptionFailure =>
+      (CHAT_TRANSCRIPTION_FAILURES as readonly string[]).includes(r),
+    );
+    return reason ?? 'error';
+  }
+  if (err.status === 400 && err.reasons.includes(VISIT_MATERIAL_CONSENT_REQUIRED)) return 'consent';
+  if (err.status === 413) return err.reasons.includes('too_many_files') ? 'tooMany' : 'tooLarge';
+  if (err.status === 415) return 'unsupported';
+  if (err.status === 429) return 'busy';
+  if (err.code === 'not_configured') return 'notConfigured';
+  if (err.status === 404) return 'notFound';
+  return 'error';
+}
 
 export interface VisitMaterialsProps {
   clientId: string;
@@ -215,9 +248,12 @@ function UploadForm({
   const { t } = useTranslation();
   const formId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
+  const shotRef = useRef<HTMLInputElement>(null);
   const today = localToday();
   const [text, setText] = useState('');
-  const [source, setSource] = useState<'paste' | 'txt'>('paste');
+  const [source, setSource] = useState<VisitMaterialSource>('paste');
+  const [transcribing, setTranscribing] = useState<number | null>(null);
+  const [shotError, setShotError] = useState<ScreenshotError | null>(null);
   // 默认关联今天到期的那次随访（2.9）
   const [visitId, setVisitId] = useState(() => visits.find((v) => v.dueDate === today)?.id ?? '');
   const [consent, setConsent] = useState(false);
@@ -248,6 +284,42 @@ function UploadForm({
       if (fileRef.current) fileRef.current.value = '';
     }
   };
+
+  // 截图先转写成文字，填进文本框给健管师核对；第一次为这位客户上传时转写前就要勾选“已告知客户”
+  const onScreenshots = async (list: FileList | null) => {
+    const files = Array.from(list ?? []);
+    if (shotRef.current) shotRef.current.value = '';
+    if (!files.length) return;
+    setError(null);
+    setShotError(null);
+    if (files.length > CHAT_SCREENSHOT_LIMITS.maxFiles) {
+      setShotError('tooMany');
+      return;
+    }
+    if (files.some((f) => f.size > CHAT_SCREENSHOT_LIMITS.maxFileBytes)) {
+      setShotError('tooLarge');
+      return;
+    }
+    if (needConsent && !consent) {
+      setError('consent');
+      return;
+    }
+    setTranscribing(files.length);
+    try {
+      setText(await transcribeScreenshots(clientId, files, needConsent && consent));
+      setSource('screenshot');
+    } catch (err) {
+      const key = screenshotError(err);
+      if (key === 'consent') {
+        setNeedConsent(true);
+        setError('consent');
+      } else setShotError(key);
+    } finally {
+      setTranscribing(null);
+    }
+  };
+
+  const working = busy || transcribing !== null;
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -285,23 +357,51 @@ function UploadForm({
           className={styles.textarea}
           value={text}
           rows={6}
-          disabled={busy}
+          disabled={working}
           aria-invalid={
             touched && (problem === 'empty' || problem === 'tooLong') ? true : undefined
           }
           onChange={(e) => {
             setText(e.target.value);
-            setSource('paste');
+            // 截图转写的文字核对、修改后仍记为截图；改过的 .txt 内容记为粘贴
+            setSource((s) => (s === 'screenshot' ? s : 'paste'));
           }}
         />
       </label>
       <p className={styles.muted} role="status">
-        {t('care.materials.count', { count: length, max: VISIT_MATERIAL_TEXT_MAX })}
+        {transcribing !== null
+          ? t('care.materials.transcribing', { count: transcribing })
+          : t('care.materials.count', { count: length, max: VISIT_MATERIAL_TEXT_MAX })}
       </p>
+      {source === 'screenshot' && transcribing === null && (
+        <p className={styles.muted}>{t('care.materials.reviewTranscript')}</p>
+      )}
+      {shotError && (
+        <p className={styles.error} role="alert">
+          {t(`care.materials.screenshotErrors.${shotError}`, {
+            max: CHAT_SCREENSHOT_LIMITS.maxFiles,
+          })}
+        </p>
+      )}
       <div className={styles.cardActions}>
-        <Button type="button" disabled={busy} onClick={() => fileRef.current?.click()}>
+        <Button type="button" disabled={working} onClick={() => fileRef.current?.click()}>
           {t('care.materials.chooseTxt')}
         </Button>
+        <Button type="button" disabled={working} onClick={() => shotRef.current?.click()}>
+          {t('care.materials.chooseScreenshots', { max: CHAT_SCREENSHOT_LIMITS.maxFiles })}
+        </Button>
+        <input
+          ref={shotRef}
+          type="file"
+          hidden
+          multiple
+          accept={SCREENSHOT_ACCEPT}
+          aria-label={t('care.materials.chooseScreenshots', {
+            max: CHAT_SCREENSHOT_LIMITS.maxFiles,
+          })}
+          data-testid="material-screenshot-input"
+          onChange={(e) => void onScreenshots(e.target.files)}
+        />
         <input
           ref={fileRef}
           type="file"
@@ -317,7 +417,7 @@ function UploadForm({
         <select
           className={styles.select}
           value={visitId}
-          disabled={busy}
+          disabled={working}
           onChange={(e) => setVisitId(e.target.value)}
         >
           <option value="">{t('care.materials.noVisit')}</option>
@@ -337,7 +437,7 @@ function UploadForm({
           <input
             type="checkbox"
             checked={consent}
-            disabled={busy}
+            disabled={working}
             aria-invalid={touched && !consent ? true : undefined}
             onChange={(e) => setConsent(e.target.checked)}
           />
@@ -355,10 +455,10 @@ function UploadForm({
         </p>
       )}
       <div className={styles.cardActions}>
-        <Button type="submit" variant="primary" disabled={busy}>
+        <Button type="submit" variant="primary" disabled={working}>
           {busy ? t('care.materials.uploading') : t('care.materials.upload')}
         </Button>
-        <Button type="button" variant="ghost" disabled={busy} onClick={onCancel}>
+        <Button type="button" variant="ghost" disabled={working} onClick={onCancel}>
           {t('care.materials.cancel')}
         </Button>
       </div>

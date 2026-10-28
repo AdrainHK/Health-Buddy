@@ -19,6 +19,7 @@
  *   pnpm eval --suite visit-schedule
  *   pnpm eval --suite visit-script
  *   pnpm eval --suite visit-record
+ *   pnpm eval --suite chat-transcription
  *                                  M5：/随访计划（日期照抄、重点相关、措辞和越界指令）
  *
  *   pnpm eval --suite expert --show-failures  未通过用例的模型输出打进日志（合成数据）
@@ -49,6 +50,7 @@ import {
   visitScheduleEvalCases,
   visitScriptEvalCases,
   visitRecordEvalCases,
+  chatTranscriptionEvalCases,
   carePlanEvalCases,
 } from '@health-buddy/skills';
 import {
@@ -65,6 +67,7 @@ import {
   runCarePlanEval,
   runVisitRecordEval,
   runVisitScriptEval,
+  runChatTranscriptionEval,
   runVisitScheduleEval,
   summarize,
   type RunResult,
@@ -123,6 +126,14 @@ const carePlanCases = pick('care-plan', carePlanEvalCases);
 const visitScheduleCases = pick('visit-schedule', visitScheduleEvalCases);
 const visitScriptCases = pick('visit-script', visitScriptEvalCases);
 const visitRecordCases = pick('visit-record', visitRecordEvalCases);
+// 聊天截图转写：合成截图由 scripts/seed 渲染，同样需要中文字体
+const chatCases = pick('chat-transcription', chatTranscriptionEvalCases);
+if (chatCases.length && !sampleFontAvailable()) {
+  const msg =
+    '缺少渲染合成聊天截图的中文字体（装 fonts-noto-cjk，或用 REPORT_SAMPLE_FONT 指定），聊天截图评测无法运行。';
+  console.error(process.env.GITHUB_ACTIONS ? `::error title=eval 缺少字体::${msg}` : msg);
+  process.exit(1);
+}
 const twinConsultCases = pick('twin-consult', twinConsultEvalCases);
 const expertSynthesisCases = pick('expert-synthesis', synthesisEvalCases);
 const useJudge = !process.argv.includes('--no-judge');
@@ -139,7 +150,7 @@ const all: RunResult[] = [];
 for (const provider of providers) {
   const gateway = createGateway({ ...config, defaultProvider: provider, routes: {} });
   console.log(
-    `\n${provider}（${config.defaultModels[provider]}）：${cases.length + askCases.length + extractionCases.length + interpretationCases.length + outlineCases.length + planCases.length + expertCases.length + expertRoutingCases.length + expertSynthesisCases.length + twinSummaryCases.length + twinConsultCases.length + twinAskCases.length + visitScheduleCases.length + carePlanCases.length + visitScriptCases.length + visitRecordCases.length} 个用例 × ${runs} 次`,
+    `\n${provider}（${config.defaultModels[provider]}）：${cases.length + askCases.length + extractionCases.length + interpretationCases.length + outlineCases.length + planCases.length + expertCases.length + expertRoutingCases.length + expertSynthesisCases.length + twinSummaryCases.length + twinConsultCases.length + twinAskCases.length + visitScheduleCases.length + carePlanCases.length + visitScriptCases.length + visitRecordCases.length + chatCases.length} 个用例 × ${runs} 次`,
   );
   const results = [
     ...(await runEval({ gateway, provider, cases, runs, useJudge })),
@@ -177,6 +188,7 @@ for (const provider of providers) {
       runs,
       useJudge,
     })),
+    ...(await runChatTranscriptionEval({ gateway, provider, cases: chatCases, runs })),
     ...(await runExpertEval({ gateway, provider, cases: twinConsultCases, runs, useJudge })),
   ];
   all.push(...results);
@@ -249,6 +261,12 @@ const DETAIL_RULES = new Set([
   'history.unexpected',
   'record.visit_date',
   'record.method',
+  // 聊天截图转写：期望的类别、样本里的消息片段（合成数据）、条数
+  'chat.category',
+  'chat.missing',
+  'chat.speaker',
+  'chat.duplicate',
+  'chat.extra_messages',
 ]);
 /** GitHub 注解的转义：先 %，再回车和换行 */
 const escapeAnnotation = (t: string) =>

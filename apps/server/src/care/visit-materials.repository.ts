@@ -86,6 +86,22 @@ export class VisitMaterialsRepository {
     });
   }
 
+  /**
+   * 截图转写前的检查（M5 规格 2.9“聊天截图”）：客户必须是自己的；第一次为这位客户上传素材时
+   * 转写前就要勾选“已告知客户”（截图要发给模型）。只读，不写任何行：同意在保存素材时才记下。
+   */
+  checkTranscribe(
+    ctx: TenantContext,
+    clientId: string,
+    consentConfirmed: boolean,
+  ): Promise<'ok' | 'not_found' | 'consent_required'> {
+    return withTenant(this.db, ctx, async (trx) => {
+      if (!(await clientVisible(trx, clientId))) return 'not_found';
+      if (!consentConfirmed && !(await hasConsent(trx, ctx, clientId))) return 'consent_required';
+      return 'ok';
+    });
+  }
+
   /** 列出本人为这位客户上传的素材（不含原文）；客户不是自己的返回 undefined */
   list(ctx: TenantContext, clientId: string): Promise<VisitMaterialListResponse | undefined> {
     return withTenant(this.db, ctx, async (trx) => {
@@ -149,7 +165,7 @@ function toMaterial(r: {
   id: string;
   client_id: string;
   visit_id: string | null;
-  kind: 'paste' | 'txt';
+  kind: 'paste' | 'txt' | 'screenshot';
   char_count: number;
   consumed_artifact_id: string | null;
   purge_after: Date;
