@@ -114,7 +114,10 @@ export class ExtractionService implements OnModuleInit, OnApplicationShutdown {
     } catch (err) {
       const category = err instanceof ExtractionFailure ? err.category : failureCategory(err);
       await this.repo.failExtraction(ctx, uploadId, category).catch(() => false);
-      this.log(uploadId, `failed:${category}`, claim.pageCount, started);
+      // 网关的错误种类和状态码（如 provider_error:401）方便排查，不含文件内容和客户信息
+      const detail =
+        err instanceof GatewayError ? `:${err.kind}${err.status ? `:${err.status}` : ''}` : '';
+      this.log(uploadId, `failed:${category}${detail}`, claim.pageCount, started);
     } finally {
       this.events.notify(uploadId);
     }

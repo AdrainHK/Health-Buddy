@@ -856,7 +856,7 @@ export interface VisitMaterialsTable extends ClientScoped {
   id: Generated<string>;
   client_id: string;
   visit_id: ColumnType<string | null, string | null | undefined, never>;
-  kind: 'paste' | 'txt';
+  kind: 'paste' | 'txt' | 'screenshot';
   text_encrypted: ColumnType<Buffer | null, Buffer, never>;
   char_count: number;
   uploaded_by: string;

@@ -10,6 +10,8 @@ import {
   Patch,
   Post,
   Query,
+  Req,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   VISIT_MATERIAL_CONSENT_REQUIRED,
@@ -22,6 +24,7 @@ import {
   updateVisitRequestSchema,
   visitListQuerySchema,
   type AdherenceResponse,
+  type ChatTranscriptionResponse,
   type CarePlanListResponse,
   type CarePlanResponse,
   type TodayVisitsResponse,
@@ -41,12 +44,20 @@ import {
   notFound,
   payloadTooLarge,
   tooManyRequests,
+  unsupportedMediaType,
 } from '../common/api-error.js';
+import type { Request } from 'express';
 import { requireManager } from '../common/manager-only.js';
 import { APP_CONFIG, type AppConfig } from '../config.js';
 import { isValidTimeZone } from '../twin/time-zone.js';
 import { CarePlansRepository } from './care-plans.repository.js';
+import {
+  ChatTranscriptionService,
+  TranscriptionFailure,
+  UnsupportedScreenshot,
+} from './chat-transcription.service.js';
 import { MaterialCipher } from './material-cipher.js';
+import { ScreenshotUploadInterceptor } from './screenshot-upload.interceptor.js';
 import { VisitMaterialsRepository } from './visit-materials.repository.js';
 import { VisitRecordsRepository } from './visit-records.repository.js';
 import { VisitsRepository, type VisitWriteResult } from './visits.repository.js';
@@ -95,6 +106,7 @@ export class CareController {
     private readonly visits: VisitsRepository,
     private readonly materials: VisitMaterialsRepository,
     private readonly records: VisitRecordsRepository,
+    private readonly transcription: ChatTranscriptionService,
     @Inject(APP_CONFIG) config: AppConfig,
   ) {
     this.cipher = config.visitMaterialKey ? new MaterialCipher(config.visitMaterialKey) : null;
@@ -240,6 +252,53 @@ export class CareController {
         throw tooManyRequests(['daily_limit']);
       default:
         return { material: result };
+    }
+  }
+
+  /**
+   * 聊天截图转写（multipart，字段 files，最多 9 张；可带 consentConfirmed=true）。截图只在内存里用，
+   * 转写完即丢弃；只返回文字，不保存任何东西（健管师核对后再用 source = screenshot 上传）。
+   * 别人的客户 404；首次未勾选“已告知客户” 400；不是图片 415；没转写出来 422 transcription_failed。
+   */
+  @Post('clients/:id/visit-materials/transcribe')
+  @HttpCode(200)
+  @UseInterceptors(ScreenshotUploadInterceptor)
+  async transcribeScreenshots(
+    @CurrentSession() session: ResolvedSession,
+    @Param('id') id: string,
+    @Req() req: Request,
+  ): Promise<ChatTranscriptionResponse> {
+    requireManager(session);
+    const clientId = parseId(id);
+    // 没配加密密钥时转写出来也存不了，先拦下，免得白白调用模型
+    if (!this.cipher) throw notConfigured();
+    const files = (req.files ?? []) as Express.Multer.File[];
+    if (!Array.isArray(files) || files.length === 0) throw badRequest();
+    const consent = (req.body as { consentConfirmed?: unknown } | undefined)?.consentConfirmed;
+    const check = await this.materials.checkTranscribe(session, clientId, consent === 'true');
+    if (check === 'not_found') throw notFound();
+    if (check === 'consent_required') {
+      throw new ApiException(HttpStatus.BAD_REQUEST, 'bad_request', {
+        reasons: [VISIT_MATERIAL_CONSENT_REQUIRED],
+      });
+    }
+    let images;
+    try {
+      images = await this.transcription.prepare(files.map((f) => f.buffer));
+    } catch (err) {
+      if (err instanceof UnsupportedScreenshot) throw unsupportedMediaType();
+      throw err;
+    }
+    try {
+      const text = await this.transcription.transcribe(session, images);
+      return { text, imageCount: images.length };
+    } catch (err) {
+      if (err instanceof TranscriptionFailure) {
+        throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, 'transcription_failed', {
+          reasons: [err.reason],
+        });
+      }
+      throw err;
     }
   }
 

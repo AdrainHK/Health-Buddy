@@ -1,5 +1,6 @@
 import {
   adherenceResponseSchema,
+  chatTranscriptionResponseSchema,
   carePlanListResponseSchema,
   carePlanResponseSchema,
   exerciseListResponseSchema,
@@ -234,6 +235,26 @@ export async function createVisitMaterial(
     { method: 'POST', body },
   );
   return material;
+}
+
+/**
+ * 聊天截图转写（M5 规格 2.9“聊天截图”）：只返回文字，后端不保存截图和文字；
+ * 健管师核对、修改后再用 source = screenshot 上传
+ */
+export async function transcribeScreenshots(
+  clientId: string,
+  files: readonly File[],
+  consentConfirmed: boolean,
+): Promise<string> {
+  const form = new FormData();
+  if (consentConfirmed) form.append('consentConfirmed', 'true');
+  for (const file of files) form.append('files', file, file.name || 'screenshot');
+  const { text } = await apiRequest(
+    `/clients/${clientId}/visit-materials/transcribe`,
+    chatTranscriptionResponseSchema,
+    { method: 'POST', body: form },
+  );
+  return text;
 }
 
 export function deleteVisitMaterial(id: string): Promise<void> {

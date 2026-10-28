@@ -21,6 +21,7 @@ import * as m0019 from './0019-task-title-source.js';
 import * as m0020 from './0020-plan-followup.js';
 import * as m0021 from './0021-sesame-allergen.js';
 import * as m0022 from './0022-plan-stats.js';
+import * as m0023 from './0023-screenshot-material.js';
 
 export interface Migration {
   name: string;
@@ -51,4 +52,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { name: '0020-plan-followup', up: m0020.up },
   { name: '0021-sesame-allergen', up: m0021.up },
   { name: '0022-plan-stats', up: m0022.up },
+  { name: '0023-screenshot-material', up: m0023.up },
 ];

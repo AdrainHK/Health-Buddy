@@ -95,6 +95,77 @@ describe('随访素材', () => {
     expect(api.callsTo('POST', LIST)[0]!.body).toEqual({ text: '合成通话笔记', source: 'txt' });
   });
 
+  it('聊天截图：先勾选“已告知客户”，转写的文字填进文本框核对，上传时来源记为 screenshot', async () => {
+    const TRANSCRIBE = `${LIST}/transcribe`;
+    const api = mockApi({
+      ...routes([], false),
+      [`POST ${TRANSCRIBE}`]: () =>
+        json(200, { text: '健管师：这周散步怎么样？\n客户：走了三次', imageCount: 2 }),
+      [`POST ${LIST}`]: () => json(201, { material: material({ kind: 'screenshot' }) }),
+    });
+    const user = userEvent.setup();
+    render(
+      <VisitMaterials clientId={ids.clientA} readOnly={false} uploading onCloseUpload={() => {}} />,
+    );
+    const form = await screen.findByRole('form', { name: '上传随访素材' });
+    const shots = [
+      new File(['a'], 'a.png', { type: 'image/png' }),
+      new File(['b'], 'b.png', { type: 'image/png' }),
+    ];
+    const input = screen.getByTestId('material-screenshot-input');
+    await user.upload(input, shots);
+    expect(within(form).getByRole('alert')).toHaveTextContent('请先勾选“已告知客户”');
+    expect(api.callsTo('POST', TRANSCRIBE)).toHaveLength(0);
+
+    await user.click(
+      within(form).getByRole('checkbox', { name: '已告知客户本次沟通内容会被整理成服务记录' }),
+    );
+    await user.upload(input, shots);
+    await waitFor(() =>
+      expect(within(form).getByRole('textbox')).toHaveValue(
+        '健管师：这周散步怎么样？\n客户：走了三次',
+      ),
+    );
+    const sent = api.callsTo('POST', TRANSCRIBE)[0]!.body as FormData;
+    expect(sent.getAll('files')).toHaveLength(2);
+    expect(sent.get('consentConfirmed')).toBe('true');
+    expect(within(form).getByText(/请逐条核对/)).toBeInTheDocument();
+
+    // 核对时改了一个字，来源仍是截图
+    await user.type(within(form).getByRole('textbox'), '。');
+    await user.click(within(form).getByRole('button', { name: '上传' }));
+    await waitFor(() => expect(api.callsTo('POST', LIST)).toHaveLength(1));
+    expect(api.callsTo('POST', LIST)[0]!.body).toMatchObject({
+      text: '健管师：这周散步怎么样？\n客户：走了三次。',
+      source: 'screenshot',
+      consentConfirmed: true,
+    });
+  });
+
+  it('聊天截图：超过 9 张前端拦截；不是聊天截图时给出提示，不填文本框', async () => {
+    const TRANSCRIBE = `${LIST}/transcribe`;
+    const api = mockApi({
+      ...routes([], true),
+      [`POST ${TRANSCRIBE}`]: () =>
+        json(422, { error: 'transcription_failed', reasons: ['not_a_chat'] }),
+    });
+    const user = userEvent.setup();
+    render(
+      <VisitMaterials clientId={ids.clientA} readOnly={false} uploading onCloseUpload={() => {}} />,
+    );
+    const form = await screen.findByRole('form', { name: '上传随访素材' });
+    const input = screen.getByTestId('material-screenshot-input');
+    await user.upload(
+      input,
+      Array.from({ length: 10 }, (_, i) => new File(['x'], `${i}.png`, { type: 'image/png' })),
+    );
+    expect(within(form).getByRole('alert')).toHaveTextContent('一次最多上传 9 张截图');
+    expect(api.callsTo('POST', TRANSCRIBE)).toHaveLength(0);
+    await user.upload(input, new File(['x'], 'r.png', { type: 'image/png' }));
+    expect(await within(form).findByRole('alert')).toHaveTextContent('不是聊天截图');
+    expect(within(form).getByRole('textbox')).toHaveValue('');
+  });
+
   it('超过 20000 字时前端拦截；后端报 413、未配置加密时给出对应提示', async () => {
     const api = mockApi({
       ...routes([], true),

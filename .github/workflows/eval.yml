@@ -43,7 +43,7 @@ jobs:
           - twin-summary,twin-consult
           - visit-schedule
           - care-plan
-          - visit-script,visit-record
+          - visit-script,visit-record,chat-transcription
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -72,7 +72,7 @@ jobs:
           cache: pnpm
       - if: steps.keys.outputs.ready == 'true'
         run: pnpm install --frozen-lockfile
-      # 报告识别评测要渲染合成报告样本（PDF、照片），需要中文字体；没有字体时每个识别用例都会出错
+      # 报告识别、聊天截图评测要渲染合成样本（PDF、照片、截图），需要中文字体；没有字体时这些用例都会出错
       - name: 安装中文字体
         if: steps.keys.outputs.ready == 'true'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk

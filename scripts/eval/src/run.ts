@@ -15,9 +15,11 @@ import {
   type VisitScheduleEvalCase,
   type VisitRecordEvalCase,
   type VisitScriptEvalCase,
+  type ChatTranscriptionEvalCase,
 } from '@health-buddy/skills';
 import type { ExpertEvalCase, RoutingEvalCase, SynthesisEvalCase } from '@health-buddy/experts';
 import { runAskOnce } from './ask.js';
+import { runChatTranscriptionOnce } from './chat-transcription.js';
 import { runExpertOnce, runRoutingOnce, runSynthesisOnce } from './expert.js';
 import { runExtractionOnce } from './extraction.js';
 import { describeError, gradeRecentSummary, type Finding } from './graders.js';
@@ -355,6 +357,23 @@ export async function runVisitRecordEval(options: {
           i + 1,
           options.useJudge ?? false,
         ),
+    ),
+  );
+  return runPool(jobs, 3);
+}
+
+/** 聊天截图转写评测（M5 规格 2.9“聊天截图”，--suite chat-transcription） */
+export async function runChatTranscriptionEval(options: {
+  gateway: LlmGateway;
+  provider: ProviderName;
+  cases: readonly ChatTranscriptionEvalCase[];
+  runs: number;
+}): Promise<RunResult[]> {
+  const jobs = options.cases.flatMap((c) =>
+    Array.from(
+      { length: options.runs },
+      (_, i) => () =>
+        runChatTranscriptionOnce(options.gateway, EVAL_CTX, options.provider, c, i + 1),
     ),
   );
   return runPool(jobs, 3);

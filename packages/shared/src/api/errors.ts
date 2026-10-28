@@ -22,6 +22,8 @@ export const API_ERROR_CODES = [
   'not_configured',
   /** 方案库条目含禁用词、疾病名称、药名或功效承诺（M5 规格 2.4），响应里标出位置，HTTP 400 */
   'invalid_content',
+  /** 聊天截图没能转写成文字（M5 规格 2.9“聊天截图”），HTTP 422，reasons 见 CHAT_TRANSCRIPTION_FAILURES */
+  'transcription_failed',
   'internal_error',
 ] as const;
 
