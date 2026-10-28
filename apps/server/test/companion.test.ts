@@ -87,6 +87,88 @@ describe('伴侣设备和设置接口', () => {
     await a1.get('/api/clients/not-a-uuid/companion').expect(404);
   });
 
+  it('已绑定设备时，别人调用每个接口都 404，设备和同意记录不变；同机构的健管师拿到激活码也绑不走', async () => {
+    await importBatch();
+    await publishNotice();
+    await consent(a1).expect(200);
+    await a1
+      .post(`${base()}/device`)
+      .send({ serialNo: 'HB-TEST-0001', activationCode: 'ABCD1234' })
+      .expect(200);
+    const snapshot = async () => ({
+      device: await owner
+        .selectFrom('companion_devices')
+        .select(['status', 'client_id', 'manager_id'])
+        .where('serial_no', '=', 'HB-TEST-0001')
+        .executeTakeFirstOrThrow(),
+      consents: (
+        await owner
+          .selectFrom('companion_consents')
+          .select('id')
+          .where('client_id', '=', f.clients.a1[0])
+          .execute()
+      ).length,
+      settings: await owner
+        .selectFrom('clients')
+        .select(['companion_volume', 'companion_name_for_client'])
+        .where('id', '=', f.clients.a1[0])
+        .executeTakeFirstOrThrow(),
+    });
+    const before = await snapshot();
+    for (const email of [
+      f.users.managerA2.email,
+      f.users.managerA3.email,
+      f.users.managerB1.email,
+      f.users.orgAdminA.email,
+      f.users.operatorAdminA.email,
+      f.users.platform.email,
+    ]) {
+      const agent = await as(email);
+      await agent.get(base()).expect(404);
+      await agent.patch(base()).send({ volume: 'high', nameForClient: '别人' }).expect(404);
+      await consent(agent).expect(404);
+      await agent.post(`${base()}/consents/revoke`).send({ revokedOn: '2026-10-02' }).expect(404);
+      await agent.delete(`${base()}/device`).expect(404);
+      await agent.post(`${base()}/pause`).expect(404);
+      await agent.post(`${base()}/resume`).expect(404);
+    }
+    expect(await snapshot()).toEqual(before);
+
+    // 同机构的 A2 给自己的客户绑 A1 已绑的设备：和激活码错一样只说“不可用”
+    const a2 = await as(f.users.managerA2.email);
+    const a2Url = `/api/clients/${f.clients.a2}/companion`;
+    await consent(a2, a2Url).expect(200);
+    await a2
+      .post(`${a2Url}/device`)
+      .send({ serialNo: 'HB-TEST-0001', activationCode: 'ABCD1234' })
+      .expect(409)
+      .expect((r) => expect(r.body).toEqual({ error: 'conflict', reason: 'device_unavailable' }));
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it('客户转给别的机构的健管师：原健管师 404，新健管师看到设备和同意记录', async () => {
+    await importBatch();
+    await publishNotice();
+    await consent(a1).expect(200);
+    await a1
+      .post(`${base()}/device`)
+      .send({ serialNo: 'HB-TEST-0001', activationCode: 'ABCD1234' })
+      .expect(200);
+    await owner
+      .updateTable('clients')
+      .set({ manager_id: f.users.managerA3.id, org_id: f.orgA2 })
+      .where('id', '=', f.clients.a1[0])
+      .execute();
+    await a1.get(base()).expect(404);
+    const a3 = await as(f.users.managerA3.email);
+    const res = await a3.get(base()).expect(200);
+    expect(res.body).toMatchObject({
+      status: 'pending_activation',
+      device: { serialLast4: '0001' },
+      consent: { noticeVersion: 1, revokedOn: null },
+    });
+  });
+
   it('设置：称呼、语速、音量；称呼超过 10 个字 400', async () => {
     const res = await a1
       .patch(base())

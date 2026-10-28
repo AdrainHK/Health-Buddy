@@ -6,7 +6,8 @@ import { APP_DB_ROLE } from '../../config.js';
  * 对话、记忆、收集信息、转交、预警、打卡等表在用到它们的步骤里再加。
  *
  * - 新会话角色 companion_device：后端用设备令牌换出客户后设置 app.role = 'companion_device'、
- *   app.device_id、app.client_id（新增 app_device_id()、app_client_id()）。已有的表都没有给这个角色的策略，
+ *   app.device_id（新增 app_device_id()）；app_client_id() 按设备行查当前绑定的客户，不信任调用方。
+ *   设备会话不设置 app.user_id、app.operator_id、app.org_id。已有的表都没有给这个角色的策略，
  *   默认拒绝（验收标准 20）；本迁移只给它“读自己这台设备”和“读固定话术”。
  * - companion_device_batches、companion_devices：平台按批次导入出厂设备（N2），只存设备密钥的 SHA-256
  *   和激活码的 argon2id 哈希。设备没有绑定时没有租户列；绑定、解绑、暂停、恢复只经 SECURITY DEFINER 函数，
@@ -98,9 +99,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
   await sql`
     create function app_device_id() returns uuid language sql stable
       as $$ select nullif(current_setting('app.device_id', true), '')::uuid $$;
-    create function app_client_id() returns uuid language sql stable
-      as $$ select nullif(current_setting('app.client_id', true), '')::uuid $$;
-    grant execute on function app_device_id(), app_client_id() to ${app};
+    grant execute on function app_device_id() to ${app};
   `.execute(db);
 
   // ---------- 2. 伴侣设置（Q7、N17） ----------
@@ -155,6 +154,18 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     );
     create index companion_devices_batch_idx on companion_devices (batch_id);
     create index companion_devices_manager_idx on companion_devices (manager_id) where manager_id is not null;
+
+    -- 设备会话的客户：不信任调用方传入，按 app_device_id() 从设备行查当前绑定的客户（租户复审 B2）。
+    -- 解绑、再绑给别人、客户转出后立即跟着变；没有绑定（库存）时为空，设备读不到任何客户数据
+    create function app_client_id() returns uuid
+      language sql stable security definer set search_path = pg_catalog, public, pg_temp
+    as $$
+      select d.client_id from companion_devices d
+        where app_role() = 'companion_device' and d.id = app_device_id()
+          and d.status in ('bound', 'active', 'paused', 'revoked')
+    $$;
+    revoke all on function app_client_id() from public;
+    grant execute on function app_client_id() to ${app};
   `.execute(db);
 
   // ---------- 4. 线下告知和同意（Q4、Q5、N4） ----------
@@ -255,7 +266,9 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       with check (app_role() = 'platform_admin' and created_by = app_user_id());
 
     grant select, insert on companion_device_batches to ${app};
-    grant select on companion_devices to ${app};
+    -- 两个哈希列不给应用读（租户复审建议 4）；绑定前的校验经 SECURITY DEFINER 函数
+    grant select (id, serial_no, batch_id, status, operator_id, org_id, manager_id, client_id, bound_by,
+      bound_at, activated_at, last_seen_at, firmware_version, created_at) on companion_devices to ${app};
     grant insert (serial_no, secret_hash, activation_code_hash, batch_id) on companion_devices to ${app};
     grant select, insert on companion_consents to ${app};
     grant select on companion_scripts to ${app};
@@ -279,6 +292,12 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       language plpgsql security definer set search_path = pg_catalog, public, pg_temp
     as $$
     begin
+      -- 先确认是自己的客户，再给出其他报错：不能借报错判断别人的客户有没有有效同意（租户复审建议 6）
+      if app_role() is not null and not exists (
+        select 1 from clients where id = new.client_id and manager_id = app_user_id()
+      ) then
+        raise exception 'not your client' using errcode = '42501';
+      end if;
       if new.action = 'consent' then
         if not exists (
           select 1 from companion_scripts where kind = 'notice' and version = new.notice_version
@@ -328,7 +347,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
 
   // ---------- 8. 绑定、解绑、暂停（规格 2.1，只经这些函数改设备） ----------
   await sql`
-    -- 绑定前按序列号取设备和激活码哈希（激活码在后端校验）。只给健管师；设备属于谁不返回
+    -- 绑定前按序列号取库存设备和激活码哈希（激活码在后端校验）。只给健管师；已绑定的设备不返回任何行
     create function companion_device_for_binding(p_serial text)
       returns table (id uuid, status text, activation_code_hash text)
       language plpgsql stable security definer set search_path = pg_catalog, public, pg_temp
@@ -338,7 +357,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
         return;
       end if;
       return query
-        select d.id, d.status, d.activation_code_hash from companion_devices d where d.serial_no = p_serial;
+        select d.id, d.status, d.activation_code_hash from companion_devices d
+          where d.serial_no = p_serial and d.status = 'stock';
     end
     $$;
     revoke all on function companion_device_for_binding(text) from public;

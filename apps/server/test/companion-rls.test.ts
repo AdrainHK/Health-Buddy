@@ -106,8 +106,12 @@ describe('伴侣设备和同意的行级安全', () => {
       .selectAll()
       .where('id', '=', id)
       .executeTakeFirstOrThrow();
-  const device = (deviceId: string, clientId: string, operatorId: string, orgId: string | null) =>
-    ({ deviceId, clientId, operatorId, orgId }) satisfies DeviceContext;
+  const device = (deviceId: string) => ({ deviceId }) satisfies DeviceContext;
+  const deviceClient = (deviceId: string) =>
+    withDevice(app, device(deviceId), async (trx) => {
+      const { rows } = await sql<{ c: string | null }>`select app_client_id() as c`.execute(trx);
+      return rows[0]?.c ?? null;
+    });
 
   beforeAll(() => {
     app = new Kysely<Database>({
@@ -197,13 +201,13 @@ describe('伴侣设备和同意的行级安全', () => {
     ]) {
       expect(await count(c)).toBe(0);
     }
-    const ids = await withDevice(app, device(d1, c1, f.operatorA, f.orgA), async (trx) =>
+    const ids = await withDevice(app, device(d1), async (trx) =>
       (await trx.selectFrom('companion_devices').select('id').execute()).map((r) => r.id),
     );
     expect(ids).toEqual([d1]);
     // 库存设备没有任何人能读
     expect(
-      await withDevice(app, device(d2, c1, f.operatorA, f.orgA), async (trx) =>
+      await withDevice(app, device(d2), async (trx) =>
         trx.selectFrom('companion_devices').select('id').where('id', '=', d1).execute(),
       ),
     ).toEqual([]);
@@ -214,35 +218,102 @@ describe('伴侣设备和同意的行级安全', () => {
     const c1 = f.clients.a1[0];
     await consent(managerA1(), c1);
     await bind(managerA1(), d1, c1);
-    // 所有带 client_id 列的表，加上客户、用户和任务相关的表
-    const { rows } = await sql<{ table_name: string }>`
-      select distinct table_name from information_schema.columns
-      where table_schema = 'public' and column_name in ('client_id', 'manager_id')
-        and table_name not in ('companion_devices')
+    // 这位客户和所属协会、机构在这些表里确实有数据（不是空表测空表）
+    for (const [table, column, value] of [
+      ['clients', 'id', c1],
+      ['health_reports', 'client_id', c1],
+      ['report_indicators', 'client_id', c1],
+      ['monitoring_readings', 'client_id', c1],
+      ['companion_consents', 'client_id', c1],
+      ['operators', 'id', f.operatorA],
+      ['organizations', 'id', f.orgA],
+      ['users', 'id', f.users.managerA1.id],
+    ] as const) {
+      const { rows } = await sql<{ n: number }>`
+        select count(*)::int as n from ${sql.table(table)} where ${sql.ref(column)} = ${value}
+      `.execute(owner);
+      expect({ table, n: rows[0]?.n }).toEqual({ table, n: 1 });
+    }
+    // 所有开启了行级安全的表逐张查：除了平台级的参考数据（没有任何客户、租户数据），设备一行都读不到
+    const PLATFORM_REFERENCE = new Set([
+      'companion_scripts',
+      'critical_thresholds',
+      'twin_status_rules',
+      'twin_rules_version',
+      'plan_library_recipes',
+      'plan_library_exercises',
+      'plan_goal_templates',
+      'visit_frequency_rules',
+      'visit_frequency_config',
+      'visit_frequency_version',
+      'expert_availability',
+    ]);
+    const { rows } = await sql<{ relname: string }>`
+      select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and c.relkind = 'r' and c.relrowsecurity
+      order by c.relname
     `.execute(owner);
-    const tables = [...rows.map((r) => r.table_name), 'clients', 'users', 'tasks', 'llm_usage'];
-    expect(tables).toContain('health_reports');
-    expect(tables).toContain('companion_consents');
-    const ctxD = device(d1, c1, f.operatorA, f.orgA);
-    for (const table of new Set(tables)) {
-      const n = await withDevice(app, ctxD, async (trx) => {
+    const tables = rows.map((r) => r.relname);
+    expect(tables).toEqual(
+      expect.arrayContaining(['clients', 'health_reports', 'companion_consents']),
+    );
+    const readable: string[] = [];
+    for (const table of tables) {
+      const n = await withDevice(app, device(d1), async (trx) => {
         try {
-          const r = await sql<{
-            n: string;
-          }>`select count(*)::text as n from ${sql.table(table)}`.execute(trx);
-          return Number(r.rows[0]?.n);
-        } catch {
-          // 没有表权限也算读不到
-          return 0;
+          const r = await sql<{ n: number }>`
+            select count(*)::int as n from ${sql.table(table)}
+          `.execute(trx);
+          return r.rows[0]?.n ?? 0;
+        } catch (e) {
+          // 只有“没有权限”算读不到，其他错误（表名写错等）直接失败
+          if ((e as { code?: string }).code === '42501') return 0;
+          throw e;
         }
       });
-      expect({ table, n }).toEqual({ table, n: 0 });
+      if (table === 'companion_devices') expect(n).toBe(1);
+      else if (n > 0) readable.push(table);
     }
-    // 固定话术可以读
-    const scripts = await withDevice(app, ctxD, (trx) =>
-      trx.selectFrom('companion_scripts').select('kind').execute(),
-    );
-    expect(scripts.length).toBeGreaterThan(0);
+    expect(readable.filter((t) => !PLATFORM_REFERENCE.has(t))).toEqual([]);
+    expect(readable).toContain('companion_scripts');
+  });
+
+  it('设备的客户由数据库按设备行查出：解绑后为空，再绑给别人后是新客户', async () => {
+    const d1 = await stockDevice();
+    const c1 = f.clients.a1[0];
+    expect(await deviceClient(d1)).toBeNull();
+    await consent(managerA1(), c1);
+    await bind(managerA1(), d1, c1);
+    expect(await deviceClient(d1)).toBe(c1);
+    // 健管师会话里 app_client_id() 永远为空
+    expect(
+      await as(managerA1(), async (trx) => {
+        const { rows } = await sql<{ c: string | null }>`select app_client_id() as c`.execute(trx);
+        return rows[0]?.c;
+      }),
+    ).toBeNull();
+    await call(managerA1(), sql`unbind_companion_device(${c1}::uuid)`);
+    expect(await deviceClient(d1)).toBeNull();
+    await consent(managerB1(), f.clients.b1);
+    await bind(managerB1(), d1, f.clients.b1);
+    expect(await deviceClient(d1)).toBe(f.clients.b1);
+    // 撤回同意后仍是这位客户（只播暂停话术），不会落到别人
+    await revoke(managerB1(), f.clients.b1);
+    expect(await deviceClient(d1)).toBe(f.clients.b1);
+  });
+
+  it('应用角色读不到设备的两个哈希列', async () => {
+    const d1 = await stockDevice();
+    await consent(managerA1(), f.clients.a1[0]);
+    await bind(managerA1(), d1, f.clients.a1[0]);
+    await expect(
+      as(managerA1(), (trx) => sql`select secret_hash from companion_devices`.execute(trx)),
+    ).rejects.toMatchObject({ code: '42501' });
+    await expect(
+      withDevice(app, device(d1), (trx) =>
+        sql`select activation_code_hash from companion_devices`.execute(trx),
+      ),
+    ).rejects.toMatchObject({ code: '42501' });
   });
 
   it('应用角色不能直接改、删设备，不能直接插入已绑定的设备', async () => {
@@ -286,7 +357,9 @@ describe('伴侣设备和同意的行级安全', () => {
     const c1 = f.clients.a1[0];
     await expect(consent(managerA1(), c1, 9)).rejects.toThrow();
     await expect(revoke(managerA1(), c1)).rejects.toThrow();
-    await expect(consent(managerA2(), c1)).rejects.toThrow();
+    // 别人的客户一律“没有权限”，不能借报错判断对方有没有有效同意
+    await expect(consent(managerA2(), c1)).rejects.toMatchObject({ code: '42501' });
+    await expect(revoke(managerA2(), c1)).rejects.toMatchObject({ code: '42501' });
     await expect(consent(managerB1(), c1)).rejects.toThrow();
     await consent(managerA1(), c1);
     const rows = await as(managerA1(), (trx) =>
@@ -384,6 +457,9 @@ describe('伴侣设备和同意的行级安全', () => {
       await as(managerA1(), (trx) => trx.selectFrom('companion_devices').select('id').execute()),
     ).toEqual([]);
     expect(
+      await as(managerA1(), (trx) => trx.selectFrom('companion_consents').select('id').execute()),
+    ).toEqual([]);
+    expect(
       (await as(managerA3(), (trx) => trx.selectFrom('companion_devices').select('id').execute()))
         .length,
     ).toBe(1);
@@ -428,6 +504,14 @@ describe('伴侣设备和同意的行级安全', () => {
           (await sql`select * from companion_device_for_binding('SN-EXIST-2')`.execute(trx)).rows,
       );
     expect(await forBinding(managerB1())).toHaveLength(1);
+    // 已绑定的设备不返回任何行（不暴露状态和激活码哈希）
+    expect(
+      await as(
+        managerB1(),
+        async (trx) =>
+          (await sql`select * from companion_device_for_binding('SN-EXIST-1')`.execute(trx)).rows,
+      ),
+    ).toEqual([]);
     expect(await forBinding(platform())).toEqual([]);
     expect(await forBinding(orgAdminA())).toEqual([]);
   });
