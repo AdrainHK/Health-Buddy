@@ -115,9 +115,34 @@ export interface PlanLibraryContext {
   libraryEmpty: boolean;
 }
 
+/** 这一次随访（/随访话术“准备随访”、/随访记录“记录随访”）：后端读到的日期、目的、方式和重点 */
+export interface VisitDigest {
+  dueDate: string;
+  purpose: VisitPurpose;
+  method: VisitMethod;
+  focus: string | null;
+}
+
+/** /随访记录 的素材：后端解密、去标识后的原文和上传日期 */
+export interface VisitMaterialDigest {
+  uploadedOn: string;
+  text: string;
+}
+
 export interface PlanContext {
   currentPlan: CarePlanDigest | null;
   recentRecords: VisitRecordDigest[];
+  /**
+   * 当前方案的执行情况（2.6、Q10，后端确定性计算）：每个关联监测的目标一句，
+   * 如“每天步行 7000 步：近 7 天有数据 5 天，平均 6320 步，达标 3 天”。/随访话术 用
+   */
+  adherence?: string[];
+  /** /随访话术、/随访记录：关联的那一次随访（没有关联时为下一次待随访） */
+  visit?: VisitDigest | null;
+  /** /随访记录：@ 的随访素材（已去标识） */
+  materials?: VisitMaterialDigest[];
+  /** 健管师时区的今天（YYYY-MM-DD）：/随访记录 校验随访日期不晚于今天 */
+  today?: string;
   /** /方案生成：候选库条目、目标模板和方案选项 */
   library?: PlanLibraryContext;
   /** /随访计划：后端算好的随访日期（按日期升序） */
@@ -181,7 +206,10 @@ export function describeSchedule(schedule: NonNullable<PlanContext['schedule']>)
   return lines.join('\n');
 }
 
-/** 方案上下文里健管师和 AI 写的自由文字（随访记录的摘要和约定），组装提示词前去标识 */
+/**
+ * 方案上下文里健管师、AI 和客户写的自由文字（随访记录的摘要和约定、随访的重点、素材原文），
+ * 组装提示词前去标识
+ */
 export function redactPlanContext(plan: PlanContext, redact: (t: string) => string): PlanContext {
   return {
     ...plan,
@@ -190,13 +218,58 @@ export function redactPlanContext(plan: PlanContext, redact: (t: string) => stri
       summary: redact(r.summary),
       agreements: r.agreements.map(redact),
     })),
+    ...(plan.visit
+      ? { visit: { ...plan.visit, focus: plan.visit.focus && redact(plan.visit.focus) } }
+      : {}),
+    ...(plan.materials
+      ? { materials: plan.materials.map((m) => ({ ...m, text: redact(m.text) })) }
+      : {}),
   };
 }
 
-/** 方案上下文里的自由文字（危机和急症的关键词识别也看这些） */
+/** 方案上下文里的自由文字（危机和急症的关键词识别也看这些，包括随访素材） */
 export function planFreeTexts(plan: PlanContext | undefined): string[] {
   if (!plan) return [];
-  return plan.recentRecords.flatMap((r) => [r.summary, ...r.agreements]);
+  return [
+    ...plan.recentRecords.flatMap((r) => [r.summary, ...r.agreements]),
+    ...(plan.visit?.focus ? [plan.visit.focus] : []),
+    ...(plan.materials ?? []).map((m) => m.text),
+  ];
+}
+
+/** /随访话术、/随访记录：这一次随访和方案执行情况 */
+export function describeVisit(plan: PlanContext): string {
+  const lines = ['## 这一次随访'];
+  const v = plan.visit;
+  if (!v) lines.push('没有关联的随访（健管师临时联系客户）。');
+  else {
+    lines.push(
+      `- 日期 ${v.dueDate} · ${VISIT_PURPOSE_ZH[v.purpose]} · 方式：${VISIT_METHOD_ZH[v.method]}`,
+      `- 重点：${v.focus ?? '没有写'}`,
+    );
+  }
+  if (plan.adherence) {
+    lines.push('', '## 方案执行情况（系统按监测数据算出）');
+    if (!plan.adherence.length) lines.push('没有关联监测数据的目标，执行情况需要在随访时了解。');
+    for (const a of plan.adherence) lines.push(`- ${a}`);
+  }
+  return lines.join('\n');
+}
+
+/** /随访记录：素材原文（已去标识），只能整理里面有的内容 */
+export function describeMaterials(materials: readonly VisitMaterialDigest[]): string {
+  const lines = ['## 随访素材（已去掉姓名和联系方式；只能整理这里写了的内容）'];
+  materials.forEach((m, i) => {
+    // 素材里的 ``` 换掉，免得提前结束代码块
+    lines.push(
+      '',
+      `### 素材 ${i + 1}（${m.uploadedOn} 上传）`,
+      '```',
+      m.text.replace(/`{3,}/g, "'''"),
+      '```',
+    );
+  });
+  return lines.join('\n');
 }
 
 const MEAL_ZH: Record<MealType, string> = {

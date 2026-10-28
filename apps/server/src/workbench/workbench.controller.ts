@@ -24,7 +24,7 @@ import { z } from 'zod';
 import type { ResolvedSession } from '../auth/auth.repository.js';
 import { CurrentSession } from '../auth/decorators.js';
 import { SESSION_COOKIE, SessionService } from '../auth/session.service.js';
-import { badRequest, notFound, tooManyRequests } from '../common/api-error.js';
+import { badRequest, conflict, notFound, tooManyRequests } from '../common/api-error.js';
 import { requireManager } from '../common/manager-only.js';
 import { ConsultationService } from '../experts/consultation.service.js';
 import { ExpertsRepository } from '../experts/experts.repository.js';
@@ -115,7 +115,13 @@ export class WorkbenchController {
       reportRefs: input.reportRefs,
       twinRefs: input.twinRefs,
       ...(input.followUpItemId ? { followUpItemId: input.followUpItemId } : {}),
+      materialRefs: input.materialRefs,
+      ...(input.visitId ? { visitId: input.visitId } : {}),
     });
+    // /随访记录 要 @ 随访素材（规格 2.9）：没有素材时提示先上传，不生成；别的技能不能带素材
+    const usesMaterials = Boolean(skill?.usesMaterials);
+    if (input.materialRefs.length && !usesMaterials) throw badRequest();
+    if (usesMaterials && !input.materialRefs.length) throw conflict({ reasons: ['no_materials'] });
     const direct = await this.checkExperts(session, taskId, input, skill, plan);
     // “请专家看看”超出当天的专家调用次数时返回 429
     if (input.twinConsult && (await this.consultation.remainingToday(session)) <= 0) {
@@ -149,6 +155,8 @@ export class WorkbenchController {
           requiresTwinData: usesTwin,
           requiresPlanData: makesPlan,
           planOptions,
+          materialRefs: input.materialRefs,
+          ...(input.visitId ? { visitId: input.visitId } : {}),
           twinConsult: input.twinConsult,
         },
         claim,
@@ -187,6 +195,8 @@ export class WorkbenchController {
           requestMessageId: turn.value.managerMessageId,
           parent: undefined,
           planOptions,
+          materialIds: input.materialRefs,
+          visitId: input.visitId ?? null,
           experts: {
             trigger: 'skill_auto',
             forced: input.expertRefs,

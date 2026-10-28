@@ -14,11 +14,14 @@ import {
   type PlanOptions,
   type PlanSection,
   type RiskTier,
+  type AdherenceWindow,
+  type VisitPurpose,
   type VisitMethod,
 } from '@health-buddy/shared';
 import { selectPlanCandidates } from '@health-buddy/plan-library';
-import type { PlanContext, PlanLibraryContext } from '@health-buddy/skills';
+import type { PlanContext, PlanLibraryContext, VisitDigest } from '@health-buddy/skills';
 import type { TenantContext, TenantTransaction } from '../db/database.js';
+import { planAdherenceIn } from '../care/care-plans.repository.js';
 import { dateText, managerTimeZone } from '../care/common.js';
 import { visitFrequencyRulesIn } from '../plan-library/visit-frequency.repository.js';
 
@@ -44,6 +47,15 @@ export interface PlanContextOptions {
    * 不看正在执行的旧方案
    */
   draftCycleWeeks?: number;
+  /** /随访话术：方案执行情况（按监测数据算出的数字） */
+  adherence?: boolean;
+  /**
+   * /随访话术、/随访记录：这一次随访。visitId 是关联的那一次（已校验属于这位客户）；
+   * 没有关联时 nextOpen 为 true 就取下一次待随访
+   */
+  visit?: { visitId: string | null; nextOpen: boolean };
+  /** /随访记录：@ 的素材 id 和解密函数（原文只在内存里，去标识后才进提示词） */
+  materials?: { ids: readonly string[]; decrypt: (data: Buffer, clientId: string) => string };
   riskTier: RiskTier | null;
   /** 有 1、2 级未处理的跟进项（第一次随访不晚于 n 天） */
   hasUrgentFollowUp: boolean;
@@ -71,6 +83,7 @@ export async function loadPlanContext(
     .executeTakeFirst();
 
   let currentPlan: PlanContext['currentPlan'] = null;
+  const goalTexts = new Map<string, string>();
   if (plan) {
     const snapshot = plan.snapshot as CarePlanSnapshot;
     const goals = snapshot.structured.sections.flatMap((s) =>
@@ -86,23 +99,22 @@ export async function loadPlanContext(
           .execute()
       : [];
     const byId = new Map(templates.map((t) => [t.id, t]));
+    const goalText = (g: (typeof goals)[number]) => {
+      const t = byId.get(g.templateId);
+      if (!t) return '（目标模板已停用）';
+      try {
+        return renderGoal({ text: t.text, params: t.params as GoalParam[] }, g.params);
+      } catch {
+        return '（目标参数和模板对不上）';
+      }
+    };
+    for (const g of goals) goalTexts.set(g.templateId, goalText(g));
     currentPlan = {
       startDate: plan.start_date_text,
       reviewDate: plan.review_date_text,
       cycleWeeks: plan.cycle_weeks,
       sections: plan.sections as PlanSection[],
-      goals: goals.map((g) => {
-        const t = byId.get(g.templateId);
-        let text = '（目标模板已停用）';
-        if (t) {
-          try {
-            text = renderGoal({ text: t.text, params: t.params as GoalParam[] }, g.params);
-          } catch {
-            text = '（目标参数和模板对不上）';
-          }
-        }
-        return { section: g.section, text };
-      }),
+      goals: goals.map((g) => ({ section: g.section, text: goalText(g) })),
     };
   }
 
@@ -128,6 +140,39 @@ export async function loadPlanContext(
   });
 
   const context: PlanContext = { currentPlan, recentRecords };
+  const needsToday = Boolean(options.visit || options.materials);
+  if (needsToday) {
+    const timeZone = await managerTimeZone(trx, ctx, options.tzFallback);
+    context.today = dateInTimeZone(options.now ?? new Date(), timeZone);
+  }
+  if (options.adherence) {
+    const result = await planAdherenceIn(trx, ctx, clientId, options.tzFallback);
+    context.adherence = (result?.goals ?? []).map((g) =>
+      adherenceLine(goalTexts.get(g.templateId) ?? '行为目标', g),
+    );
+  }
+  if (options.visit) context.visit = await loadVisit(trx, clientId, options.visit);
+  if (options.materials?.ids.length) {
+    const rows = await trx
+      .selectFrom('visit_materials')
+      .select((eb) => ['id', 'text_encrypted', dateText(eb, 'created_at').as('uploaded_on')])
+      .where('id', 'in', [...options.materials.ids])
+      .where('client_id', '=', clientId)
+      .where('purged_at', 'is', null)
+      .execute();
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    // 按 @ 的顺序；发消息后被删除或清理的素材不在里面（生成照常，健管师看到的记录里少一份）
+    context.materials = options.materials.ids.flatMap((id) => {
+      const r = byId.get(id);
+      if (!r?.text_encrypted) return [];
+      return [
+        {
+          uploadedOn: r.uploaded_on,
+          text: options.materials!.decrypt(r.text_encrypted, clientId),
+        },
+      ];
+    });
+  }
   if (options.library) context.library = await loadLibrary(trx, options.library);
   if (options.schedule) {
     const timeZone = await managerTimeZone(trx, ctx, options.tzFallback);
@@ -241,4 +286,43 @@ async function loadLibrary(
     },
     opts,
   );
+}
+
+/** 一个目标的执行情况，如“每天步行 7000 步：近 7 天有数据 5 天，平均 6320 步，达标 3 天” */
+function adherenceLine(
+  goal: string,
+  g: { metric: string; hasData: boolean; windows: AdherenceWindow[] },
+): string {
+  if (!g.hasData) return `${goal}：近 14 天没有监测数据，需要在随访时了解`;
+  const unit = g.metric === 'steps' ? ' 步' : ' 小时';
+  const parts = g.windows.map((w) =>
+    w.daysWithData
+      ? `近 ${w.days} 天有数据 ${w.daysWithData} 天，平均 ${w.average}${unit}，达标 ${w.daysMet} 天`
+      : `近 ${w.days} 天没有数据`,
+  );
+  return `${goal}：${parts.join('；')}`;
+}
+
+/** 这一次随访：关联的那一次，或下一次待随访（含已过期没处理的） */
+async function loadVisit(
+  trx: TenantTransaction,
+  clientId: string,
+  opts: { visitId: string | null; nextOpen: boolean },
+): Promise<VisitDigest | null> {
+  if (!opts.visitId && !opts.nextOpen) return null;
+  let q = trx
+    .selectFrom('visits')
+    .select((eb) => [dateText(eb, 'due_date').as('due_date_text'), 'purpose', 'method', 'focus'])
+    .where('client_id', '=', clientId);
+  q = opts.visitId
+    ? q.where('id', '=', opts.visitId)
+    : q.where('status', 'in', ['planned', 'missed']).orderBy('due_date').orderBy('created_at');
+  const row = await q.limit(1).executeTakeFirst();
+  if (!row) return null;
+  return {
+    dueDate: row.due_date_text,
+    purpose: row.purpose as VisitPurpose,
+    method: row.method as VisitMethod,
+    focus: row.focus,
+  };
 }

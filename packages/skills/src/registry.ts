@@ -5,7 +5,9 @@ import { skillUsesReport, type PlanTemplate, type SkillDefinition } from './fram
 import { interviewOutline } from './interview-outline/index.js';
 import { reportInterpretation } from './report-interpretation/index.js';
 import { twinSummary } from './twin-summary/index.js';
+import { visitRecord } from './visit-record/index.js';
 import { visitSchedule } from './visit-schedule/index.js';
+import { visitScript } from './visit-script/index.js';
 
 /** 技能注册表。新技能在这里登记后，/ 菜单和接口才能看到。 */
 // 各技能的输出结构不同，登记时统一成宽类型；取用时按 outputSchema 校验
@@ -16,6 +18,8 @@ export const SKILLS: readonly SkillDefinition[] = [
   twinSummary as unknown as SkillDefinition,
   carePlan as unknown as SkillDefinition,
   visitSchedule as unknown as SkillDefinition,
+  visitScript as unknown as SkillDefinition,
+  visitRecord as unknown as SkillDefinition,
 ];
 
 /**
@@ -77,7 +81,7 @@ export function skillSummaries(expertsEnabled = false): SkillSummary[] {
       allowsEmptyRequest: s.defaultRequest !== null,
       planSkills: [],
       experts: expertsEnabled ? (s.experts ?? 'none') : ('none' as const),
-      usesMaterials: false,
+      usesMaterials: s.usesMaterials ?? false,
       // /方案生成 有方案选项条（部分、周期，规格 2.2）
       usesPlanOptions: s.planContext === 'care_plan',
     })),
