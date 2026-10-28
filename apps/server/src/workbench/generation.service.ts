@@ -829,8 +829,9 @@ export class GenerationService {
           const clientTexts =
             skill.clientFacingTexts?.(data as never) ??
             (typeof clientFacing === 'string' ? [clientFacing] : []);
+          // /方案生成：没请专家时通俗版同样不能出现“专家”和专家名称（规格 5.3）
           const mentions =
-            used && skill.clientFacing
+            (used || skill.planContext === 'care_plan') && skill.clientFacing
               ? clientTexts.flatMap((text) =>
                   expertMentions(
                     text,
