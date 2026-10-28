@@ -1,0 +1,61 @@
+/* 伴侣“福宝”的平台维护页面（M6 规格 2.10）。表格、对话框沿用 thresholds/Thresholds.module.css */
+
+.scriptText {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.scriptArea,
+.noticeArea {
+  width: 100%;
+  padding: var(--hb-space-2);
+  border: 1px solid var(--hb-border-strong);
+  border-radius: var(--hb-radius-md);
+  background: var(--hb-surface);
+  color: var(--hb-text);
+  font: inherit;
+  line-height: var(--hb-leading);
+  resize: vertical;
+}
+
+.scriptArea {
+  min-height: 6em;
+}
+
+.noticeArea {
+  min-height: 16em;
+  font-family: var(--hb-font-mono);
+  font-size: var(--hb-text-sm);
+}
+
+.scriptArea:focus-visible,
+.noticeArea:focus-visible {
+  outline: none;
+  box-shadow: var(--hb-focus-ring);
+}
+
+.issues {
+  margin: var(--hb-space-1) 0 0;
+  padding-left: var(--hb-space-5);
+}
+
+.versions {
+  display: grid;
+  gap: var(--hb-space-3);
+  margin: 0;
+  padding-left: var(--hb-space-5);
+}
+
+.versions li {
+  display: grid;
+  gap: var(--hb-space-1);
+}
