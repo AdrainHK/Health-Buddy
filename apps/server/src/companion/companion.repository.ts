@@ -34,7 +34,7 @@ export type BindResult =
   CompanionOverview | 'not_found' | 'already_bound' | 'no_consent' | 'unavailable';
 export type DeviceActionResult = CompanionOverview | 'not_found' | 'no_device' | 'invalid_state';
 export type ConsentResult =
-  CompanionOverview | 'not_found' | 'unknown_notice' | 'future_date' | 'not_consented';
+  CompanionOverview | 'not_found' | 'unknown_notice' | 'future_date' | 'bad_date' | 'not_consented';
 
 @Injectable()
 export class CompanionRepository {
@@ -78,13 +78,16 @@ export class CompanionRepository {
     return withTenant(this.db, ctx, async (trx) => {
       if (!(await ownClient(trx, ctx, clientId))) return 'not_found';
       if (await isFuture(trx, ctx, body.consentedOn, tzFallback)) return 'future_date';
+      // 只能按平台当前的告知书版本；同意日期不早于这版的发布日期（按北京时间，同数据库触发器）
       const notice = await trx
         .selectFrom('companion_scripts')
-        .select('id')
+        .select(['version', 'created_at'])
         .where('kind', '=', 'notice')
-        .where('version', '=', body.noticeVersion)
+        .orderBy('version', 'desc')
+        .limit(1)
         .executeTakeFirst();
-      if (!notice) return 'unknown_notice';
+      if (notice?.version !== body.noticeVersion) return 'unknown_notice';
+      if (body.consentedOn < localDate(notice.created_at, 'Asia/Shanghai')) return 'bad_date';
       await trx
         .insertInto('companion_consents')
         .values({
@@ -93,6 +96,7 @@ export class CompanionRepository {
           notice_version: body.noticeVersion,
           effective_on: body.consentedOn,
           recorded_by: ctx.userId,
+          chat_data_confirmed: body.chatDataConfirmed,
         })
         .execute();
       return loadOverview(trx, ctx, clientId);
@@ -110,6 +114,7 @@ export class CompanionRepository {
       if (await isFuture(trx, ctx, body.revokedOn, tzFallback)) return 'future_date';
       const latest = await latestConsentRow(trx, clientId);
       if (latest?.action !== 'consent') return 'not_consented';
+      if (body.revokedOn < latest.effective_on) return 'bad_date';
       await trx
         .insertInto('companion_consents')
         .values({

@@ -435,7 +435,7 @@ describe('今日跟进：异常跟进和今日随访两组（M5 规格 2.7，Q19
     expect(screen.getByRole('list', { name: '异常跟进' })).toBeInTheDocument();
   });
 
-  it('客户标签有“孪生 / 方案与随访 / 档案”三个子视图', async () => {
+  it('客户标签有“孪生 / 方案与随访 / 伴侣 / 档案”四个子视图', async () => {
     mockShell({
       ...careRoutes(),
       [`GET /clients/${ids.clientA}/twin`]: () => json(404, { error: 'not_found' }),
@@ -451,7 +451,7 @@ describe('今日跟进：异常跟进和今日随访两组（M5 规格 2.7，Q19
       within(views)
         .getAllByRole('button')
         .map((b) => b.textContent),
-    ).toEqual(['孪生', '方案与随访', '档案']);
+    ).toEqual(['孪生', '方案与随访', '伴侣', '档案']);
     await user.click(within(views).getByRole('button', { name: '方案与随访' }));
     expect(await within(panel).findByTestId('current-plan')).toHaveTextContent('每天步行 7000 步');
   });

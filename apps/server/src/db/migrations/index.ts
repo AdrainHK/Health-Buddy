@@ -23,6 +23,7 @@ import * as m0021 from './0021-sesame-allergen.js';
 import * as m0022 from './0022-plan-stats.js';
 import * as m0023 from './0023-screenshot-material.js';
 import * as m0024 from './0024-companion-devices.js';
+import * as m0025 from './0025-companion-deliveries.js';
 
 export interface Migration {
   name: string;
@@ -55,4 +56,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { name: '0022-plan-stats', up: m0022.up },
   { name: '0023-screenshot-material', up: m0023.up },
   { name: '0024-companion-devices', up: m0024.up },
+  { name: '0025-companion-deliveries', up: m0025.up },
 ];

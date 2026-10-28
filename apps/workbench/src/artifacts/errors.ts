@@ -5,6 +5,9 @@ export type ArtifactErrorKey =
   | 'tooMany'
   | 'readOnly'
   | 'notClientFacing'
+  | 'noCompanion'
+  | 'notLatest'
+  | 'notCurrentPlan'
   | 'sourceReportGone'
   | 'badRequest'
   | 'notFound'
@@ -27,6 +30,10 @@ export function classifyArtifactError(err: unknown): ArtifactErrorKind {
     if (err.reasons.includes('busy')) return { kind: 'error', key: 'busy' };
     // 只有专业版的产物（/面谈提纲）不能复制、导出
     if (err.reasons.includes('not_client_facing')) return { kind: 'error', key: 'notClientFacing' };
+    // 同步给伴侣：客户没有绑定设备或已撤回同意（M6 规格 2.8）
+    if (err.reasons.includes('no_companion')) return { kind: 'error', key: 'noCompanion' };
+    if (err.reasons.includes('not_latest')) return { kind: 'error', key: 'notLatest' };
+    if (err.reasons.includes('not_current_plan')) return { kind: 'error', key: 'notCurrentPlan' };
     // 依据的报告已不可用：不能按原报告重写
     if (err.reasons.includes('source_report_unavailable')) {
       return { kind: 'error', key: 'sourceReportGone' };

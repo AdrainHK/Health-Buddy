@@ -1,0 +1,54 @@
+/* 结果区“客户 · 伴侣”（M6 规格 2.8）。表单和分区沿用 twin/Twin.module.css */
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--hb-space-1) var(--hb-space-3);
+  margin: 0;
+  font-size: var(--hb-text-sm);
+}
+
+.facts dt {
+  color: var(--hb-text-2);
+}
+
+.facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.formRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hb-space-2);
+}
+
+.formRow > * {
+  flex: 1 1 9em;
+  min-width: 0;
+}
+
+.checkRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--hb-space-2);
+  font-size: var(--hb-text-sm);
+  line-height: var(--hb-leading);
+}
+
+.checkRow input {
+  margin-top: var(--hb-space-1);
+}
+
+.noticeText {
+  white-space: pre-wrap;
+  max-height: 20em;
+  overflow-y: auto;
+  padding: var(--hb-space-3);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-md);
+  background: var(--hb-surface-2);
+  font-size: var(--hb-text-sm);
+  line-height: var(--hb-leading);
+}

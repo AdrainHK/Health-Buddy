@@ -31,11 +31,18 @@ describe('伴侣契约（M6 第 1 步）', () => {
     ).toBe(false);
   });
 
-  it('同意必须勾选确认', () => {
+  it('同意必须勾选两项：线下告知、聊天数据的使用', () => {
     const base = { noticeVersion: 1, consentedOn: '2026-10-01' };
     expect(recordCompanionConsentRequestSchema.safeParse(base).success).toBe(false);
     expect(
       recordCompanionConsentRequestSchema.safeParse({ ...base, confirmed: true }).success,
+    ).toBe(false);
+    expect(
+      recordCompanionConsentRequestSchema.safeParse({
+        ...base,
+        confirmed: true,
+        chatDataConfirmed: true,
+      }).success,
     ).toBe(true);
   });
 

@@ -1,0 +1,79 @@
+import {
+  companionOverviewSchema,
+  companionScriptSchema,
+  type BindCompanionDeviceRequest,
+  type CompanionOverview,
+  type CompanionScript,
+  type RecordCompanionConsentRequest,
+  type UpdateCompanionSettingsRequest,
+} from '@health-buddy/shared';
+import { apiRequest } from './http';
+import { browserTimeZone } from './twin';
+
+/**
+ * 伴侣“福宝”（M6 规格 2.1、2.8）：设备、线下告知和同意、伴侣设置。
+ * 只给服务这位客户的健管师；别人的客户一律 404。激活码只在绑定请求里出现。
+ */
+
+const opts = (signal?: AbortSignal) => (signal ? { signal } : {});
+const base = (clientId: string) => `/clients/${encodeURIComponent(clientId)}/companion`;
+const tz = () => {
+  const zone = browserTimeZone();
+  return zone ? `?tz=${encodeURIComponent(zone)}` : '';
+};
+
+export function getCompanion(clientId: string, signal?: AbortSignal): Promise<CompanionOverview> {
+  return apiRequest(base(clientId), companionOverviewSchema, opts(signal));
+}
+
+export function updateCompanionSettings(
+  clientId: string,
+  body: UpdateCompanionSettingsRequest,
+): Promise<CompanionOverview> {
+  return apiRequest(base(clientId), companionOverviewSchema, { method: 'PATCH', body });
+}
+
+export function recordCompanionConsent(
+  clientId: string,
+  body: RecordCompanionConsentRequest,
+): Promise<CompanionOverview> {
+  return apiRequest(`${base(clientId)}/consents${tz()}`, companionOverviewSchema, {
+    method: 'POST',
+    body,
+  });
+}
+
+export function revokeCompanionConsent(
+  clientId: string,
+  revokedOn: string,
+): Promise<CompanionOverview> {
+  return apiRequest(`${base(clientId)}/consents/revoke${tz()}`, companionOverviewSchema, {
+    method: 'POST',
+    body: { revokedOn },
+  });
+}
+
+export function bindCompanionDevice(
+  clientId: string,
+  body: BindCompanionDeviceRequest,
+): Promise<CompanionOverview> {
+  return apiRequest(`${base(clientId)}/device`, companionOverviewSchema, {
+    method: 'POST',
+    body,
+  });
+}
+
+export function unbindCompanionDevice(clientId: string): Promise<CompanionOverview> {
+  return apiRequest(`${base(clientId)}/device`, companionOverviewSchema, { method: 'DELETE' });
+}
+
+export function setCompanionPaused(clientId: string, paused: boolean): Promise<CompanionOverview> {
+  return apiRequest(`${base(clientId)}/${paused ? 'pause' : 'resume'}`, companionOverviewSchema, {
+    method: 'POST',
+  });
+}
+
+/** 当前的线下告知书模板（打印用）；平台还没有发布时 404 */
+export function getCompanionNotice(signal?: AbortSignal): Promise<CompanionScript> {
+  return apiRequest('/companion/notice', companionScriptSchema, opts(signal));
+}

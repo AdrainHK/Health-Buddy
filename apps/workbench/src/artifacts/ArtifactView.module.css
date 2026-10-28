@@ -437,3 +437,10 @@
   flex-direction: column;
   gap: var(--hb-space-1);
 }
+
+/* 已同步给伴侣、客户还没有开通伴侣（M6 规格 2.8） */
+.companionNote {
+  align-self: center;
+  font-size: var(--hb-text-sm);
+  color: var(--hb-text-2);
+}

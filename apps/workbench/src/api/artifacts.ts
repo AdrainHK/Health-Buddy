@@ -59,6 +59,20 @@ export async function approveArtifact(
 }
 
 /** 基于已审核版本新建草稿，返回新草稿的详情 */
+/** 已审核的方案、报告解读同步给伴侣“福宝”（M6 规格 2.8）；同步过的再点一次不重复 */
+export function syncArtifactToCompanion(id: string): Promise<ArtifactDetailResponse> {
+  return apiRequest(`/artifacts/${id}/sync-to-companion`, artifactDetailResponseSchema, {
+    method: 'POST',
+  });
+}
+
+/** 取消同步给伴侣：福宝不再读这份通俗版 */
+export function withdrawArtifactFromCompanion(id: string): Promise<ArtifactDetailResponse> {
+  return apiRequest(`/artifacts/${id}/sync-to-companion`, artifactDetailResponseSchema, {
+    method: 'DELETE',
+  });
+}
+
 export function reviseArtifact(id: string): Promise<ArtifactDetailResponse> {
   return apiRequest(`/artifacts/${id}/revise`, artifactDetailResponseSchema, { method: 'POST' });
 }

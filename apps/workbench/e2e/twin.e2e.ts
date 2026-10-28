@@ -83,6 +83,7 @@ const planArtifact: ArtifactSummary = {
   sourceFileName: null,
 };
 const planArtifactDetail: ArtifactDetailResponse = {
+  companion: null,
   artifact: {
     ...planArtifact,
     clientId: ids.client,

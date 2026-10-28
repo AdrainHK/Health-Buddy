@@ -154,6 +154,11 @@ export const recordCompanionConsentRequestSchema = z.object({
   consentedOn: z.iso.date(),
   /** 必须勾选“已向客户本人线下告知并取得同意” */
   confirmed: z.literal(true),
+  /**
+   * 必须另外勾选：已单独告知对话会转成文字保存、服务客户的健管师能看到、家里其他人说的话也可能被记录、
+   * 撤回后 7 天删除（合规复审：聊天数据的使用单独告知并取得同意）
+   */
+  chatDataConfirmed: z.literal(true),
 });
 export type RecordCompanionConsentRequest = z.infer<typeof recordCompanionConsentRequestSchema>;
 
@@ -253,3 +258,28 @@ export const COMPANION_DEFAULT_SCRIPTS: Readonly<
   reminder_measurement: '该记一下今天的{metric}了，您告诉我数就行。',
   reminder_exercise: '今天的运动做了吗？',
 };
+
+// ---------- 同步给伴侣（规格 2.8、N12，红线 3） ----------
+
+/** 可以同步给伴侣的产物种类（Q12：方案和解读的通俗版） */
+export const COMPANION_DELIVERY_KINDS = ['care_plan', 'report_interpretation'] as const;
+export type CompanionDeliveryKind = (typeof COMPANION_DELIVERY_KINDS)[number];
+
+export function isCompanionDeliveryKind(kind: string): kind is CompanionDeliveryKind {
+  return (COMPANION_DELIVERY_KINDS as readonly string[]).includes(kind);
+}
+
+/**
+ * POST /api/artifacts/:id/sync-to-companion 的 409 原因：未审核、不是方案或解读、
+ * 客户没有绑定设备或已撤回同意、通俗版不合规（同复制、导出的检查）
+ */
+export const SYNC_TO_COMPANION_FAILURES = [
+  'not_approved',
+  'wrong_kind',
+  /** 这条产物链有更新的已审核版本 */
+  'not_latest',
+  /** 方案不是当前生效的方案 */
+  'not_current_plan',
+  'no_companion',
+  'not_client_facing',
+] as const;

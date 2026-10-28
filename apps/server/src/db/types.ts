@@ -261,7 +261,16 @@ export interface ArtifactEventsTable extends ManagerScoped {
   id: Generated<string>;
   artifact_id: string;
   actor_id: string | null;
-  action: 'created' | 'edited' | 'approved' | 'returned' | 'voided' | 'copied' | 'exported';
+  action:
+    | 'created'
+    | 'edited'
+    | 'approved'
+    | 'returned'
+    | 'voided'
+    | 'copied'
+    | 'exported'
+    | 'companion_synced'
+    | 'companion_withdrawn';
   reason: string | null;
   format: 'png' | 'pdf' | null;
   created_at: Timestamp;
@@ -710,6 +719,7 @@ export interface Database {
   companion_devices: CompanionDevicesTable;
   companion_consents: CompanionConsentsTable;
   companion_scripts: CompanionScriptsTable;
+  companion_deliveries: CompanionDeliveriesTable;
 }
 
 // ---------- M5 方案和随访（迁移 0020） ----------
@@ -947,6 +957,8 @@ export interface CompanionConsentsTable {
   notice_version: ColumnType<number | null, number | null, never>;
   effective_on: ColumnType<Date, Date | string, never>;
   recorded_by: ColumnType<string, string, never>;
+  /** 迁移 0025：记录同意时另外确认了聊天数据的使用 */
+  chat_data_confirmed: ColumnType<boolean, boolean | undefined, never>;
   created_at: ColumnType<Date, undefined, never>;
 }
 
@@ -958,4 +970,21 @@ export interface CompanionScriptsTable {
   text: ColumnType<string, string, never>;
   created_by: ColumnType<string | null, string, never>;
   created_at: ColumnType<Date, undefined, never>;
+}
+
+/** 同步给伴侣的通俗版快照（迁移 0025）：只经 sync_artifact_to_companion 写入 */
+export interface CompanionDeliveriesTable {
+  id: Generated<string>;
+  operator_id: string;
+  org_id: string | null;
+  manager_id: string;
+  client_id: string;
+  artifact_id: string;
+  kind: 'care_plan' | 'report_interpretation';
+  content: string;
+  sent_by: string;
+  sent_at: ColumnType<Date, undefined, never>;
+  superseded_at: ColumnType<Date | null, undefined, never>;
+  withdrawn_at: ColumnType<Date | null, undefined, never>;
+  withdrawn_by: ColumnType<string | null, undefined, never>;
 }
