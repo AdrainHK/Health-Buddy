@@ -262,7 +262,7 @@ describe('/随访话术、/随访记录', () => {
       const purged = await upload(a1, f.clients.a1[0], '合成通话笔记');
       await owner
         .updateTable('visit_materials')
-        .set({ purged_at: new Date() })
+        .set({ purged_at: new Date(), text_encrypted: null })
         .where('id', '=', purged)
         .execute();
       const a2Visit = await addVisit(a2, f.clients.a2, '别人的随访');
