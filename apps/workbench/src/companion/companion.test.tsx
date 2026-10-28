@@ -70,12 +70,15 @@ describe('伴侣视图', () => {
         name: '我已按第 2 版告知书向客户本人线下告知，并取得客户同意',
       }),
     );
+    expect(record).toBeDisabled();
+    await user.click(screen.getByRole('checkbox', { name: /福宝会把对话转成文字保存/ }));
     await user.click(record);
     await waitFor(() => expect(api.callsTo('POST', `${BASE}/consents${TZ}`)).toHaveLength(1));
     expect(api.callsTo('POST', `${BASE}/consents${TZ}`)[0]!.body).toEqual({
       noticeVersion: 2,
       consentedOn: localToday(),
       confirmed: true,
+      chatDataConfirmed: true,
     });
     expect(await screen.findByRole('form', { name: '绑定设备' })).toBeInTheDocument();
   });

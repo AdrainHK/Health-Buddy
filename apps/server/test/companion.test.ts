@@ -1,11 +1,14 @@
 import { randomBytes } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { localDate } from '../src/twin/time-zone.js';
 import { ownerDb, seedFixtures, type Fixtures } from './fixtures.js';
 import { createTestApp, loginAs } from './http.js';
 
 type Agent = Awaited<ReturnType<typeof loginAs>>;
 
+/** 同意和撤回日期：不能早于告知书发布日期（测试里告知书都是今天发布的） */
+const TODAY = localDate(new Date(), 'Asia/Shanghai');
 /**
  * M6 第 1 步：伴侣设备、线下同意、伴侣设置、平台批次和固定话术的接口（规格 2.1、2.8、2.10、6.4）。
  * 每个接口都有跨租户被拒绝的用例。全部是合成数据，序列号、密钥、激活码都是测试值。
@@ -34,12 +37,12 @@ describe('伴侣设备和设置接口', () => {
   const publishNotice = () =>
     platform
       .put('/api/admin/companion/scripts/notice')
-      .send({ text: '测试用告知书正文' })
+      .send({ text: '测试用告知书：福宝不是医生，可以随时撤回同意。' })
       .expect(200);
   const consent = (agent: Agent, url = base()) =>
     agent
       .post(`${url}/consents`)
-      .send({ noticeVersion: 1, consentedOn: '2026-10-01', confirmed: true });
+      .send({ noticeVersion: 1, consentedOn: TODAY, confirmed: true, chatDataConfirmed: true });
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -75,7 +78,7 @@ describe('伴侣设备和设置接口', () => {
       await agent.get(base()).expect(404);
       await agent.patch(base()).send({ volume: 'high' }).expect(404);
       await consent(agent).expect(404);
-      await agent.post(`${base()}/consents/revoke`).send({ revokedOn: '2026-10-02' }).expect(404);
+      await agent.post(`${base()}/consents/revoke`).send({ revokedOn: TODAY }).expect(404);
       await agent
         .post(`${base()}/device`)
         .send({ serialNo: 'HB-TEST-0001', activationCode: 'ABCD1234' })
@@ -127,7 +130,7 @@ describe('伴侣设备和设置接口', () => {
       await agent.get(base()).expect(404);
       await agent.patch(base()).send({ volume: 'high', nameForClient: '别人' }).expect(404);
       await consent(agent).expect(404);
-      await agent.post(`${base()}/consents/revoke`).send({ revokedOn: '2026-10-02' }).expect(404);
+      await agent.post(`${base()}/consents/revoke`).send({ revokedOn: TODAY }).expect(404);
       await agent.delete(`${base()}/device`).expect(404);
       await agent.post(`${base()}/pause`).expect(404);
       await agent.post(`${base()}/resume`).expect(404);
@@ -189,27 +192,29 @@ describe('伴侣设备和设置接口', () => {
   it('同意：要勾选、版本要存在、日期不能晚于今天；撤回前要有同意', async () => {
     await consent(a1).expect(400); // 还没有告知书模板
     await publishNotice();
+    await a1.post(`${base()}/consents`).send({ noticeVersion: 1, consentedOn: TODAY }).expect(400);
     await a1
       .post(`${base()}/consents`)
-      .send({ noticeVersion: 1, consentedOn: '2026-10-01' })
+      .send({
+        noticeVersion: 1,
+        consentedOn: '2999-01-01',
+        confirmed: true,
+        chatDataConfirmed: true,
+      })
       .expect(400);
-    await a1
-      .post(`${base()}/consents`)
-      .send({ noticeVersion: 1, consentedOn: '2999-01-01', confirmed: true })
-      .expect(400);
-    await a1.post(`${base()}/consents/revoke`).send({ revokedOn: '2026-10-02' }).expect(409);
+    await a1.post(`${base()}/consents/revoke`).send({ revokedOn: TODAY }).expect(409);
     const res = await consent(a1).expect(200);
     expect(res.body.consent).toMatchObject({
       noticeVersion: 1,
-      consentedOn: '2026-10-01',
+      consentedOn: TODAY,
       revokedOn: null,
     });
     expect(res.body.currentNoticeVersion).toBe(1);
     const revoked = await a1
       .post(`${base()}/consents/revoke`)
-      .send({ revokedOn: '2026-10-02' })
+      .send({ revokedOn: TODAY })
       .expect(200);
-    expect(revoked.body.consent).toMatchObject({ revokedOn: '2026-10-02' });
+    expect(revoked.body.consent).toMatchObject({ revokedOn: TODAY });
   });
 
   it('绑定：激活码不对、序列号不存在、已被别人绑定，都只说“不可用”；不能绑两台', async () => {
@@ -265,6 +270,44 @@ describe('伴侣设备和设置接口', () => {
       .expect(429);
   });
 
+  it('同意：必须单独确认聊天数据的使用；只能按当前告知书版本；撤回日期不早于同意日期', async () => {
+    await publishNotice();
+    await a1
+      .post(`${base()}/consents`)
+      .send({ noticeVersion: 1, consentedOn: TODAY, confirmed: true })
+      .expect(400);
+    await platform
+      .put('/api/admin/companion/scripts/notice')
+      .send({ text: '测试用告知书第二版：福宝不是医生，可以随时撤回同意。' })
+      .expect(200);
+    await consent(a1).expect(400); // 第 1 版已不是当前版本
+    await a1
+      .post(`${base()}/consents`)
+      .send({ noticeVersion: 2, consentedOn: TODAY, confirmed: true, chatDataConfirmed: true })
+      .expect(200);
+    await a1.post(`${base()}/consents/revoke`).send({ revokedOn: '2026-01-01' }).expect(400);
+    const row = await owner
+      .selectFrom('companion_consents')
+      .select(['notice_version', 'chat_data_confirmed'])
+      .where('client_id', '=', f.clients.a1[0])
+      .executeTakeFirstOrThrow();
+    expect(row).toEqual({ notice_version: 2, chat_data_confirmed: true });
+  });
+
+  it('撤回同意后重新同意：设备回到撤回前的状态（暂停的仍是暂停）', async () => {
+    await importBatch();
+    await publishNotice();
+    await consent(a1).expect(200);
+    await a1
+      .post(`${base()}/device`)
+      .send({ serialNo: 'HB-TEST-0001', activationCode: 'ABCD1234' })
+      .expect(200);
+    await a1.post(`${base()}/pause`).expect(200);
+    await a1.post(`${base()}/consents/revoke`).send({ revokedOn: TODAY }).expect(200);
+    expect((await a1.get(base()).expect(200)).body.status).toBe('revoked');
+    expect((await consent(a1).expect(200)).body.status).toBe('paused');
+  });
+
   it('暂停、恢复、解绑；撤回同意后设备只播暂停话术，不能恢复', async () => {
     await importBatch();
     await publishNotice();
@@ -276,7 +319,7 @@ describe('伴侣设备和设置接口', () => {
       .expect(200);
     expect((await a1.post(`${base()}/pause`).expect(200)).body.status).toBe('paused');
     expect((await a1.post(`${base()}/resume`).expect(200)).body.status).toBe('pending_activation');
-    await a1.post(`${base()}/consents/revoke`).send({ revokedOn: '2026-10-02' }).expect(200);
+    await a1.post(`${base()}/consents/revoke`).send({ revokedOn: TODAY }).expect(200);
     expect((await a1.get(base()).expect(200)).body.status).toBe('revoked');
     await a1.post(`${base()}/resume`).expect(409);
     expect((await a1.delete(`${base()}/device`).expect(200)).body.status).toBe('unbound');
@@ -287,7 +330,11 @@ describe('伴侣设备和设置接口', () => {
     await a1.get('/api/companion/notice').expect(404);
     await publishNotice();
     const res = await a1.get('/api/companion/notice').expect(200);
-    expect(res.body).toMatchObject({ kind: 'notice', version: 1, text: '测试用告知书正文' });
+    expect(res.body).toMatchObject({
+      kind: 'notice',
+      version: 1,
+      text: '测试用告知书：福宝不是医生，可以随时撤回同意。',
+    });
     await (await as(f.users.orgAdminA.email)).get('/api/companion/notice').expect(404);
   });
 

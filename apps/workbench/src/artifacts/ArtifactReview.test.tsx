@@ -520,8 +520,11 @@ describe('review bar on an approved artifact', () => {
     makeArtifactDetail({ status: 'approved', hasCriticalFlags: true, criticalFlags: [CRITICAL] });
 
   it('同步给伴侣（M6）：客户已开通时可以同步，同步后显示同步时间；未开通时只提示', async () => {
-    const detail = { ...approved(), companion: { available: true, syncedAt: null } };
-    const synced = { ...detail, companion: { available: true, syncedAt: NOW } };
+    const detail = {
+      ...approved(),
+      companion: { available: true, syncedAt: null, superseded: false },
+    };
+    const synced = { ...detail, companion: { available: true, syncedAt: NOW, superseded: false } };
     const api = mockApi({
       [`GET ${TASK_PATH}`]: () => json(200, taskDetail(detail)),
       [`GET ${ART_PATH}`]: () => json(200, detail),
@@ -530,21 +533,31 @@ describe('review bar on an approved artifact', () => {
     const user = userEvent.setup();
     await openArtifact(user);
     await user.click(button('同步给伴侣'));
+    // 同步前再确认一次
+    expect(api.callsTo('POST', `${ART_PATH}/sync-to-companion`)).toHaveLength(0);
+    expect(
+      within(reviewBar()).getByText('同步后福宝会按这份通俗版原文念给客户听，确定同步吗？'),
+    ).toBeInTheDocument();
+    await user.click(button('确定同步'));
     expect(await within(reviewBar()).findByRole('status')).toHaveTextContent('已同步给伴侣');
+    expect(button('取消同步')).toBeInTheDocument();
     expect(within(reviewBar()).getByText(/^已于 .* 同步给伴侣$/)).toBeInTheDocument();
     expect(queryButton('同步给伴侣')).not.toBeInTheDocument();
     expect(api.callsTo('POST', `${ART_PATH}/sync-to-companion`)).toHaveLength(1);
   });
 
   it('同步给伴侣（M6）：客户没有开通伴侣时没有按钮；不是方案或解读时不显示', async () => {
-    const detail = { ...approved(), companion: { available: false, syncedAt: null } };
+    const detail = {
+      ...approved(),
+      companion: { available: false, syncedAt: null, superseded: false },
+    };
     mockApi({
       [`GET ${TASK_PATH}`]: () => json(200, taskDetail(detail)),
       [`GET ${ART_PATH}`]: () => json(200, detail),
     });
     const user = userEvent.setup();
     const view = await openArtifact(user);
-    expect(within(reviewBar()).getByText('客户还没有开通伴侣')).toBeInTheDocument();
+    expect(within(reviewBar()).getByText('客户没有开通伴侣，或已撤回同意')).toBeInTheDocument();
     expect(queryButton('同步给伴侣')).not.toBeInTheDocument();
     view.unmount();
   });

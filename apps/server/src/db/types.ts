@@ -269,7 +269,8 @@ export interface ArtifactEventsTable extends ManagerScoped {
     | 'voided'
     | 'copied'
     | 'exported'
-    | 'companion_synced';
+    | 'companion_synced'
+    | 'companion_withdrawn';
   reason: string | null;
   format: 'png' | 'pdf' | null;
   created_at: Timestamp;
@@ -956,6 +957,8 @@ export interface CompanionConsentsTable {
   notice_version: ColumnType<number | null, number | null, never>;
   effective_on: ColumnType<Date, Date | string, never>;
   recorded_by: ColumnType<string, string, never>;
+  /** 迁移 0025：记录同意时另外确认了聊天数据的使用 */
+  chat_data_confirmed: ColumnType<boolean, boolean | undefined, never>;
   created_at: ColumnType<Date, undefined, never>;
 }
 
@@ -981,4 +984,7 @@ export interface CompanionDeliveriesTable {
   content: string;
   sent_by: string;
   sent_at: ColumnType<Date, undefined, never>;
+  superseded_at: ColumnType<Date | null, undefined, never>;
+  withdrawn_at: ColumnType<Date | null, undefined, never>;
+  withdrawn_by: ColumnType<string | null, undefined, never>;
 }

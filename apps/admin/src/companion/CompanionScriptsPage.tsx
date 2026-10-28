@@ -35,6 +35,7 @@ const ISSUE_CATEGORIES = [
   'reassurance',
   'manager_promise',
   'hospital',
+  'expert',
   'missing_required',
   'placeholder',
 ] as const;

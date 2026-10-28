@@ -22,7 +22,7 @@ describe('checkCompanionScript', () => {
     expect(categories('reminder_medication', '该吃两片了，吃了吗？')).toContain('drug_advice');
     expect(categories('reminder_exercise', '坚持运动保证降下来。')).toContain('efficacy_claim');
     expect(categories('fallback', '您的孪生状态是红灯。')).toContain('twin_term');
-    expect(categories('handoff', '营养专家说可以。')).toContain('judgment');
+    expect(categories('handoff', '营养专家说可以。')).toContain('expert');
     expect(categories('handoff', '请去市第一医院挂号。')).toContain('hospital');
     expect(categories('handoff', '我们可以帮您诊断一下。')).toContain('banned_term');
   });
@@ -53,8 +53,14 @@ describe('checkCompanionScript', () => {
     expect(categories('asr_retry', '我没听清{，您再说一遍。')).toEqual(['placeholder']);
   });
 
-  it('告知书模板只查禁用词', () => {
-    expect(categories('notice', '福宝不会判断您是否患有疾病，请以医生意见为准。')).toEqual([]);
-    expect(categories('notice', '福宝不能替代医生诊断。')).toEqual(['banned_term']);
+  it('告知书模板只查禁用词和必须写明的要点（不是医生、怎么撤回）', () => {
+    expect(
+      categories('notice', '福宝不是医生，不会判断您是否患有疾病。您可以随时撤回同意。'),
+    ).toEqual([]);
+    expect(categories('notice', '福宝不是医生，不能替代诊断。可以撤回。')).toEqual(['banned_term']);
+    expect(categories('notice', '福宝会陪您聊天。')).toEqual([
+      'missing_required',
+      'missing_required',
+    ]);
   });
 });

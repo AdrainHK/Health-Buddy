@@ -26,7 +26,7 @@ import { withTenant, type Db, type TenantContext, type TenantTransaction } from 
 import { selectArtifactSummary, toArtifactSummary } from '../tasks/tasks.repository.js';
 import { localDate, isValidTimeZone } from '../twin/time-zone.js';
 import { approveCarePlan, approveVisitRecord, approveVisitSchedule } from '../db/plan-functions.js';
-import { syncArtifactToCompanion } from '../db/companion-functions.js';
+import { syncArtifactToCompanion, withdrawCompanionDelivery } from '../db/companion-functions.js';
 import { renderPdf, renderPng } from './export-renderer.js';
 import {
   carePlanApproveReasons,
@@ -279,10 +279,24 @@ export class ArtifactsRepository {
       const text = deliverableText(row);
       const result = await syncArtifactToCompanion(trx, row.id, text);
       if (result === 'not_found') return undefined;
-      if (result === 'no_companion' || result === 'not_approved' || result === 'wrong_kind') {
-        throw conflict({ reasons: [result] });
-      }
+      if (SYNC_CONFLICTS.has(result)) throw conflict({ reasons: [result] });
       if (result !== 'ok' && result !== 'already') throw conflict();
+      return buildDetail(trx, row);
+    });
+  }
+
+  /** 取消同步给伴侣（合规复审）：福宝不再读这份快照；产物记录里记一条 */
+  withdrawFromCompanion(
+    ctx: TenantContext,
+    id: string,
+  ): Promise<ArtifactDetailResponse | undefined> {
+    return this.write(ctx, async (trx) => {
+      const row = await loadArtifact(trx, id, 'share');
+      if (!row) return undefined;
+      if (row.detached) throw readOnly();
+      const result = await withdrawCompanionDelivery(trx, row.id);
+      if (result === 'not_found') return undefined;
+      if (result === 'not_synced') throw conflict({ reasons: ['not_synced'] });
       return buildDetail(trx, row);
     });
   }
@@ -600,6 +614,15 @@ function shanghaiDate(d: Date): string {
 
 const notClientFacing = () => conflict({ reasons: ['not_client_facing'] });
 
+/** 同步给伴侣时数据库函数给出的、要告诉健管师的原因 */
+const SYNC_CONFLICTS: ReadonlySet<string> = new Set([
+  'not_approved',
+  'wrong_kind',
+  'not_latest',
+  'not_current_plan',
+  'no_companion',
+]);
+
 /** 技能有没有通俗版。找不到技能时按有通俗版处理，检查只会更严 */
 /** 同步给伴侣的状态（M6 规格 2.8）：只有方案和报告解读、关联了客户时才有 */
 async function companionState(
@@ -612,14 +635,26 @@ async function companionState(
     .select('status')
     .where('client_id', '=', row.client_id)
     .executeTakeFirst();
+  const consent = await trx
+    .selectFrom('companion_consents')
+    .select('action')
+    .where('client_id', '=', row.client_id)
+    .orderBy('id', 'desc')
+    .limit(1)
+    .executeTakeFirst();
   const delivery = await trx
     .selectFrom('companion_deliveries')
-    .select('sent_at')
+    .select(['sent_at', 'superseded_at', 'withdrawn_at'])
     .where('artifact_id', '=', row.id)
     .executeTakeFirst();
+  const inUse = delivery && !delivery.superseded_at && !delivery.withdrawn_at;
   return {
-    available: device !== undefined && ['bound', 'active', 'paused'].includes(device.status),
-    syncedAt: delivery ? delivery.sent_at.toISOString() : null,
+    available:
+      consent?.action === 'consent' &&
+      device !== undefined &&
+      ['bound', 'active', 'paused'].includes(device.status),
+    syncedAt: inUse ? delivery.sent_at.toISOString() : null,
+    superseded: Boolean(delivery?.superseded_at && !delivery.withdrawn_at),
   };
 }
 

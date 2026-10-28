@@ -98,6 +98,8 @@ export const ARTIFACT_ACTIONS = [
   'exported',
   /** 同步给伴侣“福宝”（M6 规格 2.8） */
   'companion_synced',
+  /** 取消同步给伴侣 */
+  'companion_withdrawn',
 ] as const;
 
 /** 修改、审核、复制和导出记录。只记谁在什么时候做了什么，不记内容。 */
@@ -144,11 +146,16 @@ export const artifactDetailResponseSchema = z.object({
   versions: z.array(artifactSummarySchema),
   events: z.array(artifactEventSchema),
   /**
-   * 同步给伴侣（M6 规格 2.8、N12）：只有方案和报告解读有；available 表示客户已绑定设备且没有撤回同意，
-   * syncedAt 是同步的时间（同一份产物只同步一次）。其他产物为空
+   * 同步给伴侣（M6 规格 2.8、N12）：只有方案和报告解读有。available：客户有有效同意且已绑定设备；
+   * syncedAt：在用的同步时间（取消同步、被替代后为空）；superseded：同步过、后来被这位客户更新的同类内容替代。
+   * 其他产物为空
    */
   companion: z
-    .object({ available: z.boolean(), syncedAt: z.iso.datetime().nullable() })
+    .object({
+      available: z.boolean(),
+      syncedAt: z.iso.datetime().nullable(),
+      superseded: z.boolean().default(false),
+    })
     .nullable()
     .default(null),
 });

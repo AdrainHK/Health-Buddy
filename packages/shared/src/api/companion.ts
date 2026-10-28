@@ -154,6 +154,11 @@ export const recordCompanionConsentRequestSchema = z.object({
   consentedOn: z.iso.date(),
   /** 必须勾选“已向客户本人线下告知并取得同意” */
   confirmed: z.literal(true),
+  /**
+   * 必须另外勾选：已单独告知对话会转成文字保存、服务客户的健管师能看到、家里其他人说的话也可能被记录、
+   * 撤回后 7 天删除（合规复审：聊天数据的使用单独告知并取得同意）
+   */
+  chatDataConfirmed: z.literal(true),
 });
 export type RecordCompanionConsentRequest = z.infer<typeof recordCompanionConsentRequestSchema>;
 
@@ -271,6 +276,10 @@ export function isCompanionDeliveryKind(kind: string): kind is CompanionDelivery
 export const SYNC_TO_COMPANION_FAILURES = [
   'not_approved',
   'wrong_kind',
+  /** 这条产物链有更新的已审核版本 */
+  'not_latest',
+  /** 方案不是当前生效的方案 */
+  'not_current_plan',
   'no_companion',
   'not_client_facing',
 ] as const;

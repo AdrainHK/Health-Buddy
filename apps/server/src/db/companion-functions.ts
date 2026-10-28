@@ -89,9 +89,9 @@ export async function companionDeviceBatchStats(
 }
 
 /**
- * 已审核产物同步给伴侣（规格 2.8，红线 3）：函数里重新校验归属、已审核、种类、客户已绑定设备、
- * 快照和产物通俗版一致。ok / already / not_found / not_approved / wrong_kind / no_companion /
- * content_mismatch
+ * 已审核产物同步给伴侣（规格 2.8，红线 3）：函数里重新校验归属、已审核、最新版本、种类、当前方案、
+ * 有效同意和设备、快照和产物通俗版一致。ok / already / not_found / not_approved / wrong_kind /
+ * not_latest / not_current_plan / no_companion / content_mismatch
  */
 export async function syncArtifactToCompanion(
   trx: TenantTransaction,
@@ -100,6 +100,17 @@ export async function syncArtifactToCompanion(
 ): Promise<string> {
   const { rows } = await sql<{ r: string }>`
     select sync_artifact_to_companion(${artifactId}::uuid, ${content}) as r
+  `.execute(trx);
+  return rows[0]?.r ?? 'not_found';
+}
+
+/** 取消同步给伴侣：ok / not_found / not_synced */
+export async function withdrawCompanionDelivery(
+  trx: TenantTransaction,
+  artifactId: string,
+): Promise<string> {
+  const { rows } = await sql<{ r: string }>`
+    select withdraw_companion_delivery(${artifactId}::uuid) as r
   `.execute(trx);
   return rows[0]?.r ?? 'not_found';
 }

@@ -818,6 +818,7 @@ export type CompanionScriptIssueCategory =
   | 'reassurance'
   | 'manager_promise'
   | 'hospital'
+  | 'expert'
   | 'missing_required'
   | 'placeholder';
 
@@ -833,6 +834,8 @@ const COMPANION_REQUIRED: Readonly<Record<string, readonly string[]>> = {
   emergency: ['120'],
   intro: ['不是医生'],
   daily_intro: ['不是医生'],
+  // 告知书至少要说清“不是医生”和怎么撤回（合规复审）；其余要点由法务审定
+  notice: ['不是医生', '撤回'],
 };
 
 const SAFETY_KINDS = new Set(['crisis', 'emergency', 'critical_value']);
@@ -842,7 +845,7 @@ const PROMISE_KINDS = new Set(['handoff', 'fallback', 'critical_value', 'handoff
  * 平台保存伴侣固定话术时的检查（合规复审 B1、B2）。固定话术不经模型、不经审核，念给所有客户听，
  * 检查不比福宝回答的输出检查松：禁用词、疾病名称、判断和数值评价、药名和用药建议、剂量、功效承诺、
  * 孪生字样、专家、医院推荐；按种类再查安抚性否认、代健管师承诺、必须保留的内容和占位符。
- * 告知书模板（notice）是打印的长文，只查禁用词。
+ * 告知书模板（notice）是打印的长文，只查禁用词和必须写明的要点。
  */
 export function checkCompanionScript(kind: string, text: string): CompanionScriptIssue[] {
   const banned = findBannedTerms(text).map((b) => ({
@@ -850,7 +853,7 @@ export function checkCompanionScript(kind: string, text: string): CompanionScrip
     term: b.term,
     index: b.index,
   }));
-  if (kind === 'notice') return banned;
+  if (kind === 'notice') return [...banned, ...missingRequired(kind, text)];
   const { text: norm } = normalized(text);
   const issues: CompanionScriptIssue[] = [
     ...banned,
@@ -860,8 +863,8 @@ export function checkCompanionScript(kind: string, text: string): CompanionScrip
     ...asIssues('twin_term', findClientTwinTerms(text)),
     ...asIssues('efficacy_claim', findTerms(text, EFFICACY_TERMS)),
     ...findEfficacyPattern(text),
-    ...asIssues('judgment', findTerms(text, ['专家'])),
   ];
+  for (const found of findTerms(text, ['专家'])) issues.push({ category: 'expert', ...found });
   const dose = findDoseMatch(norm);
   if (dose) issues.push({ category: 'drug_advice', term: dose.text, index: dose.index });
   const hospital = HOSPITAL_RECOMMENDATION.exec(norm);
@@ -876,10 +879,7 @@ export function checkCompanionScript(kind: string, text: string): CompanionScrip
     if (promise)
       issues.push({ category: 'manager_promise', term: promise[0], index: promise.index });
   }
-  for (const required of COMPANION_REQUIRED[kind] ?? []) {
-    if (!text.includes(required))
-      issues.push({ category: 'missing_required', term: required, index: 0 });
-  }
+  issues.push(...missingRequired(kind, text));
   const placeholders = [...text.matchAll(/\{[^}]*\}|[{}]/g)];
   const expected = kind === 'reminder_measurement' ? ['{metric}'] : [];
   if (placeholders.map((m) => m[0]).join() !== expected.join()) {
@@ -890,4 +890,10 @@ export function checkCompanionScript(kind: string, text: string): CompanionScrip
     });
   }
   return issues.sort((a, b) => a.index - b.index);
+}
+
+function missingRequired(kind: string, text: string): CompanionScriptIssue[] {
+  return (COMPANION_REQUIRED[kind] ?? [])
+    .filter((required) => !text.includes(required))
+    .map((required) => ({ category: 'missing_required' as const, term: required, index: 0 }));
 }

@@ -23,9 +23,12 @@ import {
   COMPANION_SCRIPTS_SNAPSHOT_0024,
 } from '../src/db/migrations/0024-companion-devices.js';
 import type { Database } from '../src/db/types.js';
+import { localDate } from '../src/twin/time-zone.js';
 import { TEST_APP_URL } from './env.js';
 import { ownerDb, seedFixtures, type Fixtures } from './fixtures.js';
 
+/** 同意和撤回日期：不能早于告知书发布日期（测试里告知书都是今天发布的） */
+const TODAY = localDate(new Date(), 'Asia/Shanghai');
 /**
  * M6 伴侣设备、同意、固定话术的数据库层隔离和约束测试（规格 3.4、6.2，验收标准 14、17–20、22）。
  * 以应用角色 hb_app 直接连接，绕过仓储层。全部是虚构数据。
@@ -75,8 +78,9 @@ describe('伴侣设备和同意的行级安全', () => {
           client_id: clientId,
           action: 'consent',
           notice_version: version,
-          effective_on: '2026-10-01',
+          effective_on: TODAY,
           recorded_by: c.userId,
+          chat_data_confirmed: true,
         })
         .execute(),
     );
@@ -88,8 +92,9 @@ describe('伴侣设备和同意的行级安全', () => {
           client_id: clientId,
           action: 'revoke',
           notice_version: null,
-          effective_on: '2026-10-02',
+          effective_on: TODAY,
           recorded_by: c.userId,
+          chat_data_confirmed: true,
         })
         .execute(),
     );

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Header,
   HttpCode,
@@ -128,6 +129,16 @@ export class ArtifactsController {
   ): Promise<ArtifactDetailResponse> {
     requireManager(session);
     return found(await this.artifacts.syncToCompanion(session, parseId(id)));
+  }
+
+  /** 取消同步给伴侣：福宝不再读这份快照。没有在用的同步 409 */
+  @Delete(':id/sync-to-companion')
+  async withdrawFromCompanion(
+    @CurrentSession() session: ResolvedSession,
+    @Param('id') id: string,
+  ): Promise<ArtifactDetailResponse> {
+    requireManager(session);
+    return found(await this.artifacts.withdrawFromCompanion(session, parseId(id)));
   }
 
   /** 复制通俗版。会记一条复制记录，所以用 POST，并且不允许缓存。 */

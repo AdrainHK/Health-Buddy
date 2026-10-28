@@ -18,6 +18,7 @@ import {
   downloadBlob,
   exportArtifact,
   syncArtifactToCompanion,
+  withdrawArtifactFromCompanion,
   returnArtifact,
   reviseArtifact,
   updateArtifact,
@@ -84,6 +85,7 @@ type Notice =
   | { kind: 'approved' }
   | { kind: 'copied' }
   | { kind: 'synced' }
+  | { kind: 'withdrawn' }
   | { kind: 'exported'; filename: string }
   | { kind: 'revised' };
 
@@ -458,6 +460,14 @@ export function ArtifactView({
       const next = await syncArtifactToCompanion(artifact.id);
       onDetail(next);
       setNotice({ kind: 'synced' });
+      onChanged();
+    });
+
+  const withdrawFromCompanion = () =>
+    run('sync', async () => {
+      const next = await withdrawArtifactFromCompanion(artifact.id);
+      onDetail(next);
+      setNotice({ kind: 'withdrawn' });
       onChanged();
     });
 
@@ -939,24 +949,15 @@ export function ArtifactView({
                     ? t('results.artifacts.review.exporting')
                     : t('results.artifacts.review.exportPdf')}
                 </Button>
-                {detail.companion &&
-                  (detail.companion.syncedAt ? (
-                    <span className={styles.companionNote}>
-                      {t('results.artifacts.review.syncedAt', {
-                        time: displayDateTime(detail.companion.syncedAt),
-                      })}
-                    </span>
-                  ) : detail.companion.available ? (
-                    <Button disabled={readOnly || working} onClick={syncToCompanion}>
-                      {busy === 'sync'
-                        ? t('results.artifacts.review.syncing')
-                        : t('results.artifacts.review.syncToCompanion')}
-                    </Button>
-                  ) : (
-                    <span className={styles.companionNote}>
-                      {t('results.artifacts.review.companionUnavailable')}
-                    </span>
-                  ))}
+                {detail.companion && (
+                  <CompanionSync
+                    state={detail.companion}
+                    disabled={readOnly || working}
+                    busy={busy === 'sync'}
+                    onSync={syncToCompanion}
+                    onWithdraw={withdrawFromCompanion}
+                  />
+                )}
               </>
             )}
             <Button variant="ghost" disabled={readOnly || working} onClick={revise}>
@@ -966,6 +967,77 @@ export function ArtifactView({
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * 同步给伴侣（M6 规格 2.8）：同步前再确认一次（同步后福宝会按通俗版原文念给客户听）；
+ * 同步后可以取消；被这位客户更新的同类内容替代后只提示
+ */
+function CompanionSync({
+  state,
+  disabled,
+  busy,
+  onSync,
+  onWithdraw,
+}: {
+  state: NonNullable<ArtifactDetailResponse['companion']>;
+  disabled: boolean;
+  busy: boolean;
+  onSync: () => void;
+  onWithdraw: () => void;
+}) {
+  const { t } = useTranslation();
+  const [confirming, setConfirming] = useState(false);
+  if (state.syncedAt) {
+    return (
+      <>
+        <span className={styles.companionNote}>
+          {t('results.artifacts.review.syncedAt', { time: displayDateTime(state.syncedAt) })}
+        </span>
+        <Button variant="ghost" disabled={disabled} onClick={onWithdraw}>
+          {t('results.artifacts.review.withdrawFromCompanion')}
+        </Button>
+      </>
+    );
+  }
+  if (!state.available) {
+    return (
+      <span className={styles.companionNote}>
+        {t('results.artifacts.review.companionUnavailable')}
+      </span>
+    );
+  }
+  if (confirming) {
+    return (
+      <>
+        <span className={styles.companionNote}>{t('results.artifacts.review.syncConfirm')}</span>
+        <Button
+          disabled={disabled}
+          onClick={() => {
+            setConfirming(false);
+            onSync();
+          }}
+        >
+          {t('results.artifacts.review.syncYes')}
+        </Button>
+        <Button variant="ghost" disabled={disabled} onClick={() => setConfirming(false)}>
+          {t('results.artifacts.review.syncCancel')}
+        </Button>
+      </>
+    );
+  }
+  return (
+    <>
+      {state.superseded && (
+        <span className={styles.companionNote}>{t('results.artifacts.review.syncSuperseded')}</span>
+      )}
+      <Button disabled={disabled} onClick={() => setConfirming(true)}>
+        {busy
+          ? t('results.artifacts.review.syncing')
+          : t('results.artifacts.review.syncToCompanion')}
+      </Button>
+    </>
   );
 }
 

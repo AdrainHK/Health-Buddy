@@ -283,7 +283,9 @@ function consentResult(
   result: Awaited<ReturnType<CompanionRepository['recordConsent']>>,
 ): CompanionOverview {
   if (result === 'not_found') throw notFound();
-  if (result === 'unknown_notice' || result === 'future_date') throw badRequest();
+  if (result === 'unknown_notice' || result === 'future_date' || result === 'bad_date') {
+    throw badRequest();
+  }
   if (result === 'not_consented') throw conflict({ reasons: ['not_consented'] });
   return result;
 }

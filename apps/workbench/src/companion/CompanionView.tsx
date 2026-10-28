@@ -338,6 +338,7 @@ function ConsentSection({
   const today = localToday();
   const [date, setDate] = useState(today);
   const [confirmed, setConfirmed] = useState(false);
+  const [chatData, setChatData] = useState(false);
   const [revoking, setRevoking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -352,6 +353,7 @@ function ConsentSection({
     action()
       .then((o) => {
         setConfirmed(false);
+        setChatData(false);
         setRevoking(false);
         setDate(today);
         onChanged(o);
@@ -362,7 +364,7 @@ function ConsentSection({
 
   const record = (e: FormEvent) => {
     e.preventDefault();
-    if (!notice || !confirmed || !date || date > today) {
+    if (!notice || !confirmed || !chatData || !date || date > today) {
       setError(t('companion.consent.incomplete'));
       return;
     }
@@ -371,6 +373,7 @@ function ConsentSection({
         noticeVersion: notice.version,
         consentedOn: date,
         confirmed: true,
+        chatDataConfirmed: true,
       }),
     );
   };
@@ -422,6 +425,14 @@ function ConsentSection({
             />
             {t('companion.consent.confirm', { version: notice.version })}
           </label>
+          <label className={care.checkRow}>
+            <input
+              type="checkbox"
+              checked={chatData}
+              onChange={(e) => setChatData(e.target.checked)}
+            />
+            {t('companion.consent.chatData')}
+          </label>
           <label className={styles.label}>
             {t('companion.consent.dateLabel')}
             <input
@@ -433,7 +444,7 @@ function ConsentSection({
             />
           </label>
           <div className={styles.cardActions}>
-            <Button type="submit" variant="primary" disabled={busy || !confirmed}>
+            <Button type="submit" variant="primary" disabled={busy || !confirmed || !chatData}>
               {t('companion.consent.record')}
             </Button>
           </div>

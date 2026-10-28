@@ -66,6 +66,13 @@ export function syncArtifactToCompanion(id: string): Promise<ArtifactDetailRespo
   });
 }
 
+/** 取消同步给伴侣：福宝不再读这份通俗版 */
+export function withdrawArtifactFromCompanion(id: string): Promise<ArtifactDetailResponse> {
+  return apiRequest(`/artifacts/${id}/sync-to-companion`, artifactDetailResponseSchema, {
+    method: 'DELETE',
+  });
+}
+
 export function reviseArtifact(id: string): Promise<ArtifactDetailResponse> {
   return apiRequest(`/artifacts/${id}/revise`, artifactDetailResponseSchema, { method: 'POST' });
 }
