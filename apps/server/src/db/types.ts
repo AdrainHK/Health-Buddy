@@ -923,11 +923,7 @@ export interface CompanionDevicesTable {
   secret_hash: Buffer;
   activation_code_hash: string;
   batch_id: string;
-  status: ColumnType<
-    'stock' | 'bound' | 'active' | 'paused' | 'revoked',
-    undefined,
-    never
-  >;
+  status: ColumnType<'stock' | 'bound' | 'active' | 'paused' | 'revoked', undefined, never>;
   operator_id: ColumnType<string | null, undefined, never>;
   org_id: ColumnType<string | null, undefined, never>;
   manager_id: ColumnType<string | null, undefined, never>;

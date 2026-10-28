@@ -237,6 +237,10 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     create policy companion_devices_device_select on companion_devices for select
       using (app_role() = 'companion_device' and id = app_device_id());
 
+    -- 客户转给别的健管师时外键级联改 manager_id，触发器同时从客户行取机构和协会（同其他客户表）
+    create trigger companion_devices_tenant before update on companion_devices
+      for each row execute function client_record_tenant();
+
     create policy companion_consents_manager_select on companion_consents for select
       using (${managerUsing});
     create policy companion_consents_manager_insert on companion_consents for insert

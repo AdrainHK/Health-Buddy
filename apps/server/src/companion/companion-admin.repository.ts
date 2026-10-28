@@ -6,7 +6,7 @@ import {
   type DeviceBatch,
   type ImportDeviceBatchRequest,
 } from '@health-buddy/shared';
-import { sql } from 'kysely';
+import { companionDeviceBatchStats, companionExistingSerials } from '../db/companion-functions.js';
 import { DB } from '../db/db.provider.js';
 import { withTenant, type Db, type TenantContext } from '../db/database.js';
 import { hashActivationCode, hashDeviceSecret, mapLimited } from './device-credentials.js';
@@ -24,13 +24,7 @@ export class CompanionAdminRepository {
 
   batches(ctx: TenantContext): Promise<DeviceBatch[]> {
     return withTenant(this.db, ctx, async (trx) => {
-      const { rows } = await sql<{
-        id: string;
-        name: string;
-        device_count: number;
-        bound_count: number;
-        imported_at: Date;
-      }>`select * from companion_device_batch_stats()`.execute(trx);
+      const rows = await companionDeviceBatchStats(trx);
       return rows.map((r) => ({
         id: r.id,
         name: r.name,
@@ -48,10 +42,7 @@ export class CompanionAdminRepository {
   ): Promise<ImportBatchResult> {
     const serials = body.devices.map((d) => d.serialNo);
     const existing = await withTenant(this.db, ctx, async (trx) => {
-      const { rows } = await sql<{ serial: string }>`
-        select s as serial from companion_existing_serials(${serials}::text[]) as s
-      `.execute(trx);
-      return rows.map((r) => r.serial);
+      return companionExistingSerials(trx, serials);
     });
     if (existing.length) return { duplicates: existing.sort() };
 

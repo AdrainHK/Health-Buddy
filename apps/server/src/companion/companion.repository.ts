@@ -11,7 +11,12 @@ import {
   type RevokeCompanionConsentRequest,
   type UpdateCompanionSettingsRequest,
 } from '@health-buddy/shared';
-import { sql } from 'kysely';
+import {
+  bindCompanionDevice,
+  companionDeviceForBinding,
+  setCompanionDevicePaused,
+  unbindCompanionDevice,
+} from '../db/companion-functions.js';
 import { DB } from '../db/db.provider.js';
 import { withTenant, type Db, type TenantContext, type TenantTransaction } from '../db/database.js';
 import { dateText, iso, managerTimeZone } from '../care/common.js';
@@ -130,10 +135,7 @@ export class CompanionRepository {
   ): Promise<BindResult> {
     const candidate = await withTenant(this.db, ctx, async (trx) => {
       if (!(await ownClient(trx, ctx, clientId))) return 'not_found' as const;
-      const { rows } = await sql<{ id: string; status: string; activation_code_hash: string }>`
-        select id, status, activation_code_hash from companion_device_for_binding(${body.serialNo})
-      `.execute(trx);
-      return rows[0] ?? null;
+      return (await companionDeviceForBinding(trx, body.serialNo)) ?? null;
     });
     if (candidate === 'not_found') return 'not_found';
     const codeOk = candidate
@@ -142,10 +144,7 @@ export class CompanionRepository {
     if (!candidate || !codeOk) return 'unavailable';
 
     return withTenant(this.db, ctx, async (trx) => {
-      const { rows } = await sql<{ result: string }>`
-        select bind_companion_device(${candidate.id}::uuid, ${clientId}::uuid) as result
-      `.execute(trx);
-      const result = rows[0]?.result;
+      const result = await bindCompanionDevice(trx, candidate.id, clientId);
       if (result !== 'ok') {
         return result === 'not_found' || result === 'already_bound' || result === 'no_consent'
           ? result
@@ -156,25 +155,22 @@ export class CompanionRepository {
   }
 
   unbind(ctx: TenantContext, clientId: string): Promise<DeviceActionResult> {
-    return this.deviceAction(ctx, clientId, sql`unbind_companion_device(${clientId}::uuid)`);
+    return this.deviceAction(ctx, clientId, (trx) => unbindCompanionDevice(trx, clientId));
   }
 
   setPaused(ctx: TenantContext, clientId: string, paused: boolean): Promise<DeviceActionResult> {
-    return this.deviceAction(
-      ctx,
-      clientId,
-      sql`set_companion_device_paused(${clientId}::uuid, ${paused})`,
+    return this.deviceAction(ctx, clientId, (trx) =>
+      setCompanionDevicePaused(trx, clientId, paused),
     );
   }
 
   private deviceAction(
     ctx: TenantContext,
     clientId: string,
-    call: ReturnType<typeof sql>,
+    call: (trx: TenantTransaction) => Promise<string>,
   ): Promise<DeviceActionResult> {
     return withTenant(this.db, ctx, async (trx) => {
-      const { rows } = await sql<{ result: string }>`select ${call} as result`.execute(trx);
-      const result = rows[0]?.result;
+      const result = await call(trx);
       if (result === 'ok') return loadOverview(trx, ctx, clientId);
       if (result === 'no_device' || result === 'invalid_state') return result;
       return 'not_found';
