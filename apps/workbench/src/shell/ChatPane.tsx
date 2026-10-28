@@ -646,6 +646,7 @@ export function ChatPane({
     // @方案库条目 同样只能在问一问里用（M5 规格 2.11）
     const library = draft.libraryRefs ?? [];
     if (library.length && (draft.mode !== 'ask' || draft.skill)) return;
+    if (library.length && (refs.length || draft.twinConsult)) return;
     const consult = Boolean(draft.twinConsult) && twin.length > 0;
     const linkedClientId = task?.clientId ?? null;
     if (twin.length && !draft.client && !linkedClientId) {
@@ -987,6 +988,8 @@ export function ChatPane({
   const askOnlyRefs = mode !== 'ask' || skill !== null;
   const twinIssue = twinRefs.length > 0 && askOnlyRefs;
   const libraryIssue = libraryRefs.length > 0 && askOnlyRefs;
+  // 请专家的问一问不读库条目（M5 规格 2.11）
+  const libraryWithExperts = libraryRefs.length > 0 && (expertRefs.length > 0 || twinConsult);
   let noticeNode: ReactNode = null;
   if (twinIssue || libraryIssue) {
     noticeNode = (
@@ -1003,6 +1006,8 @@ export function ChatPane({
         </Button>
       </>
     );
+  } else if (libraryWithExperts) {
+    noticeNode = <span role="alert">{t('chat.library.noExperts')}</span>;
   } else if (conflict === null && expertIssue === 'skillNoExperts') {
     noticeNode = <span role="alert">{t('chat.experts.skillNoExperts')}</span>;
   } else if (conflict === null && expertIssue === 'needAsk') {

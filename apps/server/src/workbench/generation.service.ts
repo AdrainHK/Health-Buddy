@@ -718,18 +718,22 @@ export class GenerationService {
       });
       await steps.finish(read, 'done');
       extras.plan = plan;
+      // 问题、随访记录、健康史里有疑似急症信号时，运动一律按需先就医评估处理（候选和 @ 的动作都是）
+      const emergency = detectEmergencyKeywords([
+        question,
+        ...plan.recentRecords.flatMap((r) => [r.summary, ...r.agreements]),
+        ...(snapshot?.healthHistory ?? []).map((h) => h.content),
+      ]);
+      if (emergency && !restriction) restriction = '有疑似急症信号';
       if (library) {
-        const emergency = detectEmergencyKeywords([
-          question,
-          ...plan.recentRecords.flatMap((r) => [r.summary, ...r.agreements]),
-          ...(snapshot?.healthHistory ?? []).map((h) => h.content),
-        ]);
         extras.candidates =
-          emergency && !library.exerciseRestriction
-            ? restrictExercise(library, '有疑似急症信号')
+          restriction && !library.exerciseRestriction
+            ? restrictExercise(library, restriction)
             : library;
         restriction = extras.candidates.exerciseRestriction;
       }
+    } else if (detectEmergencyKeywords([question])) {
+      restriction = '有疑似急症信号';
     }
     if (libraryRefs.length) {
       const rows = await this.repo.libraryItems(ctx, libraryRefs);

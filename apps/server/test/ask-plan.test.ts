@@ -131,6 +131,47 @@ describe('问一问读方案和方案库', () => {
     expect(lastCall().system).toContain(ASK_PLAN_RULES);
   });
 
+  it('随访记录里的客户姓名去标识后才进提示词；记录里的急症描述让 @动作 按需先就医评估处理', async () => {
+    const client = await owner
+      .selectFrom('clients')
+      .select(['operator_id', 'org_id', 'manager_id', 'display_name'])
+      .where('id', '=', f.clients.a1[0])
+      .executeTakeFirstOrThrow();
+    await owner
+      .insertInto('visit_records')
+      .values({
+        operator_id: client.operator_id,
+        org_id: client.org_id,
+        manager_id: client.manager_id,
+        client_id: f.clients.a1[0],
+        visit_date: '2026-10-15',
+        method: 'phone',
+        snapshot: JSON.stringify({
+          visitDate: '2026-10-15',
+          method: 'phone',
+          summary: `${client.display_name}说最近散步时胸痛。`,
+          feedback: [],
+          planProgress: [],
+          agreements: ['周末也散步'],
+          attentionPoints: [],
+          historySuggestions: [],
+          openQuestions: [],
+        }),
+        approved_by: f.users.managerA1.id,
+      } as never)
+      .execute();
+    const a1 = await as(f.users.managerA1.email);
+    const task = await newTask(a1, { clientId: f.clients.a1[0] });
+    await send(a1, task, {
+      mode: 'ask',
+      content: '这个合适吗',
+      libraryRefs: [{ type: 'exercise', id: lib.walk }],
+    }).expect(200);
+    expect(prompt()).toContain('说最近散步时胸痛');
+    expect(prompt()).not.toContain(client.display_name);
+    expect(prompt()).toContain('运动安全规则（系统判断）**：有疑似急症信号');
+  });
+
   it('问吃什么：读按过敏史筛过的候选（排除花生），待审定的条目在正式环境不列', async () => {
     await allergic(f.clients.a1[0]);
     const a1 = await as(f.users.managerA1.email);
@@ -160,6 +201,8 @@ describe('问一问读方案和方案库', () => {
     expect(prompt()).toContain('过敏原提示');
     expect(prompt()).toContain('### 有氧：合成快走');
     expect(prompt()).toContain('合成注意事项');
+    // 健康史原文只用来比对，不进提示词
+    expect(prompt()).not.toContain('花生过敏');
     const detail = (await a1.get(`/api/tasks/${task}`).expect(200)).body;
     const manager = detail.messages.find((m: { role: string }) => m.role === 'manager');
     expect(manager.libraryRefs).toEqual([
@@ -206,10 +249,19 @@ describe('问一问读方案和方案库', () => {
     expect(prompt()).toContain('合成待审定早餐');
   });
 
-  it('跨租户访问被拒绝：别人的任务带库条目 → 404，不调用模型', async () => {
+  it('跨租户访问被拒绝：别人的任务、别人的客户带库条目 → 404，不调用模型', async () => {
     const a1 = await as(f.users.managerA1.email);
     const b1 = await as(f.users.managerB1.email);
     const task = await newTask(a1, { clientId: f.clients.a1[0] });
+    // 同机构别的健管师：在自己的任务里引用 A1 的客户
+    const a2 = await as(f.users.managerA2.email);
+    const own = await newTask(a2);
+    await send(a2, own, {
+      mode: 'ask',
+      content: '怎么样',
+      clientRefs: [f.clients.a1[0]],
+      libraryRefs: [{ type: 'recipe', id: lib.oat }],
+    }).expect(404);
     await send(b1, task, {
       mode: 'ask',
       content: '怎么样',

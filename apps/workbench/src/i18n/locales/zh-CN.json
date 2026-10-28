@@ -169,6 +169,7 @@
       "remove": "移除方案库条目 {{name}}",
       "item": "方案库条目",
       "needAsk": "@方案库条目 需要在问一问模式下使用，请移除技能或切换模式",
+      "noExperts": "@方案库条目 不能和请专家一起用，请移除专家或方案库条目",
       "recipe": "食谱 · {{meals}}",
       "exercise": "运动 · {{category}}",
       "separator": "、"

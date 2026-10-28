@@ -116,6 +116,9 @@ describe('问一问读方案和方案库', () => {
   it('只有问吃什么、怎么运动时才读候选条目', () => {
     expect(asksAboutLibrary('这位客户早餐适合吃什么')).toBe(true);
     expect(asksAboutLibrary('推荐几个放松练习')).toBe(true);
+    for (const q of ['他能不能吃水果', '平时吃啥好', '每天跑步可以吗', '适合练太极吗']) {
+      expect(asksAboutLibrary(q), q).toBe(true);
+    }
     expect(asksAboutLibrary('最近血压怎么样')).toBe(false);
   });
 });
