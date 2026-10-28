@@ -32,6 +32,9 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     planLibraryPreview: false,
     // 测试专用的素材加密密钥，不是任何环境的真实密钥
     visitMaterialKey: Buffer.alloc(32, 7),
+    companionDeviceKey: Buffer.alloc(32, 9),
+    // 语音通道默认按正式环境处理（关闭）；语音测试单独打开
+    companionVoiceEnabled: false,
     ...overrides,
   };
 }

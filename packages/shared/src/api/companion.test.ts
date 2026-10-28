@@ -57,15 +57,24 @@ describe('伴侣契约（M6 第 1 步）', () => {
     ).toBe(false);
   });
 
-  it('批次导入：设备密钥至少 32 位', () => {
+  it('批次导入：设备密钥是 64 位十六进制（256 位 HMAC 密钥），统一转小写', () => {
     const device = {
       serialNo: 'HB-0001',
-      deviceSecret: 'x'.repeat(31),
+      deviceSecret: 'A'.repeat(64),
       activationCode: 'ABCD1234',
     };
-    expect(importDeviceBatchRequestSchema.safeParse({ name: 'b', devices: [device] }).success).toBe(
-      false,
-    );
+    expect(
+      importDeviceBatchRequestSchema.parse({ name: 'b', devices: [device] }).devices[0]!
+        .deviceSecret,
+    ).toBe('a'.repeat(64));
+    for (const deviceSecret of ['a'.repeat(63), 'x'.repeat(64), 'a'.repeat(65)]) {
+      expect(
+        importDeviceBatchRequestSchema.safeParse({
+          name: 'b',
+          devices: [{ ...device, deviceSecret }],
+        }).success,
+      ).toBe(false);
+    }
   });
 
   it('状态和序列号显示', () => {

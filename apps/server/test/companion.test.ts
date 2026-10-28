@@ -19,7 +19,7 @@ describe('伴侣设备和设置接口', () => {
   let f: Fixtures;
 
   const as = (email: string) => loginAs(app, email);
-  const secret = () => randomBytes(24).toString('base64url');
+  const secret = () => randomBytes(32).toString('hex');
   const devices = [
     { serialNo: 'HB-TEST-0001', deviceSecret: secret(), activationCode: 'ABCD1234' },
     { serialNo: 'HB-TEST-0002', deviceSecret: secret(), activationCode: 'EFGH5678' },
@@ -41,7 +41,7 @@ describe('伴侣设备和设置接口', () => {
       .expect(200);
   const consent = (agent: Agent, url = base()) =>
     agent
-      .post(`${url}/consents`)
+      .post(`${url}/consents?tz=Asia/Shanghai`)
       .send({ noticeVersion: 1, consentedOn: TODAY, confirmed: true, chatDataConfirmed: true });
 
   beforeAll(async () => {
@@ -78,7 +78,10 @@ describe('伴侣设备和设置接口', () => {
       await agent.get(base()).expect(404);
       await agent.patch(base()).send({ volume: 'high' }).expect(404);
       await consent(agent).expect(404);
-      await agent.post(`${base()}/consents/revoke`).send({ revokedOn: TODAY }).expect(404);
+      await agent
+        .post(`${base()}/consents/revoke?tz=Asia/Shanghai`)
+        .send({ revokedOn: TODAY })
+        .expect(404);
       await agent
         .post(`${base()}/device`)
         .send({ serialNo: 'HB-TEST-0001', activationCode: 'ABCD1234' })
@@ -130,7 +133,10 @@ describe('伴侣设备和设置接口', () => {
       await agent.get(base()).expect(404);
       await agent.patch(base()).send({ volume: 'high', nameForClient: '别人' }).expect(404);
       await consent(agent).expect(404);
-      await agent.post(`${base()}/consents/revoke`).send({ revokedOn: TODAY }).expect(404);
+      await agent
+        .post(`${base()}/consents/revoke?tz=Asia/Shanghai`)
+        .send({ revokedOn: TODAY })
+        .expect(404);
       await agent.delete(`${base()}/device`).expect(404);
       await agent.post(`${base()}/pause`).expect(404);
       await agent.post(`${base()}/resume`).expect(404);
@@ -192,9 +198,12 @@ describe('伴侣设备和设置接口', () => {
   it('同意：要勾选、版本要存在、日期不能晚于今天；撤回前要有同意', async () => {
     await consent(a1).expect(400); // 还没有告知书模板
     await publishNotice();
-    await a1.post(`${base()}/consents`).send({ noticeVersion: 1, consentedOn: TODAY }).expect(400);
     await a1
-      .post(`${base()}/consents`)
+      .post(`${base()}/consents?tz=Asia/Shanghai`)
+      .send({ noticeVersion: 1, consentedOn: TODAY })
+      .expect(400);
+    await a1
+      .post(`${base()}/consents?tz=Asia/Shanghai`)
       .send({
         noticeVersion: 1,
         consentedOn: '2999-01-01',
@@ -202,7 +211,10 @@ describe('伴侣设备和设置接口', () => {
         chatDataConfirmed: true,
       })
       .expect(400);
-    await a1.post(`${base()}/consents/revoke`).send({ revokedOn: TODAY }).expect(409);
+    await a1
+      .post(`${base()}/consents/revoke?tz=Asia/Shanghai`)
+      .send({ revokedOn: TODAY })
+      .expect(409);
     const res = await consent(a1).expect(200);
     expect(res.body.consent).toMatchObject({
       noticeVersion: 1,
@@ -211,7 +223,7 @@ describe('伴侣设备和设置接口', () => {
     });
     expect(res.body.currentNoticeVersion).toBe(1);
     const revoked = await a1
-      .post(`${base()}/consents/revoke`)
+      .post(`${base()}/consents/revoke?tz=Asia/Shanghai`)
       .send({ revokedOn: TODAY })
       .expect(200);
     expect(revoked.body.consent).toMatchObject({ revokedOn: TODAY });
@@ -273,7 +285,7 @@ describe('伴侣设备和设置接口', () => {
   it('同意：必须单独确认聊天数据的使用；只能按当前告知书版本；撤回日期不早于同意日期', async () => {
     await publishNotice();
     await a1
-      .post(`${base()}/consents`)
+      .post(`${base()}/consents?tz=Asia/Shanghai`)
       .send({ noticeVersion: 1, consentedOn: TODAY, confirmed: true })
       .expect(400);
     await platform
@@ -282,10 +294,13 @@ describe('伴侣设备和设置接口', () => {
       .expect(200);
     await consent(a1).expect(400); // 第 1 版已不是当前版本
     await a1
-      .post(`${base()}/consents`)
+      .post(`${base()}/consents?tz=Asia/Shanghai`)
       .send({ noticeVersion: 2, consentedOn: TODAY, confirmed: true, chatDataConfirmed: true })
       .expect(200);
-    await a1.post(`${base()}/consents/revoke`).send({ revokedOn: '2026-01-01' }).expect(400);
+    await a1
+      .post(`${base()}/consents/revoke?tz=Asia/Shanghai`)
+      .send({ revokedOn: '2026-01-01' })
+      .expect(400);
     const row = await owner
       .selectFrom('companion_consents')
       .select(['notice_version', 'chat_data_confirmed'])
@@ -303,7 +318,10 @@ describe('伴侣设备和设置接口', () => {
       .send({ serialNo: 'HB-TEST-0001', activationCode: 'ABCD1234' })
       .expect(200);
     await a1.post(`${base()}/pause`).expect(200);
-    await a1.post(`${base()}/consents/revoke`).send({ revokedOn: TODAY }).expect(200);
+    await a1
+      .post(`${base()}/consents/revoke?tz=Asia/Shanghai`)
+      .send({ revokedOn: TODAY })
+      .expect(200);
     expect((await a1.get(base()).expect(200)).body.status).toBe('revoked');
     expect((await consent(a1).expect(200)).body.status).toBe('paused');
   });
@@ -319,7 +337,10 @@ describe('伴侣设备和设置接口', () => {
       .expect(200);
     expect((await a1.post(`${base()}/pause`).expect(200)).body.status).toBe('paused');
     expect((await a1.post(`${base()}/resume`).expect(200)).body.status).toBe('pending_activation');
-    await a1.post(`${base()}/consents/revoke`).send({ revokedOn: TODAY }).expect(200);
+    await a1
+      .post(`${base()}/consents/revoke?tz=Asia/Shanghai`)
+      .send({ revokedOn: TODAY })
+      .expect(200);
     expect((await a1.get(base()).expect(200)).body.status).toBe('revoked');
     await a1.post(`${base()}/resume`).expect(409);
     expect((await a1.delete(`${base()}/device`).expect(200)).body.status).toBe('unbound');

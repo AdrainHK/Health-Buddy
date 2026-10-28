@@ -372,3 +372,66 @@ describe('image and PDF input (M2 report extraction)', () => {
     });
   });
 });
+
+describe('OpenAIProvider speech', () => {
+  const route: ResolvedRoute = { provider: 'openai', model: 'gpt-4o-mini-tts', effort: 'low' };
+
+  it('asks for Opus output with the default voice', async () => {
+    const calls: Record<string, unknown>[] = [];
+    const client = {
+      audio: {
+        speech: {
+          create: (params: Record<string, unknown>) => {
+            calls.push(params);
+            return Promise.resolve(new Response(new Uint8Array([1, 2])));
+          },
+        },
+      },
+    } as unknown as OpenAI;
+    const result = await new OpenAIProvider('unused', client).synthesize(
+      { route: 'text_to_speech', text: '你好', speed: 0.9 },
+      route,
+    );
+    expect([...result.audio]).toEqual([1, 2]);
+    expect(calls[0]).toMatchObject({
+      model: 'gpt-4o-mini-tts',
+      input: '你好',
+      response_format: 'opus',
+      speed: 0.9,
+      voice: 'coral',
+    });
+  });
+
+  it('transcribes with token usage', async () => {
+    const calls: Record<string, unknown>[] = [];
+    const client = {
+      audio: {
+        transcriptions: {
+          create: (params: Record<string, unknown>) => {
+            calls.push(params);
+            return Promise.resolve({
+              text: '你好',
+              usage: { type: 'tokens', input_tokens: 30, output_tokens: 2 },
+            });
+          },
+        },
+      },
+    } as unknown as OpenAI;
+    const result = await new OpenAIProvider('unused', client).transcribe(
+      {
+        route: 'speech_to_text',
+        audio: new Uint8Array([1]),
+        mediaType: 'audio/ogg',
+        language: 'zh',
+      },
+      { ...route, model: 'gpt-4o-mini-transcribe' },
+    );
+    expect(result).toEqual({
+      text: '你好',
+      usage: { inputTokens: 30, outputTokens: 2 },
+      model: 'gpt-4o-mini-transcribe',
+    });
+    expect(calls[0]).toMatchObject({ language: 'zh', response_format: 'json' });
+    expect((calls[0]!.file as File).name).toBe('speech.ogg');
+  });
+});

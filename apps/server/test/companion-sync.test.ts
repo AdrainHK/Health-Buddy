@@ -66,7 +66,7 @@ describe('同步给伴侣', () => {
   async function connect(agent: Agent, clientId: string, serial: string) {
     const base = `/api/clients/${clientId}/companion`;
     await agent
-      .post(`${base}/consents`)
+      .post(`${base}/consents?tz=Asia/Shanghai`)
       .send({ noticeVersion: 1, consentedOn: TODAY, confirmed: true, chatDataConfirmed: true })
       .expect(200);
     await agent.post(`${base}/device`).send({ serialNo: serial, activationCode: CODE }).expect(200);
@@ -268,7 +268,7 @@ describe('同步给伴侣', () => {
       .expect((r) => expect(r.body.reasons).toEqual(['no_companion']));
 
     await a1
-      .post(`/api/clients/${f.clients.a1[0]}/companion/consents/revoke`)
+      .post(`/api/clients/${f.clients.a1[0]}/companion/consents/revoke?tz=Asia/Shanghai`)
       .send({ revokedOn: TODAY })
       .expect(200);
     await sync(a1, await artifact())
@@ -347,7 +347,10 @@ describe('同步给伴侣', () => {
     expect(await deviceSees(deviceId)).toEqual([]);
     await a1.post(`${base}/resume`).expect(200);
     expect(await deviceSees(deviceId)).toEqual([f.clients.a1[0]]);
-    await a1.post(`${base}/consents/revoke`).send({ revokedOn: TODAY }).expect(200);
+    await a1
+      .post(`${base}/consents/revoke?tz=Asia/Shanghai`)
+      .send({ revokedOn: TODAY })
+      .expect(200);
     expect(await deviceSees(deviceId)).toEqual([]);
 
     // 机构、协会、平台会话和别的健管师都读不到

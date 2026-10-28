@@ -38,6 +38,7 @@ import {
   badRequest,
   conflict,
   forbidden,
+  notConfigured,
   notFound,
   tooManyRequests,
 } from '../common/api-error.js';
@@ -235,6 +236,7 @@ export class CompanionAdminController {
     const serials = data.devices.map((d) => d.serialNo);
     if (new Set(serials).size !== serials.length) throw badRequest();
     const result = await this.repo.importBatch(session, data);
+    if (result === 'not_configured') throw notConfigured();
     if ('duplicates' in result)
       throw conflict({ reasons: ['duplicate_serials'], serials: result.duplicates });
     return result;

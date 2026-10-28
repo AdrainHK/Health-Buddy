@@ -91,13 +91,25 @@ function parseRoutes(raw: string | undefined): GatewayConfig['routes'] {
   return result.data as GatewayConfig['routes'];
 }
 
+/**
+ * 语音用途不跟随默认厂商和型号：Claude 没有语音接口，默认用 OpenAI 的语音型号。
+ * 仍可用 LLM_ROUTES 覆盖（例如换型号）。
+ */
+const SPEECH_DEFAULTS: Partial<Record<Route, { provider: ProviderName; model: string }>> = {
+  speech_to_text: { provider: 'openai', model: 'gpt-4o-mini-transcribe' },
+  text_to_speech: { provider: 'openai', model: 'gpt-4o-mini-tts' },
+};
+
 /** 计算某个用途最终使用的厂商、型号和推理强度。 */
 export function resolveRoute(config: GatewayConfig, route: Route): ResolvedRoute {
   const override = config.routes[route] ?? {};
-  const provider = override.provider ?? config.defaultProvider;
+  const speech = SPEECH_DEFAULTS[route];
+  const provider = override.provider ?? speech?.provider ?? config.defaultProvider;
   return {
     provider,
-    model: override.model ?? config.defaultModels[provider],
+    model:
+      override.model ??
+      (speech && speech.provider === provider ? speech.model : config.defaultModels[provider]),
     effort: override.effort ?? config.defaultEffort,
   };
 }

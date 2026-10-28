@@ -5,6 +5,10 @@ import type {
   Provider,
   ProviderName,
   ResolvedRoute,
+  SynthesizeRequest,
+  SynthesizeResult,
+  TranscribeRequest,
+  TranscribeResult,
 } from '../types.js';
 
 export interface MockScript {
@@ -17,12 +21,23 @@ export interface MockScript {
   delayMs?: number;
 }
 
+/** 语音的模拟：识别返回固定文字，合成返回调用方给的音频（测试里一般是编好的 Ogg Opus） */
+export interface MockSpeech {
+  transcript?: string | ((request: TranscribeRequest) => string);
+  synthesize?: (request: SynthesizeRequest) => Uint8Array;
+  failWith?: unknown;
+}
+
 /**
  * 测试和持续集成用的模拟厂商：不联网、不花钱。
  * 记录收到的请求，方便测试断言。
  */
 export class MockProvider implements Provider {
   readonly calls: { request: GatewayRequest; route: ResolvedRoute }[] = [];
+  readonly speechCalls: { request: TranscribeRequest | SynthesizeRequest; route: ResolvedRoute }[] =
+    [];
+  /** 测试里可以直接改，用来模拟语音 */
+  speech: MockSpeech = {};
 
   /** 传一组脚本时，第 n 次调用用第 n 个（超出后重复最后一个），用来模拟重试 */
   constructor(
@@ -54,6 +69,29 @@ export class MockProvider implements Provider {
       type: 'done',
       finishReason: script.finishReason ?? 'complete',
       usage: script.usage ?? { inputTokens: 12, outputTokens: chunks.length * 3 },
+      model: route.model,
+    };
+  }
+
+  async transcribe(request: TranscribeRequest, route: ResolvedRoute): Promise<TranscribeResult> {
+    this.speechCalls.push({ request, route });
+    await Promise.resolve();
+    if (this.speech.failWith !== undefined) throw this.speech.failWith;
+    const t = this.speech.transcript ?? '你好';
+    return {
+      text: typeof t === 'function' ? t(request) : t,
+      usage: { inputTokens: 10, outputTokens: 2 },
+      model: route.model,
+    };
+  }
+
+  async synthesize(request: SynthesizeRequest, route: ResolvedRoute): Promise<SynthesizeResult> {
+    this.speechCalls.push({ request, route });
+    await Promise.resolve();
+    if (this.speech.failWith !== undefined) throw this.speech.failWith;
+    return {
+      audio: this.speech.synthesize?.(request) ?? new Uint8Array(),
+      usage: { inputTokens: 0, outputTokens: 0 },
       model: route.model,
     };
   }

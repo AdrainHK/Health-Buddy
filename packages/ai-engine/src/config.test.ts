@@ -74,4 +74,18 @@ describe('gateway config', () => {
       'ANTHROPIC_BASE_URL',
     );
   });
+
+  it('speech routes default to OpenAI speech models whatever the default provider is', () => {
+    const config = loadGatewayConfig({ LLM_DEFAULT_PROVIDER: 'anthropic' });
+    expect(resolveRoute(config, 'speech_to_text')).toMatchObject({
+      provider: 'openai',
+      model: 'gpt-4o-mini-transcribe',
+    });
+    expect(resolveRoute(config, 'text_to_speech')).toMatchObject({
+      provider: 'openai',
+      model: 'gpt-4o-mini-tts',
+    });
+    const custom = loadGatewayConfig({ LLM_ROUTES: '{"text_to_speech":{"model":"tts-x"}}' });
+    expect(resolveRoute(custom, 'text_to_speech').model).toBe('tts-x');
+  });
 });

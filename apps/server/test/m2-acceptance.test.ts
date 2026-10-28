@@ -501,6 +501,8 @@ describe('M2 验收补齐', () => {
           [
             'cost_usd',
             'created_at',
+            // M6：伴侣设备发起的调用记设备 id（和 user_id 二选一），不记客户 id
+            'device_id',
             'duration_ms',
             'error_type',
             // M3：专家调用记专家 id（可空），仍不记客户 id 和任务 id

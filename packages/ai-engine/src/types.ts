@@ -17,6 +17,8 @@ export const ROUTES = [
   'expert_routing', // 专家路由：补充规则没覆盖的专家（M3 规格 3.2）
   'expert_synthesis', // 专家意见汇总和分歧标注（M3 规格 3.5）
   'companion', // AI 健康伴侣（M6）
+  'speech_to_text', // 语音识别：伴侣设备的语音转文字（M6 规格 3.1）
+  'text_to_speech', // 语音合成：伴侣设备的文字转语音（M6 规格 3.1）
 ] as const;
 export type Route = (typeof ROUTES)[number];
 
@@ -56,10 +58,13 @@ export interface GatewayRequest {
   expertId?: string;
 }
 
-/** 谁发起的调用，用于计量和成本归属。只放 id，不放任何个人信息。 */
+/**
+ * 谁发起的调用，用于计量和成本归属。只放 id，不放任何个人信息。
+ * 伴侣设备发起的调用没有用户（userId 为 null），由调用方按设备计量（M6 规格 3.4）。
+ */
 export interface CallContext {
   operatorId: string | null;
-  userId: string;
+  userId: string | null;
 }
 
 export interface Usage {
@@ -85,6 +90,41 @@ export interface ResolvedRoute {
   effort: Effort;
 }
 
+/** 语音识别请求。音频只在内存里转交厂商，不落盘、不进日志。 */
+export interface TranscribeRequest {
+  route: 'speech_to_text';
+  /** Ogg 封装的 Opus 音频 */
+  audio: Uint8Array;
+  mediaType: 'audio/ogg';
+  /** ISO-639-1，伴侣固定为 zh */
+  language?: string;
+}
+
+export interface TranscribeResult {
+  text: string;
+  usage: Usage;
+  model: string;
+}
+
+/** 语音合成请求。输出固定为 Ogg 封装的 Opus（设备端直接按帧播放）。 */
+export interface SynthesizeRequest {
+  route: 'text_to_speech';
+  text: string;
+  /** 厂商的音色名，不填用适配器默认 */
+  voice?: string;
+  /** 语速倍数，1 为正常 */
+  speed?: number;
+  /** 语气说明（支持时生效），例如“语速平缓、亲切” */
+  instructions?: string;
+}
+
+export interface SynthesizeResult {
+  /** Ogg Opus 字节 */
+  audio: Uint8Array;
+  usage: Usage;
+  model: string;
+}
+
 /** 厂商适配器。每家实现一个，网关负责其余的一切（配置、计量、日志）。 */
 export interface Provider {
   readonly name: ProviderName;
@@ -93,6 +133,17 @@ export interface Provider {
     route: ResolvedRoute,
     signal?: AbortSignal,
   ): AsyncIterable<GatewayEvent>;
+  /** 不支持语音的厂商不实现，网关报 not_configured */
+  transcribe?(
+    request: TranscribeRequest,
+    route: ResolvedRoute,
+    signal?: AbortSignal,
+  ): Promise<TranscribeResult>;
+  synthesize?(
+    request: SynthesizeRequest,
+    route: ResolvedRoute,
+    signal?: AbortSignal,
+  ): Promise<SynthesizeResult>;
 }
 
 /** 一次调用的计量记录。不含提示词和回答原文。 */
@@ -101,7 +152,7 @@ export interface UsageRecord {
   provider: ProviderName;
   model: string;
   operatorId: string | null;
-  userId: string;
+  userId: string | null;
   inputTokens: number;
   outputTokens: number;
   costUsd: number | null;

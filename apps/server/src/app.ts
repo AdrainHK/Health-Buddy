@@ -8,6 +8,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { AppModule, type AppOptions } from './app.module.js';
 import { originCheck } from './common/origin-check.js';
+import { VoiceGateway } from './companion/voice/voice-gateway.js';
 import type { AppConfig } from './config.js';
 
 export async function createApp(
@@ -35,6 +36,8 @@ export async function createApp(
   if (config.workbenchDist) serveWorkbench(app, resolve(config.workbenchDist));
 
   await app.init();
+  // 伴侣设备的语音通道 /ws/device（M6 规格 3.1）挂在同一个 HTTP 服务器上
+  app.get(VoiceGateway).attach(app.getHttpServer());
   return app;
 }
 
