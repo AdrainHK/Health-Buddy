@@ -199,6 +199,68 @@ describe('expert routing', () => {
     expect(openai.calls.some((c) => c.route === 'expert_routing')).toBe(false);
   });
 
+  it('M5 plan sections: section hits rank after manager picks and before indicator hits', async () => {
+    const { gateway, openai } = setup({
+      'expert:nutrition': [{ json: opinion() }],
+      'expert:exercise-rehab': [{ json: opinion() }],
+      'expert:mental-health': [{ json: opinion() }],
+      expert_synthesis: [{ json: { consensus: [], disagreements: [], followUpPoints: [] } }],
+    });
+    const result = await runConsultation(
+      gateway,
+      ctx,
+      request({
+        forced: ['mental-health'],
+        excluded: ['lab-interpretation'],
+        sectionHits: [
+          { expertId: 'nutrition', section: 'diet' },
+          { expertId: 'exercise-rehab', section: 'exercise' },
+        ],
+      }),
+    );
+    // 指定 > 部分命中 > 指标命中（内分泌、心血管因上限未调用）
+    expect(result.routing.selected.map((s) => [s.expertId, s.selectedReason])).toEqual([
+      ['mental-health', 'manager'],
+      ['nutrition', 'rule'],
+      ['exercise-rehab', 'rule'],
+    ]);
+    // 营养专家同时命中部分和指标：两种原因都记下
+    expect(result.routing.selected[1]?.reasons).toEqual([
+      { kind: 'plan_section', section: 'diet' },
+      { kind: 'indicator', code: 'fpg', direction: 'high' },
+      { kind: 'indicator', code: 'tg', direction: 'high' },
+    ]);
+    expect(result.routing.overCap).toEqual(['endocrine-metabolism', 'cardiovascular']);
+    expect(openai.calls.some((c) => c.route === 'expert_routing')).toBe(false);
+  });
+
+  it('M5 plan sections: an excluded or unavailable section expert is skipped', async () => {
+    const { gateway } = setup({
+      'expert:endocrine-metabolism': [{ json: opinion() }],
+      'expert:cardiovascular': [{ json: opinion() }],
+      'expert:nutrition': [{ json: opinion() }],
+      expert_synthesis: [{ json: { consensus: [], disagreements: [], followUpPoints: [] } }],
+    });
+    const result = await runConsultation(
+      gateway,
+      ctx,
+      request({
+        available: EXPERTS.filter((e) => e.id !== 'exercise-rehab'),
+        excluded: ['lab-interpretation', 'mental-health'],
+        sectionHits: [
+          { expertId: 'exercise-rehab', section: 'exercise' },
+          { expertId: 'mental-health', section: 'mind' },
+          { expertId: 'nutrition', section: 'diet' },
+        ],
+      }),
+    );
+    expect(result.routing.selected.map((s) => s.expertId)).toEqual([
+      'nutrition',
+      'endocrine-metabolism',
+      'cardiovascular',
+    ]);
+  });
+
   it('puts manager picks first, honours exclusions and asks the model to fill in', async () => {
     const { gateway, openai } = setup({
       expert_routing: [

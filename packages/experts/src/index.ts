@@ -3,6 +3,7 @@ export * from './registry.js';
 export * from './input.js';
 export * from './opinion.js';
 export * from './suggest.js';
+export * from './plan-routing.js';
 export { EXPERT_RULES, cardsBlock } from './rules.js';
 export * from './eval-types.js';
 export { EXPERT_SNAPSHOTS } from './eval-fixtures.js';

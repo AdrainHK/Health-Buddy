@@ -1,6 +1,7 @@
 import type {
   ExpertFailureCategory,
   ExpertOpinion,
+  PlanSection,
   RoutingDecision,
   SelectedReason,
   Synthesis,
@@ -96,6 +97,11 @@ export interface ConsultationRequest {
    * 才用模型补充，否则只按规则命中）。不写为 true
    */
   modelRouting?: boolean;
+  /**
+   * M5 /方案生成：按方案部分命中的专家（规格 2.5，由调用方按选中的部分和资料算好）。
+   * 排在健管师指定之后、指标命中之前
+   */
+  sectionHits?: readonly { expertId: string; section: PlanSection }[];
 }
 
 export type ExpertCallOutcome = 'done' | 'failed' | 'timeout' | 'refused' | 'stopped';

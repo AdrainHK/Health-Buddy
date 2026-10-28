@@ -205,6 +205,11 @@ export interface SkillDefinition<S extends z.ZodType = z.ZodType> extends SkillM
    */
   numberCheckTexts?(output: z.output<S>): string[];
   /**
+   * 通俗版由模型写的文字（不是顶层 clientFacing 的技能，如 /方案生成 每部分一段）。
+   * 用了专家意见时，后端检查这些文字里不出现“专家”和专家名称；不写时检查顶层 clientFacing
+   */
+  clientFacingTexts?(output: z.output<S>): string[];
+  /**
    * 方案和随访的上下文（M5 规格 5.2）：后端组装 SkillInput.plan，执行步骤加“正在读取数字孪生”
    * “正在读取当前方案”；visit_schedule 再加“正在排随访日期”（日期由后端算，Q17），
    * care_plan 再加“正在选择食谱和动作”（候选库条目、目标模板和方案选项由后端组装）

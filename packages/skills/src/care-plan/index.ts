@@ -403,8 +403,10 @@ export const carePlan: SkillDefinition<typeof carePlanOutputSchema> = {
   prompt: `${TWIN_PROMPT_RULES}\n\n${body}`,
   outputSchema: carePlanOutputSchema,
   planContext: 'care_plan',
-  experts: 'none',
+  // 按方案部分自动请专家（M5 规格 2.5、Q6），只在专家预览开启时生效
+  experts: 'auto',
   runStepLabel: 'steps.generateCarePlan',
+  clientFacingTexts: carePlanClientTexts,
 
   buildUserMessage(input) {
     const parts = [describeReportClient(input, { includeCriteria: false })];
@@ -413,6 +415,8 @@ export const carePlan: SkillDefinition<typeof carePlanOutputSchema> = {
       parts.push('', describePlanContext(input.plan));
       if (input.plan.library) parts.push('', describeLibrary(input.plan.library));
     }
+    // 专家意见摘要（M5 规格 2.5）：生活方式要点可以吸收进方案，其余只进专业版；没请专家时没有这一节
+    if (input.expertDigest) parts.push('', input.expertDigest);
     return appendRequest(parts, input);
   },
 

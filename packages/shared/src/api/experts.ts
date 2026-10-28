@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { planSectionSchema } from '../plan/library.js';
 import { twinRefSchema } from './twin.js';
 
 /**
@@ -202,6 +203,8 @@ export const routingReasonSchema = z.discriminatedUnion('kind', [
   }),
   /** 专家中心发起的任务绑定的专家 */
   z.object({ kind: z.literal('bound') }),
+  /** M5 /方案生成：按方案部分命中（饮食 → 营养、运动 → 运动康复、心理 → 心理，规格 2.5） */
+  z.object({ kind: z.literal('plan_section'), section: planSectionSchema }),
 ]);
 export type RoutingReason = z.infer<typeof routingReasonSchema>;
 

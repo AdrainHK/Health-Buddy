@@ -228,7 +228,8 @@ export function consultationDigest(
         `- 转介：${URGENCY_ZH[op.referral.urgency ?? 'attention']}${op.referral.to ? `，${op.referral.to}` : ''}`,
       );
     }
-    if (op.crisisSignal || op.emergencySignal) continue;
+    // 危机、急症信号或“需尽快就医”的转介：这位专家的生活方式建议不进通俗版（M5 规格 2.5、Q8）
+    if (op.crisisSignal || op.emergencySignal || op.referral.urgency === 'urgent') continue;
     for (const s of op.suggestions)
       if (s.category === 'lifestyle') lifestyle.push(`- ${withoutQuantities(s.text)}`);
   }
