@@ -136,6 +136,31 @@ describe('客户 · 方案与随访（M5 规格 2.6）', () => {
     expect(screen.queryByRole('button', { name: '生成方案和随访计划' })).not.toBeInTheDocument();
   });
 
+  it('待随访的卡片上有“准备随访”“记录随访”：把这一次随访交给外壳；等方案生效的复评没有', async () => {
+    mockApi(careRoutes());
+    const visitSkill = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <TwinActionsContext.Provider value={{ visitSkill }}>
+        <CareView client={CLIENT} />
+      </TwinActionsContext.Provider>,
+    );
+    const list = await screen.findByRole('list', { name: '随访日程' });
+    expect(within(list).getAllByRole('button', { name: '准备随访' })).toHaveLength(1);
+    await user.click(within(list).getByRole('button', { name: '准备随访' }));
+    expect(visitSkill).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: ids.clientA }),
+      careIds.visit1,
+      'visit-script',
+    );
+    await user.click(within(list).getByRole('button', { name: '记录随访' }));
+    expect(visitSkill).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: ids.clientA }),
+      careIds.visit1,
+      'visit-record',
+    );
+  });
+
   it('别人的客户（404）：显示找不到，不显示任何方案内容', async () => {
     mockApi({});
     render(<CareView client={CLIENT} />);

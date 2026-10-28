@@ -370,6 +370,18 @@ export function AppShell({ account }: AppShellProps = {}) {
         },
       );
     },
+    visitSkill: (client, visitId, skillId) => {
+      const title = t(
+        skillId === 'visit-script'
+          ? 'twin.ai.visitScriptTaskTitle'
+          : 'twin.ai.visitRecordTaskTitle',
+        { date: today() },
+      );
+      void openClientTask(client, title).then((task) => {
+        if (!task) return;
+        setPrefill({ key: ++prefillSeq.current, taskId: task.id, mode: 'craft', skillId, visitId });
+      });
+    },
   };
 
   const archiveTask = (task: Task, archived: boolean) => {

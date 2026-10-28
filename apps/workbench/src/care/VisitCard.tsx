@@ -12,6 +12,7 @@ import { type FormEvent, useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { listVisitRecords, updateVisit } from '../api/care';
 import { isAbortError } from '../api/http';
+import { useTwinActions } from '../twin/TwinActions';
 import { twinErrorKey } from '../twin/errors';
 import styles from '../twin/Twin.module.css';
 import care from './Care.module.css';
@@ -43,6 +44,10 @@ export function VisitCard({
   const [handling, setHandling] = useState(false);
   const open = visit.status === 'planned' || visit.status === 'missed';
   const canHandle = !readOnly && (open || visit.status === 'pending_plan');
+  const { visitSkill } = useTwinActions();
+  const canPrepare = !readOnly && open && Boolean(visitSkill);
+  const runSkill = (skillId: 'visit-script' | 'visit-record') =>
+    visitSkill?.({ id: visit.clientId, displayName: clientName ?? '' }, visit.id, skillId);
   const purpose = t(`care.visits.purposes.${visit.purpose}`);
   const line = t('care.visits.line', {
     date: visit.dueDate,
@@ -83,7 +88,7 @@ export function VisitCard({
           }}
         />
       ) : (
-        (canHandle || (clientName && onOpenClient)) && (
+        (canHandle || canPrepare || (clientName && onOpenClient)) && (
           <div className={styles.cardActions}>
             {clientName && onOpenClient && (
               <Button
@@ -92,6 +97,12 @@ export function VisitCard({
               >
                 {t('care.visits.openClient')}
               </Button>
+            )}
+            {canPrepare && (
+              <>
+                <Button onClick={() => runSkill('visit-script')}>{t('care.visits.prepare')}</Button>
+                <Button onClick={() => runSkill('visit-record')}>{t('care.visits.record')}</Button>
+              </>
             )}
             {canHandle && (
               <Button

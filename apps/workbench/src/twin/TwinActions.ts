@@ -25,6 +25,12 @@ export interface TwinActions {
   summarize?: (client: Pick<ClientSummary, 'id' | 'displayName'>) => void;
   /** “生成方案和随访计划”（M5 规格 2.10）：想一想模式的“方案和随访”计划 */
   planAndVisits?: (client: Pick<ClientSummary, 'id' | 'displayName'>) => void;
+  /** “准备随访”“记录随访”（M5 规格 2.8、2.9）：做一做模式的技能，关联这一次随访 */
+  visitSkill?: (
+    client: Pick<ClientSummary, 'id' | 'displayName'>,
+    visitId: string,
+    skillId: 'visit-script' | 'visit-record',
+  ) => void;
 }
 
 export const TwinActionsContext = createContext<TwinActions>({});
