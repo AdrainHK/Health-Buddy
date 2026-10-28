@@ -39,6 +39,7 @@ export type ActivateResult = 'ok' | 'unauthorized' | 'limited';
 export class DeviceAuthService {
   private readonly logger = new Logger('CompanionDevice');
   private readonly cipher: DeviceSecretCipher | null;
+  private readonly enabled: boolean;
   /** 同一序列号的激活失败次数限制，防止猜 HMAC 或刷令牌 */
   private readonly failures = new BindAttemptLimiter({
     perUser: 10,
@@ -56,18 +57,28 @@ export class DeviceAuthService {
     @Inject(DB) private readonly db: Db,
     @Inject(APP_CONFIG) config: AppConfig,
   ) {
+    this.enabled = config.companionVoiceEnabled;
     this.cipher = config.companionDeviceKey
       ? new DeviceSecretCipher(config.companionDeviceKey)
       : null;
   }
 
-  async config(serialNo: string | undefined, websocketUrl: string): Promise<DeviceOtaResponse> {
+  /**
+   * 限流按“序列号 + 来源地址”计数：序列号印在机身上，只按序列号计数的话，
+   * 别人反复请求就能让真设备暂时拿不到令牌（租户审查 S1）
+   */
+  async config(
+    serialNo: string | undefined,
+    websocketUrl: string,
+    source: string,
+  ): Promise<DeviceOtaResponse> {
     const response: DeviceOtaResponse = {
       server_time: { timestamp: Date.now(), timezone_offset: TIMEZONE_OFFSET_MINUTES },
     };
-    if (!serialNo || !this.cipher) return response;
-    if (this.failures.isBlocked(serialNo) || this.configCalls.isBlocked(serialNo)) return response;
-    this.configCalls.recordFailure(serialNo);
+    if (!serialNo || !this.cipher || !this.enabled) return response;
+    const key = `${serialNo}|${source}`;
+    if (this.configCalls.isBlocked(key)) return response;
+    this.configCalls.recordFailure(key);
     const device = await deviceAuthLookup(this.db, serialNo);
     if (!device?.secret_encrypted || device.status === 'stock') return response;
     const challenge = newChallenge();
@@ -87,9 +98,11 @@ export class DeviceAuthService {
     challenge: string;
     hmac: string;
     firmware: string | null;
+    source: string;
   }): Promise<ActivateResult> {
-    if (!this.cipher) return 'unauthorized';
-    if (this.failures.isBlocked(body.serialNo)) return 'limited';
+    if (!this.cipher || !this.enabled) return 'unauthorized';
+    const key = `${body.serialNo}|${body.source}`;
+    if (this.failures.isBlocked(key)) return 'limited';
     const device = await deviceAuthLookup(this.db, body.serialNo);
     const secret = device?.secret_encrypted
       ? this.cipher.decrypt(device.secret_encrypted, body.serialNo)
@@ -104,14 +117,15 @@ export class DeviceAuthService {
       verifyDeviceHmac(secret, body.challenge, body.hmac) &&
       (await activateDeviceToken(this.db, device.id, body.challenge, body.firmware));
     if (!ok) {
-      this.failures.recordFailure(body.serialNo);
+      this.failures.recordFailure(key);
       return 'unauthorized';
     }
     return 'ok';
   }
 
-  /** 语音通道连接时认证令牌 */
+  /** 语音通道连接时认证令牌；通道关闭时一律不认 */
   connect(token: string): Promise<DeviceConnection | undefined> {
+    if (!this.enabled) return Promise.resolve(undefined);
     return connectDevice(this.db, hashDeviceToken(token));
   }
 }

@@ -50,6 +50,7 @@ export class DeviceOtaController {
   async activate(
     @Body() body: unknown,
     @Headers('user-agent') ua: string | undefined,
+    @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
     const parsed = deviceActivateRequestSchema.safeParse(body);
@@ -62,6 +63,7 @@ export class DeviceOtaController {
       challenge: parsed.data.challenge,
       hmac: parsed.data.hmac,
       firmware: firmwareFromUserAgent(ua),
+      source: req.ip ?? '',
     });
     if (result === 'ok') res.status(200).json({ ok: true });
     else if (result === 'limited') res.status(429).json({ error: 'too_many_requests' });
@@ -70,7 +72,11 @@ export class DeviceOtaController {
 
   private config(serial: string | undefined, req: Request): Promise<DeviceOtaResponse> {
     const valid = serialSchema.safeParse(serial?.trim());
-    return this.auth.config(valid.success ? valid.data : undefined, websocketUrl(req));
+    return this.auth.config(
+      valid.success ? valid.data : undefined,
+      websocketUrl(req),
+      req.ip ?? '',
+    );
   }
 }
 

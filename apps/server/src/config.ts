@@ -50,6 +50,11 @@ const envSchema = z.object({
       .optional(),
   ),
   /**
+   * 伴侣语音通道开关（M6 第 3 步）：危机和急症的预警、转交（第 4、6 步）上线前，正式环境默认关闭，
+   * 配置接口不发令牌、/ws/device 拒绝连接；只在预览环境和真设备联调时打开。
+   */
+  COMPANION_VOICE_ENABLED: z.preprocess(emptyAsUnset, z.enum(['true', 'false']).default('false')),
+  /**
    * 伴侣设备 HMAC 密钥的加密密钥（M6 规格 3.2）：32 字节，base64 编码。
    * 没设置时平台不能导入设备批次，设备不能激活，其他功能照常。
    */
@@ -104,6 +109,8 @@ export interface AppConfig {
   visitMaterialKey: Buffer | undefined;
   /** 伴侣设备密钥的加密密钥（32 字节）；没有配置时为空 */
   companionDeviceKey: Buffer | undefined;
+  /** 伴侣语音通道开关；关闭时设备拿不到令牌、连不上语音通道 */
+  companionVoiceEnabled: boolean;
 }
 
 export const APP_DB_ROLE = 'hb_app';
@@ -145,6 +152,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     visitMaterialKey: env.VISIT_MATERIAL_KEY
       ? Buffer.from(env.VISIT_MATERIAL_KEY, 'base64')
       : undefined,
+    companionVoiceEnabled: env.COMPANION_VOICE_ENABLED === 'true',
     companionDeviceKey: env.COMPANION_DEVICE_KEY
       ? Buffer.from(env.COMPANION_DEVICE_KEY, 'base64')
       : undefined,

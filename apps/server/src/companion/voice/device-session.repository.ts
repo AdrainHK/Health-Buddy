@@ -11,6 +11,8 @@ import { withDevice, type Db } from '../../db/database.js';
 export interface DeviceState {
   status: 'stock' | 'bound' | 'active' | 'paused' | 'revoked';
   clientId: string | null;
+  /** 这次绑定的时间：解绑后再绑回同一位客户时会变，会话据此断开 */
+  boundAt: number | null;
   voiceSpeed: CompanionVoiceSpeed;
 }
 
@@ -33,7 +35,7 @@ export class DeviceSessionRepository {
     return withDevice(this.db, { deviceId }, async (trx) => {
       const row = await trx
         .selectFrom('companion_devices')
-        .select(['status', 'client_id'])
+        .select(['status', 'client_id', 'bound_at'])
         .where('id', '=', deviceId)
         .executeTakeFirst();
       if (!row) return undefined;
@@ -41,6 +43,7 @@ export class DeviceSessionRepository {
       return {
         status: row.status,
         clientId: row.client_id,
+        boundAt: row.bound_at?.getTime() ?? null,
         voiceSpeed: settings?.voice_speed ?? COMPANION_DEFAULT_VOICE_SPEED,
       };
     });

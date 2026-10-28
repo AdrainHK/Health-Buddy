@@ -8,6 +8,7 @@ import {
   type UsageRecord,
 } from '@health-buddy/ai-engine';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import type { CompanionScriptKind, CompanionVoiceSpeed } from '@health-buddy/shared';
 import { LLM_PROVIDERS } from '../../ai/gateway.provider.js';
 import { APP_CONFIG, type AppConfig } from '../../config.js';
@@ -109,7 +110,8 @@ export class CompanionSpeech {
     script: { kind: CompanionScriptKind; version: number; text: string },
     speed: CompanionVoiceSpeed,
   ): Promise<Uint8Array[]> {
-    const key = `${script.kind}:${script.version}:${speed}`;
+    // 键里带文字的哈希：话术以后加入客户称呼等个性化内容时，不会把别人的语音放给这位客户
+    const key = `${script.kind}:${script.version}:${speed}:${createHash('sha256').update(script.text).digest('hex')}`;
     const cached = this.cache.get(key);
     if (cached) return cached;
     const pending = this.synthesize(deviceId, script.text, speed);

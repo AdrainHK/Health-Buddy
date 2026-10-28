@@ -9,7 +9,7 @@ import { muxOggOpus } from './ogg.js';
 /**
  * 伴侣设备模拟器（M6 规格 3.1、验收 1）：没有真设备时，按 xiaozhi-esp32 的协议走一遍
  * 开机配置 → HMAC 激活 → 语音通道 → 说一句话 → 收回复，把福宝的回复存成 Ogg 文件。
- * 只用合成设备（平台导入的测试批次）。设备密钥从环境变量 COMPANION_SIM_KEY 读，不打印。
+ * 只用合成设备（平台导入的测试批次），**不要连正式环境的真设备**：会在终端打印识别出的文字。设备密钥从环境变量 COMPANION_SIM_KEY 读，不打印。
  *
  * 用法：
  *   COMPANION_SIM_KEY=<64 位十六进制> pnpm --filter @health-buddy/server companion:sim -- \

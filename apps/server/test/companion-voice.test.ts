@@ -206,7 +206,7 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
   const consentAndBind = async (agent: Agent, clientId: string, serial: string, code: string) => {
     const base = `/api/clients/${clientId}/companion`;
     await agent
-      .post(`${base}/consents`)
+      .post(`${base}/consents?tz=Asia/Shanghai`)
       .send({ noticeVersion: 1, consentedOn: TODAY, confirmed: true, chatDataConfirmed: true })
       .expect(200);
     await agent.post(`${base}/device`).send({ serialNo: serial, activationCode: code }).expect(200);
@@ -214,7 +214,7 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
 
   beforeAll(async () => {
     app = await createTestApp(
-      {},
+      { companionVoiceEnabled: true },
       {
         llmProviders: { openai: mock },
         voice: {
@@ -461,6 +461,9 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
     device.speak([...SPEECH_FRAMES, ...SILENCE_FRAMES]);
     const paused = await device.utterance(2);
     expect(paused.texts.find((t) => t.type === 'stt')).toBeUndefined();
+    // 暂停、撤回同意时不调用语音识别
+    const sttCalls = () => mock.speechCalls.filter((c) => c.request.route === 'speech_to_text');
+    expect(sttCalls()).toHaveLength(0);
     expect(paused.texts.find((t) => t.state === 'sentence_start')!.text).toBe(
       COMPANION_DEFAULT_SCRIPTS.paused,
     );
@@ -476,11 +479,70 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
 
     await a1.post(`/api/clients/${f.clients.a1[0]}/companion/resume`).expect(200);
     await a1
-      .post(`/api/clients/${f.clients.a1[0]}/companion/consents/revoke`)
+      .post(`/api/clients/${f.clients.a1[0]}/companion/consents/revoke?tz=Asia/Shanghai`)
       .send({ revokedOn: TODAY })
       .expect(200);
     const revoked = await open(token);
     expect((await revoked.utterance(1)).texts[1]!.text).toBe(COMPANION_DEFAULT_SCRIPTS.paused);
+    await revoked.until(() => revoked.closed, 'close after revoked');
+    expect(sttCalls()).toHaveLength(0);
+  });
+
+  it('危机和疑似急症的说法：念危机、急症固定话术，不念“我是福宝”', async () => {
+    const device = await open(await boot(SERIAL_A, keys.a));
+    await device.utterance(1);
+    const cases = [
+      { said: '最近总想着不如死了算了', script: COMPANION_DEFAULT_SCRIPTS.crisis },
+      { said: '我胸口痛，还出冷汗', script: COMPANION_DEFAULT_SCRIPTS.emergency },
+    ];
+    for (const [i, c] of cases.entries()) {
+      transcript = c.said;
+      device.send({ type: 'listen', state: 'start', mode: 'auto' });
+      device.speak([...SPEECH_FRAMES, ...SILENCE_FRAMES]);
+      const reply = await device.utterance(i + 2);
+      expect(reply.texts.find((t) => t.state === 'sentence_start')!.text).toBe(c.script);
+    }
+    device.ws.close();
+  });
+
+  it('解绑后马上绑回同一位客户：进行中的会话也要断开', async () => {
+    const device = await open(await boot(SERIAL_A, keys.a));
+    await device.utterance(1);
+    const url = `/api/clients/${f.clients.a1[0]}/companion/device`;
+    await a1.delete(url).expect(200);
+    await a1.post(url).send({ serialNo: SERIAL_A, activationCode: 'VOICE001' }).expect(200);
+    device.send({ type: 'listen', state: 'start', mode: 'auto' });
+    device.speak([...SPEECH_FRAMES, ...SILENCE_FRAMES]);
+    await device.until(() => device.closed, 'close after rebind');
+    expect(mock.speechCalls.filter((c) => c.request.route === 'speech_to_text')).toHaveLength(0);
+  });
+
+  it('语音通道开关关闭（正式环境默认）：配置接口不发令牌，已有令牌也连不上', async () => {
+    const token = await boot(SERIAL_A, keys.a);
+    const closed = await createTestApp({}, { llmProviders: { openai: mock } });
+    try {
+      await closed.listen(0, '127.0.0.1');
+      const p = (closed.getHttpServer().address() as AddressInfo).port;
+      const res = await fetch(`http://127.0.0.1:${p}/api/device/ota/`, {
+        method: 'POST',
+        headers: { 'Serial-Number': SERIAL_A, 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      const body = (await res.json()) as { websocket?: unknown; activation?: unknown };
+      expect(body.websocket).toBeUndefined();
+      expect(body.activation).toBeUndefined();
+      const status = await new Promise<number>((resolve, reject) => {
+        const ws = new WebSocket(`ws://127.0.0.1:${p}/ws/device`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        ws.on('unexpected-response', (_req, r) => resolve(r.statusCode ?? 0));
+        ws.on('open', () => resolve(101));
+        ws.on('error', reject);
+      });
+      expect(status).toBe(401);
+    } finally {
+      await closed.close();
+    }
   });
 
   it('解绑后旧令牌立即失效；设备再绑给别的客户，绑定前的令牌也不能用', async () => {
@@ -498,7 +560,7 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
     expect((await ota(SERIAL_A)).websocket).toBeUndefined();
 
     await a1
-      .post(`/api/clients/${f.clients.a1[1]}/companion/consents`)
+      .post(`/api/clients/${f.clients.a1[1]}/companion/consents?tz=Asia/Shanghai`)
       .send({ noticeVersion: 1, consentedOn: TODAY, confirmed: true, chatDataConfirmed: true })
       .expect(200);
     await a1
@@ -570,6 +632,63 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
         ),
       ),
     ).rejects.toThrow();
+    // 其余认证函数在健管师、设备上下文里同样不能调用
+    const manager = {
+      userId: f.users.managerA1.id,
+      role: 'manager' as const,
+      operatorId: f.operatorA,
+      orgId: f.orgA,
+    };
+    const guarded = [
+      sql`select companion_device_token_issue(${idA}::uuid, ${randomBytes(32)}, ${'a'.repeat(64)}, 3600)`,
+      sql`select companion_device_token_activate(${idA}::uuid, ${'a'.repeat(64)}, null)`,
+      sql`select * from companion_device_connect(${randomBytes(32)})`,
+    ];
+    for (const query of guarded) {
+      await expect(withTenant(appDb(), manager, (trx) => query.execute(trx))).rejects.toThrow();
+      await expect(
+        withDevice(appDb(), { deviceId: idA }, (trx) => query.execute(trx)),
+      ).rejects.toThrow();
+    }
+    // 有上下文时刷新在线时间不生效
+    await owner.updateTable('companion_devices').set({ last_seen_at: null }).execute();
+    await withTenant(appDb(), manager, (trx) =>
+      sql`select companion_device_seen(${idA}::uuid)`.execute(trx),
+    );
+    const seenRow = await owner
+      .selectFrom('companion_devices')
+      .select('last_seen_at')
+      .where('id', '=', idA)
+      .executeTakeFirstOrThrow();
+    expect(seenRow.last_seen_at).toBeNull();
+    // 伴侣设置函数：健管师、运营商、平台读不到；设备 B 只读到客户 B 的
+    for (const ctx of [
+      manager,
+      {
+        userId: f.users.operatorAdminA.id,
+        role: 'operator_admin' as const,
+        operatorId: f.operatorA,
+        orgId: null,
+      },
+      {
+        userId: f.users.platform.id,
+        role: 'platform_admin' as const,
+        operatorId: null,
+        orgId: null,
+      },
+    ]) {
+      const { rows } = await withTenant(appDb(), ctx, (trx) =>
+        sql`select * from companion_device_settings()`.execute(trx),
+      );
+      expect(rows).toEqual([]);
+    }
+    await owner
+      .updateTable('clients')
+      .set({ companion_voice_speed: 'fast' })
+      .where('id', '=', f.clients.a1[0])
+      .execute();
+    expect((await repo.state(idB))?.voiceSpeed).toBe('slow');
+    expect((await repo.state(idA))?.voiceSpeed).toBe('fast');
     // 应用角色读不到令牌表和设备密钥密文
     await expect(sql`select * from companion_device_tokens`.execute(appDb())).rejects.toThrow();
     await expect(

@@ -5,6 +5,8 @@ import {
   type CompanionVoiceSpeed,
   type ServerDeviceMessage,
 } from '@health-buddy/shared';
+import { detectEmergencyKeywords } from '@health-buddy/experts';
+import { detectCrisisKeywords } from '@health-buddy/skills';
 import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 import type { DeviceConnection } from '../../db/companion-device-auth.js';
@@ -51,7 +53,16 @@ export type ListenMode = 'auto' | 'manual' | 'realtime';
  */
 export type Responder = (input: { deviceId: string; text: string }) => Promise<CompanionScriptKind>;
 
-export const fixedResponder: Responder = () => Promise.resolve('daily_intro');
+/**
+ * 第 3 步的回复：先按关键词识别心理危机和疑似急症（不依赖模型，红线 4、规格 2.5），
+ * 念对应的固定话术；其余念“我是 AI 伴侣福宝，不是医生。”（占位，第 4 步换成对话）。
+ * 推送给健管师的预警在第 6 步；在那之前正式环境不开放语音通道（COMPANION_VOICE_ENABLED）。
+ */
+export const fixedResponder: Responder = ({ text }) => {
+  if (detectCrisisKeywords([text])) return Promise.resolve('crisis');
+  if (detectEmergencyKeywords([text])) return Promise.resolve('emergency');
+  return Promise.resolve('daily_intro');
+};
 
 export interface SessionDeps {
   repo: DeviceSessionRepository;
@@ -78,6 +89,7 @@ export class DeviceSession {
   readonly id = randomUUID();
   private helloDone = false;
   private clientId: string | null = null;
+  private boundAt: number | null = null;
   private voiceSpeed: CompanionVoiceSpeed = 'slow';
   private listening: Listening | null = null;
   private busy = false;
@@ -189,6 +201,7 @@ export class DeviceSession {
       return;
     }
     this.clientId = state.clientId;
+    this.boundAt = state.boundAt;
     this.voiceSpeed = state.voiceSpeed;
     if (state.status === 'paused' || state.status === 'revoked') {
       await this.sayAndClose('paused');
@@ -236,7 +249,7 @@ export class DeviceSession {
     try {
       // 每句话前确认设备仍绑定在同一位客户名下
       const state = await this.deps.repo.state(this.deviceId);
-      if (!state?.clientId || state.clientId !== this.clientId) {
+      if (!state?.clientId || state.clientId !== this.clientId || state.boundAt !== this.boundAt) {
         this.close();
         return;
       }

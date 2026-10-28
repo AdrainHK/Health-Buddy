@@ -60,7 +60,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     end
     $$;
 
-    -- 发一个待验证的令牌。顺带清理这台设备过期、作废和超时未验证的令牌，待验证的最多留 5 个
+    -- 发一个待验证的令牌。顺带清理这台设备过期、作废和超时未验证的令牌，待验证的最多留 20 个（10 分钟内；配置接口另按来源限流）
     create function companion_device_token_issue(
       p_device_id uuid, p_token_hash bytea, p_challenge text, p_ttl_seconds int
     ) returns boolean
@@ -87,7 +87,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
         where id in (
           select id from companion_device_tokens
             where device_id = p_device_id and activated_at is null
-            order by created_at desc offset 4
+            order by created_at desc offset 19
         );
       insert into companion_device_tokens (device_id, token_hash, challenge, expires_at)
         values (p_device_id, p_token_hash, p_challenge, now() + make_interval(secs => p_ttl_seconds));
