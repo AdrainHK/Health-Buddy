@@ -31,7 +31,7 @@ const MEDICAL_RULES: readonly {
   {
     category: 'medication',
     pattern:
-      /停药|减药|加药|换药|吃多少|几片|几粒|剂量|打几个单位|胰岛素|降压药|降糖药|吃什么药|药.{0,6}(能不能|可不可以|要不要|该不该|副作用|怎么吃|一起吃)/,
+      /停药|减药|加药|换药|药.{0,6}吃多少|吃多少.{0,2}药|几片|几粒|剂量|打几个单位|胰岛素|降压药|降糖药|吃什么药|药.{0,6}(能不能|可不可以|要不要|该不该|副作用|怎么吃|一起吃)/,
   },
   { category: 'medication', pattern: /药/, needsQuestion: true },
   {
@@ -162,6 +162,10 @@ export const COMPANION_VALUE_JUDGMENTS = [
 /** 指标后面跟高低好坏：“血压高了”“血糖挺稳” */
 const METRIC_JUDGMENT =
   /(?:血压|血糖|心率|心跳|体重|尿酸|血脂|胆固醇|指标|数值|这个数)[^，。！？；]{0,6}(?:高(?!压)|低(?!压)|好|稳|合适|理想|正常)/;
+/** 替健管师承诺：主语是健管师（他、她），或承诺“给您打电话、联系您、回复您”（规格 5.3 第 10 条） */
+const REPLY_MANAGER_PROMISE =
+  /(?:健管师|他|她)(?:会|马上|今天|明天|很快|立刻|一会儿)[^，。！？]{0,6}(?:给您|给你|联系|回复|打电话|来电|上门)|(?:会|马上|很快|立刻|尽快)[^，。！？]{0,3}(?:给您|给你)(?:打电话|回电|回复)|(?:会|马上|很快|尽快)[^，。！？]{0,3}(?:联系您|联系你|回复您|回复你)/;
+
 /** 平时的回答里不能说的安抚（危机后的陪伴用 COMPANION_REASSURANCE_TERMS 全部） */
 const NORMAL_REASSURANCE = ['没事', '不要紧', '不严重', '没什么大问题'] as const;
 
@@ -192,10 +196,12 @@ export function checkCompanionReply(
 ): CompanionReplyIssue[] {
   if (!text.trim()) return [{ category: 'empty', term: '' }];
   // 转交、兜底话术的检查最全：禁用词、病名、判断、药名、剂量、功效、孪生字样、专家、医院、代健管师承诺、占位符
-  const issues: CompanionReplyIssue[] = checkCompanionScript('fallback', text).map((i) => ({
-    category: i.category,
-    term: i.term,
-  }));
+  // 代健管师承诺改用更窄的规则：“马上联系家人”是危机后该说的话，不是替健管师承诺（评测发现）
+  const issues: CompanionReplyIssue[] = checkCompanionScript('fallback', text)
+    .filter((i) => i.category !== 'manager_promise')
+    .map((i) => ({ category: i.category, term: i.term }));
+  const promise = REPLY_MANAGER_PROMISE.exec(compact(text));
+  if (promise) issues.push({ category: 'manager_promise', term: promise[0] });
   // 数值高低、“健康”“达标”这类评价（合规复审 B3；规格 5.3 第 3 条）
   const norm = compact(text);
   for (const term of COMPANION_VALUE_JUDGMENTS) {

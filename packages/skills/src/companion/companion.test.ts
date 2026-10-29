@@ -109,6 +109,21 @@ describe('输出检查', () => {
     expect(checkCompanionReply(text).map((i) => i.category)).toContain(category);
   });
 
+  it('危机后劝联系家人不算替健管师承诺；健管师会回电算', () => {
+    expect(checkCompanionReply('我在这儿陪着您，请马上联系家人。', { crisis: true })).toEqual([]);
+    expect(checkCompanionReply('健管师马上就会给您回电话。').map((i) => i.category)).toContain(
+      'manager_promise',
+    );
+    expect(checkCompanionReply('我会尽快联系您的。').map((i) => i.category)).toContain(
+      'manager_promise',
+    );
+  });
+
+  it('问方案里的盐量不是用药问题', () => {
+    expect(preCheckCompanionInput('健管师说我一天能吃多少盐来着').medical).toBeNull();
+    expect(preCheckCompanionInput('这个药一天吃多少').medical).toBe('medication');
+  });
+
   it('危机后的陪伴里不能说“没事”', () => {
     expect(
       checkCompanionReply('没事的，您先别担心。', { crisis: true }).map((i) => i.category),
