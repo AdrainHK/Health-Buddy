@@ -20,3 +20,4 @@ export * from './plan-library-admin.js';
 export * from './plan-stats.js';
 export * from './companion.js';
 export * from './companion-device.js';
+export * from './companion-checkins.js';

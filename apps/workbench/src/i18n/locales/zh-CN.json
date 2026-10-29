@@ -2037,6 +2037,74 @@
       "tooMany": "绑定失败次数太多，请 15 分钟后再试。",
       "network": "网络连接失败，请稍后重试。",
       "unknown": "操作没有成功，请稍后重试。"
+    },
+    "checkin": {
+      "title": "打卡",
+      "hint": "客户唤醒福宝时，福宝先补说已到时间的提醒，再听客户说话；窗口结束还没回答的记为“未应答”。服药提醒不说药名和剂量；客户报的数值福宝会复述确认后记下，不评价高低。",
+      "loading": "正在读取打卡…",
+      "loadFailed": "打卡读取失败，请稍后重试。",
+      "noPlans": "还没有打卡计划。",
+      "add": "新增打卡计划",
+      "addTitle": "新增打卡计划",
+      "editTitle": "修改打卡计划",
+      "edit": "修改",
+      "stop": "停用",
+      "restart": "启用",
+      "stopped": "已停用",
+      "save": "保存",
+      "kind": "类别",
+      "metric": "测量项目",
+      "kinds": {
+        "medication": "服药",
+        "measurement": "测量",
+        "exercise": "运动"
+      },
+      "metrics": {
+        "bp": "血压",
+        "fpg": "空腹血糖",
+        "weight": "体重",
+        "steps": "步数",
+        "sleep_hours": "睡眠时长"
+      },
+      "slots": {
+        "morning": "早",
+        "noon": "中",
+        "evening": "晚",
+        "bedtime": "睡前"
+      },
+      "slotsLabel": "提醒时间（可选多个时间段）",
+      "slotWindow": "{{slot}}（{{start}}–{{end}}）",
+      "slotAt": "{{slot}} {{time}}",
+      "separator": "、",
+      "timeOf": "{{slot}}的提醒时间",
+      "timeOutside": "提醒时间要在所选时间段内。",
+      "medicationHint": "福宝只说“该按医嘱吃药了，吃了吗？”，不说药名和剂量。",
+      "goal": "对应方案里的行为目标（可选，只给自己看）",
+      "noGoal": "不指定",
+      "goalValue": "行为目标：{{goal}}",
+      "note": "备注（只给自己看，福宝读不到，最多 {{max}} 字）",
+      "notePlaceholder": "例如：早饭后提醒",
+      "noteValue": "备注：{{note}}",
+      "historyTitle": "近 30 天打卡",
+      "noHistory": "近 30 天还没有打卡记录。",
+      "columns": {
+        "date": "日期",
+        "item": "项目",
+        "slot": "时间段",
+        "result": "结果"
+      },
+      "statuses": {
+        "done": "完成",
+        "partial": "做了一部分",
+        "missed": "没做",
+        "skipped": "今天不用",
+        "no_response": "未应答"
+      },
+      "reported": "客户报：{{values}}",
+      "errors": {
+        "tooMany": "启用的打卡计划太多了，请先停用不用的计划。",
+        "badRequest": "填写的内容不完整或不对，请检查后再保存。"
+      }
     }
   }
 }

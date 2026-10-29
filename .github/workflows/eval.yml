@@ -29,7 +29,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # 省费用：PR 只跑和改动文件相关的评测组（规则见 .github/scripts/eval-suites.sh），手动运行跑全部
+  # 省费用：PR 只跑和改动文件相关的评测组（规则见 .github/scripts/eval-suites.sh），手动运行跑全部；
+  # PR 再次推送时只看新增的提交
   plan:
     runs-on: ubuntu-latest
     outputs:
@@ -42,11 +43,18 @@ jobs:
         id: pick
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
+          ACTION: ${{ github.event.action }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.pull_request.head.sha }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
-            files=$(git diff --name-only "$BASE"...HEAD)
-          else
+          if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
             files=ALL
+          elif [ "$ACTION" = synchronize ] && [ -n "$BEFORE" ] \
+            && git merge-base --is-ancestor "$BEFORE" "$AFTER" 2>/dev/null; then
+            # 再次推送：只看这次新增的提交（之前的提交已经评测过）；强推时退回看整个 PR
+            files=$(git diff --name-only "$BEFORE" "$AFTER")
+          else
+            files=$(git diff --name-only "$BASE"...HEAD)
           fi
           echo "改动的文件："; echo "$files"
           suites=$(printf '%s\n' "$files" | bash .github/scripts/eval-suites.sh)

@@ -18,7 +18,7 @@ import {
   type EndpointOptions,
 } from './audio.js';
 import type { DeviceSessionRepository } from './device-session.repository.js';
-import type { CompanionDialogue, Utterance } from './dialogue.service.js';
+import { scriptText, type CompanionDialogue, type Utterance } from './dialogue.service.js';
 import type { CompanionSpeech } from './speech.service.js';
 
 export interface VoiceOptions {
@@ -209,6 +209,8 @@ export class DeviceSession {
       await this.say('intro');
       await this.deps.dialogue.noteScript(this.deviceId, this.sessionId, 'intro');
     }
+    // 唤醒后先补说到期的打卡提醒，再听客户说话（规格 2.3 暂行做法）
+    await this.play(await this.deps.dialogue.greet(this.deviceId, this.sessionId));
   }
 
   /** 固定话术按这位客户的语速预先合成（规格 5.4 第 3 条），之后从缓存播放；失败不影响对话 */
@@ -318,6 +320,13 @@ export class DeviceSession {
         if (!script) {
           this.deps.logger.error(`companion script missing ${JSON.stringify({ kind: u.script })}`);
           return null;
+        }
+        // 有占位符的话术（测量项目、复述的数值）替换后实时合成，不进缓存：
+        // 复述里有客户报的数，不在内存里留合成好的音频（合规审查 N3）
+        if (u.vars) {
+          const text = scriptText(script.text, u);
+          const frames = await this.deps.speech.synthesize(this.deviceId, text, this.voiceSpeed);
+          return { text, frames };
         }
         const frames = await this.deps.speech.script(this.deviceId, script, this.voiceSpeed);
         return { text: script.text, frames };

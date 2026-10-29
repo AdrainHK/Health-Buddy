@@ -1,10 +1,24 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type {
+  CheckinMetric,
+  CheckinSlot,
+  CheckinStatus,
   CompanionAlertCategory,
   CompanionHandoffCategory,
   CompanionScriptKind,
 } from '@health-buddy/shared';
 import type { CompanionContext, CompanionTurn } from '@health-buddy/skills';
+import {
+  addPendingReading,
+  dueCheckins,
+  readingCritical,
+  recordCheckin,
+  recordCheckinReading,
+  sweepCheckins,
+  todayCheckins,
+  type DueCheckin,
+  type ReadingResult,
+} from '../../db/companion-checkins.js';
 import { deviceProfile, purgeCompanionData } from '../../db/companion-device-auth.js';
 import { DB } from '../../db/db.provider.js';
 import { withDevice, type Db, type TenantTransaction } from '../../db/database.js';
@@ -74,7 +88,11 @@ export class DialogueRepository {
   }
 
   /** 福宝能读的资料（规格 2.6） */
-  context(deviceId: string, sessionId: string): Promise<CompanionContext | undefined> {
+  context(
+    deviceId: string,
+    clientId: string,
+    sessionId: string,
+  ): Promise<CompanionContext | undefined> {
     return this.run(deviceId, async (trx) => {
       const profile = await deviceProfile(trx);
       if (!profile) return undefined;
@@ -108,6 +126,7 @@ export class DialogueRepository {
         memories: memories.map((m) => m.text),
         recentSummaries: summaries.flatMap((s) => (s.summary ? [s.summary] : [])),
         today: localDate(new Date(), TZ),
+        checkins: await todayCheckins(trx, clientId),
       };
     });
   }
@@ -319,5 +338,57 @@ export class DialogueRepository {
 
   purge(): Promise<{ messages: number; memories: number }> {
     return purgeCompanionData(this.db);
+  }
+
+  // ---------- 打卡（规格 2.3）：都经数据库函数，计划、时间段、客户由函数校验 ----------
+
+  dueCheckins(deviceId: string, clientId: string): Promise<DueCheckin[]> {
+    return this.run(deviceId, (trx) => dueCheckins(trx, clientId));
+  }
+
+  recordCheckin(
+    deviceId: string,
+    clientId: string,
+    planId: string,
+    slot: CheckinSlot,
+    status: CheckinStatus,
+  ): Promise<string | null> {
+    return this.run(deviceId, (trx) => recordCheckin(trx, clientId, planId, slot, status));
+  }
+
+  recordReading(
+    deviceId: string,
+    clientId: string,
+    planId: string,
+    slot: CheckinSlot,
+    values: readonly number[],
+  ): Promise<ReadingResult> {
+    return this.run(deviceId, (trx) => recordCheckinReading(trx, clientId, planId, slot, values));
+  }
+
+  readingCritical(
+    deviceId: string,
+    metric: CheckinMetric,
+    values: readonly number[],
+  ): Promise<boolean> {
+    return this.run(deviceId, (trx) => readingCritical(trx, metric, values));
+  }
+
+  addPendingReading(
+    deviceId: string,
+    clientId: string,
+    metric: CheckinMetric,
+    values: readonly number[],
+    text: string,
+    messageId: string | null,
+  ): Promise<void> {
+    return this.run(deviceId, (trx) =>
+      addPendingReading(trx, clientId, metric, values, text, messageId),
+    );
+  }
+
+  /** 定时任务：窗口过了没回答的记“未应答” */
+  sweepCheckins(): Promise<number> {
+    return sweepCheckins(this.db);
   }
 }

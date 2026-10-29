@@ -12,6 +12,11 @@ import {
 } from '@nestjs/common';
 import {
   bindCompanionDeviceRequestSchema,
+  createCheckinPlanRequestSchema,
+  updateCheckinPlanRequestSchema,
+  type CheckinListResponse,
+  type CheckinPlanListResponse,
+  type CheckinPlanResponse,
   companionScriptKindSchema,
   companionScriptMax,
   timeZoneSchema,
@@ -44,6 +49,7 @@ import {
 } from '../common/api-error.js';
 import { requireManager } from '../common/manager-only.js';
 import type { Role } from '../db/types.js';
+import { CheckinsRepository, type CheckinPlanResult } from './checkins.repository.js';
 import { CompanionAdminRepository } from './companion-admin.repository.js';
 import { CompanionRepository } from './companion.repository.js';
 import { BindAttemptLimiter } from './device-credentials.js';
@@ -76,6 +82,8 @@ function parseTz(tz: unknown): string | undefined {
  * - POST、DELETE /api/clients/:id/companion/device：绑定（序列号 + 激活码）、解绑（N2）
  * - POST /api/clients/:id/companion/pause、/resume
  * - GET /api/companion/notice：当前的告知书模板（打印用）
+ * - GET、POST /api/clients/:id/checkin-plans，PATCH /api/clients/:id/checkin-plans/:planId：打卡计划（Q16）
+ * - GET /api/clients/:id/checkins：近 30 天的打卡记录
  */
 @Controller()
 export class CompanionController {
@@ -84,6 +92,7 @@ export class CompanionController {
   constructor(
     private readonly repo: CompanionRepository,
     private readonly admin: CompanionAdminRepository,
+    private readonly checkins: CheckinsRepository,
   ) {}
 
   @Get('clients/:id/companion')
@@ -188,6 +197,52 @@ export class CompanionController {
     return deviceResult(await this.repo.setPaused(session, parseId(id), false));
   }
 
+  @Get('clients/:id/checkin-plans')
+  async checkinPlans(
+    @CurrentSession() session: ResolvedSession,
+    @Param('id') id: string,
+  ): Promise<CheckinPlanListResponse> {
+    requireManager(session);
+    const plans = await this.checkins.plans(session, parseId(id));
+    return plans ? { plans } : notFoundThrow();
+  }
+
+  @Post('clients/:id/checkin-plans')
+  async createCheckinPlan(
+    @CurrentSession() session: ResolvedSession,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ): Promise<CheckinPlanResponse> {
+    requireManager(session);
+    const clientId = parseId(id);
+    const data = parse(createCheckinPlanRequestSchema, body);
+    return planResult(await this.checkins.createPlan(session, clientId, data));
+  }
+
+  @Patch('clients/:id/checkin-plans/:planId')
+  async updateCheckinPlan(
+    @CurrentSession() session: ResolvedSession,
+    @Param('id') id: string,
+    @Param('planId') planId: string,
+    @Body() body: unknown,
+  ): Promise<CheckinPlanResponse> {
+    requireManager(session);
+    const clientId = parseId(id);
+    const plan = parseId(planId);
+    const data = parse(updateCheckinPlanRequestSchema, body);
+    return planResult(await this.checkins.updatePlan(session, clientId, plan, data));
+  }
+
+  @Get('clients/:id/checkins')
+  async checkinHistory(
+    @CurrentSession() session: ResolvedSession,
+    @Param('id') id: string,
+  ): Promise<CheckinListResponse> {
+    requireManager(session);
+    const checkins = await this.checkins.checkins(session, parseId(id));
+    return checkins ? { checkins } : notFoundThrow();
+  }
+
   @Get('companion/notice')
   async notice(@CurrentSession() session: ResolvedSession): Promise<CompanionScript> {
     requireManager(session);
@@ -279,6 +334,13 @@ export class CompanionAdminController {
 
 function notFoundThrow(): never {
   throw notFound();
+}
+
+function planResult(result: CheckinPlanResult): CheckinPlanResponse {
+  if (result === 'not_found') throw notFound();
+  if (result === 'unknown_goal') throw badRequest();
+  if (result === 'too_many') throw conflict({ reasons: ['too_many_plans'] });
+  return { plan: result };
 }
 
 function consentResult(

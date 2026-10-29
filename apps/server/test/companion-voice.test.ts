@@ -1199,4 +1199,581 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
       ),
     ).toEqual(Object.fromEntries(tables.map((t) => [t, 0])));
   });
+
+  // ---------- 第 5 步：打卡（规格 2.3） ----------
+
+  /** 打卡用的“北京时间现在”：测试里换成固定时刻，用完恢复（窗口按时段判断，不能依赖跑测试的时间） */
+  const setClock = async (local: string | null) => {
+    const body = local
+      ? sql.raw(`select timestamp '${local}'`)
+      : sql.raw(`select now() at time zone 'Asia/Shanghai'`);
+    await sql`create or replace function checkin_local_now() returns timestamp
+      language sql stable as $$ ${body} $$`.execute(owner);
+  };
+  const addDays = (date: string, days: number) =>
+    new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+  const plan = async (agent: Agent, clientId: string, body: Record<string, unknown>) =>
+    (await agent.post(`/api/clients/${clientId}/checkin-plans`).send(body).expect(201)).body
+      .plan as {
+      id: string;
+    };
+  const S = COMPANION_DEFAULT_SCRIPTS;
+  const managerCtx = (u: { id: string }, operatorId: string, orgId: string) => ({
+    userId: u.id,
+    role: 'manager' as const,
+    operatorId,
+    orgId,
+  });
+
+  it('打卡：唤醒时先补说到期的提醒；服药、运动记结果，血压复述确认后写入监测、孪生入队', async () => {
+    const client = f.clients.a1[0];
+    await plan(a1, client, {
+      kind: 'medication',
+      slots: [{ slot: 'morning', time: '08:00' }],
+      note: '合成备注：只给健管师看',
+    });
+    await plan(a1, client, {
+      kind: 'measurement',
+      metric: 'bp',
+      slots: [{ slot: 'morning', time: '08:30' }],
+    });
+    await plan(a1, client, { kind: 'exercise', slots: [{ slot: 'morning', time: '09:00' }] });
+    // 还没到提醒时间的不说
+    await plan(a1, client, { kind: 'exercise', slots: [{ slot: 'evening', time: '18:00' }] });
+    await setClock(`${TODAY} 09:30`);
+    try {
+      const device = await open(await boot(SERIAL_A, keys.a));
+      await device.utterance(1);
+      // 开场白后接着补说第一条提醒；服药提醒里没有药名和备注
+      const reminder = await device.utterance(2);
+      expect(reminder.texts.filter((t) => t.state === 'sentence_start').map((t) => t.text)).toEqual(
+        [S.reminder_medication],
+      );
+      expect(await turn(device, '吃过了')).toEqual([
+        S.checkin_noted,
+        '该记一下今天的血压了，您告诉我数就行。',
+      ]);
+      expect(await turn(device, '一百三十二，八十六')).toEqual([
+        '您说的是高压一百三十二，低压八十六，对吗？',
+      ]);
+      expect(await turn(device, '对')).toEqual([S.checkin_recorded, S.reminder_exercise]);
+      expect(await turn(device, '只做了一部分')).toEqual([S.checkin_noted]);
+      // 打卡全程不调用模型
+      expect(companionCalls()).toHaveLength(0);
+
+      const checkins = await owner
+        .selectFrom('checkins')
+        .select(['status', 'reading_values', 'slot', 'manager_id'])
+        .orderBy('answered_at')
+        .execute();
+      expect(checkins).toEqual([
+        { status: 'done', reading_values: [], slot: 'morning', manager_id: f.users.managerA1.id },
+        {
+          status: 'done',
+          reading_values: [132, 86],
+          slot: 'morning',
+          manager_id: f.users.managerA1.id,
+        },
+        {
+          status: 'partial',
+          reading_values: [],
+          slot: 'morning',
+          manager_id: f.users.managerA1.id,
+        },
+      ]);
+      const readings = await owner
+        .selectFrom('monitoring_readings')
+        .select(['metric', 'value', 'unit', 'source'])
+        .where('client_id', '=', client)
+        .where('source', '=', 'companion')
+        .orderBy('metric', 'desc')
+        .execute();
+      expect(readings).toEqual([
+        { metric: 'sbp', value: '132.000', unit: 'mmHg', source: 'companion' },
+        { metric: 'dbp', value: '86.000', unit: 'mmHg', source: 'companion' },
+      ]);
+      const twin = await owner
+        .selectFrom('twin_compute_state')
+        .select('requested_at')
+        .where('client_id', '=', client)
+        .executeTakeFirst();
+      expect(twin?.requested_at).toBeTruthy();
+      expect(await owner.selectFrom('companion_alerts').select('id').execute()).toEqual([]);
+      // 聊天记录里的复述是替换后的文字
+      const said = await owner
+        .selectFrom('companion_messages')
+        .select('content')
+        .where('script_kind', '=', 'checkin_confirm_reading')
+        .execute();
+      expect(said.map((m) => m.content)).toEqual(['您说的是高压一百三十二，低压八十六，对吗？']);
+
+      // 健管师看到近 30 天的打卡；别人的客户 404
+      const res = await a1.get(`/api/clients/${client}/checkins`).expect(200);
+      expect(res.body.checkins).toHaveLength(3);
+      expect(res.body.checkins.find((c: { metric: string }) => c.metric === 'bp')).toMatchObject({
+        dueOn: TODAY,
+        status: 'done',
+        values: [132, 86],
+      });
+      await b1.get(`/api/clients/${client}/checkins`).expect(404);
+
+      // 同一时间段再唤醒：已经打过卡的不再提醒
+      device.ws.close();
+      await device.until(() => device.closed, 'close');
+      const again = await open(await boot(SERIAL_A, keys.a));
+      expect(await turn(again, '今天天气不错')).toEqual([REPLY]);
+      // 给模型的资料里有今天的打卡（客户报的数可以复述），没有健管师的备注
+      const system = companionCalls().at(-1)!.request.system as string;
+      expect(system).toContain('今天的打卡');
+      expect(system).toContain('早上量血压：报了 132、86');
+      expect(system).toContain('早上吃药：吃了');
+      expect(system).not.toContain('合成备注');
+      expect(system).not.toContain('晚上运动');
+    } finally {
+      await setClock(null);
+    }
+  });
+
+  it('打卡：说“不对”重新复述；两次超出合理范围记成待确认、不写监测；命中危急阈值念固定话术、写预警', async () => {
+    const client = f.clients.a1[0];
+    await plan(a1, client, {
+      kind: 'measurement',
+      metric: 'bp',
+      slots: [{ slot: 'noon', time: '11:30' }],
+    });
+    await plan(a1, client, {
+      kind: 'measurement',
+      metric: 'fpg',
+      slots: [{ slot: 'noon', time: '11:30' }],
+    });
+    await setClock(`${TODAY} 12:00`);
+    try {
+      const device = await open(await boot(SERIAL_A, keys.a));
+      await device.utterance(1);
+      await device.utterance(2);
+      // 血压：数值不对（听错了）请再说一遍；第二次仍不对，记成待确认，接着问血糖
+      expect(await turn(device, '一千三百二，八十六')).toEqual([S.checkin_retry]);
+      // 两次都超出合理范围：不写监测、记成待确认；高压超过危急阈值，念危急指标话术、写预警
+      expect(await turn(device, '一千三百二，八十六')).toEqual([
+        S.critical_value,
+        '该记一下今天的空腹血糖了，您告诉我数就行。',
+      ]);
+      expect(await turn(device, '七点八')).toEqual(['您说的是空腹血糖七点八，对吗？']);
+      expect(await turn(device, '不对，是二点八')).toEqual(['您说的是空腹血糖二点八，对吗？']);
+      expect(await turn(device, '对的')).toEqual([S.critical_value]);
+      // 测试里说得快：把已说的话记早两分钟，免得撞上每分钟 6 句的速率限制
+      await owner
+        .updateTable('companion_messages')
+        .set({ created_at: new Date(Date.now() - 120_000) })
+        .execute();
+      // 没被提醒时主动报的血压（计划今天还没打卡）：同样复述确认
+      expect(await turn(device, '我血压一百八十五，一百二十五')).toEqual([
+        '您说的是高压一百八十五，低压一百二十五，对吗？',
+      ]);
+      expect(await turn(device, '是的')).toEqual([S.critical_value]);
+      // 说的是以前的数，不算今天的打卡
+      expect(await turn(device, '昨天量的血压一百五，九十五')).toEqual([REPLY]);
+
+      const pending = await owner
+        .selectFrom('companion_observations')
+        .select([
+          'category',
+          'status',
+          'metric',
+          'reading_values',
+          'source_message_id',
+          'manager_id',
+        ])
+        .execute();
+      expect(pending).toEqual([
+        {
+          category: 'measurement',
+          status: 'pending_confirm',
+          metric: 'bp',
+          reading_values: [1320, 86],
+          source_message_id: expect.any(String),
+          manager_id: f.users.managerA1.id,
+        },
+      ]);
+      const readings = await owner
+        .selectFrom('monitoring_readings')
+        .select(['metric', 'value'])
+        .where('source', '=', 'companion')
+        .orderBy('id')
+        .execute();
+      expect(readings).toEqual([
+        { metric: 'fpg', value: '2.800' },
+        { metric: 'sbp', value: '185.000' },
+        { metric: 'dbp', value: '125.000' },
+      ]);
+      const alerts = await owner
+        .selectFrom('companion_alerts')
+        .select(['category', 'trigger', 'reading_id', 'script_version', 'manager_id'])
+        .orderBy('created_at')
+        .execute();
+      expect(alerts).toEqual([
+        expect.objectContaining({
+          category: 'critical_value',
+          trigger: 'threshold',
+          script_version: 1,
+          reading_id: null,
+        }),
+        expect.objectContaining({ category: 'critical_value', trigger: 'threshold' }),
+        expect.objectContaining({ category: 'critical_value', trigger: 'threshold' }),
+      ]);
+      // 待确认的那条没有读数；写进监测的两条指向读数
+      expect(alerts.slice(1).every((a) => a.reading_id !== null)).toBe(true);
+      expect(alerts.every((a) => a.manager_id === f.users.managerA1.id)).toBe(true);
+    } finally {
+      await setClock(null);
+    }
+  });
+
+  it('打卡：窗口过了没回答记“未应答”；危机优先于打卡；跨租户的计划、打卡、函数都碰不到', async () => {
+    const clientA = f.clients.a1[0];
+    const planA = await plan(a1, clientA, {
+      kind: 'medication',
+      slots: [{ slot: 'morning', time: '08:00' }],
+      note: '合成备注',
+    });
+    const planB = await plan(b1, f.clients.b1, {
+      kind: 'medication',
+      slots: [{ slot: 'morning', time: '08:00' }],
+    });
+    await setClock(`${TODAY} 08:10`);
+    try {
+      const device = await open(await boot(SERIAL_A, keys.a));
+      await device.utterance(1);
+      await device.utterance(2);
+      // 刚念完提醒客户说了危机的话：先处理危机，提醒放下
+      modelReply.reply = '我在这儿陪着您，请马上联系家人。';
+      expect(await turn(device, '我不想活了')).toEqual([
+        S.crisis,
+        '我在这儿陪着您，请马上联系家人。',
+      ]);
+      modelReply.reply = REPLY;
+      expect(await turn(device, '吃了')).toEqual([REPLY]);
+      // 提醒还没回答时问“我今天药吃了吗”：是问句，不记成打卡，交给模型（合规审查 B1）
+      expect(await turn(device, '我今天药吃了吗')).toEqual([REPLY]);
+      expect(await owner.selectFrom('checkins').select('id').execute()).toEqual([]);
+      device.ws.close();
+
+      const idA = await deviceId(SERIAL_A);
+      const asDevice = <T>(fn: Parameters<typeof withDevice<T>>[2]) =>
+        withDevice(appDb(), { deviceId: idA }, fn);
+      // 设备看到的到期提醒只有自己客户的；直接读计划、打卡表一行都读不到（备注也读不到）
+      const due = await asDevice((trx) =>
+        sql`select plan_id from companion_due_checkins(${clientA}::uuid)`.execute(trx),
+      );
+      expect(due.rows).toEqual([{ plan_id: planA.id }]);
+      // 拿别的客户 id 调：读不到（会话开始后设备换了客户也是这样，租户审查 S1）
+      for (const fn of ['companion_due_checkins', 'companion_today_checkins']) {
+        const other = await asDevice((trx) =>
+          sql`select * from ${sql.raw(fn)}(${f.clients.b1}::uuid)`.execute(trx),
+        );
+        expect(other.rows).toEqual([]);
+      }
+      expect(
+        await asDevice((trx) => trx.selectFrom('checkin_plans').select('note').execute()),
+      ).toEqual([]);
+      expect(await asDevice((trx) => trx.selectFrom('checkins').select('id').execute())).toEqual(
+        [],
+      );
+      // 用别人客户的计划打卡、写读数都失败
+      await expect(
+        asDevice((trx) =>
+          sql`select companion_checkin_record(${clientA}::uuid, ${planB.id}::uuid, 'morning', 'done')`.execute(
+            trx,
+          ),
+        ),
+      ).rejects.toThrow();
+      await expect(
+        asDevice((trx) =>
+          sql`select * from companion_checkin_reading(${clientA}::uuid, ${planB.id}::uuid, 'morning', array[130, 80]::numeric[])`.execute(
+            trx,
+          ),
+        ),
+      ).rejects.toThrow();
+      // 自己的计划但客户 id 不是设备当前绑定的客户：失败
+      await expect(
+        asDevice((trx) =>
+          sql`select companion_checkin_record(${f.clients.b1}::uuid, ${planA.id}::uuid, 'morning', 'done')`.execute(
+            trx,
+          ),
+        ),
+      ).rejects.toThrow();
+      // 待确认的测量：客户 id 不对、指向别的客户的消息都失败
+      const messageB = await owner
+        .insertInto('companion_sessions')
+        .values({ client_id: f.clients.b1, device_id: await deviceId(SERIAL_B) })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      const msgB = await owner
+        .insertInto('companion_messages')
+        .values({
+          client_id: f.clients.b1,
+          session_id: messageB.id,
+          role: 'client',
+          kind: 'chat',
+          content: '合成',
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      await expect(
+        asDevice((trx) =>
+          sql`select companion_pending_reading(${f.clients.b1}::uuid, 'bp', array[130, 80]::numeric[], '合成', null)`.execute(
+            trx,
+          ),
+        ),
+      ).rejects.toThrow();
+      await expect(
+        asDevice((trx) =>
+          sql`select companion_pending_reading(${clientA}::uuid, 'bp', array[130, 80]::numeric[], '合成', ${msgB.id}::bigint)`.execute(
+            trx,
+          ),
+        ),
+      ).rejects.toThrow();
+      // 不在计划里的时间段、服药计划写数值都失败
+      await expect(
+        asDevice((trx) =>
+          sql`select companion_checkin_record(${clientA}::uuid, ${planA.id}::uuid, 'evening', 'done')`.execute(
+            trx,
+          ),
+        ),
+      ).rejects.toThrow();
+      await expect(
+        asDevice((trx) =>
+          sql`select * from companion_checkin_reading(${clientA}::uuid, ${planA.id}::uuid, 'morning', array[130, 80]::numeric[])`.execute(
+            trx,
+          ),
+        ),
+      ).rejects.toThrow();
+      // 设备不能直接写打卡、监测
+      await expect(
+        asDevice((trx) =>
+          trx
+            .insertInto('monitoring_readings')
+            .values({
+              client_id: clientA,
+              metric: 'sbp',
+              value: '130',
+              unit: 'mmHg',
+              measured_at: new Date(),
+              source: 'companion',
+            } as never)
+            .execute(),
+        ),
+      ).rejects.toThrow();
+      // 暂停后设备什么都打不了卡
+      await a1.post(`/api/clients/${clientA}/companion/pause`).expect(200);
+      expect(
+        (
+          await asDevice((trx) =>
+            sql`select * from companion_due_checkins(${clientA}::uuid)`.execute(trx),
+          )
+        ).rows,
+      ).toEqual([]);
+      await expect(
+        asDevice((trx) =>
+          sql`select companion_checkin_record(${clientA}::uuid, ${planA.id}::uuid, 'morning', 'done')`.execute(
+            trx,
+          ),
+        ),
+      ).rejects.toThrow();
+      await a1.post(`/api/clients/${clientA}/companion/resume`).expect(200);
+      // 设备会话调不了定时任务
+      await expect(
+        asDevice((trx) => sql`select companion_checkin_sweep()`.execute(trx)),
+      ).rejects.toThrow();
+
+      // 定时任务：窗口过了没回答的记“未应答”（设备没开通的客户 B 不记）；健管师调不了
+      await setClock(`${addDays(TODAY, 2)} 12:00`);
+      const swept = await sql<{ n: number }>`select companion_checkin_sweep() as n`.execute(
+        appDb(),
+      );
+      expect(swept.rows[0]!.n).toBe(2);
+      const rows = await owner
+        .selectFrom('checkins')
+        .select(['plan_id', 'status', 'answered_at'])
+        .execute();
+      expect(
+        rows.every((r) => r.plan_id === planA.id && r.status === 'no_response' && !r.answered_at),
+      ).toBe(true);
+      await expect(
+        withTenant(appDb(), managerCtx(f.users.managerA1, f.operatorA, f.orgA), (trx) =>
+          sql`select companion_checkin_sweep()`.execute(trx),
+        ),
+      ).rejects.toThrow();
+    } finally {
+      await setClock(null);
+    }
+  });
+
+  it('打卡：客户转给别的健管师、换机构后计划和打卡跟着走，原健管师看不到，设备照常用', async () => {
+    const client = f.clients.a1[0];
+    const created = await plan(a1, client, {
+      kind: 'medication',
+      slots: [{ slot: 'morning', time: '08:00' }],
+      note: '合成备注',
+    });
+    await setClock(`${TODAY} 08:30`);
+    try {
+      const device = await open(await boot(SERIAL_A, keys.a));
+      await device.utterance(1);
+      await device.utterance(2);
+      expect(await turn(device, '吃了')).toEqual([S.checkin_noted]);
+      device.ws.close();
+      await device.until(() => device.closed, 'close');
+      // 同协会另一位健管师、同机构另一位健管师都看不到
+      const a2 = await loginAs(app, f.users.managerA2.email);
+      await a2.get(`/api/clients/${client}/checkin-plans`).expect(404);
+      await a2.get(`/api/clients/${client}/checkins`).expect(404);
+      await expect(
+        withTenant(appDb(), managerCtx(f.users.managerA2, f.operatorA, f.orgA), (trx) =>
+          trx
+            .updateTable('checkin_plans')
+            .set({ note: '改别人的' })
+            .where('id', '=', created.id)
+            .executeTakeFirst(),
+        ),
+      ).resolves.toMatchObject({ numUpdatedRows: 0n });
+      await expect(
+        withTenant(appDb(), managerCtx(f.users.managerA2, f.operatorA, f.orgA), (trx) =>
+          trx
+            .insertInto('checkin_plans')
+            .values({
+              client_id: client,
+              kind: 'exercise',
+              metric: null,
+              slots: JSON.stringify([{ slot: 'evening', time: '18:00' }]),
+              goal_template_id: null,
+              note: null,
+              created_by: f.users.managerA2.id,
+            })
+            .execute(),
+        ),
+      ).rejects.toThrow();
+
+      // 转给另一个机构的健管师
+      await owner
+        .updateTable('clients')
+        .set({ manager_id: f.users.managerA3.id, org_id: f.orgA2 })
+        .where('id', '=', client)
+        .execute();
+      for (const table of ['checkin_plans', 'checkins'] as const) {
+        const rows = await owner
+          .selectFrom(table)
+          .select(['manager_id', 'org_id', 'operator_id'])
+          .where('client_id', '=', client)
+          .execute();
+        expect(rows.length).toBeGreaterThan(0);
+        expect(
+          rows.every(
+            (r) =>
+              r.manager_id === f.users.managerA3.id &&
+              r.org_id === f.orgA2 &&
+              r.operator_id === f.operatorA,
+          ),
+        ).toBe(true);
+      }
+      await a1.get(`/api/clients/${client}/checkin-plans`).expect(404);
+      await a1.get(`/api/clients/${client}/checkins`).expect(404);
+      const a3 = await loginAs(app, f.users.managerA3.email);
+      const plans = await a3.get(`/api/clients/${client}/checkin-plans`).expect(200);
+      expect(plans.body.plans).toEqual([
+        expect.objectContaining({ id: created.id, note: '合成备注' }),
+      ]);
+      const history = await a3.get(`/api/clients/${client}/checkins`).expect(200);
+      expect(history.body.checkins).toEqual([expect.objectContaining({ status: 'done' })]);
+      // 设备照常读到期提醒（今天已经打过卡，换一个还没到的时间段看不到也正常，这里只确认能调用）
+      const idA = await deviceId(SERIAL_A);
+      const due = await withDevice(appDb(), { deviceId: idA }, (trx) =>
+        sql`select plan_id from companion_due_checkins(${client}::uuid)`.execute(trx),
+      );
+      expect(due.rows).toEqual([]);
+    } finally {
+      await setClock(null);
+    }
+  });
+
+  it('打卡计划接口：只有服务这位客户的健管师；时间在窗口外、测量没选项目都 400；别人的计划 404', async () => {
+    const client = f.clients.a1[0];
+    const base = `/api/clients/${client}/checkin-plans`;
+    await a1
+      .post(base)
+      .send({ kind: 'medication', slots: [{ slot: 'morning', time: '12:00' }] })
+      .expect(400);
+    await a1
+      .post(base)
+      .send({ kind: 'measurement', slots: [{ slot: 'morning', time: '08:00' }] })
+      .expect(400);
+    await a1
+      .post(base)
+      .send({ kind: 'medication', metric: 'bp', slots: [{ slot: 'morning', time: '08:00' }] })
+      .expect(400);
+    await a1
+      .post(base)
+      .send({
+        kind: 'medication',
+        slots: [
+          { slot: 'morning', time: '08:00' },
+          { slot: 'morning', time: '09:00' },
+        ],
+      })
+      .expect(400);
+    const created = await plan(a1, client, {
+      kind: 'measurement',
+      metric: 'weight',
+      slots: [
+        { slot: 'morning', time: '07:00' },
+        { slot: 'bedtime', time: '21:30' },
+      ],
+    });
+    // 别人的客户、别的健管师 404；其他角色 404
+    await b1.get(base).expect(404);
+    await b1
+      .post(base)
+      .send({ kind: 'medication', slots: [{ slot: 'morning', time: '08:00' }] })
+      .expect(404);
+    await b1.patch(`${base}/${created.id}`).send({ active: false }).expect(404);
+    await b1
+      .patch(`/api/clients/${f.clients.b1}/checkin-plans/${created.id}`)
+      .send({ active: false })
+      .expect(404);
+    const orgAdmin = await loginAs(app, f.users.orgAdminA.email);
+    await orgAdmin.get(base).expect(404);
+    // 修改、停用；类别和项目不能改
+    const updated = await a1
+      .patch(`${base}/${created.id}`)
+      .send({ slots: [{ slot: 'noon', time: '12:30' }], note: '  ', active: false })
+      .expect(200);
+    expect(updated.body.plan).toMatchObject({
+      kind: 'measurement',
+      metric: 'weight',
+      slots: [{ slot: 'noon', time: '12:30' }],
+      note: null,
+      active: false,
+    });
+    await a1.patch(`${base}/${created.id}`).send({ kind: 'medication' }).expect(400);
+    // 非运动计划不能挂行为目标
+    await a1
+      .patch(`${base}/${created.id}`)
+      .send({ goalTemplateId: '00000000-0000-4000-8000-000000000000' })
+      .expect(400);
+    const list = await a1.get(base).expect(200);
+    expect(list.body.plans).toHaveLength(1);
+    // 数据库也拦住：直接改类别失败
+    await expect(
+      withTenant(appDb(), managerCtx(f.users.managerA1, f.operatorA, f.orgA), (trx) =>
+        sql`update checkin_plans set kind = 'exercise' where id = ${created.id}`.execute(trx),
+      ),
+    ).rejects.toThrow();
+    // 健管师 B 直接查不到 A 的计划
+    const seen = await withTenant(
+      appDb(),
+      managerCtx(f.users.managerB1, f.operatorB, f.orgB),
+      (trx) => trx.selectFrom('checkin_plans').select('id').execute(),
+    );
+    expect(seen).toEqual([]);
+  });
 });

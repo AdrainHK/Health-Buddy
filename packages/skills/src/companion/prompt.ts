@@ -2,7 +2,13 @@
  * 福宝的系统提示词和结构化输出（M6 规格 5.2、5.3）。福宝说的话会被念给老年客户听；
  * 提示词改动后必须跑 pnpm eval --suite companion，并经合规审查。
  */
-import { COMPANION_HANDOFF_CATEGORIES } from '@health-buddy/shared';
+import {
+  COMPANION_HANDOFF_CATEGORIES,
+  type CheckinKind,
+  type CheckinMetric,
+  type CheckinSlot,
+  type CheckinStatus,
+} from '@health-buddy/shared';
 import { z } from 'zod';
 import { redactAddresses, redactIdentifiers } from '../guardrails.js';
 
@@ -20,7 +26,7 @@ export const COMPANION_SYSTEM_PROMPT = `你是 Health Buddy 的 AI 健康伴侣�
 9. 不替健管师做承诺，不说“健管师会给您打电话”“马上联系您”；需要时只说“我已经转给您的健管师了”。
 10. 客户的话明显没听清、说不通时，请客户再说一遍，不猜。
 11. 客户表示要结束（再见、不聊了、去忙了）时，endSession 填 true，reply 简短道别。
-12. 不读出、不复述资料里没有的数值、日期和计划；客户问下次随访，只说资料里的日期和方式。`;
+12. 不读出、不复述资料里没有的数值、日期和计划；客户问下次随访，只说资料里的日期和方式；客户问今天打卡了没有，只按资料里“今天的打卡”说，客户报过的数可以复述，不评价。`;
 
 /** 危机或急症时（规格 2.2 第 3 条）：固定求助话术已经播过，模型只做简短陪伴 */
 export const COMPANION_CRISIS_MODE = `现在的情况：客户刚刚说的话里有心理危机或疑似急症的信号，系统已经播放了固定的求助话术（劝客户联系家人、拨打 120）。这一轮你只用一两句温和的话陪着客户，再次劝客户马上联系家人或拨打 120；不问病情、不安慰说没事、不谈别的话题，handoff 填 null。`;
@@ -50,6 +56,18 @@ export interface CompanionContext {
   recentSummaries: readonly string[];
   /** 今天的日期（北京时间） */
   today: string;
+  /** 今天已经到了提醒时间的打卡和结果（规格 5.2）；没有打卡计划时省略 */
+  checkins?: readonly CompanionCheckinStatus[];
+}
+
+export interface CompanionCheckinStatus {
+  kind: CheckinKind;
+  metric: CheckinMetric | null;
+  slot: CheckinSlot;
+  /** 还没回答时为 null */
+  status: CheckinStatus | null;
+  /** 测量类：客户报的数 */
+  values: readonly number[];
 }
 
 export interface CompanionTurn {
@@ -67,6 +85,51 @@ const DELIVERY: Record<string, string> = {
   care_plan: '健康方案（通俗版）',
   report_interpretation: '报告解读（通俗版）',
 };
+
+const SLOT: Record<CheckinSlot, string> = {
+  morning: '早上',
+  noon: '中午',
+  evening: '晚上',
+  bedtime: '睡前',
+};
+const CHECKIN_ITEM: Record<CheckinMetric, string> = {
+  bp: '量血压',
+  fpg: '量空腹血糖',
+  weight: '称体重',
+  steps: '记步数',
+  sleep_hours: '记睡眠时间',
+};
+const CHECKIN_STATUS: Record<CheckinStatus, string> = {
+  done: '做了',
+  partial: '做了一部分',
+  missed: '没做',
+  skipped: '今天不用',
+  no_response: '没有回答',
+};
+
+/** 服药的结果用吃药的说法，福宝回答时照着说（“早上的药吃了”） */
+const MEDICATION_STATUS: Record<CheckinStatus, string> = {
+  done: '吃了',
+  partial: '吃了',
+  missed: '没吃',
+  skipped: '今天不用吃',
+  no_response: '没有回答',
+};
+
+/** 一条打卡的文字：“早上吃药：吃了”“早上量血压：报了 132、86” */
+function describeCheckin(c: CompanionCheckinStatus): string {
+  const item =
+    c.kind === 'medication' ? '吃药' : c.kind === 'exercise' ? '运动' : CHECKIN_ITEM[c.metric!];
+  const result =
+    c.status === null
+      ? '还没回答'
+      : c.kind === 'measurement' && c.values.length
+        ? `报了 ${c.values.join('、')}`
+        : c.kind === 'medication'
+          ? MEDICATION_STATUS[c.status]
+          : CHECKIN_STATUS[c.status];
+  return `${SLOT[c.slot]}${item}：${result}`;
+}
 
 /** 客户的话进模型前去掉电话、证件号、地址（规格 5.2） */
 export function redactCompanionText(text: string): string {
@@ -89,6 +152,10 @@ export function describeCompanionContext(ctx: CompanionContext): string {
     }
   } else {
     lines.push('\n健管师同步给福宝的内容：暂时没有');
+  }
+  if (ctx.checkins?.length) {
+    lines.push('\n今天的打卡：');
+    for (const c of ctx.checkins) lines.push(`- ${describeCheckin(c)}`);
   }
   if (ctx.memories.length) {
     lines.push('\n福宝记得的事：');

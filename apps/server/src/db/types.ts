@@ -1,4 +1,11 @@
-import type { Role } from '@health-buddy/shared';
+import type {
+  CheckinKind,
+  CheckinMetric,
+  CheckinSlot,
+  CheckinSlotTime,
+  CheckinStatus,
+  Role,
+} from '@health-buddy/shared';
 import type { ColumnType, Generated } from 'kysely';
 
 export type { Role };
@@ -727,6 +734,9 @@ export interface Database {
   companion_memories: CompanionMemoriesTable;
   companion_handoffs: CompanionHandoffsTable;
   companion_alerts: CompanionAlertsTable;
+  checkin_plans: CheckinPlansTable;
+  checkins: CheckinsTable;
+  companion_observations: CompanionObservationsTable;
 }
 
 // ---------- M5 方案和随访（迁移 0020） ----------
@@ -1063,6 +1073,52 @@ export interface CompanionAlertsTable extends ClientScoped {
   >;
   trigger: ColumnType<'keyword' | 'model' | 'threshold', 'keyword' | 'model' | 'threshold', never>;
   script_version: ColumnType<number | null, number | null | undefined, never>;
+  /** 危急指标预警：触发的监测读数（只经 companion_checkin_reading 写） */
+  reading_id: ColumnType<string | null, never, never>;
   status: ColumnType<'open' | 'handled', undefined, never>;
   created_at: ColumnType<Date, undefined, never>;
+}
+
+/** 打卡计划（迁移 0028）：健管师读写自己客户的；设备只经 companion_due_checkins() 读 */
+export interface CheckinPlansTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: ColumnType<string, string, never>;
+  kind: ColumnType<CheckinKind, CheckinKind, never>;
+  metric: ColumnType<CheckinMetric | null, CheckinMetric | null, never>;
+  /** [{ slot, time }]，形状由数据库 checkin_slots_valid 校验 */
+  slots: ColumnType<CheckinSlotTime[], string, string>;
+  goal_template_id: ColumnType<string | null, string | null, string | null>;
+  note: ColumnType<string | null, string | null, string | null>;
+  active: ColumnType<boolean, undefined, boolean>;
+  created_by: ColumnType<string, string, never>;
+  created_at: ColumnType<Date, undefined, never>;
+  updated_at: ColumnType<Date, undefined, never>;
+}
+
+/** 打卡记录（只经数据库函数写） */
+export interface CheckinsTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: ColumnType<string, never, never>;
+  plan_id: ColumnType<string, never, never>;
+  due_on: ColumnType<Date, never, never>;
+  slot: ColumnType<CheckinSlot, never, never>;
+  status: ColumnType<CheckinStatus, never, never>;
+  /** numeric[]（pg 驱动按数字解析） */
+  reading_values: ColumnType<number[], never, never>;
+  answered_at: ColumnType<Date | null, never, never>;
+  created_at: ColumnType<Date, never, never>;
+}
+
+/** 收集信息（迁移 0028 只有待确认的测量；只经数据库函数写） */
+export interface CompanionObservationsTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: ColumnType<string, never, never>;
+  category: ColumnType<string, never, never>;
+  text: ColumnType<string, never, never>;
+  observed_on: ColumnType<Date, never, never>;
+  metric: ColumnType<CheckinMetric | null, never, never>;
+  reading_values: ColumnType<number[], never, never>;
+  source_message_id: ColumnType<string | null, never, never>;
+  status: ColumnType<'info' | 'pending_confirm' | 'confirmed' | 'dismissed', never, never>;
+  created_at: ColumnType<Date, never, never>;
 }

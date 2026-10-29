@@ -17,11 +17,20 @@ import {
 const QUESTION =
   /[吗么呢？?]|多少|能不能|可不可以|可以吗|要不要|该不该|用不用|行不行|怎么办|怎么样|是不是|会不会/;
 
+/** 客户这句话是不是在提问（打卡时问句不当作回答） */
+export function isCompanionQuestion(text: string): boolean {
+  return QUESTION.test(compact(text));
+}
+
 /** 按顺序匹配，先命中的类别优先 */
 const MEDICAL_RULES: readonly {
   category: CompanionHandoffCategory;
   pattern: RegExp;
   needsQuestion?: boolean;
+  /** 整句符合时不算这一类 */
+  unless?: RegExp;
+  /** 说到了具体药名并且在提问 */
+  drugQuestion?: boolean;
 }[] = [
   {
     category: 'diagnosis',
@@ -31,12 +40,28 @@ const MEDICAL_RULES: readonly {
   {
     category: 'medication',
     pattern:
-      /停药|减药|加药|换药|药.{0,6}吃多少|吃多少.{0,2}药|几片|几粒|剂量|打几个单位|胰岛素|降压药|降糖药|吃什么药|药.{0,6}(能不能|可不可以|要不要|该不该|副作用|怎么吃|一起吃)/,
+      /停药|减药|加药|换药|药.{0,3}停了|不吃药了|药不吃了|药没了|药快吃完|忘了吃没吃|不记得吃没吃|记不清吃没吃|吃没吃过|药.{0,4}多吃了|药.{0,6}吃多少|吃多少.{0,2}药|几片|几粒|剂量|打几个单位|胰岛素|降压药|降糖药|吃什么药|药.{0,6}(能不能|可不可以|要不要|该不该|副作用|怎么吃|一起吃)/,
   },
-  { category: 'medication', pattern: /药/, needsQuestion: true },
+  // 问自己今天吃没吃药（打卡情况）不是用药问题，由福宝按今天的打卡回答（第 5 步）。
+  // 只放过固定的说法，“饭前能把药吃了吗”“药多吃了吗”这类仍转交（合规审查 B2）
+  {
+    category: 'medication',
+    pattern: /药/,
+    needsQuestion: true,
+    unless:
+      /^(?:福宝[，,]?)?(?:我|咱)?(?:今天|今儿|今早|早上|上午|中午|下午|晚上|睡前){0,2}(?:的)?药(?:今天|早上|中午|晚上|睡前)?(?:吃了没|吃过没|吃了吗|吃过了吗|吃没吃|吃了没有)[吗呢？]*$/,
+  },
+  // 药名加提问（“二甲双胍饭前吃还是饭后吃”）同样转交
+  { category: 'medication', pattern: /^$/, drugQuestion: true },
   {
     category: 'exam',
     pattern: /高不高|低不低|正不正常|算高|算低|超标|指标|化验|检查结果|报告上|参考范围/,
+  },
+  // 问数值高低（打卡复述时“是不是有点高啊”），没说指标名也转交（合规审查 S2）
+  {
+    category: 'exam',
+    pattern: /太高|太低|有点高|有点低|偏高|偏低|高吗|低吗|高了吗|低了吗|高不|算不算高|算不算低/,
+    needsQuestion: true,
   },
   // 没说“高不高”的数值提问：“血压是不是高了”“血糖低了吗”
   {
@@ -90,7 +115,10 @@ export function preCheckCompanionInput(text: string): CompanionPreCheck {
   // “忘掉”命令里夹着用药、症状问题时仍要转交（合规复审 B2），所以总是判断
   let medical: CompanionHandoffCategory | null = null;
   for (const rule of MEDICAL_RULES) {
-    if (rule.pattern.test(t) && (!rule.needsQuestion || QUESTION.test(t))) {
+    const hit = rule.drugQuestion
+      ? findDrugNames(t).length > 0 && (QUESTION.test(t) || /还是|怎么|什么时候|几点/.test(t))
+      : rule.pattern.test(t) && (!rule.needsQuestion || QUESTION.test(t)) && !rule.unless?.test(t);
+    if (hit) {
       medical = rule.category;
       break;
     }

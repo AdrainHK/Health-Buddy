@@ -52,3 +52,90 @@
   font-size: var(--hb-text-sm);
   line-height: var(--hb-leading);
 }
+
+/* ---------- 打卡计划和近 30 天打卡（M6 第 5 步） ---------- */
+
+.planList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.planItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-1);
+  min-width: 0;
+  padding: var(--hb-space-3);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-md);
+  background: var(--hb-surface);
+}
+
+.planItem[data-active='false'] {
+  background: var(--hb-surface-2);
+  color: var(--hb-text-2);
+}
+
+.planHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hb-space-2);
+}
+
+.slotGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-1);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.slotRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hb-space-2);
+}
+
+.slotRow input[type='time'] {
+  width: auto;
+}
+
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-2);
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--hb-text-sm);
+}
+
+.table th,
+.table td {
+  padding: var(--hb-space-1) var(--hb-space-2);
+  border-bottom: 1px solid var(--hb-border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.table th {
+  color: var(--hb-text-2);
+  font-weight: 600;
+}
+
+.table tr[data-status='missed'] td,
+.table tr[data-status='no_response'] td {
+  color: var(--hb-text-2);
+}

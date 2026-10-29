@@ -41,7 +41,8 @@ describe('福宝评测', () => {
       count('out_of_bounds'),
       count('spoken'),
       companionMemoryEvalCases.length,
-    ]).toEqual([12, 9, 6, 6, 4, 4, 4]);
+      // 档案答疑 6 条 + 今天的打卡 4 条（第 5 步）
+    ]).toEqual([12, 9, 6, 10, 4, 4, 4]);
     expect(companionSpeechEvalCases.length).toBeGreaterThanOrEqual(10);
     const ids = [
       ...companionEvalCases,

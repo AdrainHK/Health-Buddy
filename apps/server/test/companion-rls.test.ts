@@ -1,5 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
+  CHECKIN_METRIC_READINGS,
+  CHECKIN_SLOT_WINDOWS,
   COMPANION_ALERT_CATEGORIES,
   COMPANION_DEFAULT_SCRIPTS,
   COMPANION_DEVICE_STATUSES,
@@ -8,6 +10,7 @@ import {
   COMPANION_VOICE_SPEEDS,
   COMPANION_VOLUMES,
   findBannedTerms,
+  MONITORING_METRICS,
 } from '@health-buddy/shared';
 import { Kysely, PostgresDialect, sql } from 'kysely';
 import pg from 'pg';
@@ -27,9 +30,14 @@ import {
 import {
   COMPANION_ALERT_CATEGORIES_0027,
   COMPANION_HANDOFF_CATEGORIES_0027,
-  COMPANION_SCRIPT_KINDS_0027,
   COMPANION_SCRIPTS_SNAPSHOT_0027,
 } from '../src/db/migrations/0027-companion-dialogue.js';
+import {
+  CHECKIN_METRIC_READINGS_0028,
+  CHECKIN_SLOT_WINDOWS_0028,
+  COMPANION_SCRIPT_KINDS_0028,
+  COMPANION_SCRIPTS_SNAPSHOT_0028,
+} from '../src/db/migrations/0028-companion-checkins.js';
 import type { Database } from '../src/db/types.js';
 import { localDate } from '../src/twin/time-zone.js';
 import { TEST_APP_URL } from './env.js';
@@ -157,11 +165,26 @@ describe('伴侣设备和同意的行级安全', () => {
     expect(COMPANION_ENUM_SNAPSHOT_0024.deviceStatuses).toEqual(COMPANION_DEVICE_STATUSES);
     expect(COMPANION_ENUM_SNAPSHOT_0024.voiceSpeeds).toEqual(COMPANION_VOICE_SPEEDS);
     expect(COMPANION_ENUM_SNAPSHOT_0024.volumes).toEqual(COMPANION_VOLUMES);
-    expect(COMPANION_SCRIPT_KINDS_0027).toEqual(COMPANION_SCRIPT_KINDS);
-    expect({ ...COMPANION_SCRIPTS_SNAPSHOT_0024, ...COMPANION_SCRIPTS_SNAPSHOT_0027 }).toEqual(
-      COMPANION_DEFAULT_SCRIPTS,
-    );
+    expect(COMPANION_SCRIPT_KINDS_0028).toEqual(COMPANION_SCRIPT_KINDS);
+    expect({
+      ...COMPANION_SCRIPTS_SNAPSHOT_0024,
+      ...COMPANION_SCRIPTS_SNAPSHOT_0027,
+      ...COMPANION_SCRIPTS_SNAPSHOT_0028,
+    }).toEqual(COMPANION_DEFAULT_SCRIPTS);
     expect(COMPANION_HANDOFF_CATEGORIES_0027).toEqual(COMPANION_HANDOFF_CATEGORIES);
+    // 打卡的时间段窗口、测量项目对应的监测指标和单位（迁移 0028）
+    expect(CHECKIN_SLOT_WINDOWS_0028).toEqual(CHECKIN_SLOT_WINDOWS);
+    expect(
+      Object.fromEntries(
+        Object.entries(CHECKIN_METRIC_READINGS_0028).map(([m, rs]) => [
+          m,
+          rs.map(([code]) => code),
+        ]),
+      ),
+    ).toEqual(CHECKIN_METRIC_READINGS);
+    for (const [code, unit] of Object.values(CHECKIN_METRIC_READINGS_0028).flat()) {
+      expect(MONITORING_METRICS.find((m) => m.code === code)?.unit).toBe(unit);
+    }
     expect(COMPANION_ALERT_CATEGORIES_0027).toEqual(COMPANION_ALERT_CATEGORIES);
     for (const text of Object.values(COMPANION_DEFAULT_SCRIPTS)) {
       expect(findBannedTerms(text)).toEqual([]);

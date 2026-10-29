@@ -7,7 +7,8 @@ const FIRST_RUN_DELAY_MS = 60 * 1000;
 
 /**
  * 伴侣聊天文字和记忆到期删除（M6 N19、Q5）：聊天文字 180 天后，撤回同意的客户 7 天后
- * （记忆同样）。由数据库函数直接删除。日志只记数量。
+ * （记忆同样）。由数据库函数直接删除。同一个定时任务把窗口已过、没有回答的打卡记“未应答”（N7）。
+ * 日志只记数量。
  */
 @Injectable()
 export class CompanionPurgeService implements OnModuleInit, OnApplicationShutdown {
@@ -19,9 +20,10 @@ export class CompanionPurgeService implements OnModuleInit, OnApplicationShutdow
 
   onModuleInit(): void {
     if (process.env.NODE_ENV === 'test') return;
-    this.first = setTimeout(() => void this.run(), FIRST_RUN_DELAY_MS);
+    const tick = () => void this.run().then(() => this.sweep());
+    this.first = setTimeout(tick, FIRST_RUN_DELAY_MS);
     this.first.unref();
-    this.timer = setInterval(() => void this.run(), PURGE_INTERVAL_MS);
+    this.timer = setInterval(tick, PURGE_INTERVAL_MS);
     this.timer.unref();
   }
 
@@ -40,6 +42,18 @@ export class CompanionPurgeService implements OnModuleInit, OnApplicationShutdow
     } catch (err) {
       this.logger.error(`companion purge failed ${err instanceof Error ? err.name : typeof err}`);
       return { messages: 0, memories: 0 };
+    }
+  }
+
+  /** 窗口已过、没有回答的打卡记“未应答” */
+  async sweep(): Promise<number> {
+    try {
+      const n = await this.repo.sweepCheckins();
+      if (n) this.logger.log(`checkins without response ${JSON.stringify({ count: n })}`);
+      return n;
+    } catch (err) {
+      this.logger.error(`checkin sweep failed ${err instanceof Error ? err.name : typeof err}`);
+      return 0;
     }
   }
 }
