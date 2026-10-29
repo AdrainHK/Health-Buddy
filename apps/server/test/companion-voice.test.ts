@@ -1326,7 +1326,7 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
       const system = companionCalls().at(-1)!.request.system as string;
       expect(system).toContain('今天的打卡');
       expect(system).toContain('早上量血压：报了 132、86');
-      expect(system).toContain('早上吃药：做了');
+      expect(system).toContain('早上吃药：吃了');
       expect(system).not.toContain('合成备注');
       expect(system).not.toContain('晚上运动');
     } finally {

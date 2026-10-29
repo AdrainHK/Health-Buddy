@@ -107,7 +107,16 @@ const CHECKIN_STATUS: Record<CheckinStatus, string> = {
   no_response: '没有回答',
 };
 
-/** 一条打卡的文字：“早上吃药：做了”“早上量血压：报了 132、86” */
+/** 服药的结果用吃药的说法，福宝回答时照着说（“早上的药吃了”） */
+const MEDICATION_STATUS: Record<CheckinStatus, string> = {
+  done: '吃了',
+  partial: '吃了',
+  missed: '没吃',
+  skipped: '今天不用吃',
+  no_response: '没有回答',
+};
+
+/** 一条打卡的文字：“早上吃药：吃了”“早上量血压：报了 132、86” */
 function describeCheckin(c: CompanionCheckinStatus): string {
   const item =
     c.kind === 'medication' ? '吃药' : c.kind === 'exercise' ? '运动' : CHECKIN_ITEM[c.metric!];
@@ -116,7 +125,9 @@ function describeCheckin(c: CompanionCheckinStatus): string {
       ? '还没回答'
       : c.kind === 'measurement' && c.values.length
         ? `报了 ${c.values.join('、')}`
-        : CHECKIN_STATUS[c.status];
+        : c.kind === 'medication'
+          ? MEDICATION_STATUS[c.status]
+          : CHECKIN_STATUS[c.status];
   return `${SLOT[c.slot]}${item}：${result}`;
 }
 
