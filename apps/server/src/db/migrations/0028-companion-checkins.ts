@@ -7,6 +7,7 @@ import { COMPANION_SCRIPT_KINDS_0027 } from './0027-companion-dialogue.js';
  *
  * - checkin_plans：健管师给自己的客户设置（Q16）。服药类不存药名和剂量（N15），note 只给健管师看：
  *   设备会话只经 companion_due_checkins() 读到期的计划，读不到 note。
+ * - 设备的打卡函数都带会话开始时的客户 id，必须等于设备当前绑定的客户（租户审查 S1）。
  * - checkins：一个计划、一天、一个时间段一条。设备不能直接写，只经下面的函数：
  *   companion_checkin_record（服药、运动的回答）、companion_checkin_reading（测量值，客户口头确认后）。
  *   窗口过了没回答的，由定时任务 companion_checkin_sweep 记“未应答”（N7）。
@@ -133,12 +134,12 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     );
   await sql`
     create function checkin_slot_start(p_slot text) returns time
-      language sql immutable as $$ select case p_slot ${windowCases('start')} end $$;
+      language sql immutable set search_path = pg_catalog, public, pg_temp as $$ select case p_slot ${windowCases('start')} end $$;
     create function checkin_slot_end(p_slot text) returns time
-      language sql immutable as $$ select case p_slot ${windowCases('end')} end $$;
+      language sql immutable set search_path = pg_catalog, public, pg_temp as $$ select case p_slot ${windowCases('end')} end $$;
     -- slots 形如 [{"slot":"morning","time":"08:00"}]：时间段不重复、时间在窗口内
     create function checkin_slots_valid(p_slots jsonb) returns boolean
-      language sql immutable as $$
+      language sql immutable set search_path = pg_catalog, public, pg_temp as $$
         select jsonb_typeof(p_slots) = 'array'
           and jsonb_array_length(p_slots) between 1 and ${sql.lit(slots.length)}
           and (select count(distinct s ->> 'slot') from jsonb_array_elements(p_slots) s)
@@ -293,20 +294,27 @@ export async function up(db: Kysely<unknown>): Promise<void> {
   );
   await sql`
     create function checkin_local_now() returns timestamp
-      language sql stable as $$ select now() at time zone 'Asia/Shanghai' $$;
+      language sql stable set search_path = pg_catalog, public, pg_temp
+      as $$ select now() at time zone 'Asia/Shanghai' $$;
     create function checkin_metric_codes(p_metric text) returns text[]
-      language sql immutable as $$ select case p_metric ${codes} end $$;
+      language sql immutable set search_path = pg_catalog, public, pg_temp
+      as $$ select case p_metric ${codes} end $$;
     create function checkin_metric_unit(p_code text) returns text
-      language sql immutable as $$ select case p_code ${units} end $$;
+      language sql immutable set search_path = pg_catalog, public, pg_temp
+      as $$ select case p_code ${units} end $$;
+
+    -- 设备会话的打卡函数都带上会话开始时的客户（p_client），必须等于设备当前绑定的客户：
+    -- 会话进行中设备被解绑又绑给别人时，旧会话碰不到新客户的计划和打卡（租户审查 S1）
 
     -- 今天到期、还没打卡的计划和时间段（按提醒时间排序），给福宝补说提醒
-    create function companion_due_checkins()
+    create function companion_due_checkins(p_client uuid)
       returns table (plan_id uuid, kind text, metric text, slot text, remind_at time)
       language sql stable security definer set search_path = pg_catalog, public, pg_temp
     as $$
       select p.id, p.kind, p.metric, s ->> 'slot', (s ->> 'time')::time
         from checkin_plans p, jsonb_array_elements(p.slots) s
-        where p.client_id = app_client_id() and companion_device_can_talk() and p.active
+        where p.client_id = p_client and p_client = app_client_id() and companion_device_can_talk()
+          and p.active
           and checkin_local_now()::time >= (s ->> 'time')::time
           and checkin_local_now()::time < checkin_slot_end(s ->> 'slot')
           and not exists (
@@ -319,7 +327,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
 
     -- 今天的打卡情况（给福宝的资料，规格 5.2）：计划的类别、项目、时间段、结果和客户报的数，
     -- 不含备注；还没到提醒时间的时间段不列
-    create function companion_today_checkins()
+    create function companion_today_checkins(p_client uuid)
       returns table (kind text, metric text, slot text, status text, reading_values numeric[])
       language sql stable security definer set search_path = pg_catalog, public, pg_temp
     as $$
@@ -328,21 +336,50 @@ export async function up(db: Kysely<unknown>): Promise<void> {
         cross join jsonb_array_elements(p.slots) s
         left join checkins c on c.plan_id = p.id and c.slot = s ->> 'slot'
           and c.due_on = checkin_local_now()::date
-        where p.client_id = app_client_id() and companion_device_can_talk() and p.active
+        where p.client_id = p_client and p_client = app_client_id() and companion_device_can_talk()
+          and p.active
           and (c.id is not null or checkin_local_now()::time >= (s ->> 'time')::time)
         order by (s ->> 'time')::time, p.created_at, p.id
     $$;
 
+    -- 数值是否命中平台的危急阈值（M1 第五节之二；两个级别都按危急指标处理）
+    create function checkin_value_critical(p_code text, p_value numeric) returns boolean
+      language sql stable security definer set search_path = pg_catalog, public, pg_temp
+    as $$
+      select exists (
+        select 1 from critical_thresholds t
+          where t.enabled and t.metric = p_code
+            and case t.comparator
+              when 'gte' then p_value >= t.value
+              when 'gt' then p_value > t.value
+              when 'lte' then p_value <= t.value
+              when 'lt' then p_value < t.value
+            end
+      )
+    $$;
+
+    -- 客户报的一组数里有没有命中危急阈值（超出合理范围、不写监测的数也要判断，审查 S3）
+    create function companion_reading_critical(p_metric text, p_values numeric[]) returns boolean
+      language sql stable security definer set search_path = pg_catalog, public, pg_temp
+    as $$
+      select app_role() = 'companion_device' and companion_device_can_talk() and exists (
+        select 1 from unnest(checkin_metric_codes(p_metric), p_values) as x (code, value)
+          where x.code is not null and x.value is not null
+            and checkin_value_critical(x.code, x.value)
+      )
+    $$;
+
     -- 校验设备能给这个计划的这个时间段打卡，返回计划
-    create function companion_checkin_plan(p_plan uuid, p_slot text) returns checkin_plans
+    create function companion_checkin_plan(p_client uuid, p_plan uuid, p_slot text)
+      returns checkin_plans
       language plpgsql stable security definer set search_path = pg_catalog, public, pg_temp
     as $$
     declare
       v checkin_plans;
     begin
       select * into v from checkin_plans p
-        where p.id = p_plan and p.client_id = app_client_id() and companion_device_can_talk()
-          and p.active
+        where p.id = p_plan and p.client_id = p_client and p_client = app_client_id()
+          and companion_device_can_talk() and p.active
           and exists (
             select 1 from jsonb_array_elements(p.slots) s
               where s ->> 'slot' = p_slot
@@ -357,7 +394,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     $$;
 
     -- 服药、运动的回答
-    create function companion_checkin_record(p_plan uuid, p_slot text, p_status text)
+    create function companion_checkin_record(p_client uuid, p_plan uuid, p_slot text,
+      p_status text)
       returns uuid
       language plpgsql security definer set search_path = pg_catalog, public, pg_temp
     as $$
@@ -365,7 +403,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       v checkin_plans;
       v_id uuid;
     begin
-      v := companion_checkin_plan(p_plan, p_slot);
+      v := companion_checkin_plan(p_client, p_plan, p_slot);
       if v.kind = 'measurement'
         or (v.kind = 'medication' and p_status not in ('done', 'missed', 'skipped'))
         or (v.kind = 'exercise' and p_status not in ('done', 'partial', 'missed')) then
@@ -381,7 +419,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
 
     -- 测量值（客户已口头确认）：合理范围由调用方先校验，这里再按目录单位写监测、判断危急阈值。
     -- 返回打卡 id、写入的读数 id、命中危急阈值的读数 id（没有命中为空）
-    create function companion_checkin_reading(p_plan uuid, p_slot text, p_values numeric[])
+    create function companion_checkin_reading(p_client uuid, p_plan uuid, p_slot text,
+      p_values numeric[])
       returns table (checkin_id uuid, reading_ids bigint[], critical_reading_id bigint)
       language plpgsql security definer set search_path = pg_catalog, public, pg_temp
     as $$
@@ -394,7 +433,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       v_critical bigint;
       v_now timestamptz := now();
     begin
-      v := companion_checkin_plan(p_plan, p_slot);
+      v := companion_checkin_plan(p_client, p_plan, p_slot);
       if v.kind <> 'measurement' then
         raise exception 'not a measurement plan' using errcode = 'check_violation';
       end if;
@@ -418,16 +457,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
             'companion')
           returning id into v_reading;
         v_readings := v_readings || v_reading;
-        if v_critical is null and exists (
-          select 1 from critical_thresholds t
-            where t.enabled and t.metric = v_codes[i]
-              and case t.comparator
-                when 'gte' then p_values[i] >= t.value
-                when 'gt' then p_values[i] > t.value
-                when 'lte' then p_values[i] <= t.value
-                when 'lt' then p_values[i] < t.value
-              end
-        ) then
+        if v_critical is null and checkin_value_critical(v_codes[i], p_values[i]) then
           v_critical := v_reading;
         end if;
       end loop;
@@ -446,9 +476,10 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     end
     $$;
 
-    -- 数值两次超出合理范围：不写监测，记一条待确认的测量给健管师（规格 2.3）
-    create function companion_pending_reading(p_metric text, p_values numeric[], p_text text,
-      p_message bigint)
+    -- 数值两次超出合理范围：不写监测，记一条待确认的测量给健管师（规格 2.3）；
+    -- 命中危急阈值时同时写“危急指标”预警（没有读数）
+    create function companion_pending_reading(p_client uuid, p_metric text, p_values numeric[],
+      p_text text, p_message bigint)
       returns uuid
       language plpgsql security definer set search_path = pg_catalog, public, pg_temp
     as $$
@@ -456,7 +487,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       v_client uuid := app_client_id();
       v_id uuid;
     begin
-      if v_client is null or not companion_device_can_talk() then
+      if v_client is null or v_client <> p_client or not companion_device_can_talk() then
         raise exception 'device cannot write' using errcode = '42501';
       end if;
       if p_message is not null and not exists (
@@ -469,6 +500,12 @@ export async function up(db: Kysely<unknown>): Promise<void> {
         values (v_client, 'measurement', p_text, checkin_local_now()::date, p_metric,
           coalesce(p_values, '{}'), p_message, 'pending_confirm')
         returning id into v_id;
+      if companion_reading_critical(p_metric, p_values) then
+        insert into companion_alerts (client_id, message_id, category, trigger, script_version)
+          values (v_client, p_message, 'critical_value', 'threshold', (
+            select max(version) from companion_scripts where kind = 'critical_value'
+          ));
+      end if;
       return v_id;
     end
     $$;
@@ -481,7 +518,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     declare
       n int;
     begin
-      if app_role() is not null then
+      if app_role() is not null or app_user_id() is not null or app_device_id() is not null then
         raise exception 'checkin sweep only without tenant context' using errcode = '42501';
       end if;
       insert into checkins (client_id, plan_id, due_on, slot, status)
@@ -504,15 +541,19 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     $$;
 
     revoke all on function checkin_local_now(), checkin_metric_codes(text),
-      checkin_metric_unit(text), companion_due_checkins(), companion_today_checkins(),
-      companion_checkin_plan(uuid, text),
-      companion_checkin_record(uuid, text, text), companion_checkin_reading(uuid, text, numeric[]),
-      companion_pending_reading(text, numeric[], text, bigint), companion_checkin_sweep()
+      checkin_metric_unit(text), checkin_value_critical(text, numeric),
+      companion_reading_critical(text, numeric[]),
+      companion_due_checkins(uuid), companion_today_checkins(uuid),
+      companion_checkin_plan(uuid, uuid, text),
+      companion_checkin_record(uuid, uuid, text, text),
+      companion_checkin_reading(uuid, uuid, text, numeric[]),
+      companion_pending_reading(uuid, text, numeric[], text, bigint), companion_checkin_sweep()
       from public;
-    grant execute on function companion_due_checkins(), companion_today_checkins(),
-      companion_checkin_record(uuid, text, text),
-      companion_checkin_reading(uuid, text, numeric[]),
-      companion_pending_reading(text, numeric[], text, bigint), companion_checkin_sweep()
+    grant execute on function companion_due_checkins(uuid), companion_today_checkins(uuid),
+      companion_reading_critical(text, numeric[]),
+      companion_checkin_record(uuid, uuid, text, text),
+      companion_checkin_reading(uuid, uuid, text, numeric[]),
+      companion_pending_reading(uuid, text, numeric[], text, bigint), companion_checkin_sweep()
       to ${app};
   `.execute(db);
 

@@ -321,10 +321,15 @@ export class DeviceSession {
           this.deps.logger.error(`companion script missing ${JSON.stringify({ kind: u.script })}`);
           return null;
         }
-        // 有占位符的话术（测量项目、复述的数值）替换后再合成；缓存按文字区分
-        const spoken = { ...script, text: scriptText(script.text, u) };
-        const frames = await this.deps.speech.script(this.deviceId, spoken, this.voiceSpeed);
-        return { text: spoken.text, frames };
+        // 有占位符的话术（测量项目、复述的数值）替换后实时合成，不进缓存：
+        // 复述里有客户报的数，不在内存里留合成好的音频（合规审查 N3）
+        if (u.vars) {
+          const text = scriptText(script.text, u);
+          const frames = await this.deps.speech.synthesize(this.deviceId, text, this.voiceSpeed);
+          return { text, frames };
+        }
+        const frames = await this.deps.speech.script(this.deviceId, script, this.voiceSpeed);
+        return { text: script.text, frames };
       }
       const frames = await this.deps.speech.synthesize(this.deviceId, u.text, this.voiceSpeed);
       return { text: u.text, frames };

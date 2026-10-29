@@ -11,6 +11,7 @@ import type { CompanionContext, CompanionTurn } from '@health-buddy/skills';
 import {
   addPendingReading,
   dueCheckins,
+  readingCritical,
   recordCheckin,
   recordCheckinReading,
   sweepCheckins,
@@ -87,7 +88,11 @@ export class DialogueRepository {
   }
 
   /** 福宝能读的资料（规格 2.6） */
-  context(deviceId: string, sessionId: string): Promise<CompanionContext | undefined> {
+  context(
+    deviceId: string,
+    clientId: string,
+    sessionId: string,
+  ): Promise<CompanionContext | undefined> {
     return this.run(deviceId, async (trx) => {
       const profile = await deviceProfile(trx);
       if (!profile) return undefined;
@@ -121,7 +126,7 @@ export class DialogueRepository {
         memories: memories.map((m) => m.text),
         recentSummaries: summaries.flatMap((s) => (s.summary ? [s.summary] : [])),
         today: localDate(new Date(), TZ),
-        checkins: await todayCheckins(trx),
+        checkins: await todayCheckins(trx, clientId),
       };
     });
   }
@@ -337,36 +342,49 @@ export class DialogueRepository {
 
   // ---------- 打卡（规格 2.3）：都经数据库函数，计划、时间段、客户由函数校验 ----------
 
-  dueCheckins(deviceId: string): Promise<DueCheckin[]> {
-    return this.run(deviceId, (trx) => dueCheckins(trx));
+  dueCheckins(deviceId: string, clientId: string): Promise<DueCheckin[]> {
+    return this.run(deviceId, (trx) => dueCheckins(trx, clientId));
   }
 
   recordCheckin(
     deviceId: string,
+    clientId: string,
     planId: string,
     slot: CheckinSlot,
     status: CheckinStatus,
   ): Promise<string | null> {
-    return this.run(deviceId, (trx) => recordCheckin(trx, planId, slot, status));
+    return this.run(deviceId, (trx) => recordCheckin(trx, clientId, planId, slot, status));
   }
 
   recordReading(
     deviceId: string,
+    clientId: string,
     planId: string,
     slot: CheckinSlot,
     values: readonly number[],
   ): Promise<ReadingResult> {
-    return this.run(deviceId, (trx) => recordCheckinReading(trx, planId, slot, values));
+    return this.run(deviceId, (trx) => recordCheckinReading(trx, clientId, planId, slot, values));
+  }
+
+  readingCritical(
+    deviceId: string,
+    metric: CheckinMetric,
+    values: readonly number[],
+  ): Promise<boolean> {
+    return this.run(deviceId, (trx) => readingCritical(trx, metric, values));
   }
 
   addPendingReading(
     deviceId: string,
+    clientId: string,
     metric: CheckinMetric,
     values: readonly number[],
     text: string,
     messageId: string | null,
   ): Promise<void> {
-    return this.run(deviceId, (trx) => addPendingReading(trx, metric, values, text, messageId));
+    return this.run(deviceId, (trx) =>
+      addPendingReading(trx, clientId, metric, values, text, messageId),
+    );
   }
 
   /** 定时任务：窗口过了没回答的记“未应答” */

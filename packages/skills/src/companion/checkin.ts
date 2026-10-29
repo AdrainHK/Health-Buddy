@@ -12,9 +12,14 @@ function compact(text: string): string {
   return text.replace(/\s+/g, '');
 }
 
-const MEDICATION_SKIPPED = /不用吃|不需要吃|不吃了|医生说停|停了|没让吃|今天不吃/;
+// 只认“今天不用吃”这类说法；“药停了”“不吃了”是自己停药，在调用前的检查里转交（合规审查 S1）
+const MEDICATION_SKIPPED = /今天不用吃|今天不需要吃|今天不吃|今天不用|今天没让吃/;
 const MEDICATION_MISSED = /忘了|忘记|没吃|还没吃|漏了|没顾上吃|没来得及吃/;
-const MEDICATION_DONE = /吃了|吃过|吃完|已经吃|按时吃|刚吃/;
+// 不认“吃完”：“药吃完了”是要配药，不是打卡（合规审查 S4）
+const MEDICATION_DONE = /吃了|吃过|已经吃|按时吃|刚吃/;
+/** 问句、记不清的说法不是回答（“我今天药吃了吗”“忘了吃没吃”，合规审查 B1） */
+const NOT_AN_ANSWER =
+  /[吗么？?]|吃没吃|吃了没|吃过没|不记得|记不清|想不起|是不是|有没有|吃完了|快吃完|药没了/;
 
 const EXERCISE_PARTIAL = /一部分|一半|没做完|没走完|做了点|做了一点|少做|走了一会|练了一会/;
 const EXERCISE_MISSED = /没做|没练|没走|没去|没运动|没锻炼|没动|不想动|今天不做/;
@@ -23,6 +28,7 @@ const EXERCISE_DONE = /做了|做完|练了|练完|走了|走完|运动了|锻�
 /** 服药、运动的回答；测量类、认不出时为 null */
 export function parseCheckinStatus(kind: CheckinKind, text: string): CheckinStatus | null {
   const t = compact(text);
+  if (NOT_AN_ANSWER.test(t)) return null;
   if (kind === 'medication') {
     if (MEDICATION_SKIPPED.test(t)) return 'skipped';
     if (MEDICATION_MISSED.test(t)) return 'missed';
@@ -40,6 +46,8 @@ export function parseCheckinStatus(kind: CheckinKind, text: string): CheckinStat
 /** 复述后客户的确认：yes / no；认不出为 null（“不对”优先于“对”） */
 export function parseConfirmation(text: string): 'yes' | 'no' | null {
   const t = compact(text).replace(/[，。！？,.!?]/g, '');
+  // “是不是有点高啊”“对了，我想问……”不是确认（合规审查 S2）
+  if (/^(?:是不是|是否|对不对|对了)/.test(t) || /[吗么呢]$/.test(t)) return null;
   if (/不对|不是|错了|说错|不太对|不准/.test(t)) return 'no';
   if (/^(?:嗯+|对+|是+|好+)$/.test(t)) return 'yes';
   if (/对的|对啊|对呀|没错|是的|是啊|是呀|正确|对对|就是这个|就这个数|没问题/.test(t)) return 'yes';

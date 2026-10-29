@@ -15,14 +15,21 @@ export interface DueCheckin {
   slot: CheckinSlot;
 }
 
+/**
+ * clientId 是会话开始时的客户：数据库函数要求它等于设备当前绑定的客户，
+ * 会话进行中设备换了客户时读写都失败（租户审查 S1）
+ */
+
 /** 今天到期、还没打卡的计划和时间段（按提醒时间） */
-export async function dueCheckins(trx: TenantTransaction): Promise<DueCheckin[]> {
+export async function dueCheckins(trx: TenantTransaction, clientId: string): Promise<DueCheckin[]> {
   const { rows } = await sql<{
     plan_id: string;
     kind: CheckinKind;
     metric: CheckinMetric | null;
     slot: CheckinSlot;
-  }>`select plan_id, kind, metric, slot from companion_due_checkins()`.execute(trx);
+  }>`select plan_id, kind, metric, slot from companion_due_checkins(${clientId}::uuid)`.execute(
+    trx,
+  );
   return rows.map((r) => ({ planId: r.plan_id, kind: r.kind, metric: r.metric, slot: r.slot }));
 }
 
@@ -36,14 +43,17 @@ export interface TodayCheckin {
 }
 
 /** 今天已经到了提醒时间的打卡和结果（给福宝的资料） */
-export async function todayCheckins(trx: TenantTransaction): Promise<TodayCheckin[]> {
+export async function todayCheckins(
+  trx: TenantTransaction,
+  clientId: string,
+): Promise<TodayCheckin[]> {
   const { rows } = await sql<{
     kind: CheckinKind;
     metric: CheckinMetric | null;
     slot: CheckinSlot;
     status: CheckinStatus | null;
     reading_values: (number | string)[];
-  }>`select kind, metric, slot, status, reading_values from companion_today_checkins()`.execute(
+  }>`select kind, metric, slot, status, reading_values from companion_today_checkins(${clientId}::uuid)`.execute(
     trx,
   );
   return rows.map((r) => ({
@@ -58,12 +68,13 @@ export async function todayCheckins(trx: TenantTransaction): Promise<TodayChecki
 /** 服药、运动的回答；同一时间段已经打过卡时返回 null */
 export async function recordCheckin(
   trx: TenantTransaction,
+  clientId: string,
   planId: string,
   slot: CheckinSlot,
   status: CheckinStatus,
 ): Promise<string | null> {
   const { rows } = await sql<{ id: string | null }>`
-    select companion_checkin_record(${planId}::uuid, ${slot}, ${status}) as id
+    select companion_checkin_record(${clientId}::uuid, ${planId}::uuid, ${slot}, ${status}) as id
   `.execute(trx);
   return rows[0]?.id ?? null;
 }
@@ -79,6 +90,7 @@ export interface ReadingResult {
 /** 测量值（客户已口头确认）：写打卡和监测、标孪生待重算、判断危急阈值 */
 export async function recordCheckinReading(
   trx: TenantTransaction,
+  clientId: string,
   planId: string,
   slot: CheckinSlot,
   values: readonly number[],
@@ -89,7 +101,7 @@ export async function recordCheckinReading(
     critical_reading_id: string | null;
   }>`
     select checkin_id, reading_ids, critical_reading_id
-    from companion_checkin_reading(${planId}::uuid, ${slot}, ${[...values]}::numeric[])
+    from companion_checkin_reading(${clientId}::uuid, ${planId}::uuid, ${slot}, ${[...values]}::numeric[])
   `.execute(trx);
   const row = rows[0];
   return {
@@ -99,16 +111,29 @@ export async function recordCheckinReading(
   };
 }
 
-/** 两次超出合理范围的测量：记一条待确认的测量给健管师 */
+/** 客户报的数是否命中危急阈值（超出合理范围、不写监测的也判断） */
+export async function readingCritical(
+  trx: TenantTransaction,
+  metric: CheckinMetric,
+  values: readonly number[],
+): Promise<boolean> {
+  const { rows } = await sql<{ critical: boolean }>`
+    select companion_reading_critical(${metric}, ${[...values]}::numeric[]) as critical
+  `.execute(trx);
+  return rows[0]?.critical === true;
+}
+
+/** 两次超出合理范围的测量：记一条待确认的测量给健管师（命中危急阈值时同时写预警） */
 export async function addPendingReading(
   trx: TenantTransaction,
+  clientId: string,
   metric: CheckinMetric,
   values: readonly number[],
   text: string,
   messageId: string | null,
 ): Promise<void> {
   await sql`
-    select companion_pending_reading(${metric}, ${[...values]}::numeric[], ${text}, ${messageId}::bigint)
+    select companion_pending_reading(${clientId}::uuid, ${metric}, ${[...values]}::numeric[], ${text}, ${messageId}::bigint)
   `.execute(trx);
 }
 

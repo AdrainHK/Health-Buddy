@@ -20,8 +20,14 @@ describe('服药、运动的回答', () => {
     ['早上已经吃过了', 'done'],
     ['哎呀忘了', 'missed'],
     ['还没吃呢', 'missed'],
-    ['今天不用吃，医生说停两天', 'skipped'],
+    ['今天不用吃', 'skipped'],
     ['今天天气不错', null],
+    // 问句、记不清、要配药都不是回答（合规审查 B1、S4）
+    ['我今天药吃了吗', null],
+    ['我今天药吃没吃', null],
+    ['我不记得吃没吃了', null],
+    ['药吃完了', null],
+    ['药停了', null],
   ])('服药：%s', (text, status) => {
     expect(parseCheckinStatus('medication', text)).toBe(status);
   });
@@ -96,6 +102,9 @@ describe('复述确认', () => {
     ['不对，是一百三十五', 'no'],
     ['不是', 'no'],
     ['我想想', null],
+    ['是不是有点高啊', null],
+    ['对了，我想问个事', null],
+    ['对吗', null],
   ])('%s', (text, answer) => {
     expect(parseConfirmation(text)).toBe(answer);
   });

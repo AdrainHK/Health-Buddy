@@ -113,7 +113,7 @@ function describeCheckin(c: CompanionCheckinStatus): string {
     c.kind === 'medication' ? '吃药' : c.kind === 'exercise' ? '运动' : CHECKIN_ITEM[c.metric!];
   const result =
     c.status === null
-      ? '还没问'
+      ? '还没回答'
       : c.kind === 'measurement' && c.values.length
         ? `报了 ${c.values.join('、')}`
         : CHECKIN_STATUS[c.status];

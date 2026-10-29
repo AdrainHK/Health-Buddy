@@ -7,6 +7,7 @@ import {
 import {
   acceptCompanionMemory,
   CHECKIN_METRIC_SPOKEN,
+  isCompanionQuestion,
   buildCompanionMemoryRequest,
   buildCompanionRequest,
   checkCompanionReply,
@@ -132,7 +133,7 @@ export class CompanionDialogue implements OnApplicationShutdown {
   async greet(deviceId: string, sessionId: string): Promise<Utterance[]> {
     const state = this.sessions.get(sessionId);
     if (!state) return [];
-    const due = await this.repo.dueCheckins(deviceId);
+    const due = await this.repo.dueCheckins(deviceId, state.clientId);
     const first = due.shift();
     if (!first) return [];
     state.checkin = { queue: due, asking: first, confirming: null, attempts: 0 };
@@ -294,6 +295,7 @@ export class CompanionDialogue implements OnApplicationShutdown {
       const { metric, values } = checkin.pending;
       await this.repo.addPendingReading(
         deviceId,
+        clientId,
         metric,
         values,
         `客户报的${CHECKIN_METRIC_SPOKEN[metric]}：${values.join('、')}（两次超出合理范围，没有写入监测）`,
@@ -329,8 +331,10 @@ export class CompanionDialogue implements OnApplicationShutdown {
    * - 服药、运动：记结果，念“好的，记下了”，接着问下一条；
    * - 测量：复述数值请客户确认 → 确认后写监测、念“记下了”（命中危急阈值时念危急指标话术，
    *   预警由数据库函数写）→ 孪生入队；说“不对”就请再说一遍；
-   * - 数值超出合理范围请再说一遍，第二次仍超出不写监测，记成待确认的测量给健管师。
-   * 客户没被提醒、主动说“药吃了”“血压一百三八十六”时，对上今天到期的计划也按同样的流程。
+   * - 数值超出合理范围请再说一遍，第二次仍超出不写监测，记成待确认的测量给健管师
+   *   （命中危急阈值时念危急指标话术，预警由数据库函数写）。
+   * 客户没被提醒、主动说“药吃了”“血压一百三八十六”时，对上今天到期的计划也按同样的流程；
+   * 问句（“我今天药吃了吗”）不是回答，交给模型按今天的打卡回答（合规审查 B1）。
    */
   private async checkinTurn(
     deviceId: string,
@@ -344,7 +348,13 @@ export class CompanionDialogue implements OnApplicationShutdown {
       const answer = parseConfirmation(text);
       if (answer === 'yes') {
         c.attempts = 0;
-        const result = await this.repo.recordReading(deviceId, due.planId, due.slot, values);
+        const result = await this.repo.recordReading(
+          deviceId,
+          state.clientId,
+          due.planId,
+          due.slot,
+          values,
+        );
         if (result.checkinId) void this.twin.requestFromCompanion(state.clientId);
         const outcome = !result.checkinId
           ? 'duplicate'
@@ -357,7 +367,7 @@ export class CompanionDialogue implements OnApplicationShutdown {
       }
       // “不对，是一百三十五”：直接按新的数再复述一次
       const again = parseCheckinReading(due.metric!, text);
-      if (again) return this.readingAnswer(c, due, again);
+      if (again) return this.readingAnswer(deviceId, c, due, again);
       if (answer === 'no') {
         c.asking = due;
         return { utterances: [{ script: 'checkin_retry' }], outcome: 'retry' };
@@ -367,50 +377,69 @@ export class CompanionDialogue implements OnApplicationShutdown {
     if (c.asking) {
       const due = c.asking;
       c.asking = null;
-      return this.answer(deviceId, c, due, text);
+      return this.answer(deviceId, state, due, text);
     }
     // 没被提醒时主动报的：只认说到了项目的（“药吃了”“血压……”），对上今天到期的计划
     const volunteered = volunteeredKind(text);
     if (!volunteered) return null;
-    const due = (await this.repo.dueCheckins(deviceId)).find(
+    const due = (await this.repo.dueCheckins(deviceId, state.clientId)).find(
       (d) =>
         d.kind === volunteered.kind &&
         (volunteered.kind !== 'measurement' || d.metric === volunteered.metric),
     );
     if (!due) return null;
     c.queue = c.queue.filter((q) => q.planId !== due.planId || q.slot !== due.slot);
-    return this.answer(deviceId, c, due, text);
+    return this.answer(deviceId, state, due, text);
   }
 
   private async answer(
     deviceId: string,
-    c: CheckinState,
+    state: SessionState,
     due: DueCheckin,
     text: string,
   ): Promise<CheckinTurn | null> {
+    const c = state.checkin;
     if (due.kind === 'measurement') {
       const values = parseCheckinReading(due.metric!, text);
-      return values ? this.readingAnswer(c, due, values) : null;
+      return values ? this.readingAnswer(deviceId, c, due, values) : null;
     }
     const status = parseCheckinStatus(due.kind, text);
     if (!status) return null;
     c.attempts = 0;
-    const id = await this.repo.recordCheckin(deviceId, due.planId, due.slot, status);
+    const id = await this.repo.recordCheckin(
+      deviceId,
+      state.clientId,
+      due.planId,
+      due.slot,
+      status,
+    );
     return {
       utterances: [{ script: 'checkin_noted' }, ...this.nextReminder(c)],
       outcome: id ? 'status' : 'duplicate',
     };
   }
 
-  /** 听到了测量值：在合理范围内就复述请确认；超出时请再说一遍，第二次仍超出记成待确认 */
-  private readingAnswer(c: CheckinState, due: DueCheckin, values: number[]): CheckinTurn {
+  /**
+   * 听到了测量值：在合理范围内就复述请确认；超出时请再说一遍，第二次仍超出记成待确认。
+   * 记成待确认的数命中危急阈值时念危急指标话术（数据库函数同时写预警，合规审查 S3）
+   */
+  private async readingAnswer(
+    deviceId: string,
+    c: CheckinState,
+    due: DueCheckin,
+    values: number[],
+  ): Promise<CheckinTurn> {
     const metric = due.metric!;
     if (!checkinValuesInRange(metric, values)) {
       c.attempts += 1;
       if (c.attempts >= READING_ATTEMPTS) {
         c.attempts = 0;
+        const critical = await this.repo.readingCritical(deviceId, metric, values);
         return {
-          utterances: [{ script: 'checkin_recorded' }, ...this.nextReminder(c)],
+          utterances: [
+            { script: critical ? 'critical_value' : 'checkin_recorded' },
+            ...this.nextReminder(c),
+          ],
           pending: { metric, values },
           outcome: 'pending',
         };
@@ -477,7 +506,9 @@ export class CompanionDialogue implements OnApplicationShutdown {
     mode: 'normal' | 'crisis',
   ): Promise<{ ok: true; reply: CompanionReply } | { ok: false }> {
     try {
-      const ctx = await this.repo.context(deviceId, sessionId);
+      const state = this.sessions.get(sessionId);
+      if (!state) return { ok: false };
+      const ctx = await this.repo.context(deviceId, state.clientId, sessionId);
       if (!ctx) return { ok: false };
       const history = await this.repo.turns(deviceId, sessionId);
       const request = buildCompanionRequest(ctx, [...history, { role: 'client', text }], mode);
@@ -566,6 +597,8 @@ function volunteeredKind(
   text: string,
 ): { kind: DueCheckin['kind']; metric?: DueCheckin['metric'] } | null {
   const t = text.replace(/\s+/g, '');
+  // 问句不是回答（“我今天药吃了吗”），交给模型按今天的打卡回答（合规审查 B1）
+  if (isCompanionQuestion(t)) return null;
   // 说的是以前的事（“昨天量的血压……”）不算今天的打卡（规格 2.7：闲聊里的数值不写监测）
   if (/昨天|前天|上次|上回|那天|以前|之前|平时|前几天|上周/.test(t)) return null;
   if (/血压|高压|低压/.test(t)) return { kind: 'measurement', metric: 'bp' };

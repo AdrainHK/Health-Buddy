@@ -123,7 +123,28 @@ describe('输出检查', () => {
     expect(preCheckCompanionInput('我今天早上药吃了吗').medical).toBeNull();
     expect(preCheckCompanionInput('药吃过了吗').medical).toBeNull();
     expect(preCheckCompanionInput('这个药饭后吃了吗会不会伤胃').medical).toBe('medication');
+    // 带药的类别名时保守转交
     expect(preCheckCompanionInput('降压药吃了没').medical).toBe('medication');
+  });
+
+  it.each([
+    '饭前能把药吃了吗',
+    '我现在可以把药吃了吗',
+    '喝了酒还能把药吃了吗',
+    '药多吃了吗',
+    '我忘了吃没吃药',
+    '我把药停了',
+    '药不吃了',
+    '药快吃完了',
+    '二甲双胍饭前吃还是饭后吃',
+  ])('用药问题、自己停药、记不清吃没吃都转交（合规审查 B2、S1）：%s', (text) => {
+    expect(preCheckCompanionInput(text).medical).toBe('medication');
+  });
+
+  it('复述数值时问高不高也转交（合规审查 S2）', () => {
+    expect(preCheckCompanionInput('是不是有点高啊').medical).toBe('exam');
+    expect(preCheckCompanionInput('一百六一百，是不是太高了').medical).toBe('exam');
+    expect(preCheckCompanionInput('一百六，一百').medical).toBeNull();
   });
 
   it('问方案里的盐量不是用药问题', () => {
