@@ -2,6 +2,7 @@ import { COMPANION_DEFAULT_SCRIPTS } from '@health-buddy/shared';
 import { describe, expect, it } from 'vitest';
 import {
   acceptCompanionMemory,
+  acceptCompanionObservations,
   buildCompanionMemoryRequest,
   buildCompanionRequest,
   checkCompanionReply,
@@ -168,6 +169,76 @@ describe('输出检查', () => {
     ] as const) {
       expect(checkCompanionReply(COMPANION_DEFAULT_SCRIPTS[kind])).toEqual([]);
     }
+  });
+});
+
+describe('收集信息（第 6 步）', () => {
+  it('药名换成“药物”，去掉电话；情绪、睡眠以外不留 polarity；测量值项目和范围不对时只留文字', () => {
+    expect(
+      acceptCompanionObservations([
+        {
+          category: 'adherence',
+          text: '客户说昨天晚上二甲双胍忘吃了，电话 13800138000',
+          polarity: 'negative',
+          metric: null,
+          values: [],
+        },
+        {
+          category: 'mood',
+          text: '客户说最近心里烦',
+          polarity: 'negative',
+          metric: null,
+          values: [],
+        },
+        {
+          category: 'measurement',
+          text: '客户说昨天血压一百五、九十五',
+          polarity: null,
+          metric: 'bp',
+          values: [150, 95],
+        },
+        {
+          category: 'measurement',
+          text: '客户说血糖一千',
+          polarity: null,
+          metric: 'fpg',
+          values: [1000],
+        },
+      ]),
+    ).toEqual([
+      {
+        category: 'adherence',
+        text: expect.stringMatching(/^客户说昨天晚上药物忘吃了/),
+        polarity: null,
+        metric: null,
+        values: [],
+      },
+      {
+        category: 'mood',
+        text: '客户说最近心里烦',
+        polarity: 'negative',
+        metric: null,
+        values: [],
+      },
+      {
+        category: 'measurement',
+        text: '客户说昨天血压一百五、九十五',
+        polarity: null,
+        metric: 'bp',
+        values: [150, 95],
+      },
+      { category: 'measurement', text: '客户说血糖一千', polarity: null, metric: null, values: [] },
+    ]);
+    const [first] = acceptCompanionObservations([
+      {
+        category: 'adherence',
+        text: '客户说电话 13800138000',
+        polarity: null,
+        metric: null,
+        values: [],
+      },
+    ]);
+    expect(first!.text).not.toContain('13800138000');
   });
 });
 

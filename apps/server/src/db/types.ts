@@ -4,6 +4,7 @@ import type {
   CheckinSlot,
   CheckinSlotTime,
   CheckinStatus,
+  AlertResolution,
   Role,
 } from '@health-buddy/shared';
 import type { ColumnType, Generated } from 'kysely';
@@ -962,6 +963,8 @@ export interface CompanionDevicesTable {
   activated_at: ColumnType<Date | null, undefined, never>;
   last_seen_at: ColumnType<Date | null, undefined, never>;
   firmware_version: ColumnType<string | null, undefined, never>;
+  /** 迁移 0029：健管师对“设备离线”点了“知道了”（只经函数写） */
+  offline_ack_at: ColumnType<Date | null, never, never>;
   created_at: ColumnType<Date, undefined, never>;
 }
 
@@ -1058,7 +1061,18 @@ export interface CompanionHandoffsTable extends ClientScoped {
   >;
   question: ColumnType<string, string, never>;
   trigger: ColumnType<'rule' | 'model' | 'fallback', 'rule' | 'model' | 'fallback', never>;
-  status: ColumnType<'open' | 'replied' | 'closed_by_call' | 'closed', undefined, never>;
+  /** 迁移 0029：状态流转、回复人和时间由触发器校验和填写；delivered 只经设备会话的函数 */
+  status: ColumnType<
+    'open' | 'replied' | 'delivered' | 'closed_by_call' | 'closed',
+    undefined,
+    'replied' | 'closed_by_call' | 'closed'
+  >;
+  reply_text: ColumnType<string | null, never, string>;
+  replied_by: ColumnType<string | null, never, never>;
+  replied_at: ColumnType<Date | null, never, never>;
+  closed_by: ColumnType<string | null, never, never>;
+  closed_at: ColumnType<Date | null, never, never>;
+  delivered_at: ColumnType<Date | null, never, never>;
   created_at: ColumnType<Date, undefined, never>;
 }
 
@@ -1075,7 +1089,12 @@ export interface CompanionAlertsTable extends ClientScoped {
   script_version: ColumnType<number | null, number | null | undefined, never>;
   /** 危急指标预警：触发的监测读数（只经 companion_checkin_reading 写） */
   reading_id: ColumnType<string | null, never, never>;
-  status: ColumnType<'open' | 'handled', undefined, never>;
+  /** 迁移 0029：只能 open → handled，处理方式必填，处理人和时间由触发器填 */
+  status: ColumnType<'open' | 'handled', undefined, 'handled'>;
+  resolution: ColumnType<AlertResolution | null, never, AlertResolution>;
+  note: ColumnType<string | null, never, string | null>;
+  handled_by: ColumnType<string | null, never, never>;
+  handled_at: ColumnType<Date | null, never, never>;
   created_at: ColumnType<Date, undefined, never>;
 }
 
@@ -1120,5 +1139,10 @@ export interface CompanionObservationsTable extends ClientScoped {
   reading_values: ColumnType<number[], never, never>;
   source_message_id: ColumnType<string | null, never, never>;
   status: ColumnType<'info' | 'pending_confirm' | 'confirmed' | 'dismissed', never, never>;
+  /** 迁移 0029 */
+  polarity: ColumnType<'negative' | 'neutral' | 'positive' | null, never, never>;
+  source_session_id: ColumnType<string | null, never, never>;
+  resolved_by: ColumnType<string | null, never, never>;
+  resolved_at: ColumnType<Date | null, never, never>;
   created_at: ColumnType<Date, never, never>;
 }

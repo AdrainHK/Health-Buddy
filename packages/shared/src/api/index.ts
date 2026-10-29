@@ -21,3 +21,4 @@ export * from './plan-stats.js';
 export * from './companion.js';
 export * from './companion-device.js';
 export * from './companion-checkins.js';
+export * from './companion-inbox.js';

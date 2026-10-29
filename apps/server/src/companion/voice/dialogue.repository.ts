@@ -20,6 +20,12 @@ import {
   type ReadingResult,
 } from '../../db/companion-checkins.js';
 import { deviceProfile, purgeCompanionData } from '../../db/companion-device-auth.js';
+import {
+  addObservations,
+  markRepliesDelivered,
+  pendingReplies,
+  type NewObservation,
+} from '../../db/companion-inbox.js';
 import { DB } from '../../db/db.provider.js';
 import { withDevice, type Db, type TenantTransaction } from '../../db/database.js';
 import type { CompanionMessageSignal } from '../../db/types.js';
@@ -385,6 +391,33 @@ export class DialogueRepository {
     return this.run(deviceId, (trx) =>
       addPendingReading(trx, clientId, metric, values, text, messageId),
     );
+  }
+
+  // ---------- 转交回复、收集信息（第 6 步） ----------
+
+  /** 健管师已回复、还没播报的回复原文（N13） */
+  pendingReplies(deviceId: string, clientId: string): Promise<{ id: string; text: string }[]> {
+    return this.run(deviceId, (trx) => pendingReplies(trx, clientId));
+  }
+
+  markRepliesDelivered(
+    deviceId: string,
+    clientId: string,
+    ids: readonly string[],
+  ): Promise<number> {
+    if (!ids.length) return Promise.resolve(0);
+    return this.run(deviceId, (trx) => markRepliesDelivered(trx, clientId, ids));
+  }
+
+  /** 会话结束整理出的收集信息（规格 2.7） */
+  addObservations(
+    deviceId: string,
+    clientId: string,
+    sessionId: string,
+    items: readonly NewObservation[],
+  ): Promise<number> {
+    if (!items.length) return Promise.resolve(0);
+    return this.run(deviceId, (trx) => addObservations(trx, clientId, sessionId, items));
   }
 
   /** 定时任务：窗口过了没回答的记“未应答” */
