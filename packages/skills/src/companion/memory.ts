@@ -104,8 +104,8 @@ export function acceptCompanionObservations(
     // 原文里的写法和词表不一样（加了空格、繁体字）时替换不掉：仍查得到药名就整条不要（合规审查 S3）
     if (!text || findDrugNames(text).length) continue;
     // 服药情况不记剂量（规格 2.7）：查到剂量就只记“客户说服药有情况”，原话不留（合规审查 S4）
-    if (findDoseMatch(normalizeForCompliance(text).text)) {
-      if (item.category !== 'adherence') continue;
+    // 只看服药情况：“一瓶可乐”“两碗饭”这类饮食说法也会被当成剂量（评测发现）
+    if (item.category === 'adherence' && findDoseMatch(normalizeForCompliance(text).text)) {
       text = '客户说了服药的情况（含剂量，已省略，请看聊天原文）';
     }
     const polarity = item.category === 'mood' || item.category === 'sleep' ? item.polarity : null;

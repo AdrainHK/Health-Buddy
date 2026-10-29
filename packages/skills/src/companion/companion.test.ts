@@ -89,6 +89,10 @@ describe('输出检查', () => {
     expect(checkCompanionReply('我是 AI 伴侣福宝，饭后散步二十分钟挺好的。')).toEqual([]);
     // 复述客户报的数值（高压、低压）不算评价
     expect(checkCompanionReply('高压一百四十五，低压九十二，记下了。')).toEqual([]);
+    expect(
+      checkCompanionReply('您今早血压高压一百四十五，低压九十二。记下了，我会告诉您的健管师。'),
+    ).toEqual([]);
+    expect(checkCompanionReply('您的血压高了一点。').map((i) => i.category)).toContain('judgment');
   });
 
   it.each([
@@ -258,6 +262,17 @@ describe('收集信息（第 6 步）', () => {
         },
       ]).map((o) => o.text),
     ).toEqual(['客户说了服药的情况（含剂量，已省略，请看聊天原文）']);
+    expect(
+      acceptCompanionObservations([
+        {
+          category: 'diet',
+          text: '客户说今天中午吃了两大碗米饭，还喝了一瓶可乐',
+          polarity: null,
+          metric: null,
+          values: [],
+        },
+      ]).map((o) => o.text),
+    ).toEqual(['客户说今天中午吃了两大碗米饭，还喝了一瓶可乐']);
   });
 });
 
