@@ -31,7 +31,8 @@
     "noClients": "还没有客户",
     "loadingClients": "正在加载客户…",
     "clientLabel": "{{name}}，孪生状态：{{level}}",
-    "library": "方案库"
+    "library": "方案库",
+    "companionAlert": "有未处理的伴侣预警"
   },
   "chat": {
     "untitled": "新任务",
@@ -1521,7 +1522,8 @@
     "groups": {
       "alerts": "异常跟进",
       "visits": "今日随访",
-      "count": "{{count}} 项"
+      "count": "{{count}} 项",
+      "companion": "伴侣"
     },
     "visitsEmpty": "今天没有到期或逾期的随访",
     "visitsLoadFailed": "今日随访加载失败",
@@ -2105,6 +2107,118 @@
         "tooMany": "启用的打卡计划太多了，请先停用不用的计划。",
         "badRequest": "填写的内容不完整或不对，请检查后再保存。"
       }
+    },
+    "inbox": {
+      "loadFailed": "伴侣跟进读取失败，请稍后重试。",
+      "empty": "福宝这边没有需要处理的事。",
+      "alerts": "伴侣预警",
+      "handoffs": "伴侣转交",
+      "pendingReadings": "待确认的测量",
+      "offline": "设备离线",
+      "offlineTitle": "设备离线超过 24 小时",
+      "lastSeen": "最后在线：{{time}}",
+      "neverSeen": "还没有上线过",
+      "ack": "知道了"
+    },
+    "cases": {
+      "title": "预警、转交和收集信息",
+      "loading": "正在读取预警和转交…",
+      "loadFailed": "预警和转交读取失败，请稍后重试。",
+      "alertsTitle": "预警",
+      "handoffsTitle": "转交",
+      "observationsTitle": "收集信息",
+      "observationsHint": "福宝从对话里整理的条目，只给你看；客户闲聊里报的测量值确认后才写进监测。",
+      "noAlerts": "没有预警。",
+      "noHandoffs": "没有转交。",
+      "noObservations": "还没有收集信息。",
+      "alertCategories": {
+        "crisis": "心理危机",
+        "emergency": "疑似急症",
+        "critical_value": "危急指标"
+      },
+      "handoffCategories": {
+        "medication": "用药问题",
+        "symptom": "症状",
+        "diagnosis": "诊断",
+        "exam": "检查结果",
+        "other": "其他问题"
+      },
+      "handoffStatuses": {
+        "open": "未处理",
+        "replied": "已回复，待福宝播报",
+        "delivered": "福宝已播报",
+        "closed_by_call": "已电话联系",
+        "closed": "已关闭"
+      },
+      "observationCategories": {
+        "diet": "饮食",
+        "sleep": "睡眠",
+        "exercise": "运动",
+        "mood": "情绪",
+        "adherence": "服药情况",
+        "body": "身体感受",
+        "life": "生活事件",
+        "measurement": "测量值"
+      },
+      "observationStatuses": {
+        "info": "",
+        "pending_confirm": "待确认",
+        "confirmed": "已确认，已写进监测",
+        "dismissed": "已驳回"
+      },
+      "polarities": {
+        "negative": "消极",
+        "neutral": "中性",
+        "positive": "积极"
+      },
+      "said": "客户说：“{{text}}”",
+      "companionSaid": "福宝已经说了：“{{text}}”",
+      "handle": "处理",
+      "handleTitle": "处理预警",
+      "resolution": "处理方式（必填）",
+      "chooseResolution": "请选择",
+      "resolutions": {
+        "called": "已电话联系客户",
+        "contacted_family": "已联系家属",
+        "seen_doctor": "客户已就医",
+        "other": "其他"
+      },
+      "note": "备注（可选）",
+      "noteRequired": "备注（选“其他”时必填）",
+      "markHandled": "标记为已处理",
+      "handled": "已处理：{{resolution}}",
+      "overdue": "已超时",
+      "writeReply": "写回复",
+      "replyTitle": "回复客户",
+      "replyHint": "福宝会在客户下次唤醒时先说“您的健管师回复了您之前问的问题”，再原样念出你的回复。请用短句、口语，不写符号和缩写。",
+      "reply": "回复（念给客户听，最多 {{max}} 字）",
+      "sendReply": "发送给福宝",
+      "replyValue": "回复：{{text}}",
+      "closedByCall": "已电话联系",
+      "close": "关闭",
+      "pendingValue": "客户报的{{metric}}：{{values}}",
+      "confirmReading": "确认并写进监测",
+      "dismissReading": "驳回",
+      "errors": {
+        "bannedTerm": "回复里有不能对客户说的词（如“治愈”“根治”），请修改后再发送。",
+        "badRequest": "填写的内容不完整或不对，请检查后再提交。",
+        "notFound": "找不到这条记录，可能已经处理过。",
+        "changed": "这条记录已经被处理过了，请刷新后再看。"
+      }
+    },
+    "chat": {
+      "title": "聊天和记忆",
+      "hint": "客户和福宝的聊天文字保存 180 天；记忆是福宝记住的客户的事（不记病名、药名），你可以删掉不合适的。",
+      "loading": "正在读取聊天…",
+      "loadFailed": "聊天读取失败，请稍后重试。",
+      "memoriesTitle": "福宝的记忆",
+      "noMemories": "福宝还没有记住什么。",
+      "forget": "删除",
+      "sessionsTitle": "聊天记录",
+      "noSessions": "还没有聊天记录。",
+      "client": "客户",
+      "companion": "福宝",
+      "more": "查看更早的聊天"
     }
   }
 }

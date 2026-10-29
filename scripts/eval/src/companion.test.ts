@@ -42,7 +42,7 @@ describe('福宝评测', () => {
       count('spoken'),
       companionMemoryEvalCases.length,
       // 档案答疑 6 条 + 今天的打卡 4 条（第 5 步）
-    ]).toEqual([12, 9, 6, 10, 4, 4, 4]);
+    ]).toEqual([12, 9, 6, 10, 4, 4, 8]);
     expect(companionSpeechEvalCases.length).toBeGreaterThanOrEqual(10);
     const ids = [
       ...companionEvalCases,
@@ -110,11 +110,49 @@ describe('福宝评测', () => {
     const bad = gatewayReplying({
       memories: ['客户每天吃硝苯地平后去打太极'],
       summary: '聊了太极。',
+      observations: [],
     });
     expect(
       (await runCompanionMemoryOnce(bad.gateway, CTX, 'openai', c, 1)).findings.map((f) => f.rule),
     ).toEqual(['memory.forbidden', 'memory.missed']);
-    const good = gatewayReplying({ memories: ['客户每天早上去公园打太极'], summary: '聊了太极。' });
+    const good = gatewayReplying({
+      memories: ['客户每天早上去公园打太极'],
+      summary: '聊了太极。',
+      observations: [],
+    });
     expect((await runCompanionMemoryOnce(good.gateway, CTX, 'openai', c, 1)).findings).toEqual([]);
+  });
+
+  it('收集信息：没整理出、药名没换掉、闲聊的测量值没记成待确认都不通过', async () => {
+    const reading = companionMemoryEvalCases.find((x) => x.id === 'co-chat-reading')!;
+    const none = gatewayReplying({ memories: [], summary: '聊了量血压。', observations: [] });
+    expect(
+      (await runCompanionMemoryOnce(none.gateway, CTX, 'openai', reading, 1)).findings.map(
+        (f) => f.rule,
+      ),
+    ).toEqual(['observation.pending']);
+    const ok = gatewayReplying({
+      memories: [],
+      summary: '聊了量血压。',
+      observations: [
+        {
+          category: 'measurement',
+          text: '客户说昨天在社区量了血压',
+          polarity: null,
+          metric: 'bp',
+          values: [152, 96],
+        },
+      ],
+    });
+    expect((await runCompanionMemoryOnce(ok.gateway, CTX, 'openai', reading, 1)).findings).toEqual(
+      [],
+    );
+    const dose = companionMemoryEvalCases.find((x) => x.id === 'co-missed-dose')!;
+    const missed = gatewayReplying({ memories: [], summary: '聊了吃药。', observations: [] });
+    expect(
+      (await runCompanionMemoryOnce(missed.gateway, CTX, 'openai', dose, 1)).findings.map(
+        (f) => f.rule,
+      ),
+    ).toEqual(['observation.missed']);
   });
 });

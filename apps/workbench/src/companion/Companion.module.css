@@ -139,3 +139,61 @@
 .table tr[data-status='no_response'] td {
   color: var(--hb-text-2);
 }
+
+/* ---------- 预警、转交、收集信息、聊天（M6 第 6 步） ---------- */
+
+.caseItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-1);
+  min-width: 0;
+  padding: var(--hb-space-3);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-md);
+  background: var(--hb-surface);
+}
+
+/* 未处理的预警：红色，置顶 */
+.caseItem[data-kind='alert'][data-status='open'] {
+  border-color: var(--hb-twin-red-text);
+  border-left: 4px solid var(--hb-twin-red-text);
+}
+
+.caseItem[data-status='handled'],
+.caseItem[data-status='delivered'],
+.caseItem[data-status='closed'],
+.caseItem[data-status='closed_by_call'],
+.caseItem[data-status='dismissed'] {
+  background: var(--hb-surface-2);
+}
+
+.memoryItem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hb-space-2);
+  padding: var(--hb-space-1) var(--hb-space-2);
+  border-bottom: 1px solid var(--hb-border);
+  font-size: var(--hb-text-sm);
+}
+
+.transcript {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-1);
+  margin: var(--hb-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--hb-text-sm);
+  line-height: var(--hb-leading);
+}
+
+.transcript li[data-role='companion'] {
+  color: var(--hb-text-2);
+}
+
+.speaker {
+  margin-right: var(--hb-space-2);
+  font-weight: 600;
+}

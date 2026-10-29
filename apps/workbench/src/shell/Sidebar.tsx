@@ -74,6 +74,8 @@ export interface SidebarClients {
   clients: ClientSummary[] | null;
   /** 每位客户的整体状态；还没加载出来时为空 */
   levels: ReadonlyMap<string, TwinLevel>;
+  /** 有未处理伴侣预警的客户（状态圆点旁单独显示红点，Q24） */
+  companionAlerts?: ReadonlySet<string>;
   activeClientId: string | null;
   onSelect: (client: ClientSummary) => void;
 }
@@ -237,6 +239,14 @@ function ClientSection({ list }: { list: SidebarClients }) {
                     <span className={styles.dotPlaceholder} aria-hidden />
                   )}
                   <span className={styles.taskTitle}>{client.displayName}</span>
+                  {list.companionAlerts?.has(client.id) && (
+                    <span
+                      className={styles.companionAlert}
+                      role="img"
+                      aria-label={t('nav.companionAlert')}
+                      title={t('nav.companionAlert')}
+                    />
+                  )}
                 </button>
               </li>
             );
