@@ -1,7 +1,7 @@
 name: AI 评测
 
 # 改提示词、技能、网关或评测本身时自动跑一次；也可以在 Actions 页面手动运行。
-# 会真实调用大模型并产生费用，所以只在相关文件变动时触发。
+# 会真实调用大模型并产生费用，所以只在相关文件变动时触发，且只跑相关的评测组。
 on:
   pull_request:
     paths:
@@ -11,6 +11,7 @@ on:
       - packages/shared/src/compliance/**
       - scripts/eval/**
       - .github/workflows/eval.yml
+      - .github/scripts/eval-suites.sh
   workflow_dispatch:
     inputs:
       runs:
@@ -28,23 +29,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 省费用：PR 只跑和改动文件相关的评测组（规则见 .github/scripts/eval-suites.sh），手动运行跑全部
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      suites: ${{ steps.pick.outputs.suites }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 挑选评测组
+        id: pick
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            files=$(git diff --name-only "$BASE"...HEAD)
+          else
+            files=ALL
+          fi
+          echo "改动的文件："; echo "$files"
+          suites=$(printf '%s\n' "$files" | bash .github/scripts/eval-suites.sh)
+          echo "评测组：$suites"
+          echo "suites=$suites" >> "$GITHUB_OUTPUT"
+
   eval:
+    needs: plan
+    if: needs.plan.outputs.suites != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     # 用例多了单个任务会超过 60 分钟，按组并行跑
     strategy:
       fail-fast: false
       matrix:
-        suite:
-          - summary,ask,extraction
-          - interpretation,outline,plan
-          - expert
-          - expert-routing,expert-synthesis
-          - twin-summary,twin-consult
-          - visit-schedule
-          - care-plan
-          - visit-script,visit-record,chat-transcription
-          - companion,companion-speech
+        suite: ${{ fromJSON(needs.plan.outputs.suites) }}
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -81,11 +99,13 @@ jobs:
         if: steps.keys.outputs.ready == 'true'
         # 手动输入经环境变量传入，不直接拼进脚本
         env:
-          RUNS: ${{ inputs.runs || '3' }}
+          # 省费用：PR 每个用例跑 1 次，手动运行默认 3 次（看稳定性）
+          RUNS: ${{ inputs.runs || (github.event_name == 'pull_request' && '1' || '3') }}
           # Claude 中转暂停使用（2026-10-16 产品决定），默认只跑 OpenAI；恢复后把仓库变量 EVAL_PROVIDER 设为 all
           PROVIDER: ${{ inputs.provider || vars.EVAL_PROVIDER || 'openai' }}
           SUITE: ${{ matrix.suite }}
-          SHOW: ${{ inputs.show_failures == 'true' && '--show-failures' || '' }}
+          # PR 上默认打出未通过用例的输出（合成数据），不用为了看原因再花钱重跑
+          SHOW: ${{ (inputs.show_failures == 'true' || github.event_name == 'pull_request') && '--show-failures' || '' }}
         run: |
           case "$RUNS" in ''|*[!0-9]*) echo "runs 必须是数字"; exit 1;; esac
           if [ "$PROVIDER" != all ]; then
