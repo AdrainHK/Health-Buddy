@@ -1,7 +1,9 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
+  COMPANION_ALERT_CATEGORIES,
   COMPANION_DEFAULT_SCRIPTS,
   COMPANION_DEVICE_STATUSES,
+  COMPANION_HANDOFF_CATEGORIES,
   COMPANION_SCRIPT_KINDS,
   COMPANION_VOICE_SPEEDS,
   COMPANION_VOLUMES,
@@ -22,6 +24,12 @@ import {
   COMPANION_ENUM_SNAPSHOT_0024,
   COMPANION_SCRIPTS_SNAPSHOT_0024,
 } from '../src/db/migrations/0024-companion-devices.js';
+import {
+  COMPANION_ALERT_CATEGORIES_0027,
+  COMPANION_HANDOFF_CATEGORIES_0027,
+  COMPANION_SCRIPT_KINDS_0027,
+  COMPANION_SCRIPTS_SNAPSHOT_0027,
+} from '../src/db/migrations/0027-companion-dialogue.js';
 import type { Database } from '../src/db/types.js';
 import { localDate } from '../src/twin/time-zone.js';
 import { TEST_APP_URL } from './env.js';
@@ -149,8 +157,12 @@ describe('伴侣设备和同意的行级安全', () => {
     expect(COMPANION_ENUM_SNAPSHOT_0024.deviceStatuses).toEqual(COMPANION_DEVICE_STATUSES);
     expect(COMPANION_ENUM_SNAPSHOT_0024.voiceSpeeds).toEqual(COMPANION_VOICE_SPEEDS);
     expect(COMPANION_ENUM_SNAPSHOT_0024.volumes).toEqual(COMPANION_VOLUMES);
-    expect(COMPANION_ENUM_SNAPSHOT_0024.scriptKinds).toEqual(COMPANION_SCRIPT_KINDS);
-    expect(COMPANION_SCRIPTS_SNAPSHOT_0024).toEqual(COMPANION_DEFAULT_SCRIPTS);
+    expect(COMPANION_SCRIPT_KINDS_0027).toEqual(COMPANION_SCRIPT_KINDS);
+    expect({ ...COMPANION_SCRIPTS_SNAPSHOT_0024, ...COMPANION_SCRIPTS_SNAPSHOT_0027 }).toEqual(
+      COMPANION_DEFAULT_SCRIPTS,
+    );
+    expect(COMPANION_HANDOFF_CATEGORIES_0027).toEqual(COMPANION_HANDOFF_CATEGORIES);
+    expect(COMPANION_ALERT_CATEGORIES_0027).toEqual(COMPANION_ALERT_CATEGORIES);
     for (const text of Object.values(COMPANION_DEFAULT_SCRIPTS)) {
       expect(findBannedTerms(text)).toEqual([]);
       expect(text.length).toBeLessThanOrEqual(300);

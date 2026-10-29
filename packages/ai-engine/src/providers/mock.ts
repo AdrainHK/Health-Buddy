@@ -13,6 +13,8 @@ import type {
 
 export interface MockScript {
   chunks?: string[];
+  /** 按请求给出整段回答（优先于 chunks），用来模拟结构化输出 */
+  respond?: (request: GatewayRequest) => string;
   finishReason?: FinishReason;
   usage?: { inputTokens: number; outputTokens: number };
   /** 输出若干块之后抛出这个错误，模拟中途断开 */
@@ -57,7 +59,9 @@ export class MockProvider implements Provider {
   ): AsyncIterable<GatewayEvent> {
     this.calls.push({ request, route });
     const script = this.script;
-    const chunks = script.chunks ?? ['你好', '，我是', ' Health Buddy。'];
+    const chunks = script.respond
+      ? [script.respond(request)]
+      : (script.chunks ?? ['你好', '，我是', ' Health Buddy。']);
     for (const delta of chunks) {
       if (script.delayMs) await new Promise((r) => setTimeout(r, script.delayMs));
       else await Promise.resolve();

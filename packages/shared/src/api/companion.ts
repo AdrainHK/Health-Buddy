@@ -115,6 +115,10 @@ export const COMPANION_SCRIPT_KINDS = [
   'reminder_measurement',
   'reminder_exercise',
   'notice',
+  // 第 4 步（N11）：客户说“忘掉……”
+  'memory_forgotten',
+  'memory_forget_confirm',
+  'memory_forgotten_all',
 ] as const;
 export const companionScriptKindSchema = z.enum(COMPANION_SCRIPT_KINDS);
 export type CompanionScriptKind = z.infer<typeof companionScriptKindSchema>;
@@ -264,7 +268,24 @@ export const COMPANION_DEFAULT_SCRIPTS: Readonly<
   reminder_medication: '该按医嘱吃药了，吃了吗？',
   reminder_measurement: '该记一下今天的{metric}了，您告诉我数就行。',
   reminder_exercise: '今天的运动做了吗？',
+  memory_forgotten: '好的，这件事我不记了。',
+  memory_forget_confirm: '您是要我把记住的您的事全都忘掉吗？是的话请再说一遍“全都忘掉”。',
+  memory_forgotten_all: '好的，您的事我都不记了。',
 };
+
+/** 转交的类别（规格 2.4） */
+export const COMPANION_HANDOFF_CATEGORIES = [
+  'medication',
+  'symptom',
+  'diagnosis',
+  'exam',
+  'other',
+] as const;
+export type CompanionHandoffCategory = (typeof COMPANION_HANDOFF_CATEGORIES)[number];
+
+/** 伴侣预警的类别（规格 2.5） */
+export const COMPANION_ALERT_CATEGORIES = ['crisis', 'emergency', 'critical_value'] as const;
+export type CompanionAlertCategory = (typeof COMPANION_ALERT_CATEGORIES)[number];
 
 // ---------- 同步给伴侣（规格 2.8、N12，红线 3） ----------
 

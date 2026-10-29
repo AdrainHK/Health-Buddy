@@ -5,8 +5,6 @@ import {
   type CompanionVoiceSpeed,
   type ServerDeviceMessage,
 } from '@health-buddy/shared';
-import { detectEmergencyKeywords } from '@health-buddy/experts';
-import { detectCrisisKeywords } from '@health-buddy/skills';
 import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 import type { DeviceConnection } from '../../db/companion-device-auth.js';
@@ -20,6 +18,7 @@ import {
   type EndpointOptions,
 } from './audio.js';
 import type { DeviceSessionRepository } from './device-session.repository.js';
+import type { CompanionDialogue, Utterance } from './dialogue.service.js';
 import type { CompanionSpeech } from './speech.service.js';
 
 export interface VoiceOptions {
@@ -47,27 +46,10 @@ export const DEFAULT_VOICE_OPTIONS: VoiceOptions = {
 
 export type ListenMode = 'auto' | 'manual' | 'realtime';
 
-/**
- * 回复一句话的策略。第 3 步只用固定话术跑通“说话 → 识别 → 回复 → 合成 → 播放”，
- * 第 4 步换成对话（大模型 + 边界规则）。返回要念的固定话术种类。
- */
-export type Responder = (input: { deviceId: string; text: string }) => Promise<CompanionScriptKind>;
-
-/**
- * 第 3 步的回复：先按关键词识别心理危机和疑似急症（不依赖模型，红线 4、规格 2.5），
- * 念对应的固定话术；其余念“我是 AI 伴侣福宝，不是医生。”（占位，第 4 步换成对话）。
- * 推送给健管师的预警在第 6 步；在那之前正式环境不开放语音通道（COMPANION_VOICE_ENABLED）。
- */
-export const fixedResponder: Responder = ({ text }) => {
-  if (detectCrisisKeywords([text])) return Promise.resolve('crisis');
-  if (detectEmergencyKeywords([text])) return Promise.resolve('emergency');
-  return Promise.resolve('daily_intro');
-};
-
 export interface SessionDeps {
   repo: DeviceSessionRepository;
   speech: CompanionSpeech;
-  responder: Responder;
+  dialogue: CompanionDialogue;
   logger: Logger;
   options: VoiceOptions;
 }
@@ -90,6 +72,10 @@ export class DeviceSession {
   private helloDone = false;
   private clientId: string | null = null;
   private boundAt: number | null = null;
+  /** 对话会话（companion_sessions）；暂停、撤回同意时没有 */
+  private sessionId: string | null = null;
+  /** hello 的处理（建会话、开场白）；第一句话要等它完成 */
+  private ready: Promise<void> = Promise.resolve();
   private voiceSpeed: CompanionVoiceSpeed = 'slow';
   private listening: Listening | null = null;
   private busy = false;
@@ -144,6 +130,7 @@ export class DeviceSession {
     if (this.closed) return;
     this.closed = true;
     this.speaking?.abort();
+    if (this.sessionId) void this.deps.dialogue.end(this.deviceId, this.sessionId);
     clearTimeout(this.helloTimer);
     clearTimeout(this.idleTimer);
     clearInterval(this.seenTimer);
@@ -170,8 +157,11 @@ export class DeviceSession {
     if (!parsed.success) return;
     const message = parsed.data;
     try {
-      if (message.type === 'hello') await this.onHello();
-      else if (!this.helloDone) return;
+      if (message.type === 'hello') {
+        // 重复的 hello 不重新处理，也不替换第一次的（租户审查 S5b）
+        if (!this.helloDone) this.ready = this.onHello();
+        await this.ready;
+      } else if (!this.helloDone) return;
       else if (message.type === 'abort') this.speaking?.abort();
       else if (message.state === 'start') this.onListenStart(message.mode ?? 'auto');
       else if (message.state === 'stop') await this.finishUtterance();
@@ -205,9 +195,34 @@ export class DeviceSession {
     this.voiceSpeed = state.voiceSpeed;
     if (state.status === 'paused' || state.status === 'revoked') {
       await this.sayAndClose('paused');
-    } else if (this.conn.first_connection) {
+      return;
+    }
+    this.sessionId = await this.deps.dialogue.start(this.deviceId, state.clientId);
+    if (this.closed) {
+      // 建会话时连接已经断了：cleanup 没看到会话，这里补上结束（租户审查 S5a）
+      void this.deps.dialogue.end(this.deviceId, this.sessionId);
+      return;
+    }
+    void this.warmScripts();
+    if (this.conn.first_connection) {
       // 第一次连接（激活）时播开场白（规格 2.1 第 4 步、N9）
       await this.say('intro');
+      await this.deps.dialogue.noteScript(this.deviceId, this.sessionId, 'intro');
+    }
+  }
+
+  /** 固定话术按这位客户的语速预先合成（规格 5.4 第 3 条），之后从缓存播放；失败不影响对话 */
+  private async warmScripts(): Promise<void> {
+    try {
+      const scripts = await this.deps.repo.scripts(this.deviceId);
+      for (const script of scripts) {
+        if (this.closed) return;
+        await this.deps.speech
+          .script(this.deviceId, script, this.voiceSpeed)
+          .catch(() => undefined);
+      }
+    } catch {
+      // 预合成只是加速，读不到话术时照常对话
     }
   }
 
@@ -247,6 +262,8 @@ export class DeviceSession {
     if (l.frames.length === 0) return;
     this.busy = true;
     try {
+      // hello 的处理（读设备状态、建会话）可能还没完成，先等它，再比较客户
+      await this.ready.catch(() => undefined);
       // 每句话前确认设备仍绑定在同一位客户名下
       const state = await this.deps.repo.state(this.deviceId);
       if (!state?.clientId || state.clientId !== this.clientId || state.boundAt !== this.boundAt) {
@@ -271,8 +288,13 @@ export class DeviceSession {
         return;
       }
       this.send({ type: 'stt', session_id: this.id, text });
-      const reply = await this.deps.responder({ deviceId: this.deviceId, text });
-      await this.say(reply);
+      if (!this.sessionId) {
+        this.close();
+        return;
+      }
+      const turn = await this.deps.dialogue.respond(this.deviceId, this.sessionId, text);
+      await this.play(turn.utterances);
+      if (turn.end) this.close();
     } finally {
       this.busy = false;
     }
@@ -283,41 +305,61 @@ export class DeviceSession {
     this.close();
   }
 
-  /** 念一句固定话术；合成失败时只结束这句（不念别的） */
-  private async say(kind: CompanionScriptKind): Promise<void> {
-    if (this.closed) return;
-    const script = await this.deps.repo.script(this.deviceId, kind);
-    if (!script) {
-      this.deps.logger.error(`companion script missing ${JSON.stringify({ kind })}`);
-      return;
-    }
-    let frames: Uint8Array[];
-    try {
-      frames = await this.deps.speech.script(this.deviceId, script, this.voiceSpeed);
-    } catch (err) {
-      this.fail('tts', err);
-      return;
-    }
-    await this.play(script.text, frames);
+  /** 念一句固定话术 */
+  private say(kind: CompanionScriptKind): Promise<void> {
+    return this.play([{ script: kind }]);
   }
 
-  private async play(text: string, frames: Uint8Array[]): Promise<void> {
-    if (this.closed) return;
+  /** 准备一段要念的话：固定话术从缓存取（没有时合成），模型回答实时合成；失败时跳过这段 */
+  private async prepare(u: Utterance): Promise<{ text: string; frames: Uint8Array[] } | null> {
+    try {
+      if ('script' in u) {
+        const script = await this.deps.repo.script(this.deviceId, u.script);
+        if (!script) {
+          this.deps.logger.error(`companion script missing ${JSON.stringify({ kind: u.script })}`);
+          return null;
+        }
+        const frames = await this.deps.speech.script(this.deviceId, script, this.voiceSpeed);
+        return { text: script.text, frames };
+      }
+      const frames = await this.deps.speech.synthesize(this.deviceId, u.text, this.voiceSpeed);
+      return { text: u.text, frames };
+    } catch (err) {
+      this.fail('tts', err);
+      return null;
+    }
+  }
+
+  /**
+   * 念一轮的几段话（例如危机求助话术接着陪伴的话）：一次 tts start / stop，每段一个 sentence_start。
+   * 下一段在上一段发完后再准备，固定话术不用等模型回答的合成。
+   */
+  private async play(utterances: readonly Utterance[]): Promise<void> {
+    if (this.closed || !utterances.length) return;
     this.speaking?.abort();
     const controller = new AbortController();
     this.speaking = controller;
     const { frameIntervalMs, prebufferFrames } = this.deps.options;
-    this.send({ type: 'tts', session_id: this.id, state: 'start' });
-    this.send({ type: 'tts', session_id: this.id, state: 'sentence_start', text });
-    for (let i = 0; i < frames.length; i++) {
-      if (controller.signal.aborted || this.ws.readyState !== WebSocket.OPEN) break;
-      this.ws.send(frames[i]!, { binary: true });
-      if (frameIntervalMs > 0 && i >= prebufferFrames) {
-        await new Promise((r) => setTimeout(r, frameIntervalMs));
+    let started = false;
+    for (const u of utterances) {
+      if (controller.signal.aborted || this.closed) break;
+      const part = await this.prepare(u);
+      if (!part || controller.signal.aborted || this.ws.readyState !== WebSocket.OPEN) continue;
+      if (!started) {
+        this.send({ type: 'tts', session_id: this.id, state: 'start' });
+        started = true;
+      }
+      this.send({ type: 'tts', session_id: this.id, state: 'sentence_start', text: part.text });
+      for (let i = 0; i < part.frames.length; i++) {
+        if (controller.signal.aborted || this.ws.readyState !== WebSocket.OPEN) break;
+        this.ws.send(part.frames[i]!, { binary: true });
+        if (frameIntervalMs > 0 && i >= prebufferFrames) {
+          await new Promise((r) => setTimeout(r, frameIntervalMs));
+        }
       }
     }
     if (this.speaking === controller) this.speaking = null;
-    this.send({ type: 'tts', session_id: this.id, state: 'stop' });
+    if (started) this.send({ type: 'tts', session_id: this.id, state: 'stop' });
   }
 
   private fail(stage: string, err: unknown): void {

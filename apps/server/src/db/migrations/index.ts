@@ -25,6 +25,7 @@ import * as m0023 from './0023-screenshot-material.js';
 import * as m0024 from './0024-companion-devices.js';
 import * as m0025 from './0025-companion-deliveries.js';
 import * as m0026 from './0026-companion-voice.js';
+import * as m0027 from './0027-companion-dialogue.js';
 
 export interface Migration {
   name: string;
@@ -59,4 +60,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { name: '0024-companion-devices', up: m0024.up },
   { name: '0025-companion-deliveries', up: m0025.up },
   { name: '0026-companion-voice', up: m0026.up },
+  { name: '0027-companion-dialogue', up: m0027.up },
 ];

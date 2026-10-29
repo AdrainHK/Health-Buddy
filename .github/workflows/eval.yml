@@ -44,6 +44,7 @@ jobs:
           - visit-schedule
           - care-plan
           - visit-script,visit-record,chat-transcription
+          - companion,companion-speech
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
