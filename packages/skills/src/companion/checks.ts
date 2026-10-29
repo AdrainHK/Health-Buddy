@@ -22,6 +22,8 @@ const MEDICAL_RULES: readonly {
   category: CompanionHandoffCategory;
   pattern: RegExp;
   needsQuestion?: boolean;
+  /** 整句符合时不算这一类 */
+  unless?: RegExp;
 }[] = [
   {
     category: 'diagnosis',
@@ -33,7 +35,13 @@ const MEDICAL_RULES: readonly {
     pattern:
       /停药|减药|加药|换药|药.{0,6}吃多少|吃多少.{0,2}药|几片|几粒|剂量|打几个单位|胰岛素|降压药|降糖药|吃什么药|药.{0,6}(能不能|可不可以|要不要|该不该|副作用|怎么吃|一起吃)/,
   },
-  { category: 'medication', pattern: /药/, needsQuestion: true },
+  // 问自己今天吃没吃药（打卡情况）不是用药问题，由福宝按今天的打卡回答（第 5 步）
+  {
+    category: 'medication',
+    pattern: /药/,
+    needsQuestion: true,
+    unless: /^[^药]*药[^药，。？]{0,4}(?:吃了没|吃过没|吃了吗|吃过了吗|吃没吃|吃了没有)[吗呢？]*$/,
+  },
   {
     category: 'exam',
     pattern: /高不高|低不低|正不正常|算高|算低|超标|指标|化验|检查结果|报告上|参考范围/,
@@ -90,7 +98,11 @@ export function preCheckCompanionInput(text: string): CompanionPreCheck {
   // “忘掉”命令里夹着用药、症状问题时仍要转交（合规复审 B2），所以总是判断
   let medical: CompanionHandoffCategory | null = null;
   for (const rule of MEDICAL_RULES) {
-    if (rule.pattern.test(t) && (!rule.needsQuestion || QUESTION.test(t))) {
+    if (
+      rule.pattern.test(t) &&
+      (!rule.needsQuestion || QUESTION.test(t)) &&
+      !rule.unless?.test(t)
+    ) {
       medical = rule.category;
       break;
     }

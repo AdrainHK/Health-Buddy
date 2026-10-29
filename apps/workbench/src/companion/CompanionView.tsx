@@ -25,11 +25,12 @@ import { ApiError, isAbortError } from '../api/http';
 import { localToday } from '../care/dates';
 import { displayDateTime } from '../twin/errors';
 import styles from '../twin/Twin.module.css';
+import { CheckinSection } from './CheckinPlans';
 import care from './Companion.module.css';
 
 /**
  * 结果区“客户 · 伴侣”（M6 规格 2.1、2.8）：伴侣“福宝”的设备、线下告知和同意、伴侣设置。
- * 只给服务这位客户的健管师。打卡、预警、转交、收集信息在后续步骤加进这个视图。
+ * 只给服务这位客户的健管师。打卡计划和近 30 天打卡（第 5 步）；预警、转交、收集信息在第 6 步加进这个视图。
  */
 export function CompanionView({ client }: { client: ClientSummary }) {
   const { t } = useTranslation();
@@ -103,6 +104,9 @@ export function CompanionView({ client }: { client: ClientSummary }) {
           settings={shown.settings}
           onSaved={update}
         />
+      </Section>
+      <Section title={t('companion.checkin.title')}>
+        <CheckinSection clientId={clientId} />
       </Section>
     </div>
   );

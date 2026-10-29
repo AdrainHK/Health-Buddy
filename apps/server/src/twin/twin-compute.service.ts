@@ -90,6 +90,20 @@ export class TwinComputeService implements OnModuleInit, OnApplicationShutdown {
     }
   }
 
+  /**
+   * 福宝打卡写入监测之后调用（M6 规格 2.3）：数据库函数已经在设备会话里把客户标为“正在更新”，
+   * 这里只入队。只在 companion_checkin_reading 成功写入之后调用（客户由函数按设备绑定校验）。
+   */
+  async requestFromCompanion(clientId: string): Promise<void> {
+    try {
+      await this.queue.enqueue({ type: 'client', clientId, trigger: 'monitoring' });
+    } catch (err) {
+      this.logger.error(
+        `twin enqueue failed ${JSON.stringify({ clientId, trigger: 'monitoring', error: dbErrorCode(err) })}`,
+      );
+    }
+  }
+
   /** 平台修改状态规则或危急阈值后：所有客户在后台按新规则重算（Q22，不生成跟进项） */
   async requestAll(trigger: 'rules_changed' | 'thresholds_changed'): Promise<void> {
     try {

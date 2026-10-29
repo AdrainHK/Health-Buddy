@@ -1,10 +1,23 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type {
+  CheckinMetric,
+  CheckinSlot,
+  CheckinStatus,
   CompanionAlertCategory,
   CompanionHandoffCategory,
   CompanionScriptKind,
 } from '@health-buddy/shared';
 import type { CompanionContext, CompanionTurn } from '@health-buddy/skills';
+import {
+  addPendingReading,
+  dueCheckins,
+  recordCheckin,
+  recordCheckinReading,
+  sweepCheckins,
+  todayCheckins,
+  type DueCheckin,
+  type ReadingResult,
+} from '../../db/companion-checkins.js';
 import { deviceProfile, purgeCompanionData } from '../../db/companion-device-auth.js';
 import { DB } from '../../db/db.provider.js';
 import { withDevice, type Db, type TenantTransaction } from '../../db/database.js';
@@ -108,6 +121,7 @@ export class DialogueRepository {
         memories: memories.map((m) => m.text),
         recentSummaries: summaries.flatMap((s) => (s.summary ? [s.summary] : [])),
         today: localDate(new Date(), TZ),
+        checkins: await todayCheckins(trx),
       };
     });
   }
@@ -319,5 +333,44 @@ export class DialogueRepository {
 
   purge(): Promise<{ messages: number; memories: number }> {
     return purgeCompanionData(this.db);
+  }
+
+  // ---------- 打卡（规格 2.3）：都经数据库函数，计划、时间段、客户由函数校验 ----------
+
+  dueCheckins(deviceId: string): Promise<DueCheckin[]> {
+    return this.run(deviceId, (trx) => dueCheckins(trx));
+  }
+
+  recordCheckin(
+    deviceId: string,
+    planId: string,
+    slot: CheckinSlot,
+    status: CheckinStatus,
+  ): Promise<string | null> {
+    return this.run(deviceId, (trx) => recordCheckin(trx, planId, slot, status));
+  }
+
+  recordReading(
+    deviceId: string,
+    planId: string,
+    slot: CheckinSlot,
+    values: readonly number[],
+  ): Promise<ReadingResult> {
+    return this.run(deviceId, (trx) => recordCheckinReading(trx, planId, slot, values));
+  }
+
+  addPendingReading(
+    deviceId: string,
+    metric: CheckinMetric,
+    values: readonly number[],
+    text: string,
+    messageId: string | null,
+  ): Promise<void> {
+    return this.run(deviceId, (trx) => addPendingReading(trx, metric, values, text, messageId));
+  }
+
+  /** 定时任务：窗口过了没回答的记“未应答” */
+  sweepCheckins(): Promise<number> {
+    return sweepCheckins(this.db);
   }
 }

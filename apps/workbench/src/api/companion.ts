@@ -1,7 +1,14 @@
 import {
+  checkinListResponseSchema,
+  checkinPlanListResponseSchema,
+  checkinPlanResponseSchema,
   companionOverviewSchema,
   companionScriptSchema,
   type BindCompanionDeviceRequest,
+  type Checkin,
+  type CheckinPlan,
+  type CreateCheckinPlanRequest,
+  type UpdateCheckinPlanRequest,
   type CompanionOverview,
   type CompanionScript,
   type RecordCompanionConsentRequest,
@@ -76,4 +83,53 @@ export function setCompanionPaused(clientId: string, paused: boolean): Promise<C
 /** 当前的线下告知书模板（打印用）；平台还没有发布时 404 */
 export function getCompanionNotice(signal?: AbortSignal): Promise<CompanionScript> {
   return apiRequest('/companion/notice', companionScriptSchema, opts(signal));
+}
+
+// ---------- 打卡计划和近 30 天的打卡（规格 2.3、2.8） ----------
+
+const plansUrl = (clientId: string) => `/clients/${encodeURIComponent(clientId)}/checkin-plans`;
+
+export async function listCheckinPlans(
+  clientId: string,
+  signal?: AbortSignal,
+): Promise<CheckinPlan[]> {
+  const { plans } = await apiRequest(
+    plansUrl(clientId),
+    checkinPlanListResponseSchema,
+    opts(signal),
+  );
+  return plans;
+}
+
+export async function createCheckinPlan(
+  clientId: string,
+  body: CreateCheckinPlanRequest,
+): Promise<CheckinPlan> {
+  const { plan } = await apiRequest(plansUrl(clientId), checkinPlanResponseSchema, {
+    method: 'POST',
+    body,
+  });
+  return plan;
+}
+
+export async function updateCheckinPlan(
+  clientId: string,
+  planId: string,
+  body: UpdateCheckinPlanRequest,
+): Promise<CheckinPlan> {
+  const { plan } = await apiRequest(
+    `${plansUrl(clientId)}/${encodeURIComponent(planId)}`,
+    checkinPlanResponseSchema,
+    { method: 'PATCH', body },
+  );
+  return plan;
+}
+
+export async function listCheckins(clientId: string, signal?: AbortSignal): Promise<Checkin[]> {
+  const { checkins } = await apiRequest(
+    `/clients/${encodeURIComponent(clientId)}/checkins`,
+    checkinListResponseSchema,
+    opts(signal),
+  );
+  return checkins;
 }

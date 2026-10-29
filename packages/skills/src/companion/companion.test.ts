@@ -119,6 +119,13 @@ describe('输出检查', () => {
     );
   });
 
+  it('问自己今天吃没吃药是打卡情况，不是用药问题；问药怎么吃仍转交', () => {
+    expect(preCheckCompanionInput('我今天早上药吃了吗').medical).toBeNull();
+    expect(preCheckCompanionInput('药吃过了吗').medical).toBeNull();
+    expect(preCheckCompanionInput('这个药饭后吃了吗会不会伤胃').medical).toBe('medication');
+    expect(preCheckCompanionInput('降压药吃了没').medical).toBe('medication');
+  });
+
   it('问方案里的盐量不是用药问题', () => {
     expect(preCheckCompanionInput('健管师说我一天能吃多少盐来着').medical).toBeNull();
     expect(preCheckCompanionInput('这个药一天吃多少').medical).toBe('medication');

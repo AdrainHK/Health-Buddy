@@ -1,4 +1,10 @@
-import { DRUG_NAMES, findBannedTerms, normalizeForCompliance } from '@health-buddy/shared';
+import {
+  COMPANION_SCRIPT_PLACEHOLDERS,
+  DRUG_NAMES,
+  findBannedTerms,
+  normalizeForCompliance,
+  type CompanionScriptKind,
+} from '@health-buddy/shared';
 
 /**
  * 面向客户说出口的话（面谈提纲的问题）的确定性措辞检查（M2 规格 2.8）。
@@ -881,11 +887,12 @@ export function checkCompanionScript(kind: string, text: string): CompanionScrip
   }
   issues.push(...missingRequired(kind, text));
   const placeholders = [...text.matchAll(/\{[^}]*\}|[{}]/g)];
-  const expected = kind === 'reminder_measurement' ? ['{metric}'] : [];
+  const placeholder = COMPANION_SCRIPT_PLACEHOLDERS[kind as CompanionScriptKind];
+  const expected = placeholder ? [placeholder] : [];
   if (placeholders.map((m) => m[0]).join() !== expected.join()) {
     issues.push({
       category: 'placeholder',
-      term: placeholders.map((m) => m[0]).join('') || '{metric}',
+      term: placeholders.map((m) => m[0]).join('') || (placeholder ?? ''),
       index: placeholders[0]?.index ?? 0,
     });
   }

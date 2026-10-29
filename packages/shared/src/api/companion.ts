@@ -119,6 +119,11 @@ export const COMPANION_SCRIPT_KINDS = [
   'memory_forgotten',
   'memory_forget_confirm',
   'memory_forgotten_all',
+  // 第 5 步（规格 2.3）：打卡的复述确认、记下、请再说一遍
+  'checkin_confirm_reading',
+  'checkin_recorded',
+  'checkin_retry',
+  'checkin_noted',
 ] as const;
 export const companionScriptKindSchema = z.enum(COMPANION_SCRIPT_KINDS);
 export type CompanionScriptKind = z.infer<typeof companionScriptKindSchema>;
@@ -247,7 +252,8 @@ export function companionStatusOf(
 /**
  * 固定话术的初始版本（规格 2.2–2.5、Q5、Q22）：**候选，待产品负责人和医学、心理顾问审定**，
  * 平台管理员可以在后台改。迁移 0024 写入第 1 版，有测试对照。
- * reminder_measurement 里的 {metric} 由后端换成测量项目的名称（血压、血糖等）。
+ * reminder_measurement 里的 {metric} 由后端换成测量项目的名称（血压、血糖等）；
+ * checkin_confirm_reading 里的 {reading} 换成客户报的数值（“高压一百三十二，低压八十六”）。
  * 告知书模板没有初始版本：正文由法务和产品负责人提供（N4）。
  */
 export const COMPANION_DEFAULT_SCRIPTS: Readonly<
@@ -271,7 +277,18 @@ export const COMPANION_DEFAULT_SCRIPTS: Readonly<
   memory_forgotten: '好的，这件事我不记了。',
   memory_forget_confirm: '您是要我把记住的您的事全都忘掉吗？是的话请再说一遍“全都忘掉”。',
   memory_forgotten_all: '好的，您的事我都不记了。',
+  checkin_confirm_reading: '您说的是{reading}，对吗？',
+  checkin_recorded: '记下了，我会告诉您的健管师。',
+  checkin_retry: '我没记清楚，您再说一遍数好吗？',
+  checkin_noted: '好的，记下了。',
 };
+
+/** 话术里的占位符（只有这两段有，由后端替换后再念；平台保存时检查不能删） */
+export const COMPANION_SCRIPT_PLACEHOLDERS: Readonly<Partial<Record<CompanionScriptKind, string>>> =
+  {
+    reminder_measurement: '{metric}',
+    checkin_confirm_reading: '{reading}',
+  };
 
 /** 转交的类别（规格 2.4） */
 export const COMPANION_HANDOFF_CATEGORIES = [
