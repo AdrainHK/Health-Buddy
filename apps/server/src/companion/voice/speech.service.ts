@@ -3,12 +3,15 @@ import {
   LlmGateway,
   type CallContext,
   type GatewayLogger,
+  type GatewayRequest,
   type Provider,
+  type StructuredResult,
   type ProviderName,
   type UsageRecord,
 } from '@health-buddy/ai-engine';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import type { z } from 'zod';
 import type { CompanionScriptKind, CompanionVoiceSpeed } from '@health-buddy/shared';
 import { LLM_PROVIDERS } from '../../ai/gateway.provider.js';
 import { APP_CONFIG, type AppConfig } from '../../config.js';
@@ -33,7 +36,8 @@ const VOICE_INSTRUCTIONS = '用普通话，语气温和亲切，吐字清楚，�
 const CACHE_LIMIT = 200;
 
 /**
- * 伴侣的语音识别和合成（M6 规格 3.1）：经大模型网关（speech_to_text、text_to_speech 两个用途），
+ * 伴侣的模型调用（M6 规格 3.1、5.1）：对话和后台整理（companion）、语音识别和合成
+ * （speech_to_text、text_to_speech），都经大模型网关，
  * 计量记在设备上。固定话术的合成结果按“种类、版本、语速”缓存在内存里，同一句不重复合成。
  * 音频、识别出的文字、合成的文字都不进日志。
  */
@@ -73,6 +77,21 @@ export class CompanionSpeech {
       : createGateway<DeviceCallContext>(config.llm, options);
   }
 
+  /** 福宝的对话和后台整理（用途 companion，结构化输出），计量记在设备上 */
+  completeStructured<S extends z.ZodType>(
+    deviceId: string,
+    request: Omit<GatewayRequest, 'responseFormat' | 'route'>,
+    format: { name: string; schema: S },
+    signal?: AbortSignal,
+  ): Promise<StructuredResult<z.output<S>>> {
+    return this.gateway.completeStructured(
+      ctxOf(deviceId),
+      { ...request, route: 'companion' },
+      format,
+      signal,
+    );
+  }
+
   /** 设备上行的 Opus 帧 → 文字 */
   async transcribe(deviceId: string, frames: Uint8Array[], signal?: AbortSignal): Promise<string> {
     const audio = muxOggOpus(frames, UPLINK);
@@ -95,7 +114,8 @@ export class CompanionSpeech {
       ctxOf(deviceId),
       {
         route: 'text_to_speech',
-        text,
+        // 急救电话念成“幺二零”（规格 2.10），屏幕和聊天记录里仍是 120
+        text: spokenForm(text),
         speed: SPEED[speed],
         instructions: VOICE_INSTRUCTIONS,
       },
@@ -124,6 +144,11 @@ export class CompanionSpeech {
     }
     return pending;
   }
+}
+
+/** 念出来的写法：120 念“幺二零”，不念“一百二十” */
+export function spokenForm(text: string): string {
+  return text.replace(/(?<!\d)120(?!\d)/g, '幺二零');
 }
 
 function ctxOf(deviceId: string): DeviceCallContext {

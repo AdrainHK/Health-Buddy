@@ -722,6 +722,11 @@ export interface Database {
   companion_consents: CompanionConsentsTable;
   companion_scripts: CompanionScriptsTable;
   companion_deliveries: CompanionDeliveriesTable;
+  companion_sessions: CompanionSessionsTable;
+  companion_messages: CompanionMessagesTable;
+  companion_memories: CompanionMemoriesTable;
+  companion_handoffs: CompanionHandoffsTable;
+  companion_alerts: CompanionAlertsTable;
 }
 
 // ---------- M5 方案和随访（迁移 0020） ----------
@@ -991,4 +996,73 @@ export interface CompanionDeliveriesTable {
   superseded_at: ColumnType<Date | null, undefined, never>;
   withdrawn_at: ColumnType<Date | null, undefined, never>;
   withdrawn_by: ColumnType<string | null, undefined, never>;
+}
+
+// ---------- M6 福宝对话（迁移 0027） ----------
+
+export interface CompanionSessionsTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: ColumnType<string, string, never>;
+  device_id: ColumnType<string, string, never>;
+  started_at: ColumnType<Date, undefined, never>;
+  ended_at: ColumnType<Date | null, undefined, Date>;
+  turns: ColumnType<number, undefined, number>;
+  summary: ColumnType<string | null, undefined, string | null>;
+  summarized_at: ColumnType<Date | null, undefined, Date>;
+}
+
+export type CompanionMessageSignal =
+  'crisis' | 'emergency' | 'handoff' | 'fallback' | 'rate_limited' | 'forget';
+
+export interface CompanionMessagesTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: ColumnType<string, string, never>;
+  session_id: ColumnType<string, string, never>;
+  role: ColumnType<'client' | 'companion', 'client' | 'companion', never>;
+  kind: ColumnType<'chat' | 'script', 'chat' | 'script', never>;
+  script_kind: ColumnType<string | null, string | null | undefined, never>;
+  /** 识别出的文字或福宝说的话，含健康内容，不进日志 */
+  content: ColumnType<string, string, never>;
+  signals: ColumnType<CompanionMessageSignal[], CompanionMessageSignal[] | undefined, never>;
+  created_at: ColumnType<Date, undefined, never>;
+  purge_after: ColumnType<Date, undefined, never>;
+}
+
+export interface CompanionMemoriesTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: ColumnType<string, string, never>;
+  text: ColumnType<string, string, never>;
+  source_session_id: ColumnType<string | null, string | null | undefined, never>;
+  created_at: ColumnType<Date, undefined, never>;
+  purge_after: ColumnType<Date | null, undefined, never>;
+}
+
+export interface CompanionHandoffsTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: ColumnType<string, string, never>;
+  message_id: ColumnType<string | null, string | null | undefined, never>;
+  category: ColumnType<
+    'medication' | 'symptom' | 'diagnosis' | 'exam' | 'other',
+    'medication' | 'symptom' | 'diagnosis' | 'exam' | 'other',
+    never
+  >;
+  question: ColumnType<string, string, never>;
+  trigger: ColumnType<'rule' | 'model' | 'fallback', 'rule' | 'model' | 'fallback', never>;
+  status: ColumnType<'open' | 'replied' | 'closed_by_call' | 'closed', undefined, never>;
+  created_at: ColumnType<Date, undefined, never>;
+}
+
+export interface CompanionAlertsTable extends ClientScoped {
+  id: Generated<string>;
+  client_id: ColumnType<string, string, never>;
+  message_id: ColumnType<string | null, string | null | undefined, never>;
+  category: ColumnType<
+    'crisis' | 'emergency' | 'critical_value',
+    'crisis' | 'emergency' | 'critical_value',
+    never
+  >;
+  trigger: ColumnType<'keyword' | 'model' | 'threshold', 'keyword' | 'model' | 'threshold', never>;
+  script_version: ColumnType<number | null, number | null | undefined, never>;
+  status: ColumnType<'open' | 'handled', undefined, never>;
+  created_at: ColumnType<Date, undefined, never>;
 }

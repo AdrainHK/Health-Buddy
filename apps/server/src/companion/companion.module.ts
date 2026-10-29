@@ -4,7 +4,10 @@ import { CompanionAdminController, CompanionController } from './companion.contr
 import { CompanionRepository } from './companion.repository.js';
 import { DeviceAuthService } from './device-auth.service.js';
 import { DeviceOtaController } from './device-ota.controller.js';
+import { CompanionPurgeService } from './voice/companion-purge.service.js';
 import { DeviceSessionRepository } from './voice/device-session.repository.js';
+import { DialogueRepository } from './voice/dialogue.repository.js';
+import { CompanionDialogue } from './voice/dialogue.service.js';
 import { CompanionSpeech } from './voice/speech.service.js';
 import { VoiceGateway } from './voice/voice-gateway.js';
 
@@ -20,6 +23,9 @@ import { VoiceGateway } from './voice/voice-gateway.js';
     DeviceAuthService,
     DeviceSessionRepository,
     CompanionSpeech,
+    DialogueRepository,
+    CompanionDialogue,
+    CompanionPurgeService,
     VoiceGateway,
   ],
 })

@@ -110,3 +110,28 @@ export async function deviceSettings(
   `.execute(trx);
   return rows[0];
 }
+
+export interface DeviceProfileRow {
+  name_for_client: string | null;
+  age_band: string | null;
+  next_visit_on: string | null;
+  next_visit_method: 'phone' | 'wechat' | 'in_person' | 'video' | null;
+}
+
+/** 设备会话里读福宝能读的客户资料（规格 2.6，迁移 0027）；只在 withDevice 事务里调用 */
+export async function deviceProfile(trx: TenantTransaction): Promise<DeviceProfileRow | undefined> {
+  const { rows } = await sql<DeviceProfileRow>`
+    select name_for_client, age_band, to_char(next_visit_on, 'YYYY-MM-DD') as next_visit_on,
+      next_visit_method
+    from companion_device_profile()
+  `.execute(trx);
+  return rows[0];
+}
+
+/** 定时清理到期的聊天文字和记忆（N19、Q5）；没有租户上下文时调用 */
+export async function purgeCompanionData(db: Db): Promise<{ messages: number; memories: number }> {
+  const { rows } = await sql<{ messages: number; memories: number }>`
+    select messages, memories from companion_purge()
+  `.execute(db);
+  return rows[0] ?? { messages: 0, memories: 0 };
+}

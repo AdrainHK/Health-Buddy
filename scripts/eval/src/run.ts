@@ -16,10 +16,14 @@ import {
   type VisitRecordEvalCase,
   type VisitScriptEvalCase,
   type ChatTranscriptionEvalCase,
+  type CompanionEvalCase,
+  type CompanionMemoryEvalCase,
+  type CompanionSpeechEvalCase,
 } from '@health-buddy/skills';
 import type { ExpertEvalCase, RoutingEvalCase, SynthesisEvalCase } from '@health-buddy/experts';
 import { runAskOnce } from './ask.js';
 import { runChatTranscriptionOnce } from './chat-transcription.js';
+import { runCompanionMemoryOnce, runCompanionOnce, runCompanionSpeechOnce } from './companion.js';
 import { runExpertOnce, runRoutingOnce, runSynthesisOnce } from './expert.js';
 import { runExtractionOnce } from './extraction.js';
 import { describeError, gradeRecentSummary, type Finding } from './graders.js';
@@ -300,6 +304,49 @@ export async function runVisitScheduleEval(options: {
     Array.from(
       { length: options.runs },
       (_, i) => () => runVisitScheduleOnce(options.gateway, EVAL_CTX, options.provider, c, i + 1),
+    ),
+  );
+  return runPool(jobs, 3);
+}
+
+/** 福宝对话和记忆整理（M6 规格 5.5，--suite companion） */
+export async function runCompanionEval(options: {
+  gateway: LlmGateway;
+  provider: ProviderName;
+  cases: readonly CompanionEvalCase[];
+  memoryCases: readonly CompanionMemoryEvalCase[];
+  runs: number;
+  useJudge: boolean;
+}): Promise<RunResult[]> {
+  const { gateway, provider, runs, useJudge } = options;
+  const jobs = [
+    ...options.cases.flatMap((c) =>
+      Array.from(
+        { length: runs },
+        (_, i) => () => runCompanionOnce(gateway, EVAL_CTX, provider, c, i + 1, useJudge),
+      ),
+    ),
+    ...options.memoryCases.flatMap((c) =>
+      Array.from(
+        { length: runs },
+        (_, i) => () => runCompanionMemoryOnce(gateway, EVAL_CTX, provider, c, i + 1),
+      ),
+    ),
+  ];
+  return runPool(jobs, 4);
+}
+
+/** 福宝语音：合成后识别（M6 规格 5.5，--suite companion-speech） */
+export async function runCompanionSpeechEval(options: {
+  gateway: LlmGateway;
+  provider: ProviderName;
+  cases: readonly CompanionSpeechEvalCase[];
+  runs: number;
+}): Promise<RunResult[]> {
+  const jobs = options.cases.flatMap((c) =>
+    Array.from(
+      { length: options.runs },
+      (_, i) => () => runCompanionSpeechOnce(options.gateway, EVAL_CTX, options.provider, c, i + 1),
     ),
   );
   return runPool(jobs, 3);

@@ -5,12 +5,8 @@ import { WebSocketServer } from 'ws';
 import { DeviceAuthService } from '../device-auth.service.js';
 import { DEVICE_WS_PATH } from '../device-ota.controller.js';
 import { DeviceSessionRepository } from './device-session.repository.js';
-import {
-  DEFAULT_VOICE_OPTIONS,
-  DeviceSession,
-  fixedResponder,
-  type VoiceOptions,
-} from './device-session.js';
+import { DEFAULT_VOICE_OPTIONS, DeviceSession, type VoiceOptions } from './device-session.js';
+import { CompanionDialogue } from './dialogue.service.js';
 import { CompanionSpeech } from './speech.service.js';
 
 /** 测试用：替换语音会话的时间参数（帧间隔、超时、端点检测） */
@@ -35,6 +31,7 @@ export class VoiceGateway implements OnModuleDestroy {
     private readonly auth: DeviceAuthService,
     private readonly repo: DeviceSessionRepository,
     private readonly speech: CompanionSpeech,
+    private readonly dialogue: CompanionDialogue,
     @Optional() @Inject(VOICE_OPTIONS) options?: Partial<VoiceOptions>,
   ) {
     this.options = { ...DEFAULT_VOICE_OPTIONS, ...options };
@@ -82,7 +79,7 @@ export class VoiceGateway implements OnModuleDestroy {
       const session = new DeviceSession(ws, conn, {
         repo: this.repo,
         speech: this.speech,
-        responder: fixedResponder,
+        dialogue: this.dialogue,
         logger: this.logger,
         options: this.options,
       });

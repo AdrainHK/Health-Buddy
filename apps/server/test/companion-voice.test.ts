@@ -1,12 +1,13 @@
-import { MockProvider } from '@health-buddy/ai-engine';
+import { MockProvider, type MockScript } from '@health-buddy/ai-engine';
 import { COMPANION_DEFAULT_SCRIPTS } from '@health-buddy/shared';
 import type { INestApplication } from '@nestjs/common';
 import { sql } from 'kysely';
 import { createHmac, randomBytes } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { DOWNLINK, encodePcm, UPLINK } from '../src/companion/voice/audio.js';
+import { CompanionDialogue } from '../src/companion/voice/dialogue.service.js';
 import { demuxOggOpus, muxOggOpus } from '../src/companion/voice/ogg.js';
 import { DB } from '../src/db/db.provider.js';
 import { withDevice, withTenant, type Db } from '../src/db/database.js';
@@ -37,6 +38,9 @@ const TTS_OGG = muxOggOpus(encodePcm(tone(500, 24000, 3000), 24000, 20), {
   frameDurationMs: 20,
 });
 
+/** 每个用例结束时关掉还开着的连接，等会话结束整理写完，再进下一个用例（避免和重置数据并发） */
+const OPEN_DEVICES = new Set<FakeDevice>();
+
 type Received = { text: Record<string, unknown> } | { binary: Buffer };
 
 /** 设备模拟：连上 /ws/device，收到的消息按顺序排队 */
@@ -46,6 +50,7 @@ class FakeDevice {
   closed = false;
 
   constructor(readonly ws: WebSocket) {
+    OPEN_DEVICES.add(this);
     ws.on('message', (data, isBinary) => {
       const buf = data as Buffer;
       this.received.push(
@@ -71,7 +76,10 @@ class FakeDevice {
   async until(check: () => boolean, label: string, timeoutMs = 5000): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     while (!check()) {
-      if (Date.now() > deadline) throw new Error(`timed out waiting for ${label}`);
+      if (Date.now() > deadline)
+        throw new Error(
+          `timed out waiting for ${label}: ${JSON.stringify(this.texts().map((t) => [t.type, t.state]))}`,
+        );
       await new Promise<void>((r) => {
         this.waiters.push(r);
         setTimeout(r, 50);
@@ -112,7 +120,12 @@ class FakeDevice {
 
 describe('伴侣语音通道（M6 第 3 步）', () => {
   const owner = ownerDb();
-  const mock = new MockProvider('openai');
+  /** 模拟模型：福宝的回答和后台整理（结构化输出），按请求的格式名给出 */
+  const llm: MockScript = {};
+  const mock = new MockProvider('openai', llm);
+  const REPLY = '记下了，我会告诉您的健管师。';
+  let modelReply: Record<string, unknown>;
+  let memoryOutput: { memories: string[]; summary: string };
   let app: INestApplication;
   let port: number;
   let f: Fixtures;
@@ -227,6 +240,16 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
     await app.listen(0, '127.0.0.1');
     port = (app.getHttpServer().address() as AddressInfo).port;
   });
+  afterEach(async () => {
+    for (const d of OPEN_DEVICES) {
+      if (!d.closed) d.ws.close();
+      await d.until(() => d.closed, 'close');
+    }
+    OPEN_DEVICES.clear();
+    // 服务端处理断开是异步的：等语音会话都结束，再等结束整理写完
+    await new Promise((r) => setTimeout(r, 50));
+    await app.get(CompanionDialogue).settled();
+  });
   afterAll(async () => {
     await app.close();
     await owner.destroy();
@@ -235,6 +258,17 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
     f = await seedFixtures(owner);
     transcript = '我今天走了五千步';
     mock.speechCalls.length = 0;
+    mock.calls.length = 0;
+    modelReply = {
+      reply: REPLY,
+      handoff: null,
+      crisisSignal: false,
+      emergencySignal: false,
+      endSession: false,
+    };
+    memoryOutput = { memories: ['客户的孙子下周放假回家'], summary: '聊了孙子放假回家。' };
+    llm.respond = (req) =>
+      JSON.stringify(req.responseFormat?.name === 'companion_memory' ? memoryOutput : modelReply);
     mock.speech = { transcript: () => transcript, synthesize: () => TTS_OGG };
     platform = await loginAs(app, f.users.platform.email);
     a1 = await loginAs(app, f.users.managerA1.email);
@@ -271,6 +305,10 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
     // 0.5 秒 = 25 个 20 ms 帧 → 9 个 60 ms 帧（最后一帧补静音）
     expect(oggToDownlinkFrames(TTS_OGG)).toHaveLength(Math.ceil(500 / DOWNLINK.frameDurationMs));
     expect(() => demuxOggOpus(Buffer.from('not an ogg file'))).toThrow('invalid ogg page');
+    // 急救电话念成“幺二零”（规格 2.10）
+    const { spokenForm } = await import('../src/companion/voice/speech.service.js');
+    expect(spokenForm('请马上拨打 120 或让家人送医。')).toBe('请马上拨打 幺二零 或让家人送医。');
+    expect(spokenForm('高压 1200')).toBe('高压 1200');
   });
 
   it('配置接口：没有序列号、序列号不存在、未绑定都不发令牌；已绑定的设备拿到挑战和令牌', async () => {
@@ -351,11 +389,8 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
       session_id: hello!.session_id,
       text: '我今天走了五千步',
     });
-    expect(reply.texts[2]).toMatchObject({
-      type: 'tts',
-      state: 'sentence_start',
-      text: COMPANION_DEFAULT_SCRIPTS.daily_intro,
-    });
+    // 开场白里已经说过“不是医生”，今天不再念 daily_intro；回答来自模型
+    expect(reply.texts[2]).toMatchObject({ type: 'tts', state: 'sentence_start', text: REPLY });
     expect(reply.frames.length).toBeGreaterThan(0);
 
     // 识别请求：Ogg 文件、中文；合成按客户的语速（默认偏慢）
@@ -375,9 +410,7 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
       .where('device_id', 'is not', null)
       .execute();
     expect(usage.filter((u) => u.route === 'speech_to_text')).toHaveLength(1);
-    expect(
-      usage.map((u) => u.route).every((r) => r === 'speech_to_text' || r === 'text_to_speech'),
-    ).toBe(true);
+    expect(usage.filter((u) => u.route === 'companion')).toHaveLength(1);
     expect(usage.every((u) => u.user_id === null && u.operator_id === f.operatorA)).toBe(true);
     for (const ctx of [
       {
@@ -421,9 +454,7 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
     second.send({ type: 'listen', state: 'start', mode: 'auto' });
     second.speak([...SPEECH_FRAMES, ...SILENCE_FRAMES]);
     const reply = await second.utterance(1);
-    expect(reply.texts.find((t) => t.state === 'sentence_start')!.text).toBe(
-      COMPANION_DEFAULT_SCRIPTS.daily_intro,
-    );
+    expect(reply.texts.find((t) => t.state === 'sentence_start')!.text).toBe(REPLY);
     second.speak(SILENCE_FRAMES);
     second.send({ type: 'listen', state: 'start', mode: 'auto' });
     second.speak([...SPEECH_FRAMES, ...SILENCE_FRAMES]);
@@ -431,7 +462,8 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
     // 每句话术最多合成一次（之后用缓存）
     const tts = mock.speechCalls
       .filter((c) => c.request.route === 'text_to_speech')
-      .map((c) => (c.request as { text: string }).text);
+      .map((c) => (c.request as { text: string }).text)
+      .filter((text) => text !== REPLY);
     expect(new Set(tts).size).toBe(tts.length);
     expect(second.texts().filter((t) => t.text === COMPANION_DEFAULT_SCRIPTS.intro)).toEqual([]);
     second.ws.close();
@@ -695,5 +727,400 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
       sql`select secret_encrypted from companion_devices`.execute(appDb()),
     ).rejects.toThrow();
     expect(tokenB).not.toBe(tokenA);
+  });
+
+  // ---------- 第 4 步：福宝对话（规格 2.2、2.4–2.6、5.3、5.4） ----------
+
+  /** 说一句话，等这一轮念完，返回这一轮的 sentence_start 文字 */
+  async function turn(device: FakeDevice, text: string): Promise<string[]> {
+    const stops = () => device.texts().filter((t) => t.type === 'tts' && t.state === 'stop').length;
+    const n = stops() + 1;
+    transcript = text;
+    device.send({ type: 'listen', state: 'start', mode: 'auto' });
+    device.speak([...SPEECH_FRAMES, ...SILENCE_FRAMES]);
+    const out = await device.utterance(n);
+    return out.texts.filter((t) => t.state === 'sentence_start').map((t) => String(t.text));
+  }
+  const waitFor = async (check: () => Promise<boolean>) => {
+    for (let i = 0; i < 100 && !(await check()); i++) await new Promise((r) => setTimeout(r, 50));
+  };
+  const exists = (q: Promise<unknown>) => q.then(Boolean);
+  const companionCalls = () => mock.calls.filter((c) => c.request.route === 'companion');
+  const deviceId = async (serial: string) =>
+    (
+      await owner
+        .selectFrom('companion_devices')
+        .select('id')
+        .where('serial_no', '=', serial)
+        .executeTakeFirstOrThrow()
+    ).id as string;
+
+  it('用药、症状、诊断类问题：念转交话术、写转交，不调用模型；模型判断要转交时同样', async () => {
+    const device = await open(await boot(SERIAL_A, keys.a));
+    await device.utterance(1);
+    expect(await turn(device, '我这个降压药能不能停')).toEqual([COMPANION_DEFAULT_SCRIPTS.handoff]);
+    expect(companionCalls()).toHaveLength(0);
+    modelReply.handoff = 'symptom';
+    modelReply.reply = '好的，我明白了。';
+    expect(await turn(device, '最近总觉得没精神')).toEqual([COMPANION_DEFAULT_SCRIPTS.handoff]);
+    const handoffs = await owner
+      .selectFrom('companion_handoffs')
+      .select(['category', 'trigger', 'question', 'status', 'manager_id', 'client_id'])
+      .orderBy('created_at')
+      .execute();
+    expect(handoffs).toEqual([
+      {
+        category: 'medication',
+        trigger: 'rule',
+        question: '我这个降压药能不能停',
+        status: 'open',
+        manager_id: f.users.managerA1.id,
+        client_id: f.clients.a1[0],
+      },
+      expect.objectContaining({ category: 'symptom', trigger: 'model' }),
+    ]);
+    const messages = await owner
+      .selectFrom('companion_messages')
+      .select(['role', 'kind', 'script_kind', 'content', 'signals'])
+      .where('role', '=', 'client')
+      .orderBy('id')
+      .execute();
+    expect(messages.map((m) => m.signals)).toEqual([['handoff'], ['handoff']]);
+    device.ws.close();
+  });
+
+  it('输出检查不通过或模型出错：念兜底话术、写转交，不念模型的话', async () => {
+    const device = await open(await boot(SERIAL_A, keys.a));
+    await device.utterance(1);
+    modelReply.reply = '您的血压偏高了，要注意。';
+    expect(await turn(device, '我今天量了血压')).toEqual([COMPANION_DEFAULT_SCRIPTS.fallback]);
+    llm.respond = () => 'not json';
+    expect(await turn(device, '今天天气不错')).toEqual([COMPANION_DEFAULT_SCRIPTS.fallback]);
+    const handoffs = await owner.selectFrom('companion_handoffs').select('trigger').execute();
+    expect(handoffs.map((h) => h.trigger)).toEqual(['fallback', 'fallback']);
+    const spoken = await owner
+      .selectFrom('companion_messages')
+      .select('content')
+      .where('role', '=', 'companion')
+      .execute();
+    expect(spoken.map((m) => m.content)).not.toContain('您的血压偏高了，要注意。');
+    device.ws.close();
+  });
+
+  it('危机：先念求助话术、写预警，再念模型的陪伴（危机模式）；模型识别出的急症同样写预警', async () => {
+    const device = await open(await boot(SERIAL_A, keys.a));
+    await device.utterance(1);
+    modelReply.reply = '我在这儿陪着您，请马上给家人打电话。';
+    expect(await turn(device, '活着没什么意思，不想活了')).toEqual([
+      COMPANION_DEFAULT_SCRIPTS.crisis,
+      '我在这儿陪着您，请马上给家人打电话。',
+    ]);
+    expect(companionCalls().at(-1)!.request.system).toContain('求助话术');
+    modelReply.emergencySignal = true;
+    modelReply.reply = '请马上拨打 120。';
+    expect((await turn(device, '我老伴刚才突然倒在地上了'))[0]).toBe(
+      COMPANION_DEFAULT_SCRIPTS.emergency,
+    );
+    const alerts = await owner
+      .selectFrom('companion_alerts')
+      .select(['category', 'trigger', 'script_version', 'status', 'message_id'])
+      .orderBy('created_at')
+      .execute();
+    expect(alerts).toEqual([
+      expect.objectContaining({
+        category: 'crisis',
+        trigger: 'keyword',
+        script_version: 1,
+        status: 'open',
+      }),
+      expect.objectContaining({ category: 'emergency', trigger: 'model', script_version: 1 }),
+    ]);
+    expect(alerts.every((a) => a.message_id !== null)).toBe(true);
+    device.ws.close();
+  });
+
+  it('每天第一次对话先说“不是医生”（N9）；速率超限时念 rate_limited，不调用模型', async () => {
+    const token = await boot(SERIAL_A, keys.a);
+    const first = await open(token);
+    await first.utterance(1);
+    first.ws.close();
+    await first.until(() => first.closed, 'close');
+    // 开场白记成昨天说的
+    await waitFor(() =>
+      exists(
+        owner
+          .selectFrom('companion_messages')
+          .select('id')
+          .where('script_kind', '=', 'intro')
+          .executeTakeFirst(),
+      ),
+    );
+    await owner
+      .updateTable('companion_messages')
+      .set({ created_at: new Date(Date.now() - 36 * 3600_000) })
+      .execute();
+    const device = await open(token);
+    expect(await turn(device, '早上好')).toEqual([COMPANION_DEFAULT_SCRIPTS.daily_intro, REPLY]);
+    expect(await turn(device, '吃过早饭了')).toEqual([REPLY]);
+    const calls = companionCalls().length;
+    const session = await owner
+      .selectFrom('companion_sessions')
+      .select(['id'])
+      .orderBy('started_at', 'desc')
+      .executeTakeFirstOrThrow();
+    for (let i = 0; i < 6; i++) {
+      await owner
+        .insertInto('companion_messages')
+        .values({
+          client_id: f.clients.a1[0],
+          session_id: session.id,
+          role: 'client',
+          kind: 'chat',
+          content: '合成',
+        })
+        .execute();
+    }
+    expect(await turn(device, '再聊一会')).toEqual([COMPANION_DEFAULT_SCRIPTS.rate_limited]);
+    expect(companionCalls()).toHaveLength(calls);
+    device.ws.close();
+  });
+
+  it('“忘掉……”删除对应的记忆；“全都忘掉”先确认一次（N11）', async () => {
+    const memory = (text: string) =>
+      owner.insertInto('companion_memories').values({ client_id: f.clients.a1[0], text }).execute();
+    await memory('客户下周要去北京看孙子');
+    await memory('客户喜欢听京剧');
+    await memory('客户每天早上去公园打太极');
+    const device = await open(await boot(SERIAL_A, keys.a));
+    await device.utterance(1);
+    expect(await turn(device, '把去北京那件事忘掉吧')).toEqual([
+      COMPANION_DEFAULT_SCRIPTS.memory_forgotten,
+    ]);
+    const left = () =>
+      owner.selectFrom('companion_memories').select('text').orderBy('text').execute();
+    expect((await left()).map((m) => m.text)).toEqual([
+      '客户喜欢听京剧',
+      '客户每天早上去公园打太极',
+    ]);
+    expect(await turn(device, '把我的事全都忘掉')).toEqual([
+      COMPANION_DEFAULT_SCRIPTS.memory_forget_confirm,
+    ]);
+    expect(await left()).toHaveLength(2);
+    expect(await turn(device, '对，全都忘掉')).toEqual([
+      COMPANION_DEFAULT_SCRIPTS.memory_forgotten,
+    ]);
+    expect(await left()).toEqual([]);
+    expect(companionCalls()).toHaveLength(0);
+    device.ws.close();
+  });
+
+  it('会话结束后整理记忆和摘要：病名药名不记；下一次对话带上称呼、记忆、摘要，不带姓名', async () => {
+    await a1
+      .patch(`/api/clients/${f.clients.a1[0]}/companion`)
+      .send({ nameForClient: '王阿姨' })
+      .expect(200);
+    memoryOutput = {
+      memories: ['客户的孙子下周放假回家', '客户在吃二甲双胍', '客户有高血压'],
+      summary: '聊了孙子放假回家。',
+    };
+    const token = await boot(SERIAL_A, keys.a);
+    const device = await open(token);
+    await device.utterance(1);
+    modelReply.endSession = true;
+    modelReply.reply = '好的，您忙吧，再见。';
+    expect(await turn(device, '我孙子下周放假，先不聊了')).toEqual(['好的，您忙吧，再见。']);
+    await device.until(() => device.closed, 'end session');
+    await waitFor(async () =>
+      Boolean(
+        await owner
+          .selectFrom('companion_sessions')
+          .select('id')
+          .where('summary', 'is not', null)
+          .executeTakeFirst(),
+      ),
+    );
+    expect(
+      (await owner.selectFrom('companion_memories').select('text').execute()).map((m) => m.text),
+    ).toEqual(['客户的孙子下周放假回家']);
+    const session = await owner
+      .selectFrom('companion_sessions')
+      .select(['turns', 'summary', 'ended_at'])
+      .executeTakeFirstOrThrow();
+    expect(session).toMatchObject({ turns: 1, summary: '聊了孙子放假回家。' });
+    expect(session.ended_at).not.toBeNull();
+
+    modelReply.endSession = false;
+    const again = await open(token);
+    await turn(again, '你好');
+    const system = companionCalls().at(-1)!.request.system!;
+    expect(system).toContain('王阿姨');
+    expect(system).toContain('客户的孙子下周放假回家');
+    expect(system).toContain('聊了孙子放假回家。');
+    const client = await owner
+      .selectFrom('clients')
+      .select('display_name')
+      .where('id', '=', f.clients.a1[0])
+      .executeTakeFirstOrThrow();
+    expect(system).not.toContain(client.display_name);
+    again.ws.close();
+  });
+
+  it('到期清理：聊天文字 180 天、撤回同意后 7 天连同记忆删除；记忆最多 100 条', async () => {
+    const { CompanionPurgeService } =
+      await import('../src/companion/voice/companion-purge.service.js');
+    const device = await open(await boot(SERIAL_A, keys.a));
+    await device.utterance(1);
+    await turn(device, '今天天气不错');
+    device.ws.close();
+    await device.until(() => device.closed, 'close');
+    const purge = app.get(CompanionPurgeService);
+    expect(await purge.run()).toEqual({ messages: 0, memories: 0 });
+    const purgeAfter = await owner.selectFrom('companion_messages').select('purge_after').execute();
+    expect(purgeAfter.every((m) => m.purge_after.getTime() > Date.now() + 179 * 86400_000)).toBe(
+      true,
+    );
+    for (let i = 0; i < 101; i++) {
+      await owner
+        .insertInto('companion_memories')
+        .values({ client_id: f.clients.a1[0], text: `合成记忆 ${i}` })
+        .execute();
+    }
+    expect(await owner.selectFrom('companion_memories').select('id').execute()).toHaveLength(100);
+    await a1
+      .post(`/api/clients/${f.clients.a1[0]}/companion/consents/revoke?tz=Asia/Shanghai`)
+      .send({ revokedOn: TODAY })
+      .expect(200);
+    const scheduled = await owner.selectFrom('companion_memories').select('purge_after').execute();
+    expect(
+      scheduled.every(
+        (m) => m.purge_after !== null && m.purge_after.getTime() < Date.now() + 8 * 86400_000,
+      ),
+    ).toBe(true);
+    await owner
+      .updateTable('companion_messages')
+      .set({ purge_after: new Date(Date.now() - 1000) })
+      .execute();
+    await owner
+      .updateTable('companion_memories')
+      .set({ purge_after: new Date(Date.now() - 1000) })
+      .execute();
+    const purged = await purge.run();
+    expect(purged.memories).toBe(100);
+    expect(purged.messages).toBeGreaterThan(0);
+    expect(await owner.selectFrom('companion_messages').select('id').execute()).toEqual([]);
+  });
+
+  it('跨租户：设备、健管师只能读写自己客户的会话、聊天、记忆、转交、预警', async () => {
+    const device = await open(await boot(SERIAL_A, keys.a));
+    await device.utterance(1);
+    await turn(device, '我是不是得了糖尿病');
+    await turn(device, '不想活了');
+    device.ws.close();
+    await device.until(() => device.closed, 'close');
+    // 等会话结束后的后台整理写完
+    await waitFor(() =>
+      exists(
+        owner
+          .selectFrom('companion_sessions')
+          .select('id')
+          .where('summarized_at', 'is not', null)
+          .executeTakeFirst(),
+      ),
+    );
+    await owner
+      .insertInto('companion_memories')
+      .values({ client_id: f.clients.a1[0], text: '客户喜欢听京剧' })
+      .execute();
+    const idA = await deviceId(SERIAL_A);
+    const idB = await deviceId(SERIAL_B);
+    const tables = [
+      'companion_sessions',
+      'companion_messages',
+      'companion_memories',
+      'companion_handoffs',
+      'companion_alerts',
+    ] as const;
+    const count = async (read: (t: (typeof tables)[number]) => Promise<unknown[]>) =>
+      Object.fromEntries(await Promise.all(tables.map(async (t) => [t, (await read(t)).length])));
+    const ownerCounts = await count((t) => owner.selectFrom(t).select('id').execute());
+    expect(Object.values(ownerCounts).every((n) => (n as number) > 0)).toBe(true);
+    // 设备 B（客户 B，另一个运营商）读不到客户 A 的任何行
+    expect(
+      await count((t) =>
+        withDevice(appDb(), { deviceId: idB }, (trx) => trx.selectFrom(t).select('id').execute()),
+      ),
+    ).toEqual(Object.fromEntries(tables.map((t) => [t, 0])));
+    // 设备 A 读得到自己客户的
+    expect(
+      await count((t) =>
+        withDevice(appDb(), { deviceId: idA }, (trx) => trx.selectFrom(t).select('id').execute()),
+      ),
+    ).toEqual(ownerCounts);
+    // 同协会的其他健管师、机构管理员、运营商、平台都读不到；服务的健管师读得到
+    const ctxOf = (
+      u: { id: string },
+      role: 'manager' | 'org_admin' | 'operator_admin' | 'platform_admin',
+      operatorId: string | null,
+      orgId: string | null,
+    ) => ({ userId: u.id, role, operatorId, orgId });
+    for (const ctx of [
+      ctxOf(f.users.managerA2, 'manager', f.operatorA, f.orgA),
+      ctxOf(f.users.managerA3, 'manager', f.operatorA, f.orgA2),
+      ctxOf(f.users.managerB1, 'manager', f.operatorB, f.orgB),
+      ctxOf(f.users.orgAdminA, 'org_admin', f.operatorA, f.orgA),
+      ctxOf(f.users.operatorAdminA, 'operator_admin', f.operatorA, null),
+      ctxOf(f.users.platform, 'platform_admin', null, null),
+    ]) {
+      expect(
+        await count((t) =>
+          withTenant(appDb(), ctx, (trx) => trx.selectFrom(t).select('id').execute()),
+        ),
+      ).toEqual(Object.fromEntries(tables.map((t) => [t, 0])));
+    }
+    expect(
+      await count((t) =>
+        withTenant(appDb(), ctxOf(f.users.managerA1, 'manager', f.operatorA, f.orgA), (trx) =>
+          trx.selectFrom(t).select('id').execute(),
+        ),
+      ),
+    ).toEqual(ownerCounts);
+    // 设备 B 不能往客户 A 名下写，也不能删客户 A 的记忆
+    await expect(
+      withDevice(appDb(), { deviceId: idB }, (trx) =>
+        trx
+          .insertInto('companion_memories')
+          .values({ client_id: f.clients.a1[0], text: '冒充' })
+          .execute(),
+      ),
+    ).rejects.toThrow();
+    await withDevice(appDb(), { deviceId: idB }, (trx) =>
+      trx.deleteFrom('companion_memories').execute(),
+    );
+    expect(await owner.selectFrom('companion_memories').select('id').execute()).toHaveLength(
+      ownerCounts.companion_memories as number,
+    );
+    // 健管师不能写对话、转交、预警（只经设备会话）
+    await expect(
+      withTenant(appDb(), ctxOf(f.users.managerA1, 'manager', f.operatorA, f.orgA), (trx) =>
+        trx
+          .insertInto('companion_alerts')
+          .values({ client_id: f.clients.a1[0], category: 'crisis', trigger: 'keyword' })
+          .execute(),
+      ),
+    ).rejects.toThrow();
+    // 客户资料函数只给设备会话
+    const { rows } = await withTenant(
+      appDb(),
+      ctxOf(f.users.managerA1, 'manager', f.operatorA, f.orgA),
+      (trx) => sql`select * from companion_device_profile()`.execute(trx),
+    );
+    expect(rows).toEqual([]);
+    // 暂停后设备读写不了任何对话数据
+    await a1.post(`/api/clients/${f.clients.a1[0]}/companion/pause`).expect(200);
+    expect(
+      await count((t) =>
+        withDevice(appDb(), { deviceId: idA }, (trx) => trx.selectFrom(t).select('id').execute()),
+      ),
+    ).toEqual(Object.fromEntries(tables.map((t) => [t, 0])));
   });
 });

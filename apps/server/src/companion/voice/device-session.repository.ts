@@ -63,6 +63,25 @@ export class DeviceSessionRepository {
     });
   }
 
+  /** 全部念出来的固定话术的当前版本（不含告知书模板），预合成用 */
+  scripts(deviceId: string): Promise<Script[]> {
+    return withDevice(this.db, { deviceId }, async (trx) => {
+      const rows = await trx
+        .selectFrom('companion_scripts')
+        .distinctOn('kind')
+        .select(['kind', 'version', 'text'])
+        .where('kind', '!=', 'notice')
+        .orderBy('kind')
+        .orderBy('version', 'desc')
+        .execute();
+      return rows.map((r) => ({
+        kind: r.kind as CompanionScriptKind,
+        version: r.version,
+        text: r.text,
+      }));
+    });
+  }
+
   seen(deviceId: string): Promise<void> {
     return markDeviceSeen(this.db, deviceId);
   }

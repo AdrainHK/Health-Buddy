@@ -11,6 +11,7 @@ import {
   describeReportClient,
   describeTwin,
   detectCrisisKeywords,
+  detectEmergencyKeywords,
   knownNumbers,
   redactClientIdentity,
   redactTwin,
@@ -20,13 +21,8 @@ import {
   type ClientSnapshot,
 } from '@health-buddy/skills';
 
-/** 疑似急症关键词：不依赖模型，模型拒答时也能提示健管师 */
-const EMERGENCY_KEYWORDS =
-  /胸痛|胸口.{0,2}痛|胸闷痛|胸闷.{0,6}(?:出汗|喘|晕)|晕厥|昏厥|晕倒|昏迷|意识不清|意识模糊|叫不醒|呼吸困难|喘不上气|口角歪斜|说话不清|口齿不清|言语不清|一侧肢体(?:无力|麻木)|半边身子(?:无力|麻|不能动)|单侧肢体(?:无力|麻木)|抽搐|剧烈头痛|头痛欲裂|大汗淋漓|冒冷汗|出冷汗|大汗|低血糖昏迷|呕血|吐血|黑便|便血不止/;
-
-export function detectEmergencyKeywords(texts: readonly string[]): boolean {
-  return texts.some((t) => EMERGENCY_KEYWORDS.test(t.replace(/\s+/g, '')));
-}
+/** 疑似急症关键词：实现在 packages/skills（专家、工作台、伴侣共用） */
+export { detectEmergencyKeywords };
 
 /** 输入资料里出现过的全部数值：实现在 packages/skills（/孪生小结 和专家共用） */
 export { knownNumbers };
