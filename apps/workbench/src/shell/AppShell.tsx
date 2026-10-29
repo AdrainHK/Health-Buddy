@@ -12,6 +12,8 @@ import { isAbortError } from '../api/http';
 import { ExpertCenter, type ExpertListState } from '../experts/ExpertCenter';
 import { ExpertsContext } from '../experts/ExpertsContext';
 import { getTodayVisits } from '../api/care';
+import { getCompanionInbox } from '../api/companion';
+import { companionInboxCount, type CompanionInboxState } from '../companion/CompanionInbox';
 import { getTwinLevels, listFollowUps } from '../api/twin';
 import {
   createTask,
@@ -90,6 +92,11 @@ export function AppShell({ account }: AppShellProps = {}) {
   });
   /** 今日随访（M5 规格 2.7，Q19）：今日跟进入口的第二个分组，角标是两组之和 */
   const [todayVisits, setTodayVisits] = useState<TodayVisitsState>({
+    status: 'loading',
+    data: null,
+  });
+  /** 今日跟进的“伴侣”分组（M6 规格 2.8）：角标加上它的三组；有未处理预警的客户在列表里标红点 */
+  const [companionInbox, setCompanionInbox] = useState<CompanionInboxState>({
     status: 'loading',
     data: null,
   });
@@ -175,6 +182,12 @@ export function AppShell({ account }: AppShellProps = {}) {
       .then((data) => setTodayVisits({ status: 'ready', data }))
       .catch((err: unknown) => {
         if (!isAbortError(err)) setTodayVisits((v) => ({ status: 'error', data: v.data }));
+      });
+    setCompanionInbox((v) => ({ status: 'loading', data: v.data }));
+    getCompanionInbox(controller.signal)
+      .then((data) => setCompanionInbox({ status: 'ready', data }))
+      .catch((err: unknown) => {
+        if (!isAbortError(err)) setCompanionInbox((v) => ({ status: 'error', data: v.data }));
       });
     getTwinLevels(controller.signal)
       .then((levels) => setTwinLevels(new Map(levels.map((l) => [l.clientId, l.level]))))
@@ -514,14 +527,17 @@ export function AppShell({ account }: AppShellProps = {}) {
             followUps={{
               active: centerView === 'followUps',
               count:
-                followUpList.data || todayVisits.data
-                  ? (followUpList.data?.openCount ?? 0) + (todayVisits.data?.count ?? 0)
+                followUpList.data || todayVisits.data || companionInbox.data
+                  ? (followUpList.data?.openCount ?? 0) +
+                    (todayVisits.data?.count ?? 0) +
+                    companionInboxCount(companionInbox.data)
                   : null,
               onOpen: openFollowUps,
             }}
             clientList={{
               clients,
               levels: twinLevels,
+              companionAlerts: new Set(companionInbox.data?.alerts.map((a) => a.clientId) ?? []),
               activeClientId: panelClient?.id ?? null,
               onSelect: selectClient,
             }}
@@ -553,6 +569,9 @@ export function AppShell({ account }: AppShellProps = {}) {
                 visits={todayVisits}
                 onVisitsRetry={() => setTwinSummaryVersion((v) => v + 1)}
                 onVisitsChanged={onFollowUpsChanged}
+                companion={companionInbox}
+                onCompanionRetry={() => setTwinSummaryVersion((v) => v + 1)}
+                onCompanionChanged={onFollowUpsChanged}
               />
             )}
             {centerView === 'library' && (

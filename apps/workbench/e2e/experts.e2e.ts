@@ -372,6 +372,9 @@ async function mockApi(page: Page, { followUp = false } = {}): Promise<Mock> {
           return key.startsWith('GET /api/visits/today')
             ? json(route, { items: [], count: 0, date: '2026-10-18', timeZone: 'UTC' })
             : json(route, { visits: [] });
+        // M6：今日跟进的“伴侣”分组（本用例不关心，给空数据）
+        case key === 'GET /api/companion/inbox':
+          return json(route, { alerts: [], handoffs: [], pendingReadings: [], offlineDevices: [] });
         default:
           mock.unknown.push(key);
           return json(route, { error: 'not_found' }, 404);

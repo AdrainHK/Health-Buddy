@@ -5,6 +5,7 @@ import { BellRing, Menu } from 'lucide-react';
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import care from '../care/Care.module.css';
+import { CompanionInboxGroup, type CompanionInboxState } from '../companion/CompanionInbox';
 import { VisitCard } from '../care/VisitCard';
 import { FollowUpCard } from './FollowUpCard';
 import { followUpTwinRef, useCanAskExpert, useTwinActions } from './TwinActions';
@@ -31,6 +32,10 @@ export interface FollowUpCenterProps {
   visits?: TodayVisitsState;
   onVisitsRetry?: () => void;
   onVisitsChanged?: () => void;
+  /** 伴侣（M6 规格 2.8）：预警置顶；没有传时不显示这个分组 */
+  companion?: CompanionInboxState;
+  onCompanionRetry?: () => void;
+  onCompanionChanged?: () => void;
 }
 
 /**
@@ -38,6 +43,7 @@ export interface FollowUpCenterProps {
  * 严重程度（1 级最先）→ 同级按最近触发时间从新到旧。“今日”按健管师时区（Q13）。
  * M5 起分两组（M5 规格 2.7，Q19）：“异常跟进”（M4 原样）和“今日随访”（今天到期和逾期未处理的随访，
  * 按逾期天数 → 目的 → 时间排序，后端排好）。
+ * M6 起最上面加“伴侣”分组（M6 规格 2.8）：福宝的预警置顶，转交、待确认的测量、设备离线。
  */
 export function FollowUpCenter({
   narrow,
@@ -49,6 +55,9 @@ export function FollowUpCenter({
   visits,
   onVisitsRetry,
   onVisitsChanged,
+  companion,
+  onCompanionRetry,
+  onCompanionChanged,
 }: FollowUpCenterProps) {
   const { t } = useTranslation();
   const alertsId = useId();
@@ -75,6 +84,14 @@ export function FollowUpCenter({
             <p className={styles.intro}>
               {t('followUps.intro', { timeZone: state.data.timeZone })}
             </p>
+          )}
+          {companion && (
+            <CompanionInboxGroup
+              state={companion}
+              onRetry={onCompanionRetry ?? onRetry}
+              onOpenClient={onOpenClient}
+              onChanged={onCompanionChanged ?? onChanged}
+            />
           )}
           {visits && (
             <h2 id={alertsId} className={care.groupTitle}>

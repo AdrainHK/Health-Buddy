@@ -1,4 +1,21 @@
 import {
+  clientCompanionCasesResponseSchema,
+  companionAlertSchema,
+  companionHandoffSchema,
+  companionInboxResponseSchema,
+  companionMemoryListResponseSchema,
+  companionObservationListResponseSchema,
+  companionObservationSchema,
+  companionSessionListResponseSchema,
+  type ClientCompanionCasesResponse,
+  type CloseHandoffRequest,
+  type CompanionAlert,
+  type CompanionHandoff,
+  type CompanionInboxResponse,
+  type CompanionMemory,
+  type CompanionObservation,
+  type CompanionSessionListResponse,
+  type HandleAlertRequest,
   checkinListResponseSchema,
   checkinPlanListResponseSchema,
   checkinPlanResponseSchema,
@@ -132,4 +149,114 @@ export async function listCheckins(clientId: string, signal?: AbortSignal): Prom
     opts(signal),
   );
   return checkins;
+}
+
+// ---------- 转交、预警、收集信息、聊天和记忆（第 6 步） ----------
+
+const cid = (clientId: string) => encodeURIComponent(clientId);
+
+/** 今日跟进“伴侣”分组 */
+export function getCompanionInbox(signal?: AbortSignal): Promise<CompanionInboxResponse> {
+  return apiRequest('/companion/inbox', companionInboxResponseSchema, opts(signal));
+}
+
+export function getClientCompanionCases(
+  clientId: string,
+  signal?: AbortSignal,
+): Promise<ClientCompanionCasesResponse> {
+  return apiRequest(
+    `/clients/${cid(clientId)}/companion/cases`,
+    clientCompanionCasesResponseSchema,
+    opts(signal),
+  );
+}
+
+export function handleCompanionAlert(
+  alertId: string,
+  body: HandleAlertRequest,
+): Promise<CompanionAlert> {
+  return apiRequest(`/companion/alerts/${cid(alertId)}/handle`, companionAlertSchema, {
+    method: 'POST',
+    body,
+  });
+}
+
+/** acknowledgeWarnings：看过“含药名、判断”等提醒后仍要发送 */
+export function replyCompanionHandoff(
+  handoffId: string,
+  text: string,
+  acknowledgeWarnings = false,
+): Promise<CompanionHandoff> {
+  return apiRequest(`/companion/handoffs/${cid(handoffId)}/reply`, companionHandoffSchema, {
+    method: 'POST',
+    body: { text, acknowledgeWarnings },
+  });
+}
+
+export function closeCompanionHandoff(
+  handoffId: string,
+  outcome: CloseHandoffRequest['outcome'],
+): Promise<CompanionHandoff> {
+  return apiRequest(`/companion/handoffs/${cid(handoffId)}/close`, companionHandoffSchema, {
+    method: 'POST',
+    body: { outcome },
+  });
+}
+
+export async function listCompanionObservations(
+  clientId: string,
+  signal?: AbortSignal,
+): Promise<CompanionObservation[]> {
+  const { observations } = await apiRequest(
+    `/clients/${cid(clientId)}/companion/observations`,
+    companionObservationListResponseSchema,
+    opts(signal),
+  );
+  return observations;
+}
+
+export function resolveCompanionObservation(
+  observationId: string,
+  confirm: boolean,
+): Promise<CompanionObservation> {
+  return apiRequest(
+    `/companion/observations/${cid(observationId)}/${confirm ? 'confirm' : 'dismiss'}`,
+    companionObservationSchema,
+    { method: 'POST' },
+  );
+}
+
+export function listCompanionSessions(
+  clientId: string,
+  before: string | null,
+  signal?: AbortSignal,
+): Promise<CompanionSessionListResponse> {
+  const q = before ? `?before=${encodeURIComponent(before)}` : '';
+  return apiRequest(
+    `/clients/${cid(clientId)}/companion/sessions${q}`,
+    companionSessionListResponseSchema,
+    opts(signal),
+  );
+}
+
+export async function listCompanionMemories(
+  clientId: string,
+  signal?: AbortSignal,
+): Promise<CompanionMemory[]> {
+  const { memories } = await apiRequest(
+    `/clients/${cid(clientId)}/companion/memories`,
+    companionMemoryListResponseSchema,
+    opts(signal),
+  );
+  return memories;
+}
+
+export function deleteCompanionMemory(clientId: string, memoryId: string): Promise<void> {
+  return apiRequest(`/clients/${cid(clientId)}/companion/memories/${cid(memoryId)}`, null, {
+    method: 'DELETE',
+  });
+}
+
+export function ackCompanionOffline(clientId: string): Promise<void> {
+  return apiRequest(`/clients/${cid(clientId)}/companion/offline-ack`, null, { method: 'POST' });
 }

@@ -341,3 +341,13 @@
   width: 16px;
   height: 16px;
 }
+
+/* 有未处理的伴侣预警（M6 Q24）：客户名后的红点 */
+.companionAlert {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--hb-twin-red-text);
+}

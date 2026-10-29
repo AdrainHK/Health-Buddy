@@ -8,6 +8,7 @@
 import type { CallContext, LlmGateway, ProviderName } from '@health-buddy/ai-engine';
 import {
   acceptCompanionMemory,
+  acceptCompanionObservations,
   buildCompanionMemoryRequest,
   buildCompanionRequest,
   checkCompanionReply,
@@ -159,6 +160,35 @@ export async function runCompanionMemoryOnce(
     const forbidden = hits(raw, c.expect.mustNotContain);
     if (forbidden.length) findings.push({ rule: 'memory.forbidden', detail: forbidden.join('、') });
     const accepted = acceptCompanionMemory(result.data, c.existing ?? []);
+    // 收集信息（第 6 步）：按线上同一套过滤后再判断
+    const observations = acceptCompanionObservations(result.data.observations);
+    if (
+      c.expect.observeAny?.length &&
+      !observations.some((o) => c.expect.observeAny!.includes(o.category))
+    ) {
+      findings.push({
+        rule: 'observation.missed',
+        detail: `应整理出：${c.expect.observeAny.join(' / ')}`,
+      });
+    }
+    // 查模型原始输出（过滤前）：药名本该由提示词挡住，过滤只是兜底（合规审查 S5）
+    const leaked = hits(
+      result.data.observations.map((o) => o.text).join('\n'),
+      c.expect.observationsMustNotContain ?? [],
+    );
+    if (leaked.length) findings.push({ rule: 'observation.forbidden', detail: leaked.join('、') });
+    const want = c.expect.pending;
+    if (
+      want &&
+      !observations.some(
+        (o) =>
+          o.metric === want.metric &&
+          o.values.length === want.values.length &&
+          o.values.every((v, i) => v === want.values[i]),
+      )
+    ) {
+      findings.push({ rule: 'observation.pending', detail: `应记成待确认的${want.metric}` });
+    }
     if (
       c.expect.rememberAny?.length &&
       !accepted.memories.some((m) => hits(m, c.expect.rememberAny!).length)

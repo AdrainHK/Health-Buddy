@@ -6,6 +6,7 @@ import {
 } from '@health-buddy/shared';
 import {
   acceptCompanionMemory,
+  acceptCompanionObservations,
   CHECKIN_METRIC_SPOKEN,
   isCompanionQuestion,
   buildCompanionMemoryRequest,
@@ -46,7 +47,12 @@ const READING_ATTEMPTS = 2;
  * 或通过了输出检查的模型回答
  */
 export type Utterance =
-  { script: CompanionScriptKind; vars?: Readonly<Record<string, string>> } | { text: string };
+  | { script: CompanionScriptKind; vars?: Readonly<Record<string, string>> }
+  | {
+      text: string;
+      /** 健管师的转交回复（N13）：念完后标记已播报，聊天记录里记成 handoff_reply */
+      replyId?: string;
+    };
 
 export interface DialogueTurn {
   utterances: Utterance[];
@@ -127,21 +133,31 @@ export class CompanionDialogue implements OnApplicationShutdown {
   }
 
   /**
-   * 唤醒后先补说到期的打卡提醒（规格 2.3 暂行做法），再听客户说话；没有到期的提醒时不说话。
-   * 今天还没说过“不是医生”时先说每日开场（N9）。念的话记进聊天记录。
+   * 唤醒后先说健管师的回复（N13：先念“您的健管师回复了……”，再念回复原文，不改写），
+   * 再补说到期的打卡提醒（规格 2.3 暂行做法），然后听客户说话；都没有时不说话。
+   * 今天还没说过“不是医生”时先说每日开场（N9）。念的话记进聊天记录；回复要等设备真正念完
+   * 才标记已播报（markRepliesDelivered，合规审查 B1）。
    */
   async greet(deviceId: string, sessionId: string): Promise<Utterance[]> {
     const state = this.sessions.get(sessionId);
     if (!state) return [];
+    const replies = await this.repo.pendingReplies(deviceId, state.clientId);
     const due = await this.repo.dueCheckins(deviceId, state.clientId);
     const first = due.shift();
-    if (!first) return [];
-    state.checkin = { queue: due, asking: first, confirming: null, attempts: 0 };
+    if (!replies.length && !first) return [];
     const utterances: Utterance[] = [];
     if (!(await this.repo.saidIntroToday(deviceId))) utterances.push({ script: 'daily_intro' });
-    utterances.push(reminderOf(first));
+    for (const reply of replies) {
+      utterances.push({ script: 'handoff_reply_intro' }, { text: reply.text, replyId: reply.id });
+    }
+    if (first) {
+      state.checkin = { queue: due, asking: first, confirming: null, attempts: 0 };
+      utterances.push(reminderOf(first));
+    }
     await this.record(deviceId, state.clientId, sessionId, [], utterances);
-    this.logger.log(`companion reminders ${JSON.stringify({ due: due.length + 1 })}`);
+    this.logger.log(
+      `companion greet ${JSON.stringify({ replies: replies.length, due: first ? due.length + 1 : 0 })}`,
+    );
     return utterances;
   }
 
@@ -325,6 +341,17 @@ export class CompanionDialogue implements OnApplicationShutdown {
     return work;
   }
 
+  /** 回复原文已经完整念给客户：标记已播报，下次不再念 */
+  async markRepliesDelivered(
+    deviceId: string,
+    sessionId: string,
+    replyIds: readonly string[],
+  ): Promise<void> {
+    const state = this.sessions.get(sessionId);
+    if (!state || !replyIds.length) return;
+    await this.repo.markRepliesDelivered(deviceId, state.clientId, replyIds);
+  }
+
   /**
    * 打卡的回答（规格 2.3、5.4 第 5 条），按规则识别，不调用模型；不是打卡的回答时返回 null，
    * 交给后面的普通对话（这条提醒留着，窗口内下次唤醒再问）。
@@ -496,7 +523,12 @@ export class CompanionDialogue implements OnApplicationShutdown {
     if (result.status !== 'ok') return;
     const digest = acceptCompanionMemory(result.data, existing);
     await this.repo.saveSessionDigest(deviceId, clientId, sessionId, digest);
-    this.logger.log(`companion digest ${JSON.stringify({ memories: digest.memories.length })}`);
+    // 收集信息只给健管师（规格 2.7）；闲聊里的测量值记成待确认，不直接写监测
+    const observations = acceptCompanionObservations(result.data.observations);
+    await this.repo.addObservations(deviceId, clientId, sessionId, observations);
+    this.logger.log(
+      `companion digest ${JSON.stringify({ memories: digest.memories.length, observations: observations.length })}`,
+    );
   }
 
   private async modelReply(
@@ -566,7 +598,11 @@ export class CompanionDialogue implements OnApplicationShutdown {
           });
         }
       } else {
-        messages.push({ role: 'companion', kind: 'chat', content: u.text });
+        messages.push({
+          role: 'companion',
+          kind: u.replyId ? 'handoff_reply' : 'chat',
+          content: u.text,
+        });
       }
     }
     const ids = await this.repo.addMessages(deviceId, clientId, sessionId, messages);

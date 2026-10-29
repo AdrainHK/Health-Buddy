@@ -219,10 +219,12 @@ function spokenLength(text: string): number {
  * crisis 为真时（危机、急症后的陪伴）另外查安抚性否认（“没事”“别担心”）。
  */
 export function checkCompanionReply(
-  text: string,
+  reply: string,
   options: { crisis?: boolean } = {},
 ): CompanionReplyIssue[] {
-  if (!text.trim()) return [{ category: 'empty', term: '' }];
+  if (!reply.trim()) return [{ category: 'empty', term: '' }];
+  // 复述“血压高压一百四十五”时“血压高”会被当成病名（评测发现）：项目名和高压、低压之间断开再查
+  const text = reply.replace(/血压(?=[高低]压)/g, '血压，');
   // 转交、兜底话术的检查最全：禁用词、病名、判断、药名、剂量、功效、孪生字样、专家、医院、代健管师承诺、占位符
   // 代健管师承诺改用更窄的规则：“马上联系家人”是危机后该说的话，不是替健管师承诺（评测发现）
   const issues: CompanionReplyIssue[] = checkCompanionScript('fallback', text)

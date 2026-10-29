@@ -210,7 +210,12 @@ export class DeviceSession {
       await this.deps.dialogue.noteScript(this.deviceId, this.sessionId, 'intro');
     }
     // 唤醒后先补说到期的打卡提醒，再听客户说话（规格 2.3 暂行做法）
-    await this.play(await this.deps.dialogue.greet(this.deviceId, this.sessionId));
+    const sessionId = this.sessionId;
+    const played = await this.play(await this.deps.dialogue.greet(this.deviceId, sessionId));
+    // 回复原文完整念完（没被打断、没合成失败、连接没断）才标记已播报
+    if (played.length) {
+      await this.deps.dialogue.markRepliesDelivered(this.deviceId, sessionId, played);
+    }
   }
 
   /** 固定话术按这位客户的语速预先合成（规格 5.4 第 3 条），之后从缓存播放；失败不影响对话 */
@@ -308,8 +313,8 @@ export class DeviceSession {
   }
 
   /** 念一句固定话术 */
-  private say(kind: CompanionScriptKind): Promise<void> {
-    return this.play([{ script: kind }]);
+  private async say(kind: CompanionScriptKind): Promise<void> {
+    await this.play([{ script: kind }]);
   }
 
   /** 准备一段要念的话：固定话术从缓存取（没有时合成），模型回答实时合成；失败时跳过这段 */
@@ -342,9 +347,11 @@ export class DeviceSession {
   /**
    * 念一轮的几段话（例如危机求助话术接着陪伴的话）：一次 tts start / stop，每段一个 sentence_start。
    * 下一段在上一段发完后再准备，固定话术不用等模型回答的合成。
+   * 返回完整发出去的转交回复（replyId）。
    */
-  private async play(utterances: readonly Utterance[]): Promise<void> {
-    if (this.closed || !utterances.length) return;
+  private async play(utterances: readonly Utterance[]): Promise<string[]> {
+    const delivered: string[] = [];
+    if (this.closed || !utterances.length) return delivered;
     this.speaking?.abort();
     const controller = new AbortController();
     this.speaking = controller;
@@ -359,16 +366,22 @@ export class DeviceSession {
         started = true;
       }
       this.send({ type: 'tts', session_id: this.id, state: 'sentence_start', text: part.text });
+      let complete = true;
       for (let i = 0; i < part.frames.length; i++) {
-        if (controller.signal.aborted || this.ws.readyState !== WebSocket.OPEN) break;
+        if (controller.signal.aborted || this.ws.readyState !== WebSocket.OPEN) {
+          complete = false;
+          break;
+        }
         this.ws.send(part.frames[i]!, { binary: true });
         if (frameIntervalMs > 0 && i >= prebufferFrames) {
           await new Promise((r) => setTimeout(r, frameIntervalMs));
         }
       }
+      if (complete && 'replyId' in u && u.replyId) delivered.push(u.replyId);
     }
     if (this.speaking === controller) this.speaking = null;
     if (started) this.send({ type: 'tts', session_id: this.id, state: 'stop' });
+    return delivered;
   }
 
   private fail(stage: string, err: unknown): void {

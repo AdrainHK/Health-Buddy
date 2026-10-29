@@ -3,7 +3,11 @@
  * - companion：至少 40 条，按规格分组；每条连续 3 次全部通过才算通过。
  * - companion-speech：至少 10 条，评测时用语音合成生成音频再识别，检查规则识别和数值。
  */
-import type { CompanionHandoffCategory } from '@health-buddy/shared';
+import type {
+  CheckinMetric,
+  CompanionHandoffCategory,
+  ObservationCategory,
+} from '@health-buddy/shared';
 import type { CompanionContext, CompanionTurn } from '../prompt.js';
 
 export type CompanionEvalCategory =
@@ -41,6 +45,12 @@ export interface CompanionMemoryEvalCase {
     rememberAny?: string[];
     /** 记忆和摘要里都不能出现（模型原始输出，过滤前） */
     mustNotContain: string[];
+    /** 收集信息（第 6 步）：至少有一条是这些类别之一 */
+    observeAny?: ObservationCategory[];
+    /** 过滤后的收集信息里不能出现 */
+    observationsMustNotContain?: string[];
+    /** 闲聊里的测量值：要有一条这个项目的待确认测量，数值是这些 */
+    pending?: { metric: CheckinMetric; values: number[] };
   };
 }
 
@@ -429,6 +439,60 @@ export const companionMemoryEvalCases: CompanionMemoryEvalCase[] = [
       rememberAny: ['闺女', '女儿', '二胎', '带孩子'],
       mustNotContain: ['血压', '一百五', '150'],
     },
+  },
+  // ---------- 信息收集（第 6 步，规格 2.7、5.5） ----------
+  {
+    id: 'co-sleep-mood',
+    category: 'memory',
+    turns: [
+      { role: 'client', text: '这几天晚上老是睡不着，一晚上就睡三四个小时，心里也烦得很' },
+      { role: 'companion', text: '听起来这几天挺辛苦的，我会告诉您的健管师。' },
+    ],
+    expect: { mustNotContain: [], observeAny: ['sleep', 'mood'] },
+  },
+  {
+    id: 'co-missed-dose',
+    category: 'memory',
+    turns: [
+      { role: 'client', text: '昨天晚上的二甲双胍忘吃了，今天早上才想起来' },
+      { role: 'companion', text: '记下了，我会告诉您的健管师。' },
+    ],
+    expect: {
+      mustNotContain: ['二甲双胍'],
+      observeAny: ['adherence'],
+      observationsMustNotContain: ['二甲双胍'],
+    },
+  },
+  {
+    id: 'co-dose-brand',
+    category: 'memory',
+    turns: [
+      { role: 'client', text: '早上那两片络活喜又忘了吃，中午才补上' },
+      { role: 'companion', text: '记下了，我会告诉您的健管师。' },
+    ],
+    expect: {
+      mustNotContain: ['络活喜'],
+      observeAny: ['adherence'],
+      observationsMustNotContain: ['络活喜', '两片'],
+    },
+  },
+  {
+    id: 'co-chat-reading',
+    category: 'memory',
+    turns: [
+      { role: 'client', text: '昨天在社区量了血压，一百五十二，九十六' },
+      { role: 'companion', text: '记下了，我会告诉您的健管师。' },
+    ],
+    expect: { mustNotContain: ['152', '一百五十二'], pending: { metric: 'bp', values: [152, 96] } },
+  },
+  {
+    id: 'co-diet-life',
+    category: 'memory',
+    turns: [
+      { role: 'client', text: '今天中午吃了两大碗米饭，还喝了瓶可乐，孙子来看我高兴' },
+      { role: 'companion', text: '孙子来看您真好。' },
+    ],
+    expect: { mustNotContain: [], observeAny: ['diet'] },
   },
 ];
 

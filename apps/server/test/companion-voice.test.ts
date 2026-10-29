@@ -7,6 +7,8 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { DOWNLINK, encodePcm, UPLINK } from '../src/companion/voice/audio.js';
+import { DeviceAuthService } from '../src/companion/device-auth.service.js';
+import { BindAttemptLimiter } from '../src/companion/device-credentials.js';
 import { CompanionDialogue } from '../src/companion/voice/dialogue.service.js';
 import { demuxOggOpus, muxOggOpus } from '../src/companion/voice/ogg.js';
 import { DB } from '../src/db/db.provider.js';
@@ -125,7 +127,7 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
   const mock = new MockProvider('openai', llm);
   const REPLY = '记下了，我会告诉您的健管师。';
   let modelReply: Record<string, unknown>;
-  let memoryOutput: { memories: string[]; summary: string };
+  let memoryOutput: { memories: string[]; summary: string; observations: unknown[] };
   let app: INestApplication;
   let port: number;
   let f: Fixtures;
@@ -255,6 +257,12 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
     await owner.destroy();
   });
   beforeEach(async () => {
+    // 配置接口按序列号限次（每 15 分钟 30 次），每个用例都重新开机：用例之间清掉计数
+    Reflect.set(
+      app.get(DeviceAuthService),
+      'configCalls',
+      new BindAttemptLimiter({ perUser: 30, windowMs: 15 * 60 * 1000, maxKeys: 10_000 }),
+    );
     f = await seedFixtures(owner);
     transcript = '我今天走了五千步';
     mock.speechCalls.length = 0;
@@ -266,7 +274,11 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
       emergencySignal: false,
       endSession: false,
     };
-    memoryOutput = { memories: ['客户的孙子下周放假回家'], summary: '聊了孙子放假回家。' };
+    memoryOutput = {
+      memories: ['客户的孙子下周放假回家'],
+      summary: '聊了孙子放假回家。',
+      observations: [],
+    };
     llm.respond = (req) =>
       JSON.stringify(req.responseFormat?.name === 'companion_memory' ? memoryOutput : modelReply);
     mock.speech = { transcript: () => transcript, synthesize: () => TTS_OGG };
@@ -937,6 +949,7 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
     memoryOutput = {
       memories: ['客户的孙子下周放假回家', '客户在吃二甲双胍', '客户有高血压'],
       summary: '聊了孙子放假回家。',
+      observations: [],
     };
     const token = await boot(SERIAL_A, keys.a);
     const device = await open(token);
@@ -1775,5 +1788,524 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
       (trx) => trx.selectFrom('checkin_plans').select('id').execute(),
     );
     expect(seen).toEqual([]);
+  });
+
+  // ---------- 第 6 步（6a）：转交、预警、收集信息的处理（规格 2.4、2.5、2.7、N10、N13、N18） ----------
+
+  /** 等会话结束整理写完（断开后服务端异步处理） */
+  const closeAndSettle = async (device: FakeDevice) => {
+    device.ws.close();
+    await device.until(() => device.closed, 'close');
+    await new Promise((r) => setTimeout(r, 50));
+    await app.get(CompanionDialogue).settled();
+  };
+
+  it('转交：健管师直接回复（过禁用词检查）→ 客户下次唤醒时先念回复开场、再念原文，只念一次', async () => {
+    const client = f.clients.a1[0];
+    const device = await open(await boot(SERIAL_A, keys.a));
+    await device.utterance(1);
+    await turn(device, '我这个降压药能不能停');
+    await turn(device, '最近总是头晕');
+    await closeAndSettle(device);
+
+    const inbox = await a1.get('/api/companion/inbox').expect(200);
+    expect(inbox.body.handoffs).toHaveLength(2);
+    const [first, second] = inbox.body.handoffs as { id: string; question: string }[];
+    expect(first!.question).toBe('我这个降压药能不能停');
+    // 别的健管师（同协会、别的协会）看不到、回复不了
+    const a2 = await loginAs(app, f.users.managerA2.email);
+    expect((await a2.get('/api/companion/inbox').expect(200)).body.handoffs).toEqual([]);
+    expect((await b1.get('/api/companion/inbox').expect(200)).body.handoffs).toEqual([]);
+    await a2.post(`/api/companion/handoffs/${first!.id}/reply`).send({ text: '好的' }).expect(404);
+    await b1
+      .post(`/api/companion/handoffs/${first!.id}/close`)
+      .send({ outcome: 'closed' })
+      .expect(404);
+    const orgAdmin = await loginAs(app, f.users.orgAdminA.email);
+    await orgAdmin.get('/api/companion/inbox').expect(404);
+    // 含禁用词的回复不能发
+    const bad = await a1
+      .post(`/api/companion/handoffs/${first!.id}/reply`)
+      .send({ text: '这个可以根治，不用担心。' })
+      .expect(400);
+    expect(bad.body.error).toBe('invalid_content');
+    // 只给健管师看的提示语不能念给客户（合规审查 S1）
+    const managerOnly = await a1
+      .post(`/api/companion/handoffs/${first!.id}/reply`)
+      .send({ text: '仅供健管师参考，非医疗诊断，请勿直接转发给客户' })
+      .expect(400);
+    expect(managerOnly.body.reasons).toEqual(['manager_only_text']);
+    // 有药名：先提醒，健管师确认后才发（合规审查 S2）
+    const reply = '王阿姨，降压药先按原来的吃，别自己停，我明天上午给您打电话细说。';
+    const warned = await a1
+      .post(`/api/companion/handoffs/${first!.id}/reply`)
+      .send({ text: reply })
+      .expect(400);
+    expect(warned.body.reasons[0]).toBe('needs_confirmation');
+    const ok = await a1
+      .post(`/api/companion/handoffs/${first!.id}/reply`)
+      .send({ text: reply, acknowledgeWarnings: true })
+      .expect(200);
+    expect(ok.body).toMatchObject({ status: 'replied', replyText: reply });
+    // 回复过的不能再回复；另一条选“已电话联系”
+    await a1
+      .post(`/api/companion/handoffs/${first!.id}/reply`)
+      .send({ text: '再说一次' })
+      .expect(409);
+    await a1
+      .post(`/api/companion/handoffs/${second!.id}/close`)
+      .send({ outcome: 'closed_by_call' })
+      .expect(200);
+
+    // 设备不能直接读转交表；读回复只能读自己客户的
+    const idA = await deviceId(SERIAL_A);
+    expect(
+      await withDevice(appDb(), { deviceId: idA }, (trx) =>
+        trx.selectFrom('companion_handoffs').select('id').execute(),
+      ),
+    ).toEqual([]);
+    const other = await withDevice(appDb(), { deviceId: idA }, (trx) =>
+      sql`select * from companion_pending_replies(${f.clients.b1}::uuid)`.execute(trx),
+    );
+    expect(other.rows).toEqual([]);
+
+    // 下次唤醒：先念回复开场，再念原文
+    const again = await open(await boot(SERIAL_A, keys.a));
+    const said = await again.utterance(1);
+    expect(said.texts.filter((t) => t.state === 'sentence_start').map((t) => t.text)).toEqual([
+      COMPANION_DEFAULT_SCRIPTS.handoff_reply_intro,
+      reply,
+    ]);
+    await closeAndSettle(again);
+    const rows = await owner
+      .selectFrom('companion_handoffs')
+      .select(['status', 'delivered_at', 'replied_by'])
+      .where('client_id', '=', client)
+      .orderBy('created_at')
+      .execute();
+    expect(rows).toEqual([
+      { status: 'delivered', delivered_at: expect.any(Date), replied_by: f.users.managerA1.id },
+      { status: 'closed_by_call', delivered_at: null, replied_by: null },
+    ]);
+    // 再唤醒不再念
+    const third = await open(await boot(SERIAL_A, keys.a));
+    expect(await turn(third, '今天天气不错')).toEqual([REPLY]);
+    // 设备只能把自己客户已回复的标成已播报：传别的 id 不生效
+    const marked = await withDevice(appDb(), { deviceId: idA }, (trx) =>
+      sql<{
+        n: number;
+      }>`select companion_mark_replies_delivered(${f.clients.a1[0]}::uuid, array[${second!.id}]::uuid[]) as n`.execute(
+        trx,
+      ),
+    );
+    expect(marked.rows[0]!.n).toBe(0);
+    // 健管师调不了设备的函数，设备调不了健管师的函数
+    await expect(
+      withTenant(appDb(), managerCtx(f.users.managerA1, f.operatorA, f.orgA), (trx) =>
+        sql`select * from companion_pending_replies(${f.clients.a1[0]}::uuid)`.execute(trx),
+      ).then((r) => r.rows),
+    ).resolves.toEqual([]);
+    await expect(
+      withDevice(appDb(), { deviceId: idA }, (trx) =>
+        sql`select companion_offline_ack(${f.clients.a1[0]}::uuid)`.execute(trx),
+      ),
+    ).rejects.toThrow();
+    // 已播报的不能再关闭
+    await a1
+      .post(`/api/companion/handoffs/${first!.id}/close`)
+      .send({ outcome: 'closed' })
+      .expect(409);
+    // 数据库也拦：直接改原话、直接标已播报都失败
+    await expect(
+      withTenant(appDb(), managerCtx(f.users.managerA1, f.operatorA, f.orgA), (trx) =>
+        sql`update companion_handoffs set question = '改过' where id = ${second!.id}`.execute(trx),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('预警：今日跟进置顶、有原话和福宝说的话；处理方式必填，不能忽略；别人的 404', async () => {
+    const device = await open(await boot(SERIAL_A, keys.a));
+    await device.utterance(1);
+    modelReply.reply = '我在这儿陪着您，请马上联系家人。';
+    await turn(device, '我不想活了');
+    await closeAndSettle(device);
+    const inbox = await a1.get('/api/companion/inbox').expect(200);
+    expect(inbox.body.alerts).toEqual([
+      expect.objectContaining({
+        category: 'crisis',
+        said: '我不想活了',
+        companionSaid: COMPANION_DEFAULT_SCRIPTS.crisis,
+        status: 'open',
+        clientId: f.clients.a1[0],
+      }),
+    ]);
+    const id = inbox.body.alerts[0].id as string;
+    expect((await b1.get('/api/companion/inbox').expect(200)).body.alerts).toEqual([]);
+    await b1.post(`/api/companion/alerts/${id}/handle`).send({ resolution: 'called' }).expect(404);
+    await a1.post(`/api/companion/alerts/${id}/handle`).send({}).expect(400);
+    await a1.post(`/api/companion/alerts/${id}/handle`).send({ resolution: 'other' }).expect(400);
+    await a1.post(`/api/companion/alerts/${id}/handle`).send({ resolution: 'ignored' }).expect(400);
+    const handled = await a1
+      .post(`/api/companion/alerts/${id}/handle`)
+      .send({ resolution: 'contacted_family', note: '已联系女儿' })
+      .expect(200);
+    expect(handled.body).toMatchObject({ status: 'handled', resolution: 'contacted_family' });
+    await a1.post(`/api/companion/alerts/${id}/handle`).send({ resolution: 'called' }).expect(409);
+    expect((await a1.get('/api/companion/inbox').expect(200)).body.alerts).toEqual([]);
+    // 客户的伴侣视图仍能看到已处理的
+    const cases = await a1.get(`/api/clients/${f.clients.a1[0]}/companion/cases`).expect(200);
+    expect(cases.body.alerts).toEqual([expect.objectContaining({ status: 'handled' })]);
+    await b1.get(`/api/clients/${f.clients.a1[0]}/companion/cases`).expect(404);
+    // 数据库也拦：改回未处理失败
+    await expect(
+      withTenant(appDb(), managerCtx(f.users.managerA1, f.operatorA, f.orgA), (trx) =>
+        sql`update companion_alerts set status = 'open' where id = ${id}`.execute(trx),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('收集信息：会话结束后整理（药名换成“药物”），闲聊里的测量值待确认；确认才写监测，驳回不写', async () => {
+    memoryOutput = {
+      memories: [],
+      summary: '聊了最近睡得不好。',
+      observations: [
+        {
+          category: 'sleep',
+          text: '客户说昨晚只睡了四个小时',
+          polarity: 'negative',
+          metric: null,
+          values: [],
+        },
+        {
+          category: 'adherence',
+          text: '客户说昨天晚上二甲双胍忘吃了',
+          polarity: null,
+          metric: null,
+          values: [],
+        },
+        {
+          category: 'measurement',
+          text: '客户说昨天量的血压一百五、九十五',
+          polarity: null,
+          metric: 'bp',
+          values: [150, 95],
+        },
+        {
+          category: 'measurement',
+          text: '客户说体重一百三十斤',
+          polarity: null,
+          metric: 'weight',
+          values: [65],
+        },
+      ],
+    };
+    const device = await open(await boot(SERIAL_A, keys.a));
+    await device.utterance(1);
+    await turn(device, '昨天量的血压一百五、九十五，晚上只睡了四个小时');
+    await closeAndSettle(device);
+
+    const list = await a1.get(`/api/clients/${f.clients.a1[0]}/companion/observations`).expect(200);
+    const observations = list.body.observations as {
+      id: string;
+      category: string;
+      text: string;
+      status: string;
+      metric: string | null;
+    }[];
+    expect(observations).toHaveLength(4);
+    expect(observations.find((o) => o.category === 'adherence')!.text).toBe(
+      '客户说昨天晚上药物忘吃了',
+    );
+    const bp = observations.find((o) => o.metric === 'bp')!;
+    const weight = observations.find((o) => o.metric === 'weight')!;
+    expect(bp.status).toBe('pending_confirm');
+    // 闲聊里的数没有直接写进监测
+    expect(
+      await owner
+        .selectFrom('monitoring_readings')
+        .select('id')
+        .where('source', '=', 'companion')
+        .execute(),
+    ).toEqual([]);
+    const inbox = await a1.get('/api/companion/inbox').expect(200);
+    expect(inbox.body.pendingReadings).toHaveLength(2);
+    // 别人的 404；确认写监测；驳回不写；处理过的再处理 404
+    await b1.post(`/api/companion/observations/${bp.id}/confirm`).expect(404);
+    await b1.get(`/api/clients/${f.clients.a1[0]}/companion/observations`).expect(404);
+    const confirmed = await a1.post(`/api/companion/observations/${bp.id}/confirm`).expect(200);
+    expect(confirmed.body.status).toBe('confirmed');
+    await a1.post(`/api/companion/observations/${weight.id}/dismiss`).expect(200);
+    await a1.post(`/api/companion/observations/${bp.id}/dismiss`).expect(404);
+    const readings = await owner
+      .selectFrom('monitoring_readings')
+      .select(['metric', 'value', 'source'])
+      .where('source', '=', 'companion')
+      .orderBy('metric', 'desc')
+      .execute();
+    expect(readings).toEqual([
+      { metric: 'sbp', value: '150.000', source: 'companion' },
+      { metric: 'dbp', value: '95.000', source: 'companion' },
+    ]);
+    expect((await a1.get('/api/companion/inbox').expect(200)).body.pendingReadings).toEqual([]);
+    // 设备不能直接写收集信息；用别的客户、别的会话调函数都失败
+    const idA = await deviceId(SERIAL_A);
+    const session = await owner
+      .selectFrom('companion_sessions')
+      .select('id')
+      .where('client_id', '=', f.clients.a1[0])
+      .executeTakeFirstOrThrow();
+    const items = JSON.stringify([
+      { category: 'life', text: '合成', polarity: null, metric: null, values: [] },
+    ]);
+    await expect(
+      withDevice(appDb(), { deviceId: idA }, (trx) =>
+        sql`select companion_add_observations(${f.clients.b1}::uuid, ${session.id}::uuid, ${items}::jsonb)`.execute(
+          trx,
+        ),
+      ),
+    ).rejects.toThrow();
+    await expect(
+      withDevice(appDb(), { deviceId: idA }, (trx) =>
+        trx
+          .insertInto('companion_observations')
+          .values({ client_id: f.clients.a1[0] } as never)
+          .execute(),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('聊天和记忆（N10）：只给服务这位客户的健管师看；健管师能删记忆', async () => {
+    await owner
+      .insertInto('companion_memories')
+      .values({ client_id: f.clients.a1[0], text: '客户喜欢听京剧' })
+      .execute();
+    const device = await open(await boot(SERIAL_A, keys.a));
+    await device.utterance(1);
+    await turn(device, '今天天气不错');
+    await closeAndSettle(device);
+    const base = `/api/clients/${f.clients.a1[0]}/companion`;
+    const sessions = await a1.get(`${base}/sessions`).expect(200);
+    expect(sessions.body.next).toBeNull();
+    expect(sessions.body.sessions[0].messages.map((m: { content: string }) => m.content)).toEqual([
+      COMPANION_DEFAULT_SCRIPTS.intro,
+      '今天天气不错',
+      REPLY,
+    ]);
+    await a1.get(`${base}/sessions?before=not-a-date`).expect(400);
+    const memories = await a1.get(`${base}/memories`).expect(200);
+    expect(memories.body.memories.map((m: { text: string }) => m.text)).toContain('客户喜欢听京剧');
+    const memoryId = memories.body.memories.find(
+      (m: { text: string }) => m.text === '客户喜欢听京剧',
+    ).id as string;
+    const a2 = await loginAs(app, f.users.managerA2.email);
+    for (const agent of [b1, a2]) {
+      await agent.get(`${base}/sessions`).expect(404);
+      await agent.get(`${base}/memories`).expect(404);
+      await agent.delete(`${base}/memories/${memoryId}`).expect(404);
+    }
+    const operator = await loginAs(app, f.users.operatorAdminA.email);
+    await operator.get(`${base}/sessions`).expect(404);
+    await a1.delete(`${base}/memories/${memoryId}`).expect(204);
+    await a1.delete(`${base}/memories/${memoryId}`).expect(404);
+  });
+
+  it('设备离线超过 24 小时：今日跟进出现提醒；点“知道了”后消失，再上线又离线时重新提醒', async () => {
+    await open(await boot(SERIAL_A, keys.a)).then(closeAndSettle);
+    const idA = await deviceId(SERIAL_A);
+    await owner
+      .updateTable('companion_devices')
+      .set({ last_seen_at: new Date(Date.now() - 30 * 3600_000) } as never)
+      .where('id', '=', idA)
+      .execute();
+    const inbox = await a1.get('/api/companion/inbox').expect(200);
+    expect(inbox.body.offlineDevices).toEqual([
+      expect.objectContaining({ clientId: f.clients.a1[0] }),
+    ]);
+    expect((await b1.get('/api/companion/inbox').expect(200)).body.offlineDevices).toEqual([]);
+    await b1.post(`/api/clients/${f.clients.a1[0]}/companion/offline-ack`).expect(404);
+    await a1.post(`/api/clients/${f.clients.a1[0]}/companion/offline-ack`).expect(204);
+    expect((await a1.get('/api/companion/inbox').expect(200)).body.offlineDevices).toEqual([]);
+    // 再上线后又离线：重新提醒
+    await owner
+      .updateTable('companion_devices')
+      .set({
+        last_seen_at: new Date(Date.now() - 25 * 3600_000),
+        offline_ack_at: new Date(Date.now() - 26 * 3600_000),
+      } as never)
+      .where('id', '=', idA)
+      .execute();
+    expect((await a1.get('/api/companion/inbox').expect(200)).body.offlineDevices).toHaveLength(1);
+  });
+
+  it('转交：回复没念完（连接断了）不算已播报，下次唤醒再念；已回复还没播报的可以关闭', async () => {
+    const device = await open(await boot(SERIAL_A, keys.a));
+    await device.utterance(1);
+    await turn(device, '我这个降压药能不能停');
+    await turn(device, '最近总是头晕');
+    await closeAndSettle(device);
+    const [first, second] = (await a1.get('/api/companion/inbox').expect(200)).body.handoffs as {
+      id: string;
+    }[];
+    await a1
+      .post(`/api/companion/handoffs/${first!.id}/reply`)
+      .send({ text: '王阿姨，这个我们电话里细说。' })
+      .expect(200);
+    await a1
+      .post(`/api/companion/handoffs/${second!.id}/reply`)
+      .send({ text: '王阿姨，头晕的事我明天给您打电话。' })
+      .expect(200);
+    // 已回复、还没播报的可以选“已电话联系”（租户审查 B1）
+    const closed = await a1
+      .post(`/api/companion/handoffs/${second!.id}/close`)
+      .send({ outcome: 'closed_by_call' })
+      .expect(200);
+    expect(closed.body).toMatchObject({ status: 'closed_by_call', replyText: expect.any(String) });
+    // 合成失败：回复没念出来，不标记已播报
+    mock.speech = {
+      transcript: () => transcript,
+      synthesize: (request) => {
+        if (request.text.includes('电话里细说')) throw new Error('合成失败');
+        return TTS_OGG;
+      },
+    };
+    const again = await open(await boot(SERIAL_A, keys.a));
+    await again.utterance(1);
+    await closeAndSettle(again);
+    const row = await owner
+      .selectFrom('companion_handoffs')
+      .select(['status', 'delivered_at'])
+      .where('id', '=', first!.id)
+      .executeTakeFirstOrThrow();
+    expect(row).toEqual({ status: 'replied', delivered_at: null });
+    // 聊天记录里健管师的回复单独标记（合规审查 S6）
+    const kinds = await owner
+      .selectFrom('companion_messages')
+      .select('kind')
+      .where('kind', '=', 'handoff_reply')
+      .execute();
+    expect(kinds.length).toBeGreaterThan(0);
+  });
+
+  it('后台角色在所有新接口上都 404；客户转出后转交、预警、收集信息、记忆跟着新健管师走', async () => {
+    const client = f.clients.a1[0];
+    memoryOutput = {
+      memories: ['客户喜欢听京剧'],
+      summary: '聊了血压。',
+      observations: [
+        {
+          category: 'measurement',
+          text: '客户说昨天血压二百一，一百二十五',
+          polarity: null,
+          metric: 'bp',
+          values: [210, 125],
+        },
+      ],
+    };
+    const device = await open(await boot(SERIAL_A, keys.a));
+    await device.utterance(1);
+    await turn(device, '我这个降压药能不能停');
+    modelReply.reply = '我在这儿陪着您，请马上联系家人。';
+    await turn(device, '我不想活了');
+    await closeAndSettle(device);
+    // 闲聊里的数命中危急阈值：也写“危急指标”预警（合规审查 S7）
+    const alerts = await owner.selectFrom('companion_alerts').select('category').execute();
+    expect(alerts.map((a) => a.category).sort()).toEqual(['crisis', 'critical_value']);
+
+    const inbox = (await a1.get('/api/companion/inbox').expect(200)).body as {
+      alerts: { id: string }[];
+      handoffs: { id: string }[];
+      pendingReadings: { id: string }[];
+    };
+    const memoryId = (
+      await owner.selectFrom('companion_memories').select('id').executeTakeFirstOrThrow()
+    ).id;
+    const base = `/api/clients/${client}/companion`;
+    const admins = await Promise.all([
+      loginAs(app, f.users.platform.email),
+      loginAs(app, f.users.operatorAdminA.email),
+      loginAs(app, f.users.orgAdminA.email),
+    ]);
+    for (const agent of admins) {
+      await agent.get('/api/companion/inbox').expect(404);
+      await agent
+        .post(`/api/companion/alerts/${inbox.alerts[0]!.id}/handle`)
+        .send({ resolution: 'called' })
+        .expect(404);
+      await agent
+        .post(`/api/companion/handoffs/${inbox.handoffs[0]!.id}/reply`)
+        .send({ text: '好的' })
+        .expect(404);
+      await agent
+        .post(`/api/companion/handoffs/${inbox.handoffs[0]!.id}/close`)
+        .send({ outcome: 'closed' })
+        .expect(404);
+      await agent
+        .post(`/api/companion/observations/${inbox.pendingReadings[0]!.id}/confirm`)
+        .expect(404);
+      await agent
+        .post(`/api/companion/observations/${inbox.pendingReadings[0]!.id}/dismiss`)
+        .expect(404);
+      for (const path of ['cases', 'observations', 'sessions', 'memories']) {
+        await agent.get(`${base}/${path}`).expect(404);
+      }
+      await agent.delete(`${base}/memories/${memoryId}`).expect(404);
+      await agent.post(`${base}/offline-ack`).expect(404);
+    }
+    await b1
+      .post(`/api/companion/observations/${inbox.pendingReadings[0]!.id}/dismiss`)
+      .expect(404);
+    // 健管师 A2 直接改 A1 的转交、预警：一行都改不到
+    const a2ctx = managerCtx(f.users.managerA2, f.operatorA, f.orgA);
+    const updated = await withTenant(appDb(), a2ctx, (trx) =>
+      trx
+        .updateTable('companion_alerts')
+        .set({ status: 'handled', resolution: 'called', note: null })
+        .executeTakeFirst(),
+    );
+    expect(Number(updated.numUpdatedRows)).toBe(0);
+
+    // A1 点过“知道了”后转出：新健管师照常看到离线提醒（租户审查 S1）
+    const idA = await deviceId(SERIAL_A);
+    await owner
+      .updateTable('companion_devices')
+      .set({ last_seen_at: new Date(Date.now() - 30 * 3600_000) } as never)
+      .where('id', '=', idA)
+      .execute();
+    await a1.post(`${base}/offline-ack`).expect(204);
+    await owner
+      .updateTable('clients')
+      .set({ manager_id: f.users.managerA3.id, org_id: f.orgA2 })
+      .where('id', '=', client)
+      .execute();
+    for (const path of ['cases', 'observations', 'sessions', 'memories']) {
+      await a1.get(`${base}/${path}`).expect(404);
+    }
+    const a3 = await loginAs(app, f.users.managerA3.email);
+    const moved = (await a3.get('/api/companion/inbox').expect(200)).body;
+    expect(moved.alerts).toHaveLength(2);
+    expect(moved.handoffs).toHaveLength(1);
+    expect(moved.pendingReadings).toHaveLength(1);
+    expect(moved.offlineDevices).toHaveLength(1);
+    expect((await a3.get(`${base}/memories`).expect(200)).body.memories).toHaveLength(1);
+    // 新健管师回复，福宝照常播报
+    await a3
+      .post(`/api/companion/handoffs/${inbox.handoffs[0]!.id}/reply`)
+      .send({ text: '王阿姨，这个我们电话里细说。' })
+      .expect(200);
+    const again = await open(await boot(SERIAL_A, keys.a));
+    const said = await again.utterance(1);
+    expect(said.texts.filter((t) => t.state === 'sentence_start').map((t) => t.text)).toContain(
+      '王阿姨，这个我们电话里细说。',
+    );
+    await closeAndSettle(again);
+    expect(
+      (
+        await owner
+          .selectFrom('companion_handoffs')
+          .select('status')
+          .where('id', '=', inbox.handoffs[0]!.id)
+          .executeTakeFirstOrThrow()
+      ).status,
+    ).toBe('delivered');
   });
 });

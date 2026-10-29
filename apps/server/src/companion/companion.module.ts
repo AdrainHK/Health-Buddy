@@ -6,6 +6,8 @@ import { CompanionAdminController, CompanionController } from './companion.contr
 import { CompanionRepository } from './companion.repository.js';
 import { DeviceAuthService } from './device-auth.service.js';
 import { DeviceOtaController } from './device-ota.controller.js';
+import { InboxController } from './inbox.controller.js';
+import { InboxRepository } from './inbox.repository.js';
 import { CompanionPurgeService } from './voice/companion-purge.service.js';
 import { DeviceSessionRepository } from './voice/device-session.repository.js';
 import { DialogueRepository } from './voice/dialogue.repository.js';
@@ -19,11 +21,17 @@ import { VoiceGateway } from './voice/voice-gateway.js';
  */
 @Module({
   imports: [TwinModule],
-  controllers: [CompanionController, CompanionAdminController, DeviceOtaController],
+  controllers: [
+    CompanionController,
+    CompanionAdminController,
+    DeviceOtaController,
+    InboxController,
+  ],
   providers: [
     CompanionRepository,
     CompanionAdminRepository,
     CheckinsRepository,
+    InboxRepository,
     DeviceAuthService,
     DeviceSessionRepository,
     CompanionSpeech,
