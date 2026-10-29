@@ -1032,7 +1032,7 @@ export interface CompanionMessagesTable extends ClientScoped {
   client_id: ColumnType<string, string, never>;
   session_id: ColumnType<string, string, never>;
   role: ColumnType<'client' | 'companion', 'client' | 'companion', never>;
-  kind: ColumnType<'chat' | 'script', 'chat' | 'script', never>;
+  kind: ColumnType<'chat' | 'script' | 'handoff_reply', 'chat' | 'script' | 'handoff_reply', never>;
   script_kind: ColumnType<string | null, string | null | undefined, never>;
   /** 识别出的文字或福宝说的话，含健康内容，不进日志 */
   content: ColumnType<string, string, never>;

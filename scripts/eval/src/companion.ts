@@ -171,8 +171,9 @@ export async function runCompanionMemoryOnce(
         detail: `应整理出：${c.expect.observeAny.join(' / ')}`,
       });
     }
+    // 查模型原始输出（过滤前）：药名本该由提示词挡住，过滤只是兜底（合规审查 S5）
     const leaked = hits(
-      observations.map((o) => o.text).join('\n'),
+      result.data.observations.map((o) => o.text).join('\n'),
       c.expect.observationsMustNotContain ?? [],
     );
     if (leaked.length) findings.push({ rule: 'observation.forbidden', detail: leaked.join('、') });

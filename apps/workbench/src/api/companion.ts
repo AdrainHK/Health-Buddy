@@ -181,10 +181,15 @@ export function handleCompanionAlert(
   });
 }
 
-export function replyCompanionHandoff(handoffId: string, text: string): Promise<CompanionHandoff> {
+/** acknowledgeWarnings：看过“含药名、判断”等提醒后仍要发送 */
+export function replyCompanionHandoff(
+  handoffId: string,
+  text: string,
+  acknowledgeWarnings = false,
+): Promise<CompanionHandoff> {
   return apiRequest(`/companion/handoffs/${cid(handoffId)}/reply`, companionHandoffSchema, {
     method: 'POST',
-    body: { text },
+    body: { text, acknowledgeWarnings },
   });
 }
 

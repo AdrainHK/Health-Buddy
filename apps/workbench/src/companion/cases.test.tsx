@@ -111,6 +111,33 @@ describe('伴侣视图 · 预警、转交、收集信息', () => {
     expect(await within(form).findByRole('alert')).toHaveTextContent('不能对客户说的词');
   });
 
+  it('回复里有药名：先看提醒，确认后带 acknowledgeWarnings 再发', async () => {
+    let calls = 0;
+    const api = mockApi({
+      [`GET ${CASES}`]: () => json(200, { alerts: [], handoffs: [handoff] }),
+      [`GET ${OBS}`]: () => json(200, { observations: [] }),
+      [`POST /companion/handoffs/${HANDOFF_ID}/reply`]: () =>
+        ++calls === 1
+          ? json(400, { error: 'invalid_content', reasons: ['needs_confirmation', 'drug_name'] })
+          : json(200, { ...handoff, status: 'replied', replyText: '合成回复' }),
+    });
+    const user = userEvent.setup();
+    render(<CasesSection clientId={ids.clientA} />);
+    await user.click(await screen.findByRole('button', { name: '写回复' }));
+    const form = screen.getByRole('form', { name: '回复客户' });
+    await user.type(within(form).getByRole('textbox'), '降压药先别停');
+    await user.click(within(form).getByRole('button', { name: '发送给福宝' }));
+    expect(await within(form).findByRole('alert')).toHaveTextContent('药名');
+    await user.click(within(form).getByRole('button', { name: '仍然发送' }));
+    await waitFor(() =>
+      expect(api.callsTo('POST', `/companion/handoffs/${HANDOFF_ID}/reply`)).toHaveLength(2),
+    );
+    expect(api.callsTo('POST', `/companion/handoffs/${HANDOFF_ID}/reply`)[1]!.body).toEqual({
+      text: '降压药先别停',
+      acknowledgeWarnings: true,
+    });
+  });
+
   it('待确认的测量：确认后写进监测', async () => {
     const api = mockApi({
       [`GET ${CASES}`]: () => json(200, { alerts: [], handoffs: [] }),
@@ -120,7 +147,7 @@ describe('伴侣视图 · 预警、转交、收集信息', () => {
     });
     const user = userEvent.setup();
     render(<CasesSection clientId={ids.clientA} />);
-    expect(await screen.findByText('客户报的血压：150 / 95')).toBeInTheDocument();
+    expect(await screen.findByText('客户报的血压：150 / 95 毫米汞柱')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '确认并写进监测' }));
     await waitFor(() =>
       expect(api.callsTo('POST', `/companion/observations/${OBS_ID}/confirm`)).toHaveLength(1),

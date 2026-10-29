@@ -42,7 +42,7 @@ describe('福宝评测', () => {
       count('spoken'),
       companionMemoryEvalCases.length,
       // 档案答疑 6 条 + 今天的打卡 4 条（第 5 步）
-    ]).toEqual([12, 9, 6, 10, 4, 4, 8]);
+    ]).toEqual([12, 9, 6, 10, 4, 4, 9]);
     expect(companionSpeechEvalCases.length).toBeGreaterThanOrEqual(10);
     const ids = [
       ...companionEvalCases,

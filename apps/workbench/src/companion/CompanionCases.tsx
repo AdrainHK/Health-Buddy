@@ -33,7 +33,9 @@ import care from './Companion.module.css';
 export function caseErrorText(t: TFunction, err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 400 && err.code === 'invalid_content') {
-      return t('companion.cases.errors.bannedTerm');
+      return err.reasons.includes('manager_only_text')
+        ? t('companion.cases.errors.managerOnly')
+        : t('companion.cases.errors.bannedTerm');
     }
     if (err.status === 400) return t('companion.cases.errors.badRequest');
     if (err.status === 404) return t('companion.cases.errors.notFound');
@@ -193,15 +195,28 @@ export function HandoffItem({
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** 回复里有药名、判断等：服务器先提醒，健管师看过后再确认发送（合规审查 S2） */
+  const [warnings, setWarnings] = useState<string[] | null>(null);
   const run = (action: () => Promise<unknown>) => {
     setBusy(true);
     setError(null);
     action()
       .then(() => {
         setReplying(false);
+        setWarnings(null);
         onChanged();
       })
-      .catch((err: unknown) => setError(caseErrorText(t, err)))
+      .catch((err: unknown) => {
+        if (
+          err instanceof ApiError &&
+          err.status === 400 &&
+          err.reasons[0] === 'needs_confirmation'
+        ) {
+          setWarnings(err.reasons.slice(1));
+          return;
+        }
+        setError(caseErrorText(t, err));
+      })
       .finally(() => setBusy(false));
   };
   const canClose = handoff.status === 'open' || handoff.status === 'replied';
@@ -237,7 +252,7 @@ export function HandoffItem({
           aria-label={t('companion.cases.replyTitle')}
           onSubmit={(e) => {
             e.preventDefault();
-            run(() => replyCompanionHandoff(handoff.id, text.trim()));
+            run(() => replyCompanionHandoff(handoff.id, text.trim(), warnings !== null));
           }}
         >
           <p className={styles.muted}>{t('companion.cases.replyHint')}</p>
@@ -248,9 +263,23 @@ export function HandoffItem({
               rows={3}
               maxLength={COMPANION_REPLY_MAX}
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => {
+                setText(e.target.value);
+                setWarnings(null);
+              }}
             />
           </label>
+          {warnings && (
+            <div className={care.warningBox} role="alert">
+              <p>{t('companion.cases.warningsTitle')}</p>
+              <ul>
+                {warnings.map((w) => (
+                  <li key={w}>{t(`companion.cases.warnings.${w}`, { defaultValue: w })}</li>
+                ))}
+              </ul>
+              <p>{t('companion.cases.warningsHint')}</p>
+            </div>
+          )}
           {error && (
             <p className={styles.error} role="alert">
               {error}
@@ -258,7 +287,7 @@ export function HandoffItem({
           )}
           <div className={styles.cardActions}>
             <Button type="submit" variant="primary" disabled={busy || !text.trim()}>
-              {t('companion.cases.sendReply')}
+              {warnings ? t('companion.cases.sendAnyway') : t('companion.cases.sendReply')}
             </Button>
             <Button variant="ghost" disabled={busy} onClick={() => setReplying(false)}>
               {t('companion.cancel')}
@@ -354,6 +383,7 @@ export function ObservationItem({
           {t('companion.cases.pendingValue', {
             metric: t(`companion.checkin.metrics.${observation.metric}`),
             values: observation.values.join(' / '),
+            unit: t(`companion.cases.units.${observation.metric}`),
           })}
         </p>
       )}
@@ -453,6 +483,7 @@ export function CasesSection({
       )}
       <h6 className={styles.basisTitle}>{t('companion.cases.observationsTitle')}</h6>
       <p className={styles.muted}>{t('companion.cases.observationsHint')}</p>
+      <p className={styles.muted}>{t('companion.cases.aiNote')}</p>
       {shown.observations.length === 0 ? (
         <p className={styles.muted}>{t('companion.cases.noObservations')}</p>
       ) : (

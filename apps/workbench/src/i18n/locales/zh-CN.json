@@ -2190,21 +2190,46 @@
       "overdue": "已超时",
       "writeReply": "写回复",
       "replyTitle": "回复客户",
-      "replyHint": "福宝会在客户下次唤醒时先说“您的健管师回复了您之前问的问题”，再原样念出你的回复。请用短句、口语，不写符号和缩写。",
+      "replyHint": "福宝会在客户下次唤醒时先说“您的健管师回复了您之前问的问题”，再原样念出你的回复，家人也可能听到。请用短句、口语，不写符号和缩写；不写药名和剂量，不评价指标高低，不下诊断；用药问题请电话联系，或请客户和开药的医生确认。",
       "reply": "回复（念给客户听，最多 {{max}} 字）",
       "sendReply": "发送给福宝",
       "replyValue": "回复：{{text}}",
       "closedByCall": "已电话联系",
       "close": "关闭",
-      "pendingValue": "客户报的{{metric}}：{{values}}",
+      "pendingValue": "客户报的{{metric}}：{{values}} {{unit}}",
       "confirmReading": "确认并写进监测",
       "dismissReading": "驳回",
       "errors": {
         "bannedTerm": "回复里有不能对客户说的词（如“治愈”“根治”），请修改后再发送。",
         "badRequest": "填写的内容不完整或不对，请检查后再提交。",
         "notFound": "找不到这条记录，可能已经处理过。",
-        "changed": "这条记录已经被处理过了，请刷新后再看。"
-      }
+        "changed": "这条记录已经被处理过了，请刷新后再看。",
+        "managerOnly": "回复里有只给健管师看的提示语（如“仅供健管师参考”），不能念给客户，请删掉后再发送。"
+      },
+      "units": {
+        "bp": "毫米汞柱",
+        "fpg": "毫摩尔/升",
+        "weight": "公斤",
+        "steps": "步",
+        "sleep_hours": "小时"
+      },
+      "aiNote": "收集信息由 AI 整理，可能有误，以聊天原文为准。",
+      "warningsTitle": "这段回复会原样念给客户，发现以下内容：",
+      "warnings": {
+        "drug_name": "药名",
+        "drug_advice": "用药建议或剂量",
+        "presumed_disease": "病名或疾病判断",
+        "judgment": "数值高低、好坏的评价",
+        "efficacy_claim": "效果承诺",
+        "twin_term": "孪生、风险颜色等内部说法",
+        "expert": "“专家”字样",
+        "hospital": "推荐具体医院",
+        "manager_promise": "承诺",
+        "reassurance": "“没事”这类安抚",
+        "placeholder": "花括号等符号"
+      },
+      "warningsHint": "请修改；确实需要这样说时，再点“仍然发送”。",
+      "sendAnyway": "仍然发送"
     },
     "chat": {
       "title": "聊天和记忆",
@@ -2218,7 +2243,8 @@
       "noSessions": "还没有聊天记录。",
       "client": "客户",
       "companion": "福宝",
-      "more": "查看更早的聊天"
+      "more": "查看更早的聊天",
+      "managerReply": "健管师回复（福宝念）"
     }
   }
 }

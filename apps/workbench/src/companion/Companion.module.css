@@ -197,3 +197,16 @@
   margin-right: var(--hb-space-2);
   font-weight: 600;
 }
+
+.warningBox {
+  padding: var(--hb-space-2) var(--hb-space-3);
+  border: 1px solid var(--hb-twin-yellow-text);
+  border-radius: var(--hb-radius-md);
+  background: var(--hb-surface-2);
+  font-size: var(--hb-text-sm);
+}
+
+.warningBox p,
+.warningBox ul {
+  margin: 0;
+}

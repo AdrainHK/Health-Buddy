@@ -239,6 +239,25 @@ describe('收集信息（第 6 步）', () => {
       },
     ]);
     expect(first!.text).not.toContain('13800138000');
+    // 剂量不记；变了写法的药名查得到但替换不掉时整条不要（合规审查 S3、S4）
+    expect(
+      acceptCompanionObservations([
+        {
+          category: 'adherence',
+          text: '客户说早上那两片忘吃了',
+          polarity: null,
+          metric: null,
+          values: [],
+        },
+        {
+          category: 'adherence',
+          text: '客户说二甲 双胍忘吃了',
+          polarity: null,
+          metric: null,
+          values: [],
+        },
+      ]).map((o) => o.text),
+    ).toEqual(['客户说了服药的情况（含剂量，已省略，请看聊天原文）']);
   });
 });
 

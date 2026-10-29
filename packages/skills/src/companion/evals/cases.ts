@@ -464,6 +464,19 @@ export const companionMemoryEvalCases: CompanionMemoryEvalCase[] = [
     },
   },
   {
+    id: 'co-dose-brand',
+    category: 'memory',
+    turns: [
+      { role: 'client', text: '早上那两片络活喜又忘了吃，中午才补上' },
+      { role: 'companion', text: '记下了，我会告诉您的健管师。' },
+    ],
+    expect: {
+      mustNotContain: ['络活喜'],
+      observeAny: ['adherence'],
+      observationsMustNotContain: ['络活喜', '两片'],
+    },
+  },
+  {
     id: 'co-chat-reading',
     category: 'memory',
     turns: [

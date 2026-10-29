@@ -47,7 +47,12 @@ const READING_ATTEMPTS = 2;
  * 或通过了输出检查的模型回答
  */
 export type Utterance =
-  { script: CompanionScriptKind; vars?: Readonly<Record<string, string>> } | { text: string };
+  | { script: CompanionScriptKind; vars?: Readonly<Record<string, string>> }
+  | {
+      text: string;
+      /** 健管师的转交回复（N13）：念完后标记已播报，聊天记录里记成 handoff_reply */
+      replyId?: string;
+    };
 
 export interface DialogueTurn {
   utterances: Utterance[];
@@ -130,7 +135,8 @@ export class CompanionDialogue implements OnApplicationShutdown {
   /**
    * 唤醒后先说健管师的回复（N13：先念“您的健管师回复了……”，再念回复原文，不改写），
    * 再补说到期的打卡提醒（规格 2.3 暂行做法），然后听客户说话；都没有时不说话。
-   * 今天还没说过“不是医生”时先说每日开场（N9）。念的话记进聊天记录，回复标记为已播报。
+   * 今天还没说过“不是医生”时先说每日开场（N9）。念的话记进聊天记录；回复要等设备真正念完
+   * 才标记已播报（markRepliesDelivered，合规审查 B1）。
    */
   async greet(deviceId: string, sessionId: string): Promise<Utterance[]> {
     const state = this.sessions.get(sessionId);
@@ -142,18 +148,13 @@ export class CompanionDialogue implements OnApplicationShutdown {
     const utterances: Utterance[] = [];
     if (!(await this.repo.saidIntroToday(deviceId))) utterances.push({ script: 'daily_intro' });
     for (const reply of replies) {
-      utterances.push({ script: 'handoff_reply_intro' }, { text: reply.text });
+      utterances.push({ script: 'handoff_reply_intro' }, { text: reply.text, replyId: reply.id });
     }
     if (first) {
       state.checkin = { queue: due, asking: first, confirming: null, attempts: 0 };
       utterances.push(reminderOf(first));
     }
     await this.record(deviceId, state.clientId, sessionId, [], utterances);
-    await this.repo.markRepliesDelivered(
-      deviceId,
-      state.clientId,
-      replies.map((r) => r.id),
-    );
     this.logger.log(
       `companion greet ${JSON.stringify({ replies: replies.length, due: first ? due.length + 1 : 0 })}`,
     );
@@ -338,6 +339,17 @@ export class CompanionDialogue implements OnApplicationShutdown {
     this.pending.add(work);
     void work.finally(() => this.pending.delete(work));
     return work;
+  }
+
+  /** 回复原文已经完整念给客户：标记已播报，下次不再念 */
+  async markRepliesDelivered(
+    deviceId: string,
+    sessionId: string,
+    replyIds: readonly string[],
+  ): Promise<void> {
+    const state = this.sessions.get(sessionId);
+    if (!state || !replyIds.length) return;
+    await this.repo.markRepliesDelivered(deviceId, state.clientId, replyIds);
   }
 
   /**
@@ -586,7 +598,11 @@ export class CompanionDialogue implements OnApplicationShutdown {
           });
         }
       } else {
-        messages.push({ role: 'companion', kind: 'chat', content: u.text });
+        messages.push({
+          role: 'companion',
+          kind: u.replyId ? 'handoff_reply' : 'chat',
+          content: u.text,
+        });
       }
     }
     const ids = await this.repo.addMessages(deviceId, clientId, sessionId, messages);

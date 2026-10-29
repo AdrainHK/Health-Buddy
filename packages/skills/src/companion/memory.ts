@@ -4,6 +4,7 @@
  * 收集信息只给健管师看，药名换成“药物”，闲聊里的测量值记成待确认（不直接写监测）。
  */
 import {
+  normalizeForCompliance,
   CHECKIN_METRICS,
   checkinValuesInRange,
   COMPANION_OBSERVATION_CATEGORIES,
@@ -11,7 +12,7 @@ import {
   type ObservationCategory,
 } from '@health-buddy/shared';
 import { z } from 'zod';
-import { findDrugNames } from '../wording.js';
+import { findDoseMatch, findDrugNames } from '../wording.js';
 import { isAllowedMemory } from './checks.js';
 import { redactCompanionText, type CompanionTurn } from './prompt.js';
 
@@ -100,7 +101,13 @@ export function acceptCompanionObservations(
   for (const item of items) {
     let text = redactCompanionText(item.text.trim()).slice(0, 200);
     for (const { term } of findDrugNames(text)) text = text.split(term).join('药物');
-    if (!text) continue;
+    // 原文里的写法和词表不一样（加了空格、繁体字）时替换不掉：仍查得到药名就整条不要（合规审查 S3）
+    if (!text || findDrugNames(text).length) continue;
+    // 服药情况不记剂量（规格 2.7）：查到剂量就只记“客户说服药有情况”，原话不留（合规审查 S4）
+    if (findDoseMatch(normalizeForCompliance(text).text)) {
+      if (item.category !== 'adherence') continue;
+      text = '客户说了服药的情况（含剂量，已省略，请看聊天原文）';
+    }
     const polarity = item.category === 'mood' || item.category === 'sleep' ? item.polarity : null;
     const isReading =
       item.category === 'measurement' &&

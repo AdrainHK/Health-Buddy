@@ -130,7 +130,9 @@ export function ChatSection({ clientId }: { clientId: string }) {
                       <span className={care.speaker}>
                         {m.role === 'client'
                           ? t('companion.chat.client')
-                          : t('companion.chat.companion')}
+                          : m.kind === 'handoff_reply'
+                            ? t('companion.chat.managerReply')
+                            : t('companion.chat.companion')}
                       </span>
                       {m.content}
                     </li>

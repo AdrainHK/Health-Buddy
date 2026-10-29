@@ -43,7 +43,7 @@ export interface SpokenScript {
 
 export interface NewMessage {
   role: 'client' | 'companion';
-  kind: 'chat' | 'script';
+  kind: 'chat' | 'script' | 'handoff_reply';
   scriptKind?: CompanionScriptKind;
   content: string;
   signals?: CompanionMessageSignal[];

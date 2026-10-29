@@ -45,6 +45,11 @@ export type CompanionHandoff = z.infer<typeof companionHandoffSchema>;
 
 export const replyHandoffRequestSchema = z.object({
   text: z.string().trim().min(1).max(COMPANION_REPLY_MAX),
+  /**
+   * 回复会被福宝原样念给客户：含药名、用药建议、病名、数值评价、功效承诺等时先返回提醒
+   * （400 invalid_content，reasons 第一项是 needs_confirmation，后面是提醒的类别），健管师看过提醒仍要发送时再带 true 提交（合规审查 S2）
+   */
+  acknowledgeWarnings: z.boolean().default(false),
 });
 export type ReplyHandoffRequest = z.infer<typeof replyHandoffRequestSchema>;
 
@@ -143,8 +148,8 @@ export type CompanionObservationListResponse = z.infer<
 export const companionMessageSchema = z.object({
   id: z.string(),
   role: z.enum(['client', 'companion']),
-  /** chat：客户说的、福宝的回答；script：固定话术 */
-  kind: z.enum(['chat', 'script']),
+  /** chat：客户说的、福宝的回答；script：固定话术；handoff_reply：健管师的回复（福宝念） */
+  kind: z.enum(['chat', 'script', 'handoff_reply']),
   content: z.string(),
   createdAt: z.iso.datetime(),
 });

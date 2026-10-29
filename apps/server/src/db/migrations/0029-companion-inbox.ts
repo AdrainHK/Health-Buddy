@@ -45,14 +45,15 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     alter table companion_handoffs add constraint companion_handoffs_status_check
       check (status in ('open', 'replied', 'delivered', 'closed_by_call', 'closed'));
     alter table companion_handoffs
-      add column reply_text text check (char_length(btrim(reply_text)) between 1 and 300),
+      add column reply_text text check (char_length(btrim(reply_text)) between 1 and 150),
       add column replied_by uuid references users (id),
       add column replied_at timestamptz,
       add column closed_by uuid references users (id),
       add column closed_at timestamptz,
       add column delivered_at timestamptz,
+      -- 已回复、已播报的必须有回复；已回复后关闭的保留回复（租户审查 B1）
       add constraint companion_handoffs_reply_check
-        check ((status in ('replied', 'delivered')) = (reply_text is not null and replied_at is not null)),
+        check (status not in ('replied', 'delivered') or (reply_text is not null and replied_at is not null)),
       add constraint companion_handoffs_delivered_check
         check ((status = 'delivered') = (delivered_at is not null));
     create index companion_handoffs_reply_pending_idx on companion_handoffs (client_id)
@@ -62,7 +63,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       language plpgsql set search_path = pg_catalog, public, pg_temp
     as $$
     begin
-      if hb_is_system(tg_relid) or tg_op = 'INSERT' then
+      if hb_is_system(tg_relid) then
         return new;
       end if;
       -- 健管师只能改状态和回复；原话、类别、客户、来源都不能改
@@ -111,7 +112,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       language plpgsql set search_path = pg_catalog, public, pg_temp
     as $$
     begin
-      if hb_is_system(tg_relid) or tg_op = 'INSERT' then
+      if hb_is_system(tg_relid) then
         return new;
       end if;
       if new.client_id is distinct from old.client_id or new.category is distinct from old.category
@@ -137,7 +138,14 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     grant update (status, resolution, note, handled_by, handled_at) on companion_alerts to ${app};
   `.execute(db);
 
-  // ---------- 3. 收集信息 ----------
+  // ---------- 3. 聊天消息：健管师的回复由福宝念出，单独标记（合规审查 S6） ----------
+  await sql`
+    alter table companion_messages drop constraint companion_messages_kind_check;
+    alter table companion_messages add constraint companion_messages_kind_check
+      check (kind in ('chat', 'script', 'handoff_reply'));
+  `.execute(db);
+
+  // ---------- 4. 收集信息 ----------
   await sql`
     alter table companion_observations
       add column polarity text check (polarity in ('negative', 'neutral', 'positive')),
@@ -163,7 +171,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
         raise exception 'device cannot write' using errcode = '42501';
       end if;
       if not exists (
-        select 1 from companion_sessions s where s.id = p_session and s.client_id = p_client
+        select 1 from companion_sessions s
+          where s.id = p_session and s.client_id = p_client and s.device_id = app_device_id()
       ) then
         raise exception 'session not found' using errcode = '42501';
       end if;
@@ -171,6 +180,17 @@ export async function up(db: Kysely<unknown>): Promise<void> {
         raise exception 'invalid observations' using errcode = 'check_violation';
       end if;
       for v in select * from jsonb_array_elements(p_items) loop
+        -- 测量项目和数值个数必须对上，否则只当文字（租户审查小问题 2）
+        if v ->> 'metric' is not null and cardinality(checkin_metric_codes(v ->> 'metric'))
+          is distinct from jsonb_array_length(coalesce(v -> 'values', '[]')) then
+          raise exception 'invalid reading values' using errcode = 'check_violation';
+        end if;
+        -- 闲聊里报的数命中危急阈值：同样写“危急指标”预警（合规审查 S7，规格 2.5“宁可多报”）
+        if v ->> 'metric' is not null and companion_reading_critical(v ->> 'metric',
+          (select array_agg(x::numeric) from jsonb_array_elements_text(v -> 'values') x)) then
+          insert into companion_alerts (client_id, category, trigger)
+            values (p_client, 'critical_value', 'threshold');
+        end if;
         insert into companion_observations
           (client_id, category, text, observed_on, polarity, metric, reading_values,
             source_session_id, status)
@@ -204,6 +224,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       if not found then
         raise exception 'observation not found' using errcode = 'P0002';
       end if;
+      -- 和并发的客户转出串行（同 sync_artifact_to_companion）
+      perform 1 from clients where id = o.client_id and manager_id = app_user_id() for share;
       update companion_observations
         set status = case when p_confirm then 'confirmed' else 'dismissed' end,
           resolved_by = app_user_id(), resolved_at = v_now
@@ -218,7 +240,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       for i in 1 .. cardinality(v_codes) loop
         insert into monitoring_readings (client_id, metric, value, unit, measured_at, source)
           values (o.client_id, v_codes[i], o.reading_values[i], checkin_metric_unit(v_codes[i]),
-            v_now, 'companion');
+            o.created_at, 'companion');
       end loop;
       insert into twin_compute_state (client_id, operator_id, org_id, manager_id, requested_at)
         select c.id, c.operator_id, c.org_id, c.manager_id, v_now from clients c
@@ -229,7 +251,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     $$;
   `.execute(db);
 
-  // ---------- 4. 福宝播报回复（N13） ----------
+  // ---------- 5. 福宝播报回复（N13） ----------
   await sql`
     -- 已回复、还没播报的回复原文（最早的在前），给设备会话
     create function companion_pending_replies(p_client uuid)
@@ -261,13 +283,28 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     $$;
   `.execute(db);
 
-  // ---------- 5. 记忆删除、设备离线“知道了” ----------
+  // ---------- 6. 记忆删除、设备离线“知道了” ----------
   await sql`
     create policy companion_memories_manager_delete on companion_memories for delete
       using (${manager});
 
     alter table companion_devices add column offline_ack_at timestamptz;
     grant select (offline_ack_at) on companion_devices to ${app};
+    -- 设备换客户、客户转给别的健管师时清掉“知道了”，新健管师照常收到提醒（租户审查 S1）
+    create function companion_devices_offline_ack_reset() returns trigger
+      language plpgsql set search_path = pg_catalog, public, pg_temp
+    as $$
+    begin
+      if new.client_id is distinct from old.client_id
+        or new.manager_id is distinct from old.manager_id then
+        new.offline_ack_at := null;
+      end if;
+      return new;
+    end
+    $$;
+    revoke all on function companion_devices_offline_ack_reset() from public;
+    create trigger companion_devices_offline_ack_reset before update on companion_devices
+      for each row execute function companion_devices_offline_ack_reset();
     -- 健管师对“设备离线”点“知道了”；设备再上线（last_seen_at 更新）后提醒自然消失
     create function companion_offline_ack(p_client uuid) returns boolean
       language plpgsql security definer set search_path = pg_catalog, public, pg_temp
