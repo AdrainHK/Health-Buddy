@@ -16,7 +16,9 @@ import { COMPANION_ENUM_SNAPSHOT_0024 } from './0024-companion-devices.js';
  * - companion_handoffs、companion_alerts：福宝说“已经转给健管师了”时写一条，设备只能新增。
  * - companion_device_profile()：设备角色对 clients、visits 没有策略，只经这个函数读称呼、年龄段、
  *   下一次随访的日期和方式（规格 2.6 能读的部分；不含随访重点和话术）。
- * - 新增固定话术 memory_forgotten、memory_forget_confirm（N11）。
+ * - 新增固定话术 memory_forgotten、memory_forget_confirm、memory_forgotten_all（N11）。
+ * - 表之间的引用都带 client_id（复合外键）：外键检查绕过行级安全，单列外键能让一位客户的行
+ *   指向另一位客户的会话或消息（租户审查 S1）。
  */
 
 /** 迁移时的固定话术种类快照（有测试对照 packages/shared） */
@@ -24,12 +26,14 @@ export const COMPANION_SCRIPT_KINDS_0027 = [
   ...COMPANION_ENUM_SNAPSHOT_0024.scriptKinds,
   'memory_forgotten',
   'memory_forget_confirm',
+  'memory_forgotten_all',
 ] as const;
 
 /** 新增话术第 1 版（候选，待审定）；有测试对照 COMPANION_DEFAULT_SCRIPTS */
 export const COMPANION_SCRIPTS_SNAPSHOT_0027: Readonly<Record<string, string>> = {
   memory_forgotten: '好的，这件事我不记了。',
   memory_forget_confirm: '您是要我把记住的您的事全都忘掉吗？是的话请再说一遍“全都忘掉”。',
+  memory_forgotten_all: '好的，您的事我都不记了。',
 };
 
 export const COMPANION_HANDOFF_CATEGORIES_0027 = [
@@ -114,6 +118,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       -- 后台整理生成的摘要（不含病名、药名的口语化概述），给之后的对话做上下文
       summary text check (char_length(summary) <= 500),
       summarized_at timestamptz,
+      unique (id, client_id),
       ${TENANT_FKS}
     );
     create index companion_sessions_client_idx on companion_sessions (client_id, started_at desc);
@@ -121,7 +126,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     create table companion_messages (
       id bigint generated always as identity primary key,
       ${TENANT_COLUMNS}
-      session_id uuid not null references companion_sessions (id) on delete cascade,
+      session_id uuid not null,
       role text not null check (role in ('client', 'companion')),
       kind text not null check (kind in ('chat', 'script')),
       script_kind text check (script_kind in (${list(COMPANION_SCRIPT_KINDS_0027)})),
@@ -133,6 +138,9 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       purge_after timestamptz not null default now() + interval '180 days',
       check ((kind = 'script') = (script_kind is not null)),
       check (role = 'companion' or kind = 'chat'),
+      unique (id, client_id),
+      foreign key (session_id, client_id) references companion_sessions (id, client_id)
+        on delete cascade,
       ${TENANT_FKS}
     );
     create index companion_messages_client_idx on companion_messages (client_id, created_at desc);
@@ -143,9 +151,11 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       id uuid primary key default gen_random_uuid(),
       ${TENANT_COLUMNS}
       text text not null check (char_length(btrim(text)) between 1 and 100),
-      source_session_id uuid references companion_sessions (id) on delete set null,
+      source_session_id uuid,
       created_at timestamptz not null default clock_timestamp(),
       purge_after timestamptz,
+      foreign key (source_session_id, client_id) references companion_sessions (id, client_id)
+        on delete set null (source_session_id),
       ${TENANT_FKS}
     );
     create index companion_memories_client_idx on companion_memories (client_id, created_at desc);
@@ -153,7 +163,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     create table companion_handoffs (
       id uuid primary key default gen_random_uuid(),
       ${TENANT_COLUMNS}
-      message_id bigint references companion_messages (id) on delete set null,
+      message_id bigint,
       category text not null check (category in (${list(COMPANION_HANDOFF_CATEGORIES_0027)})),
       -- 客户问的原话（识别出的文字，已去掉电话、证件号），给健管师看
       question text not null check (char_length(question) between 1 and 500),
@@ -162,6 +172,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       status text not null default 'open'
         check (status in ('open', 'replied', 'closed_by_call', 'closed')),
       created_at timestamptz not null default now(),
+      foreign key (message_id, client_id) references companion_messages (id, client_id)
+        on delete set null (message_id),
       ${TENANT_FKS}
     );
     create index companion_handoffs_client_idx on companion_handoffs (client_id, created_at desc);
@@ -170,12 +182,14 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     create table companion_alerts (
       id uuid primary key default gen_random_uuid(),
       ${TENANT_COLUMNS}
-      message_id bigint references companion_messages (id) on delete set null,
+      message_id bigint,
       category text not null check (category in (${list(COMPANION_ALERT_CATEGORIES_0027)})),
       trigger text not null check (trigger in ('keyword', 'model', 'threshold')),
       script_version int check (script_version >= 1),
       status text not null default 'open' check (status in ('open', 'handled')),
       created_at timestamptz not null default now(),
+      foreign key (message_id, client_id) references companion_messages (id, client_id)
+        on delete set null (message_id),
       ${TENANT_FKS}
     );
     create index companion_alerts_client_idx on companion_alerts (client_id, created_at desc);
@@ -199,8 +213,14 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       create trigger ${p('tenant')} before insert or update on ${t}
         for each row execute function client_record_tenant();
       create policy ${p('manager_select')} on ${t} for select using (${manager});
-      create policy ${p('device_select')} on ${t} for select using (${device});
       create policy ${p('device_insert')} on ${t} for insert with check (${device});
+    `.execute(db);
+  }
+  // 设备要读会话、聊天、记忆；转交、预警只新增不读（租户审查 S4，第 6 步播报回复时再按需开放）
+  for (const table of ['companion_sessions', 'companion_messages', 'companion_memories']) {
+    await sql`
+      create policy ${sql.id(`${table}_device_select`)} on ${sql.table(table)} for select
+        using (${device});
     `.execute(db);
   }
   await sql`
@@ -226,7 +246,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     create policy companion_memories_device_delete on companion_memories for delete
       using (app_role() = 'companion_device' and client_id = app_client_id() and companion_device_can_talk());
 
-    grant select, insert on companion_sessions to ${app};
+    grant select on companion_sessions to ${app};
+    grant insert (client_id, device_id) on companion_sessions to ${app};
     grant update (ended_at, turns, summary, summarized_at) on companion_sessions to ${app};
     grant select on companion_messages to ${app};
     grant insert (client_id, session_id, role, kind, script_kind, content, signals) on companion_messages to ${app};
@@ -276,21 +297,31 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     create trigger companion_consents_purge_schedule after insert on companion_consents
       for each row execute function companion_consents_purge_schedule();
 
-    -- 定时清理（没有租户上下文时由后台任务调用）：删掉到期的聊天文字和记忆，返回删除条数
+    -- 定时清理（没有租户上下文时由后台任务调用）：删掉到期的聊天文字和记忆，返回删除条数。
+    -- 撤回同意满 7 天的客户（最近一条记录是撤回）再按客户删一遍、清空会话摘要：撤回时正在写入的
+    -- 消息可能没赶上打标（租户审查 S6）
     create function companion_purge() returns table (messages int, memories int)
       language plpgsql security definer set search_path = pg_catalog, public, pg_temp
     as $$
     declare
       m int;
       r int;
+      v_revoked uuid[];
     begin
       if app_role() is not null then
         raise exception 'companion purge only without tenant context' using errcode = '42501';
       end if;
-      delete from companion_messages where purge_after <= now();
+      select coalesce(array_agg(c.client_id), '{}') into v_revoked from (
+        select distinct on (client_id) client_id, action, created_at
+          from companion_consents order by client_id, id desc
+      ) c
+      where c.action = 'revoke' and c.created_at <= now() - interval '7 days';
+      delete from companion_messages where purge_after <= now() or client_id = any(v_revoked);
       get diagnostics m = row_count;
-      delete from companion_memories where purge_after <= now();
+      delete from companion_memories where purge_after <= now() or client_id = any(v_revoked);
       get diagnostics r = row_count;
+      update companion_sessions set summary = null
+        where summary is not null and client_id = any(v_revoked);
       return query select m, r;
     end
     $$;

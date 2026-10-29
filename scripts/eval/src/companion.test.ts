@@ -41,7 +41,7 @@ describe('福宝评测', () => {
       count('out_of_bounds'),
       count('spoken'),
       companionMemoryEvalCases.length,
-    ]).toEqual([10, 8, 6, 6, 4, 4, 4]);
+    ]).toEqual([12, 9, 6, 6, 4, 4, 4]);
     expect(companionSpeechEvalCases.length).toBeGreaterThanOrEqual(10);
     const ids = [
       ...companionEvalCases,

@@ -38,14 +38,22 @@ const MEDICAL_RULES: readonly {
     category: 'exam',
     pattern: /高不高|低不低|正不正常|算高|算低|超标|指标|化验|检查结果|报告上|参考范围/,
   },
+  // 没说“高不高”的数值提问：“血压是不是高了”“血糖低了吗”
+  {
+    category: 'exam',
+    pattern: /(?:血压|血糖|心率|心跳|尿酸|血脂|胆固醇|体重).{0,8}(?:高|低|好|稳)/,
+    needsQuestion: true,
+  },
   {
     category: 'other',
     pattern: /要不要去医院|去哪个医院|挂什么科|看什么科|要不要看医生|用不用去医院|该去医院/,
   },
+  // 客户主动要转给健管师（规格 2.4）
+  { category: 'other', pattern: /问问(?:我的)?健管师|转告(?:我的)?健管师|告诉(?:我的)?健管师/ },
   {
     category: 'symptom',
     pattern:
-      /疼|痛|晕|麻|咳|喘|发烧|发热|拉肚子|腹泻|心慌|心跳快|胸闷|恶心|吐了|不舒服|难受|肿|出血|便秘|尿频|看不清/,
+      /疼|痛|晕|发麻|手麻|脚麻|腿麻|麻木|咳|喘|发烧|发热|拉肚子|腹泻|心慌|心跳快|胸闷|恶心|吐了|不舒服|难受|肿|出血|便秘|尿频|看不清/,
   },
 ];
 
@@ -79,21 +87,20 @@ export function preCheckCompanionInput(text: string): CompanionPreCheck {
     const query = t.replace(FORGET, '').replace(FORGET_FILLER, '');
     forget = { all, query };
   }
+  // “忘掉”命令里夹着用药、症状问题时仍要转交（合规复审 B2），所以总是判断
   let medical: CompanionHandoffCategory | null = null;
-  if (!forget) {
-    for (const rule of MEDICAL_RULES) {
-      if (rule.pattern.test(t) && (!rule.needsQuestion || QUESTION.test(t))) {
-        medical = rule.category;
-        break;
-      }
+  for (const rule of MEDICAL_RULES) {
+    if (rule.pattern.test(t) && (!rule.needsQuestion || QUESTION.test(t))) {
+      medical = rule.category;
+      break;
     }
   }
   return { crisis, emergency, medical, forget };
 }
 
-/** 客户确认“全都忘掉”（福宝先问了一次，N11） */
+/** 客户确认“全都忘掉”：话术请客户再说一遍“全都忘掉”，只认这句（N11） */
 export function confirmsForgetAll(text: string): boolean {
-  return /全都忘|都忘掉|全部忘|是的|对的|确定|忘掉吧/.test(compact(text));
+  return /全都忘|都忘掉|全部忘掉/.test(compact(text));
 }
 
 /**
@@ -133,6 +140,31 @@ export interface CompanionReplyIssue {
   term: string;
 }
 
+/** 福宝回答里不能出现的数值、健康评价（固定话术检查里的判断用语之外） */
+export const COMPANION_VALUE_JUDGMENTS = [
+  '超标',
+  '达标',
+  '有点高',
+  '有点低',
+  '太高',
+  '太低',
+  '过高',
+  '过低',
+  '偏胖',
+  '太胖',
+  '很健康',
+  '挺健康',
+  '身体很好',
+  '不太好',
+  '控制得好',
+  '控制得不错',
+] as const;
+/** 指标后面跟高低好坏：“血压高了”“血糖挺稳” */
+const METRIC_JUDGMENT =
+  /(?:血压|血糖|心率|心跳|体重|尿酸|血脂|胆固醇|指标|数值|这个数)[^，。！？；]{0,6}(?:高(?!压)|低(?!压)|好|稳|合适|理想|正常)/;
+/** 平时的回答里不能说的安抚（危机后的陪伴用 COMPANION_REASSURANCE_TERMS 全部） */
+const NORMAL_REASSURANCE = ['没事', '不要紧', '不严重', '没什么大问题'] as const;
+
 /** 列表、括号、符号、英文缩写（“AI”除外） */
 const SYMBOLS =
   /[[\]()（）【】*#•·:：/\\|<>{}=_~^%&@$]|^\s*[-\d]+[.、)]|(?<![A-Za-z])(?!AI\b)[A-Za-z]{2,}/m;
@@ -164,10 +196,17 @@ export function checkCompanionReply(
     category: i.category,
     term: i.term,
   }));
-  if (options.crisis) {
-    for (const term of COMPANION_REASSURANCE_TERMS) {
-      if (text.includes(term)) issues.push({ category: 'reassurance', term });
-    }
+  // 数值高低、“健康”“达标”这类评价（合规复审 B3；规格 5.3 第 3 条）
+  const norm = compact(text);
+  for (const term of COMPANION_VALUE_JUDGMENTS) {
+    if (norm.includes(term)) issues.push({ category: 'judgment', term });
+  }
+  const metric = METRIC_JUDGMENT.exec(norm);
+  if (metric) issues.push({ category: 'judgment', term: metric[0] });
+  // 不说客户“没事”；危机、急症后的陪伴连“别担心”也不说
+  const reassurance = options.crisis ? COMPANION_REASSURANCE_TERMS : NORMAL_REASSURANCE;
+  for (const term of reassurance) {
+    if (norm.includes(term)) issues.push({ category: 'reassurance', term });
   }
   const sentences = companionSentences(text);
   const clauses = sentences.flatMap((s) => s.split(/[，,、]/));
@@ -183,8 +222,12 @@ export function checkCompanionReply(
   return issues;
 }
 
-/** 记忆和摘要里不能有的：病名、药名、“药”字、判断用语（规格 2.6、5.4 第 4 条） */
-const MEMORY_FORBIDDEN = /药|偏高|偏低|正常|异常|风险|疑似|患有|确诊|诊断/;
+/**
+ * 记忆和摘要里不能有的（规格 2.6、5.4 第 4 条）：病名、药名、“药”字、判断用语、症状、
+ * 指标和数值（合规复审 S5）
+ */
+const MEMORY_FORBIDDEN =
+  /药|偏高|偏低|正常|异常|风险|疑似|患有|确诊|诊断|疼|痛|晕|发麻|咳|喘|发烧|不舒服|难受|失眠|血压|血糖|心率|尿酸|血脂|胆固醇|体重|化验|检查/;
 
 export function isAllowedMemory(text: string): boolean {
   const t = text.trim();

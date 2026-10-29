@@ -75,11 +75,12 @@ export async function runCompanionOnce(
       outcome.crisis ||= reply.crisisSignal;
       outcome.emergency ||= reply.emergencySignal;
       outcome.endSession = reply.endSession;
-      // 转交、模型报危机时线上不念这句（危机时念固定话术后，只有通过危机检查才念）
-      const silent =
-        mode === 'normal' &&
-        (reply.handoff !== null || reply.crisisSignal || reply.emergencySignal);
-      if (!silent) {
+      // 和线上一致：转交时不念模型的话；模型报危机、急症时念固定话术，模型的话通过危机检查才念
+      const modelSignal = mode === 'normal' && (reply.crisisSignal || reply.emergencySignal);
+      if (modelSignal) {
+        if (!checkCompanionReply(reply.reply, { crisis: true }).length)
+          outcome.spoken = reply.reply;
+      } else if (!(mode === 'normal' && reply.handoff !== null)) {
         outcome.spoken = reply.reply;
         for (const issue of checkCompanionReply(reply.reply, { crisis: mode === 'crisis' })) {
           findings.push({

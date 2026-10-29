@@ -146,9 +146,12 @@ export class CompanionSpeech {
   }
 }
 
-/** 念出来的写法：120 念“幺二零”，不念“一百二十” */
+/**
+ * 念出来的写法：急救电话 120 念“幺二零”，不念“一百二十”。只替换“拨打、打、叫、呼叫”后面的，
+ * 复述测量值（“高压 120”）时照常念数字（合规复审 S1）
+ */
 export function spokenForm(text: string): string {
-  return text.replace(/(?<!\d)120(?!\d)/g, '幺二零');
+  return text.replace(/((?:拨打|呼叫|打|叫)\s*)120(?!\d)/g, '$1幺二零');
 }
 
 function ctxOf(deviceId: string): DeviceCallContext {

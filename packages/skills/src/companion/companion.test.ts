@@ -51,8 +51,18 @@ describe('调用模型前的检查', () => {
     expect(preCheckCompanionInput(text).medical).toBe(category);
   });
 
-  it('说“药吃过了”不是问题，不转交', () => {
+  it('说“药吃过了”“打麻将”不是问题，不转交；“问问健管师”转交', () => {
     expect(preCheckCompanionInput('早上的药吃过了').medical).toBeNull();
+    expect(preCheckCompanionInput('下午去打麻将了，挺麻烦的').medical).toBeNull();
+    expect(preCheckCompanionInput('帮我问问健管师能不能去旅游').medical).toBe('other');
+    expect(preCheckCompanionInput('我血压是不是高了').medical).toBe('exam');
+  });
+
+  it('“忘掉”里夹着用药问题仍要转交；确认全部忘掉只认“全都忘掉”（合规复审 B2）', () => {
+    const pre = preCheckCompanionInput('别记了，这药我能不能停');
+    expect(pre.medical).toBe('medication');
+    expect(pre.forget).not.toBeNull();
+    expect(confirmsForgetAll('对的，我头晕要不要去医院')).toBe(false);
   });
 
   it('“忘掉……”命令（N11）', () => {
@@ -76,10 +86,17 @@ describe('输出检查', () => {
   it('合格的回答', () => {
     expect(checkCompanionReply('记下了，我会告诉您的健管师。')).toEqual([]);
     expect(checkCompanionReply('我是 AI 伴侣福宝，饭后散步二十分钟挺好的。')).toEqual([]);
+    // 复述客户报的数值（高压、低压）不算评价
+    expect(checkCompanionReply('高压一百四十五，低压九十二，记下了。')).toEqual([]);
   });
 
   it.each([
     ['您的血压偏高了，要注意。', 'judgment'],
+    ['一百四有点高，注意休息。', 'judgment'],
+    ['您的血压高了一点。', 'judgment'],
+    ['您这个数挺理想的。', 'judgment'],
+    ['步数已经达标了。', 'judgment'],
+    ['没事的，不用担心。', 'reassurance'],
     ['这可能是高血压。', 'presumed_disease'],
     ['可以吃点阿司匹林。', 'drug_name'],
     ['健管师会给您打电话的。', 'manager_promise'],
@@ -129,6 +146,8 @@ describe('提示词和资料', () => {
     expect(isAllowedMemory('客户喜欢听戏')).toBe(true);
     expect(isAllowedMemory('客户有高血压')).toBe(false);
     expect(isAllowedMemory('客户每天早上吃药')).toBe(false);
+    expect(isAllowedMemory('客户最近膝盖疼')).toBe(false);
+    expect(isAllowedMemory('客户血压一百五')).toBe(false);
     expect(
       acceptCompanionMemory(
         {

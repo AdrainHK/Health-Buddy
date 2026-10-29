@@ -158,7 +158,8 @@ export class DeviceSession {
     const message = parsed.data;
     try {
       if (message.type === 'hello') {
-        this.ready = this.onHello();
+        // 重复的 hello 不重新处理，也不替换第一次的（租户审查 S5b）
+        if (!this.helloDone) this.ready = this.onHello();
         await this.ready;
       } else if (!this.helloDone) return;
       else if (message.type === 'abort') this.speaking?.abort();
@@ -197,6 +198,11 @@ export class DeviceSession {
       return;
     }
     this.sessionId = await this.deps.dialogue.start(this.deviceId, state.clientId);
+    if (this.closed) {
+      // 建会话时连接已经断了：cleanup 没看到会话，这里补上结束（租户审查 S5a）
+      void this.deps.dialogue.end(this.deviceId, this.sessionId);
+      return;
+    }
     void this.warmScripts();
     if (this.conn.first_connection) {
       // 第一次连接（激活）时播开场白（规格 2.1 第 4 步、N9）
@@ -256,6 +262,8 @@ export class DeviceSession {
     if (l.frames.length === 0) return;
     this.busy = true;
     try {
+      // hello 的处理（读设备状态、建会话）可能还没完成，先等它，再比较客户
+      await this.ready.catch(() => undefined);
       // 每句话前确认设备仍绑定在同一位客户名下
       const state = await this.deps.repo.state(this.deviceId);
       if (!state?.clientId || state.clientId !== this.clientId || state.boundAt !== this.boundAt) {
@@ -280,7 +288,6 @@ export class DeviceSession {
         return;
       }
       this.send({ type: 'stt', session_id: this.id, text });
-      await this.ready.catch(() => undefined);
       if (!this.sessionId) {
         this.close();
         return;

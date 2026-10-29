@@ -308,7 +308,8 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
     // 急救电话念成“幺二零”（规格 2.10）
     const { spokenForm } = await import('../src/companion/voice/speech.service.js');
     expect(spokenForm('请马上拨打 120 或让家人送医。')).toBe('请马上拨打 幺二零 或让家人送医。');
-    expect(spokenForm('高压 1200')).toBe('高压 1200');
+    expect(spokenForm('高压 120，低压 80，记下了。')).toBe('高压 120，低压 80，记下了。');
+    expect(spokenForm('请马上联系家人，或拨打120。')).toBe('请马上联系家人，或拨打幺二零。');
   });
 
   it('配置接口：没有序列号、序列号不存在、未绑定都不发令牌；已绑定的设备拿到挑战和令牌', async () => {
@@ -882,6 +883,12 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
     }
     expect(await turn(device, '再聊一会')).toEqual([COMPANION_DEFAULT_SCRIPTS.rate_limited]);
     expect(companionCalls()).toHaveLength(calls);
+    // 速率超限时危机照样处理：念求助话术、写预警（合规复审 B1），不再调用模型
+    expect(await turn(device, '我不想活了')).toEqual([COMPANION_DEFAULT_SCRIPTS.crisis]);
+    expect(companionCalls()).toHaveLength(calls);
+    expect(
+      await owner.selectFrom('companion_alerts').select(['category', 'trigger']).execute(),
+    ).toEqual([{ category: 'crisis', trigger: 'keyword' }]);
     device.ws.close();
   });
 
@@ -906,8 +913,16 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
       COMPANION_DEFAULT_SCRIPTS.memory_forget_confirm,
     ]);
     expect(await left()).toHaveLength(2);
+    // 确认时说别的不算；夹着用药问题时转交，不删记忆（合规复审 B2）
+    expect(await turn(device, '别记了，这药我能不能停')).toEqual([
+      COMPANION_DEFAULT_SCRIPTS.handoff,
+    ]);
+    expect(await left()).toHaveLength(2);
+    expect(await turn(device, '把我的事全都忘掉')).toEqual([
+      COMPANION_DEFAULT_SCRIPTS.memory_forget_confirm,
+    ]);
     expect(await turn(device, '对，全都忘掉')).toEqual([
-      COMPANION_DEFAULT_SCRIPTS.memory_forgotten,
+      COMPANION_DEFAULT_SCRIPTS.memory_forgotten_all,
     ]);
     expect(await left()).toEqual([]);
     expect(companionCalls()).toHaveLength(0);
@@ -1050,12 +1065,12 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
         withDevice(appDb(), { deviceId: idB }, (trx) => trx.selectFrom(t).select('id').execute()),
       ),
     ).toEqual(Object.fromEntries(tables.map((t) => [t, 0])));
-    // 设备 A 读得到自己客户的
+    // 设备 A 读得到自己客户的会话、聊天、记忆；转交、预警只能新增不能读（租户审查 S4）
     expect(
       await count((t) =>
         withDevice(appDb(), { deviceId: idA }, (trx) => trx.selectFrom(t).select('id').execute()),
       ),
-    ).toEqual(ownerCounts);
+    ).toEqual({ ...ownerCounts, companion_handoffs: 0, companion_alerts: 0 });
     // 同协会的其他健管师、机构管理员、运营商、平台都读不到；服务的健管师读得到
     const ctxOf = (
       u: { id: string },
@@ -1099,6 +1114,39 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
     expect(await owner.selectFrom('companion_memories').select('id').execute()).toHaveLength(
       ownerCounts.companion_memories as number,
     );
+    // 设备 A 不能把会话记在设备 B 名下；更新不了客户 B 的会话（租户审查 S8）
+    const clientOf = { [idA]: f.clients.a1[0], [idB]: f.clients.b1 };
+    await expect(
+      withDevice(appDb(), { deviceId: idA }, (trx) =>
+        trx
+          .insertInto('companion_sessions')
+          .values({ client_id: clientOf[idA]!, device_id: idB })
+          .execute(),
+      ),
+    ).rejects.toThrow();
+    const sessionA = await owner
+      .selectFrom('companion_sessions')
+      .select('id')
+      .executeTakeFirstOrThrow();
+    const updated = await withDevice(appDb(), { deviceId: idB }, (trx) =>
+      trx
+        .updateTable('companion_sessions')
+        .set({ summary: '篡改' })
+        .where('id', '=', sessionA.id)
+        .executeTakeFirst(),
+    );
+    expect(Number(updated.numUpdatedRows)).toBe(0);
+    // 清理函数只在没有租户上下文时可用
+    for (const run of [
+      (q: ReturnType<typeof sql>) =>
+        withDevice(appDb(), { deviceId: idA }, (trx) => q.execute(trx)),
+      (q: ReturnType<typeof sql>) =>
+        withTenant(appDb(), ctxOf(f.users.managerA1, 'manager', f.operatorA, f.orgA), (trx) =>
+          q.execute(trx),
+        ),
+    ]) {
+      await expect(run(sql`select * from companion_purge()`)).rejects.toThrow();
+    }
     // 健管师不能写对话、转交、预警（只经设备会话）
     await expect(
       withTenant(appDb(), ctxOf(f.users.managerA1, 'manager', f.operatorA, f.orgA), (trx) =>
@@ -1117,6 +1165,34 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
     expect(rows).toEqual([]);
     // 暂停后设备读写不了任何对话数据
     await a1.post(`/api/clients/${f.clients.a1[0]}/companion/pause`).expect(200);
+    expect(
+      await count((t) =>
+        withDevice(appDb(), { deviceId: idA }, (trx) => trx.selectFrom(t).select('id').execute()),
+      ),
+    ).toEqual(Object.fromEntries(tables.map((t) => [t, 0])));
+    await expect(
+      withDevice(appDb(), { deviceId: idA }, (trx) =>
+        trx
+          .insertInto('companion_memories')
+          .values({ client_id: f.clients.a1[0], text: '暂停中写入' })
+          .execute(),
+      ),
+    ).rejects.toThrow();
+    const deleted = await withDevice(appDb(), { deviceId: idA }, (trx) =>
+      trx.deleteFrom('companion_memories').executeTakeFirst(),
+    );
+    expect(Number(deleted.numDeletedRows)).toBe(0);
+    // 解绑后再绑给另一位客户：同一台设备读不到前一位客户的会话、聊天、记忆
+    await a1.post(`/api/clients/${f.clients.a1[0]}/companion/resume`).expect(200);
+    await a1.delete(`/api/clients/${f.clients.a1[0]}/companion/device`).expect(200);
+    await a1
+      .post(`/api/clients/${f.clients.a1[1]}/companion/consents?tz=Asia/Shanghai`)
+      .send({ noticeVersion: 1, consentedOn: TODAY, confirmed: true, chatDataConfirmed: true })
+      .expect(200);
+    await a1
+      .post(`/api/clients/${f.clients.a1[1]}/companion/device`)
+      .send({ serialNo: SERIAL_A, activationCode: 'VOICE001' })
+      .expect(200);
     expect(
       await count((t) =>
         withDevice(appDb(), { deviceId: idA }, (trx) => trx.selectFrom(t).select('id').execute()),

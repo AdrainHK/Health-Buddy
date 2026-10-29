@@ -118,6 +118,7 @@ export const COMPANION_SCRIPT_KINDS = [
   // 第 4 步（N11）：客户说“忘掉……”
   'memory_forgotten',
   'memory_forget_confirm',
+  'memory_forgotten_all',
 ] as const;
 export const companionScriptKindSchema = z.enum(COMPANION_SCRIPT_KINDS);
 export type CompanionScriptKind = z.infer<typeof companionScriptKindSchema>;
@@ -269,6 +270,7 @@ export const COMPANION_DEFAULT_SCRIPTS: Readonly<
   reminder_exercise: '今天的运动做了吗？',
   memory_forgotten: '好的，这件事我不记了。',
   memory_forget_confirm: '您是要我把记住的您的事全都忘掉吗？是的话请再说一遍“全都忘掉”。',
+  memory_forgotten_all: '好的，您的事我都不记了。',
 };
 
 /** 转交的类别（规格 2.4） */

@@ -54,7 +54,7 @@ export class DialogueRepository {
   }
 
   /** 结束会话，返回这次会话客户说了几句 */
-  endSession(deviceId: string, sessionId: string): Promise<number> {
+  endSession(deviceId: string, clientId: string, sessionId: string): Promise<number> {
     return this.run(deviceId, async (trx) => {
       const count = await trx
         .selectFrom('companion_messages')
@@ -67,6 +67,7 @@ export class DialogueRepository {
         .updateTable('companion_sessions')
         .set({ ended_at: new Date(), turns })
         .where('id', '=', sessionId)
+        .where('client_id', '=', clientId)
         .execute();
       return turns;
     });
@@ -267,14 +268,28 @@ export class DialogueRepository {
     );
   }
 
-  /** 删除记忆（N11）；ids 为 'all' 时删除这位客户的全部记忆 */
-  deleteMemories(deviceId: string, ids: readonly string[] | 'all'): Promise<number> {
+  /**
+   * 删除记忆（N11）；ids 为 'all' 时删除这位客户的全部记忆，并清空会话摘要（摘要里可能也有，
+   * 不能忘了又被说出来）。显式限定客户，不只靠行级安全（租户审查 S2）
+   */
+  deleteMemories(
+    deviceId: string,
+    clientId: string,
+    ids: readonly string[] | 'all',
+  ): Promise<number> {
     if (ids !== 'all' && !ids.length) return Promise.resolve(0);
     return this.run(deviceId, async (trx) => {
-      let q = trx.deleteFrom('companion_memories');
+      let q = trx.deleteFrom('companion_memories').where('client_id', '=', clientId);
       if (ids !== 'all') q = q.where('id', 'in', [...ids]);
-      // 'all' 也只删得到当前客户的行（行级安全）
       const result = await q.executeTakeFirst();
+      if (ids === 'all') {
+        await trx
+          .updateTable('companion_sessions')
+          .set({ summary: null })
+          .where('client_id', '=', clientId)
+          .where('summary', 'is not', null)
+          .execute();
+      }
       return Number(result.numDeletedRows);
     });
   }
@@ -297,6 +312,7 @@ export class DialogueRepository {
         .updateTable('companion_sessions')
         .set({ summary: digest.summary, summarized_at: new Date() })
         .where('id', '=', sessionId)
+        .where('client_id', '=', clientId)
         .execute();
     });
   }

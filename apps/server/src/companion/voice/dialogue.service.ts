@@ -80,8 +80,13 @@ export class CompanionDialogue implements OnApplicationShutdown {
     if (!state) return { utterances: [], end: true };
     const { clientId } = state;
 
+    const pre = preCheckCompanionInput(text);
+    const urgent = pre.crisis || pre.emergency;
+    // 速率超限时危机、急症照样处理（合规复审 B1），只是不再调用模型陪伴
     const counts = await this.repo.clientTurnCounts(deviceId);
-    if (counts.minute >= COMPANION_TURNS_PER_MINUTE || counts.today >= COMPANION_TURNS_PER_DAY) {
+    const limited =
+      counts.minute >= COMPANION_TURNS_PER_MINUTE || counts.today >= COMPANION_TURNS_PER_DAY;
+    if (limited && !urgent) {
       await this.record(
         deviceId,
         clientId,
@@ -93,9 +98,10 @@ export class CompanionDialogue implements OnApplicationShutdown {
     }
 
     const utterances: Utterance[] = [];
-    if (!(await this.repo.saidIntroToday(deviceId))) utterances.push({ script: 'daily_intro' });
+    const needIntro = !(await this.repo.saidIntroToday(deviceId));
+    // 每天第一次对话先说“不是医生”；危机、急症时求助话术先念（1 秒内开始），开场放到后面
+    if (needIntro && !urgent) utterances.push({ script: 'daily_intro' });
 
-    const pre = preCheckCompanionInput(text);
     const signals = new Set<CompanionMessageSignal>();
     const handoffs: {
       category: CompanionHandoffCategory;
@@ -107,17 +113,33 @@ export class CompanionDialogue implements OnApplicationShutdown {
     const awaiting = state.awaitingForgetAll;
     state.awaitingForgetAll = false;
 
-    if (pre.crisis || pre.emergency) {
+    if (urgent) {
       // 危机优先于急症：两种都命中时先念危机话术（含 120 和家人），两条预警都写
       if (pre.crisis) alerts.push({ category: 'crisis', trigger: 'keyword' });
       if (pre.emergency) alerts.push({ category: 'emergency', trigger: 'keyword' });
       utterances.push({ script: pre.crisis ? 'crisis' : 'emergency' });
-      const comfort = await this.modelReply(deviceId, sessionId, text, 'crisis');
-      if (comfort.ok) utterances.push({ text: comfort.reply.reply });
+      if (!limited) {
+        const comfort = await this.modelReply(deviceId, sessionId, text, 'crisis');
+        if (comfort.ok) {
+          // 陪伴时模型另外识别出的信号也写预警（宁可多报）
+          if (comfort.reply.crisisSignal && !pre.crisis) {
+            alerts.push({ category: 'crisis', trigger: 'model' });
+          }
+          if (comfort.reply.emergencySignal && !pre.emergency) {
+            alerts.push({ category: 'emergency', trigger: 'model' });
+          }
+          utterances.push({ text: comfort.reply.reply });
+        }
+      }
+      if (needIntro) utterances.push({ script: 'daily_intro' });
+    } else if (pre.medical) {
+      // 用药、症状、诊断类问题优先于“忘掉”命令（合规复审 B2）
+      handoffs.push({ category: pre.medical, trigger: 'rule' });
+      utterances.push({ script: 'handoff' });
     } else if (awaiting && confirmsForgetAll(text)) {
-      await this.repo.deleteMemories(deviceId, 'all');
+      await this.repo.deleteMemories(deviceId, clientId, 'all');
       signals.add('forget');
-      utterances.push({ script: 'memory_forgotten' });
+      utterances.push({ script: 'memory_forgotten_all' });
     } else if (pre.forget) {
       signals.add('forget');
       if (pre.forget.all) {
@@ -128,13 +150,11 @@ export class CompanionDialogue implements OnApplicationShutdown {
         const matched = matchMemoriesToForget(memories, pre.forget.query);
         await this.repo.deleteMemories(
           deviceId,
+          clientId,
           matched.map((m) => m.id),
         );
         utterances.push({ script: 'memory_forgotten' });
       }
-    } else if (pre.medical) {
-      handoffs.push({ category: pre.medical, trigger: 'rule' });
-      utterances.push({ script: 'handoff' });
     } else {
       const result = await this.modelReply(deviceId, sessionId, text, 'normal');
       if (!result.ok) {
@@ -144,7 +164,7 @@ export class CompanionDialogue implements OnApplicationShutdown {
       } else if (result.reply.crisisSignal || result.reply.emergencySignal) {
         if (result.reply.crisisSignal) alerts.push({ category: 'crisis', trigger: 'model' });
         if (result.reply.emergencySignal) alerts.push({ category: 'emergency', trigger: 'model' });
-        utterances.push({ script: result.reply.crisisSignal ? 'crisis' : 'emergency' });
+        utterances.unshift({ script: result.reply.crisisSignal ? 'crisis' : 'emergency' });
         // 模型这一轮的回答没有按危机模式生成，只在通过危机后的检查时念
         if (!checkCompanionReply(result.reply.reply, { crisis: true }).length) {
           utterances.push({ text: result.reply.reply });
@@ -157,6 +177,7 @@ export class CompanionDialogue implements OnApplicationShutdown {
         end = result.reply.endSession;
       }
     }
+    if (limited) signals.add('rate_limited');
 
     for (const a of alerts) signals.add(a.category);
     if (handoffs.length) signals.add('handoff');
@@ -216,7 +237,7 @@ export class CompanionDialogue implements OnApplicationShutdown {
 
   private async finish(deviceId: string, clientId: string, sessionId: string): Promise<void> {
     try {
-      const turns = await this.repo.endSession(deviceId, sessionId);
+      const turns = await this.repo.endSession(deviceId, clientId, sessionId);
       if (turns === 0) return;
       await this.digest(deviceId, clientId, sessionId);
     } catch (err) {
@@ -305,15 +326,22 @@ export class CompanionDialogue implements OnApplicationShutdown {
     return client.length ? (ids[0] ?? null) : null;
   }
 
+  /** 预警记下这一轮实际念的求助话术版本（危机、急症都命中时念的是危机话术） */
   private async scriptVersions(
     deviceId: string,
     utterances: readonly Utterance[],
   ): Promise<Map<string, number>> {
-    const kinds = utterances.flatMap((u) =>
-      'script' in u && (u.script === 'crisis' || u.script === 'emergency') ? [u.script] : [],
+    const played = utterances.find(
+      (u): u is { script: 'crisis' | 'emergency' } =>
+        'script' in u && (u.script === 'crisis' || u.script === 'emergency'),
     );
-    const scripts = await this.repo.scripts(deviceId, kinds);
-    return new Map(scripts.map((s) => [s.kind, s.version]));
+    if (!played) return new Map();
+    const [script] = await this.repo.scripts(deviceId, [played.script]);
+    if (!script) return new Map();
+    return new Map([
+      ['crisis', script.version],
+      ['emergency', script.version],
+    ]);
   }
 }
 
