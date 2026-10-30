@@ -650,7 +650,9 @@ describe('孪生接口', () => {
         expect(types, t).toContain(t);
       // 更正只说哪一项、谁、何时，不带数值
       const correction = res.events.find((e) => e.type === 'correction')!;
-      expect(JSON.stringify(correction)).not.toContain('6.8');
+      // 时间戳里可能恰好有“6.8”（如 06:41:16.8），先去掉再查
+      const withoutTimes = JSON.stringify(correction).replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/g, '');
+      expect(withoutTimes).not.toContain('6.8');
 
       const only = await a2
         .get(`/api/clients/${f.clients.a2}/twin/timeline?types=status_change`)
