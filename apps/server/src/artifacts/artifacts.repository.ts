@@ -6,6 +6,7 @@ import {
   DISCLAIMER,
   findBannedTerms,
   endsWithDisclaimer,
+  handoffReplyStructuredSchema,
   isCompanionDeliveryKind,
   type ApproveArtifactRequest,
   type ApproveRejection,
@@ -14,11 +15,18 @@ import {
   type ArtifactEvent,
   type CriticalFlag,
   type ExportFormat,
+  type HandoffReplyStructured,
   type PlanOptions,
   type RiskTierSuggestion,
   type UpdateArtifactRequest,
 } from '@health-buddy/shared';
-import { checkClientText, finalizeClientText, getSkill } from '@health-buddy/skills';
+import {
+  checkClientText,
+  checkHandoffReply,
+  finalizeClientText,
+  getSkill,
+  withHandoffReplySection,
+} from '@health-buddy/skills';
 import { ApiException, conflict, notFound } from '../common/api-error.js';
 import { dbErrorCode } from '../common/db-error.js';
 import { DB } from '../db/db.provider.js';
@@ -27,6 +35,7 @@ import { selectArtifactSummary, toArtifactSummary } from '../tasks/tasks.reposit
 import { localDate, isValidTimeZone } from '../twin/time-zone.js';
 import { approveCarePlan, approveVisitRecord, approveVisitSchedule } from '../db/plan-functions.js';
 import { syncArtifactToCompanion, withdrawCompanionDelivery } from '../db/companion-functions.js';
+import { assertReplySendable } from '../companion/reply-check.js';
 import { renderPdf, renderPng } from './export-renderer.js';
 import {
   carePlanApproveReasons,
@@ -80,13 +89,21 @@ export class ArtifactsRepository {
       const structured =
         input.structured === undefined
           ? undefined
-          : await validateEditedStructured(trx, ctx, row.kind, input.structured);
+          : await validateEditedStructured(trx, ctx, row.kind, input.structured, row.structured);
+      // /转交回复：专业版里“回复”一节跟着改成新的原文（发送时只念 structured.reply）
+      const professional =
+        row.kind === 'handoff_reply' && structured !== undefined
+          ? withHandoffReplySection(
+              input.content.professional,
+              (structured as HandoffReplyStructured).reply,
+            )
+          : input.content.professional;
       await trx
         .updateTable('artifacts')
         .set({
           ...(structured === undefined ? {} : { structured: JSON.stringify(structured) }),
           content: JSON.stringify({
-            professional: input.content.professional,
+            professional,
             // 没有通俗版的技能（/面谈提纲）通俗版始终为空，不拼免责声明（规格 2.8）
             clientFacing: isClientFacing(row) ? finalizeClientText(input.content.clientFacing) : '',
           }),
@@ -137,6 +154,10 @@ export class ArtifactsRepository {
         reasons.push(...(await scheduleApproveReasons(trx, ctx, row.structured)));
       } else if (row.kind === 'visit_record') {
         reasons.push(...(await recordApproveReasons(trx, ctx, row.structured)));
+      } else if (row.kind === 'handoff_reply') {
+        // /转交回复（M6 规格 2.9）：回复原文过禁用词；为空、超长、有只给健管师看的提示语不能确认。
+        // 药名等提醒类在审核栏显示，发送时再确认
+        reasons.push(...handoffReplyApproveReasons(row.structured));
       }
       if (m5 && lockedClientId === null) throw readOnly();
       // 没有通俗版的技能（/面谈提纲）跳过通俗版相关检查（规格 4.1 框架扩展）
@@ -302,6 +323,51 @@ export class ArtifactsRepository {
   }
 
   /**
+   * /转交回复 审核后发送给福宝（M6 规格 2.4、2.9，红线 3）。别人的产物、转交不是本人的 → undefined（404）；
+   * 不是转交回复、未审核或不是最新一版 → 409；转交已回复或关闭 → 409 handoff_closed。
+   * 回复原文再过一遍发送检查：禁用词、只给健管师看的提示语 → 400；药名等提醒没确认 → 400 needs_confirmation。
+   * 写回复由数据库触发器再核对一遍：产物已审核、属于本人、对应这个转交、原文一致
+   */
+  sendHandoffReply(
+    ctx: TenantContext,
+    id: string,
+    acknowledgeWarnings: boolean,
+  ): Promise<ArtifactDetailResponse | undefined> {
+    return this.write(ctx, async (trx) => {
+      if (ctx.role !== 'manager') return undefined;
+      const row = await loadArtifact(trx, id, 'lock');
+      if (!row) return undefined;
+      if (row.detached) throw readOnly();
+      if (row.kind !== 'handoff_reply') throw conflict({ reasons: ['wrong_kind'] });
+      if (row.status !== 'approved') throw conflict({ reasons: ['not_approved'] });
+      if (!(await isLatest(trx, row))) throw conflict({ reasons: ['not_latest'] });
+      const parsed = handoffReplyStructuredSchema.safeParse(row.structured);
+      if (!parsed.success || !row.client_id) throw conflict({ reasons: ['reply_invalid'] });
+      const { handoffId, reply } = parsed.data;
+      assertReplySendable(reply, acknowledgeWarnings);
+      const handoff = await trx
+        .selectFrom('companion_handoffs')
+        .select('status')
+        .where('id', '=', handoffId)
+        .where('client_id', '=', row.client_id)
+        .where('manager_id', '=', ctx.userId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!handoff) return undefined;
+      if (handoff.status !== 'open') throw conflict({ reasons: ['handoff_closed'] });
+      await trx
+        .updateTable('companion_handoffs')
+        .set({ status: 'replied', reply_text: reply, reply_artifact_id: row.id })
+        .where('id', '=', handoffId)
+        .where('manager_id', '=', ctx.userId)
+        .execute();
+      await recordEvent(trx, ctx, row, 'companion_reply_sent');
+      const updated = await loadArtifact(trx, id, 'none');
+      return updated && buildDetail(trx, updated);
+    });
+  }
+
+  /**
    * 导出已审核产物的通俗版（图片或 PDF），并记一条导出记录（谁、什么时候、什么格式，不记内容）。
    * 检查和复制相同，另外标题也要合规；文件在同一个事务里生成，生成失败就不留记录。
    */
@@ -457,7 +523,7 @@ async function recordEvent(
   trx: TenantTransaction,
   ctx: TenantContext,
   row: Pick<ArtifactRow, 'id'>,
-  action: 'created' | 'edited' | 'approved' | 'copied' | 'exported',
+  action: 'created' | 'edited' | 'approved' | 'copied' | 'exported' | 'companion_reply_sent',
   reason: string | null = null,
   format: ExportFormat | null = null,
 ): Promise<void> {
@@ -757,4 +823,15 @@ async function adoptRiskTier(
       set_by: ctx.userId,
     })
     .execute();
+}
+
+/** /转交回复 确认前的检查：禁用词 → banned_terms；为空、超长、有只给健管师看的提示语 → reply_invalid */
+function handoffReplyApproveReasons(structured: unknown): RejectReason[] {
+  const parsed = handoffReplyStructuredSchema.safeParse(structured);
+  if (!parsed.success) return ['reply_invalid'];
+  const check = checkHandoffReply(parsed.data.reply);
+  const reasons: RejectReason[] = [];
+  if (check.bannedTerms.length) reasons.push('banned_terms');
+  if (check.managerOnly) reasons.push('reply_invalid');
+  return reasons;
 }

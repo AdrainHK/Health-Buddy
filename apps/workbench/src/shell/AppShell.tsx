@@ -395,6 +395,20 @@ export function AppShell({ account }: AppShellProps = {}) {
         setPrefill({ key: ++prefillSeq.current, taskId: task.id, mode: 'craft', skillId, visitId });
       });
     },
+    handoffReply: (client, handoffId) => {
+      void openClientTask(client, t('twin.ai.handoffReplyTaskTitle', { date: today() })).then(
+        (task) => {
+          if (!task) return;
+          setPrefill({
+            key: ++prefillSeq.current,
+            taskId: task.id,
+            mode: 'craft',
+            skillId: 'handoff-reply',
+            handoffRefs: [handoffId],
+          });
+        },
+      );
+    },
   };
 
   const archiveTask = (task: Task, archived: boolean) => {

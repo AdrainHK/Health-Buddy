@@ -58,6 +58,7 @@ export const SKILL: SkillSummary = {
   planSkills: [],
   experts: 'none',
   usesMaterials: false,
+  usesHandoff: false,
   usesPlanOptions: false,
 };
 

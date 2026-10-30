@@ -28,6 +28,7 @@ import * as m0026 from './0026-companion-voice.js';
 import * as m0027 from './0027-companion-dialogue.js';
 import * as m0028 from './0028-companion-checkins.js';
 import * as m0029 from './0029-companion-inbox.js';
+import * as m0030 from './0030-handoff-reply.js';
 
 export interface Migration {
   name: string;
@@ -65,4 +66,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { name: '0027-companion-dialogue', up: m0027.up },
   { name: '0028-companion-checkins', up: m0028.up },
   { name: '0029-companion-inbox', up: m0029.up },
+  { name: '0030-handoff-reply', up: m0030.up },
 ];

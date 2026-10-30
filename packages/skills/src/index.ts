@@ -116,7 +116,17 @@ export {
   visitRecordStructured,
   type VisitRecordOutput,
 } from './visit-record/index.js';
+export {
+  handoffReply,
+  checkHandoffReply,
+  checkHandoffReplyDraft,
+  HANDOFF_CATEGORY_ZH,
+  withHandoffReplySection,
+  type HandoffReplyCheck,
+  type HandoffReplyOutput,
+} from './handoff-reply/index.js';
 export { carePlanEvalCases } from './care-plan/evals/cases.js';
+export { handoffReplyEvalCases } from './handoff-reply/evals/cases.js';
 export { visitScriptEvalCases } from './visit-script/evals/cases.js';
 export { visitRecordEvalCases } from './visit-record/evals/cases.js';
 export * from './companion/index.js';

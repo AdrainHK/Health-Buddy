@@ -63,6 +63,7 @@ describe('conversationReducer', () => {
         twinRefs: [],
         libraryRefs: [],
         materialRefs: [],
+        handoffRefs: [],
         planOptions: null,
         status: 'refused',
         createdAt: '2026-10-15T08:00:00.000Z',

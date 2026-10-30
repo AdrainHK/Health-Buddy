@@ -74,6 +74,7 @@ const skills: SkillSummary[] = [
     planSkills: [],
     experts: 'auto',
     usesMaterials: false,
+    usesHandoff: false,
     usesPlanOptions: false,
   },
 ];

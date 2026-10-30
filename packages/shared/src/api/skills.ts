@@ -32,6 +32,8 @@ export const skillSummarySchema = z.object({
   experts: z.enum(['none', 'auto']).default('none'),
   /** 技能读取随访素材（/随访记录，M5 规格 2.9）：没有 @素材 时提示先上传 */
   usesMaterials: z.boolean().default(false),
+  /** 技能为一个伴侣转交起草回复（/转交回复，M6 规格 2.9）：没有 @伴侣转交 时提示先选 */
+  usesHandoff: z.boolean().default(false),
   /** 技能或计划带方案选项条（/方案生成、“方案和随访”，M5 规格 2.2） */
   usesPlanOptions: z.boolean().default(false),
 });

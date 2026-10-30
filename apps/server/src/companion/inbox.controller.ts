@@ -1,12 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
 import {
-  ASK_DISCLAIMER,
   closeHandoffRequestSchema,
-  CRISIS_NOTICE,
-  EMERGENCY_NOTICE,
-  EXPERT_DISCLAIMER,
-  findBannedTerms,
-  normalizeForCompliance,
   handleAlertRequestSchema,
   replyHandoffRequestSchema,
   type ClientCompanionCasesResponse,
@@ -18,15 +12,14 @@ import {
   type CompanionObservationListResponse,
   type CompanionSessionListResponse,
 } from '@health-buddy/shared';
-import { checkCompanionScript } from '@health-buddy/skills';
 import { z } from 'zod';
 import type { ResolvedSession } from '../auth/auth.repository.js';
 import { CurrentSession } from '../auth/decorators.js';
-import { ApiException, badRequest, conflict, notFound } from '../common/api-error.js';
+import { badRequest, conflict, notFound } from '../common/api-error.js';
 import { requireManager } from '../common/manager-only.js';
 import { TwinComputeService } from '../twin/twin-compute.service.js';
 import { InboxRepository, type CaseResult } from './inbox.repository.js';
-import { HttpStatus } from '@nestjs/common';
+import { assertReplySendable } from './reply-check.js';
 
 const idSchema = z.uuid();
 
@@ -94,33 +87,8 @@ export class InboxController {
     const handoffId = parseId(id);
     const { text, acknowledgeWarnings } = parse(replyHandoffRequestSchema, body);
     // 健管师直接写的回复由福宝原文念给客户听，发送前过禁用词检查（规格 2.4、验收 25）；
-    // 只给健管师看的提示语（问一问、专家中心的免责声明，危机、急症提示）也不能念给客户（合规审查 S1）
-    const banned = findBannedTerms(text);
-    if (banned.length) {
-      throw new ApiException(HttpStatus.BAD_REQUEST, 'invalid_content', {
-        reasons: ['banned_term'],
-        terms: [...new Set(banned.map((b) => b.term))],
-      });
-    }
-    const norm = normalizeForCompliance(text).text;
-    if (MANAGER_ONLY_TEXTS.some((p) => norm.includes(p))) {
-      throw new ApiException(HttpStatus.BAD_REQUEST, 'invalid_content', {
-        reasons: ['manager_only_text'],
-      });
-    }
-    // 药名、用药建议、病名、数值评价、功效承诺等按念给客户听的标准提醒，确认后才发（合规审查 S2）
-    const warnings = [
-      ...new Set(
-        checkCompanionScript('handoff_reply', text)
-          .map((i) => i.category)
-          .filter((c) => c !== 'banned_term'),
-      ),
-    ];
-    if (warnings.length && !acknowledgeWarnings) {
-      throw new ApiException(HttpStatus.BAD_REQUEST, 'invalid_content', {
-        reasons: ['needs_confirmation', ...warnings],
-      });
-    }
+    // 只给健管师看的提示语不能念给客户（合规审查 S1）；药名、病名、数值评价等先提醒，确认后才发（S2）
+    assertReplySendable(text, acknowledgeWarnings);
     return caseResult(await this.repo.replyHandoff(session, handoffId, text));
   }
 
@@ -236,11 +204,6 @@ export class InboxController {
     if (!(await this.repo.offlineAck(session, parseId(id)))) throw notFound();
   }
 }
-
-/** 只给健管师看的提示语（规范化后比较） */
-const MANAGER_ONLY_TEXTS = [ASK_DISCLAIMER, EXPERT_DISCLAIMER, CRISIS_NOTICE, EMERGENCY_NOTICE].map(
-  (t) => normalizeForCompliance(t).text,
-);
 
 function notFoundThrow(): never {
   throw notFound();

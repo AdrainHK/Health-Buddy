@@ -159,3 +159,17 @@ export function downloadBlob({ blob, filename }: ExportedFile): void {
   // 下一轮事件循环再释放，部分浏览器在 click 返回后才开始下载
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
+
+/**
+ * /转交回复 审核后发送给福宝（M6 规格 2.4、2.9）。有药名等提醒时先返回 400（reasons 第一项是
+ * needs_confirmation），健管师看过后带 acknowledgeWarnings 再发
+ */
+export function sendHandoffReply(
+  id: string,
+  acknowledgeWarnings: boolean,
+): Promise<ArtifactDetailResponse> {
+  return apiRequest(`/artifacts/${id}/send-handoff-reply`, artifactDetailResponseSchema, {
+    method: 'POST',
+    body: { acknowledgeWarnings },
+  });
+}

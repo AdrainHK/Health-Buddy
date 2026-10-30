@@ -14,6 +14,7 @@ import {
   findBannedTerms,
   type AbnormalFlag,
   type CriticalFlag,
+  type CompanionHandoffCategory,
   type RiskTier,
   type RiskTierSuggestion,
 } from '@health-buddy/shared';
@@ -149,6 +150,11 @@ export interface SkillInput {
    * /随访计划 还有后端算好的随访日期。只给声明了 planContext 的技能组装
    */
   plan?: PlanContext | undefined;
+  /**
+   * /转交回复（M6 规格 2.9）：@ 的伴侣转交。question 是客户的原话（已去掉电话、证件号和客户姓名），
+   * 只给声明了 usesHandoff 的技能组装
+   */
+  handoff?: { category: CompanionHandoffCategory; question: string; createdOn: string } | undefined;
 }
 
 /** 技能输出渲染后的产物内容。clientFacing 还没有拼接免责声明。 */
@@ -217,6 +223,8 @@ export interface SkillDefinition<S extends z.ZodType = z.ZodType> extends SkillM
   planContext?: 'visit_schedule' | 'care_plan' | 'visit_script' | 'visit_record';
   /** /随访记录：要 @ 随访素材（最多 3 份），没有素材时不生成（M5 规格 2.9） */
   usesMaterials?: boolean;
+  /** /转交回复：要 @ 一个未处理的伴侣转交，没有时不生成（M6 规格 2.9） */
+  usesHandoff?: boolean;
   /**
    * 结构校验（M5 规格 5.2）：随访行数和日期必须和输入一致、条目必须在候选里、参数必须在范围里。
    * 返回不合格的类别（不带内容）；有问题时带 validationNote 重试一次，仍不合格不保存草稿

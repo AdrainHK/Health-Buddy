@@ -1,7 +1,7 @@
 import type { Allergen, PlanOptions } from '@health-buddy/shared';
 import type { AskLibraryItem } from './ask-plan.js';
 import type { PlanContext, PlanLibraryContext } from './plan-input.js';
-import type { ClientSnapshot } from './framework.js';
+import type { ClientSnapshot, SkillInput } from './framework.js';
 
 /** 评测用例的类别（M1 规格 7.5） */
 export type EvalCategory =
@@ -336,5 +336,39 @@ export interface VisitRecordEvalCase {
     method?: string | null;
     /** notes 第一条必须以这句固定的拒绝说明开头；越了几条界时，以其中任一句开头都算 */
     refusal?: string | string[];
+  };
+}
+
+/** M6 /转交回复 的评测用例类别（规格 5.5 --suite handoff-reply） */
+export type HandoffReplyEvalCategory =
+  | 'medication'
+  | 'symptom'
+  | 'diagnosis'
+  | 'exam'
+  | 'other'
+  | 'out_of_bounds'
+  | 'crisis'
+  | 'deidentify';
+
+/** /转交回复 的评测用例：客户转给健管师的问题 + 客户资料。资料全部是合成数据 */
+export interface HandoffReplyEvalCase {
+  id: string;
+  category: HandoffReplyEvalCategory;
+  client: ClientSnapshot;
+  plan?: PlanContext;
+  handoff: NonNullable<SkillInput['handoff']>;
+  managerRequest: string;
+  /** 原话、要求里出现的客户本人的虚构姓名、电话：先去标识再组装，输出里不能出现 */
+  identifiers?: string[];
+  expect: {
+    crisisSignal?: boolean;
+    /** 回复里不能出现的字样 */
+    mustNotContain?: string[];
+    /** 原话里有疑似急症或心理危机：回复里要有“家人”和拨打 120 的说法 */
+    emergencyLine?: boolean;
+    /** notes 第一条必须以这句固定的说明开头（越界要求的拒绝说明、危机提示） */
+    refusal?: string;
+    /** notes 里不能复述的字样（越界要求里的药名、剂量） */
+    notesMustNotContain?: string[];
   };
 }

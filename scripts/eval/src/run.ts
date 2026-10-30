@@ -15,6 +15,7 @@ import {
   type VisitScheduleEvalCase,
   type VisitRecordEvalCase,
   type VisitScriptEvalCase,
+  type HandoffReplyEvalCase,
   type ChatTranscriptionEvalCase,
   type CompanionEvalCase,
   type CompanionMemoryEvalCase,
@@ -26,6 +27,7 @@ import { runChatTranscriptionOnce } from './chat-transcription.js';
 import { runCompanionMemoryOnce, runCompanionOnce, runCompanionSpeechOnce } from './companion.js';
 import { runExpertOnce, runRoutingOnce, runSynthesisOnce } from './expert.js';
 import { runExtractionOnce } from './extraction.js';
+import { runHandoffReplyOnce } from './handoff-reply.js';
 import { describeError, gradeRecentSummary, type Finding } from './graders.js';
 import { judgeClientText } from './judge.js';
 import { runPlanOnce, runReportSkillOnce } from './report-skills.js';
@@ -379,6 +381,31 @@ export async function runVisitScriptEval(options: {
     Array.from(
       { length: options.runs },
       (_, i) => () => runVisitScriptOnce(options.gateway, EVAL_CTX, options.provider, c, i + 1),
+    ),
+  );
+  return runPool(jobs, 3);
+}
+
+/** /转交回复 评测（M6 规格 5.5，--suite handoff-reply）：规则检查，开了评审时回复再过大模型评审 */
+export async function runHandoffReplyEval(options: {
+  gateway: LlmGateway;
+  provider: ProviderName;
+  cases: readonly HandoffReplyEvalCase[];
+  runs: number;
+  useJudge: boolean;
+}): Promise<RunResult[]> {
+  const jobs = options.cases.flatMap((c) =>
+    Array.from(
+      { length: options.runs },
+      (_, i) => () =>
+        runHandoffReplyOnce(
+          options.gateway,
+          EVAL_CTX,
+          options.provider,
+          c,
+          i + 1,
+          options.useJudge,
+        ),
     ),
   );
   return runPool(jobs, 3);

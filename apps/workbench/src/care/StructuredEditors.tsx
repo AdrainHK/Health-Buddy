@@ -47,7 +47,9 @@ export type StructuredProblem =
   | 'scheduleDuplicate'
   | 'focusTooLong'
   | 'recordIncomplete'
-  | 'recordFuture';
+  | 'recordFuture'
+  | 'replyEmpty'
+  | 'replyTooLong';
 
 export interface LibraryData {
   status: 'loading' | 'ready' | 'error';

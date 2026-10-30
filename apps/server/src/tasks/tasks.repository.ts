@@ -116,6 +116,7 @@ export class TasksRepository {
           'twin_refs',
           'library_refs',
           'material_refs',
+          'handoff_ref',
           'plan_options',
           'status',
           'created_at',
@@ -181,6 +182,7 @@ export class TasksRepository {
             ? (m.library_refs as TaskMessage['libraryRefs'])
             : [],
           materialRefs: m.material_refs,
+          handoffRefs: m.handoff_ref ? [m.handoff_ref] : [],
           planOptions: (m.plan_options as TaskMessage['planOptions']) ?? null,
           status: m.status,
           createdAt: m.created_at.toISOString(),

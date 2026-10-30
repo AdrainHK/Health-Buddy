@@ -31,6 +31,8 @@ export interface TwinActions {
     visitId: string,
     skillId: 'visit-script' | 'visit-record',
   ) => void;
+  /** “让 AI 起草”（M6 规格 2.9）：做一做模式的 /转交回复，@ 这个伴侣转交 */
+  handoffReply?: (client: Pick<ClientSummary, 'id' | 'displayName'>, handoffId: string) => void;
 }
 
 export const TwinActionsContext = createContext<TwinActions>({});

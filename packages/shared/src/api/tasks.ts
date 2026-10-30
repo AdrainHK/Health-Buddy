@@ -69,6 +69,9 @@ export type TaskListResponse = z.infer<typeof taskListResponseSchema>;
 export const messageStatusSchema = z.enum(['streaming', 'complete', 'stopped', 'refused', 'error']);
 export type MessageStatus = z.infer<typeof messageStatusSchema>;
 
+/** @ 引用的伴侣转交最多 1 个（M6 规格 2.8） */
+export const HANDOFF_REFS_MAX = 1;
+
 /** @ 引用的库条目：食谱、运动和放松练习（只能引用已发布的条目，后端再校验） */
 export const LIBRARY_REFS_MAX = 3;
 export const libraryRefSchema = z.object({
@@ -96,6 +99,8 @@ export const taskMessageSchema = z.object({
   libraryRefs: z.array(libraryRefSchema).default([]),
   /** @ 引用的随访素材（M5 规格 2.9），最多 3 份 */
   materialRefs: z.array(z.uuid()).default([]),
+  /** @ 引用的伴侣转交（M6 规格 2.8，/转交回复），最多 1 个 */
+  handoffRefs: z.array(z.uuid()).default([]),
   /** /方案生成 的选项 */
   planOptions: planOptionsSchema.nullable().default(null),
   status: messageStatusSchema,
@@ -129,6 +134,8 @@ export const taskStepSchema = z.object({
     'schedule_visits',
     'read_visit_materials',
     'read_visit_records',
+    // M6 规格 2.8：正在读取伴侣信息
+    'read_companion',
   ]),
   labelKey: z.string(),
   /** 步骤文案参数：涉及的专家 id（如“已调用：内分泌与代谢专家、营养专家”） */
@@ -213,6 +220,11 @@ export const sendMessageRequestSchema = z
      * 否则 404，不调用任何模型
      */
     materialRefs: z.array(z.uuid()).max(VISIT_MATERIALS_PER_RECORD_MAX).default([]),
+    /**
+     * @ 引用的伴侣转交（/转交回复，M6 规格 2.8），最多 1 个，必须是任务关联客户的、服务这位客户的健管师的
+     * 未处理转交；否则 404，不调用任何模型
+     */
+    handoffRefs: z.array(z.uuid()).max(HANDOFF_REFS_MAX).default([]),
     /** /方案生成、“方案和随访”计划的选项 */
     planOptions: planOptionsSchema.optional(),
     /** 关联的那一次随访（“准备随访”“记录随访”），必须是任务关联客户的随访 */
@@ -275,6 +287,11 @@ export const sendMessageRequestSchema = z
   .refine((v) => v.materialRefs.length === 0 || v.skillId !== undefined, {
     message: 'material refs need a skill',
     path: ['materialRefs'],
+  })
+  // 转交只能交给技能起草回复（/转交回复），不能在问一问里引用
+  .refine((v) => v.handoffRefs.length === 0 || v.skillId !== undefined, {
+    message: 'handoff refs need a skill',
+    path: ['handoffRefs'],
   });
 export type SendMessageRequest = z.input<typeof sendMessageRequestSchema>;
 

@@ -118,11 +118,16 @@ export class WorkbenchController {
       materialRefs: input.materialRefs,
       ...(input.visitId ? { visitId: input.visitId } : {}),
       libraryRefs: input.libraryRefs,
+      handoffRefs: input.handoffRefs,
     });
     // /随访记录 要 @ 随访素材（规格 2.9）：没有素材时提示先上传，不生成；别的技能不能带素材
     const usesMaterials = Boolean(skill?.usesMaterials);
     if (input.materialRefs.length && !usesMaterials) throw badRequest();
     if (usesMaterials && !input.materialRefs.length) throw conflict({ reasons: ['no_materials'] });
+    // /转交回复 要 @ 一个伴侣转交（M6 规格 2.9）：没有时提示先选；别的技能不能带转交
+    const usesHandoff = Boolean(skill?.usesHandoff);
+    if (input.handoffRefs.length && !usesHandoff) throw badRequest();
+    if (usesHandoff && !input.handoffRefs.length) throw conflict({ reasons: ['no_handoff'] });
     const direct = await this.checkExperts(session, taskId, input, skill, plan);
     // “请专家看看”超出当天的专家调用次数时返回 429
     if (input.twinConsult && (await this.consultation.remainingToday(session)) <= 0) {
@@ -160,6 +165,7 @@ export class WorkbenchController {
           ...(input.visitId ? { visitId: input.visitId } : {}),
           twinConsult: input.twinConsult,
           libraryRefs: input.libraryRefs,
+          handoffRefs: input.handoffRefs,
         },
         claim,
       ),
@@ -199,6 +205,7 @@ export class WorkbenchController {
           planOptions,
           materialIds: input.materialRefs,
           visitId: input.visitId ?? null,
+          handoffId: input.handoffRefs[0] ?? null,
           experts: {
             trigger: 'skill_auto',
             forced: input.expertRefs,

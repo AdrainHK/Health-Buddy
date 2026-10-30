@@ -15,7 +15,8 @@ VSCHED='visit-schedule'
 CARE='care-plan'
 VISIT='visit-script,visit-record,chat-transcription'
 COMP='companion,companion-speech'
-ALL_GROUPS=("$SUMMARY" "$REPORT" "$EXPERT" "$ROUTE" "$TWIN" "$VSCHED" "$CARE" "$VISIT" "$COMP")
+HANDOFF='handoff-reply'
+ALL_GROUPS=("$SUMMARY" "$REPORT" "$EXPERT" "$ROUTE" "$TWIN" "$VSCHED" "$CARE" "$VISIT" "$COMP" "$HANDOFF")
 
 declare -A picked=()
 all=false
@@ -27,6 +28,7 @@ while IFS= read -r file; do
     # 测试文件不改提示词和评分，不触发评测
     *.test.ts) ;;
     packages/skills/src/companion/* | scripts/eval/src/companion.ts) picked[$COMP]=1 ;;
+    packages/skills/src/handoff-reply/* | scripts/eval/src/handoff-reply.ts) picked[$HANDOFF]=1 ;;
     packages/skills/src/visit-script/* | packages/skills/src/visit-record/* | \
       packages/skills/src/chat-transcription* | scripts/eval/src/visits.ts | \
       scripts/eval/src/chat-transcription.ts) picked[$VISIT]=1 ;;

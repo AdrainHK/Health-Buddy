@@ -210,3 +210,12 @@
 .warningBox ul {
   margin: 0;
 }
+
+/* /转交回复 审核后“发送给福宝” */
+.draftSend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hb-space-2);
+  width: 100%;
+}

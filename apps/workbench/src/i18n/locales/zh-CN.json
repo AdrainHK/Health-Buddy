@@ -109,7 +109,8 @@
       "noVerifiedReport": "这位客户还没有已核对的报告，请先上传并核对报告",
       "noTwinData": "这位客户的数字孪生还没有数据，请先录入监测或核对报告",
       "noPlanData": "这位客户的资料太少，请先补充档案或上传报告",
-      "noMaterials": "请先上传随访素材，并在素材卡片上勾选要整理的素材"
+      "noMaterials": "请先上传随访素材，并在素材卡片上勾选要整理的素材",
+      "noHandoff": "请先在输入框上方选一个伴侣转交（客户问的问题）"
     },
     "streamErrors": {
       "not_configured": "AI 服务尚未配置，请联系管理员",
@@ -216,7 +217,9 @@
     "readVisitRecords": "正在读取随访记录",
     "readVisitMaterials": "正在读取随访素材",
     "generateVisitScript": "正在生成随访话术",
-    "organizeVisitRecord": "正在整理随访记录"
+    "organizeVisitRecord": "正在整理随访记录",
+    "readCompanion": "正在读取伴侣信息",
+    "generateHandoffReply": "正在起草转交回复"
   },
   "skills": {
     "client-recent-summary": {
@@ -262,6 +265,10 @@
     "visit-record": {
       "name": "随访记录",
       "description": "把上传的随访素材整理成随访记录：只整理客户和健管师说过的内容；只给健管师看，确认后写入随访记录"
+    },
+    "handoff-reply": {
+      "name": "转交回复",
+      "description": "为福宝转来的一个客户问题起草念给客户听的回复；草稿只给健管师看，审核通过后点“发送给福宝”，客户下次唤醒时福宝原样念出"
     }
   },
   "results": {
@@ -301,7 +308,8 @@
           "care-plan": "健康方案",
           "visit-schedule": "随访计划",
           "visit-script": "随访话术",
-          "visit-record": "随访记录"
+          "visit-record": "随访记录",
+          "handoff-reply": "转交回复"
         },
         "source": "依据报告 {{source}}",
         "sourceSeparator": " · "
@@ -421,7 +429,8 @@
         "allergens_not_acknowledged": "请先勾选“已核对过敏原”",
         "schedule_mismatch": "随访日期不能早于今天、不能超过 6 个月后，也不能重复",
         "unknown": "未通过确认检查，请刷新后重试",
-        "record_incomplete": "随访记录还没有填随访日期或方式，或日期在今天之后"
+        "record_incomplete": "随访记录还没有填随访日期或方式，或日期在今天之后",
+        "reply_invalid": "回复为空、超过 150 字，或写了只给健管师看的提示语，不能念给客户"
       },
       "stale": "内容已在别处修改，已刷新",
       "returnDialog": {
@@ -496,7 +505,8 @@
         "copied": "复制通俗版",
         "exported": "导出",
         "companion_synced": "同步给伴侣",
-        "companion_withdrawn": "取消同步给伴侣"
+        "companion_withdrawn": "取消同步给伴侣",
+        "companion_reply_sent": "发送给福宝"
       },
       "noEvents": "还没有记录",
       "selectArtifact": "打开一个产物后，这里显示它的版本和记录",
@@ -1275,7 +1285,8 @@
         "artifact": "产物",
         "care_plan": "方案",
         "visit": "随访",
-        "visit_record": "随访记录"
+        "visit_record": "随访记录",
+        "handoff_reply": "转交回复"
       },
       "month": "{{year}} 年 {{month}} 月",
       "loadMore": "加载更早的",
@@ -1418,7 +1429,8 @@
       "planAndVisitsNote": "在对话区先出计划，确认后起草方案和随访计划",
       "planAndVisitsTaskTitle": "方案和随访（{{date}}）",
       "visitScriptTaskTitle": "随访话术（{{date}}）",
-      "visitRecordTaskTitle": "随访记录（{{date}}）"
+      "visitRecordTaskTitle": "随访记录（{{date}}）",
+      "handoffReplyTaskTitle": "转交回复（{{date}}）"
     }
   },
   "followUps": {
@@ -1729,7 +1741,8 @@
       "tabs": {
         "care_plan": "食谱、动作和目标",
         "visit_schedule": "随访日程表",
-        "visit_record": "日期和方式"
+        "visit_record": "日期和方式",
+        "handoff_reply": "念给客户的回复"
       },
       "planNote": "示例食谱、动作和行为目标只能从方案库里选。替换或删除条目后，请核对通俗版里对应的段落。",
       "libraryFailed": "方案库加载失败，暂时不能替换条目",
@@ -1772,7 +1785,9 @@
         "scheduleDuplicate": "有两次随访在同一天",
         "focusTooLong": "重点超出了字数上限",
         "recordIncomplete": "请填写随访日期和方式",
-        "recordFuture": "随访日期不能在今天之后"
+        "recordFuture": "随访日期不能在今天之后",
+        "replyEmpty": "回复不能为空",
+        "replyTooLong": "回复不能超过 150 字"
       }
     },
     "review": {
@@ -2226,10 +2241,12 @@
         "hospital": "推荐具体医院",
         "manager_promise": "承诺",
         "reassurance": "“没事”这类安抚",
-        "placeholder": "花括号等符号"
+        "placeholder": "花括号等符号",
+        "risk_tier": "风险分层、高危等内部说法"
       },
       "warningsHint": "请修改；确实需要这样说时，再点“仍然发送”。",
-      "sendAnyway": "仍然发送"
+      "sendAnyway": "仍然发送",
+      "draftWithAi": "让 AI 起草"
     },
     "chat": {
       "title": "聊天和记忆",
@@ -2245,6 +2262,26 @@
       "companion": "福宝",
       "more": "查看更早的聊天",
       "managerReply": "健管师回复（福宝念）"
+    },
+    "picker": {
+      "list": "未处理的伴侣转交",
+      "select": "选这个转交：{{text}}",
+      "hint": "选一个客户问的问题，AI 起草回复；草稿审核通过后才能发送给福宝",
+      "none": "这位客户没有未处理的伴侣转交"
+    },
+    "draft": {
+      "hint": "福宝会在客户下次唤醒时先说“您的健管师回复了您之前问的问题”，再原样念出这段回复，客户的家人也可能听到。请用短句、口语，不写药名、剂量和判断；疑似急症时请保留拨打120的提醒。",
+      "reply": "念给客户的回复（不超过 {{max}} 字）",
+      "count": "{{count}} / {{max}} 字",
+      "send": "发送给福宝",
+      "confirm": "发送后福宝会在客户下次唤醒时原样念出这段回复，确认发送？",
+      "confirmYes": "确认发送",
+      "sentAt": "已于 {{time}} 发送给福宝",
+      "errors": {
+        "closed": "这个转交已经回复或关闭，不能再发送",
+        "notFound": "找不到这个转交，客户可能已转给别的健管师",
+        "failed": "发送失败，请稍后再试"
+      }
     }
   }
 }
