@@ -1300,6 +1300,8 @@ describe('assertedIn（问一问的禁用文字）', () => {
     expect(assertedIn('这道菜可以代替降压药。', '代替降压药')).toBe(true);
     expect(assertedIn('不能代替降压药，但多吃能代替降压药。', '代替降压药')).toBe(true);
     expect(assertedIn('没有提到。', '代替降压药')).toBe(false);
+    expect(assertedIn('- **不可以这样说**：不能承诺效果。', '可以这样说')).toBe(false);
+    expect(assertedIn('你可以这样说。', '可以这样说')).toBe(true);
     // 合规审查 B2：看着像否定的肯定、隔得远、转折、双重否定都算正面说了
     for (const answer of [
       '不得不说这道菜能代替降压药。',

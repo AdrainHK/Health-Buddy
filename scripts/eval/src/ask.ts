@@ -197,12 +197,15 @@ export function assertedIn(answer: string, s: string): boolean {
     const negations = [...prefix.matchAll(NEGATION)];
     const last = negations.at(-1);
     const gap = last ? prefix.slice(last.index + last[0].length) : '';
+    // 紧挨着的单字否定（“不可以这样说”里的“不”，评测发现 ask-recipe-efficacy）
+    const adjacent = /[不没别勿未]$/.test(prefix);
     const negated =
-      last !== undefined &&
-      gap.length <= NEGATION_REACH &&
-      !TURN.test(gap) &&
-      // 前面紧挨着另一个否定就是双重否定
-      !negations.some((n) => n !== last && n.index + n[0].length === last.index);
+      adjacent ||
+      (last !== undefined &&
+        gap.length <= NEGATION_REACH &&
+        !TURN.test(gap) &&
+        // 前面紧挨着另一个否定就是双重否定
+        !negations.some((n) => n !== last && n.index + n[0].length === last.index));
     if (!negated) return true;
     from = index + s.length;
   }
