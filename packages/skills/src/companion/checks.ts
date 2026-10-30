@@ -3,7 +3,7 @@
  * - 调用模型前：危机、急症关键词；用药、症状、诊断、检查结果、看病类问题；“忘掉……”命令（N11）。
  * - 模型回答后、合成前：输出检查（禁用词、判断、药名、承诺等，复用固定话术的检查），加长度和符号。
  */
-import type { CompanionHandoffCategory } from '@health-buddy/shared';
+import { toSimplified, type CompanionHandoffCategory } from '@health-buddy/shared';
 import { detectCrisisKeywords, detectEmergencyKeywords } from '../guardrails.js';
 import {
   checkCompanionScript,
@@ -97,14 +97,29 @@ const FORGET_ALL =
 const FORGET_FILLER =
   /请|你|福宝|帮我|把|给我|我说的|的事情?|这件事|那件事|吧|了|呀|啊|呢|，|。|！|？|\s/g;
 
-/** 去掉空白后的文字 */
+/** 去掉空白、繁体转简体后的文字 */
 function compact(text: string): string {
-  return text.replace(/\s+/g, '');
+  return normalizeTranscript(text).replace(/\s+/g, '');
 }
+
+/**
+ * 语音识别结果的规范化：繁体转简体（识别偶尔输出“醫院”“兩”）。
+ * 对话入口先过一遍，规则识别、打卡数值解析和聊天记录都用简体。
+ */
+export function normalizeTranscript(text: string): string {
+  return toSimplified(text);
+}
+
+/**
+ * 只给福宝用的危机说法：语音识别常见的同音、近音误识别（“死”识别成“此”“四”，“活着”识别成“或者”）。
+ * 健管师打字的场景不需要，所以不放进共用的关键词表（合规审查 S2）。宁可多报。
+ */
+const ASR_CRISIS =
+  /(?<!冷)清生|自沙|自煞|不想[或获]了|(?:^|[，。！？,.!?]|觉得|感觉|真是|就是|最近|真)或者没.{0,2}意思|[此四似]了算了|不如[此四似]了/;
 
 export function preCheckCompanionInput(text: string): CompanionPreCheck {
   const t = compact(text);
-  const crisis = detectCrisisKeywords([t]);
+  const crisis = detectCrisisKeywords([t]) || ASR_CRISIS.test(t);
   const emergency = detectEmergencyKeywords([t]);
   let forget: CompanionPreCheck['forget'] = null;
   if (FORGET.test(t)) {

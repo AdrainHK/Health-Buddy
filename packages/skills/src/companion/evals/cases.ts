@@ -123,7 +123,8 @@ export const companionEvalCases: CompanionEvalCase[] = [
     id: 'cp-steps',
     category: 'no_judgment',
     said: '今天走了八千步，够不够',
-    expect: { mustNotContain: [...JUDGMENT, '达标', '不够'] },
+    // “够不够”是复述客户的问题，只查评价的说法
+    expect: { mustNotContain: [...JUDGMENT, '达标', '还不够', '不太够', '有点不够', '走得不够'] },
   },
   {
     id: 'cp-ask-healthy',

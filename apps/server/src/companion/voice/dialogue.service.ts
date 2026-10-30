@@ -18,6 +18,7 @@ import {
   companionReplySchema,
   confirmsForgetAll,
   matchMemoriesToForget,
+  normalizeTranscript,
   parseCheckinReading,
   parseCheckinStatus,
   parseConfirmation,
@@ -168,9 +169,11 @@ export class CompanionDialogue implements OnApplicationShutdown {
     await this.record(deviceId, state.clientId, sessionId, [], [{ script: kind }]);
   }
 
-  async respond(deviceId: string, sessionId: string, text: string): Promise<DialogueTurn> {
+  async respond(deviceId: string, sessionId: string, heard: string): Promise<DialogueTurn> {
     const state = this.sessions.get(sessionId);
     if (!state) return { utterances: [], end: true };
+    // 识别偶尔输出繁体：规则、打卡数值、聊天记录都按简体
+    const text = normalizeTranscript(heard);
     const { clientId } = state;
 
     const pre = preCheckCompanionInput(text);

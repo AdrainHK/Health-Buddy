@@ -9,6 +9,7 @@ import {
   confirmsForgetAll,
   isAllowedMemory,
   matchMemoriesToForget,
+  normalizeTranscript,
   preCheckCompanionInput,
   type CompanionContext,
 } from './index.js';
@@ -37,6 +38,40 @@ describe('调用模型前的检查', () => {
       medical: null,
       forget: null,
     });
+  });
+
+  it('语音识别容错：繁体、同音误识别、口语说法', () => {
+    expect(preCheckCompanionInput('我最近总想着不如此了算了')).toMatchObject({ crisis: true });
+    expect(preCheckCompanionInput('或者没什么意思')).toMatchObject({ crisis: true });
+    expect(preCheckCompanionInput('我觉得或者没啥意思')).toMatchObject({ crisis: true });
+    expect(preCheckCompanionInput('覺得活著沒意思')).toMatchObject({ crisis: true });
+    expect(preCheckCompanionInput('想自殺')).toMatchObject({ crisis: true });
+    expect(preCheckCompanionInput('左边胳膊抬不起来了')).toMatchObject({ emergency: true });
+    expect(preCheckCompanionInput('一邊手腳沒勁')).toMatchObject({ emergency: true });
+    expect(preCheckCompanionInput('心口疼')).toMatchObject({ emergency: true });
+    expect(preCheckCompanionInput('我真不想或了')).toMatchObject({ crisis: true });
+    expect(preCheckCompanionInput('我胸口疼得厉害')).toMatchObject({ emergency: true });
+    expect(preCheckCompanionInput('老伴喘不過氣了')).toMatchObject({ emergency: true });
+    expect(preCheckCompanionInput('他嘴歪了，一边手脚没力气')).toMatchObject({ emergency: true });
+    expect(preCheckCompanionInput('我要不要去醫院看看')).toMatchObject({ medical: 'other' });
+    expect(preCheckCompanionInput('這個藥一次吃幾片')).toMatchObject({ medical: 'medication' });
+    // 日常说法不误报
+    for (const ok of [
+      '我想四点去公园',
+      '吃面或者米饭都行',
+      '在家看电视或者没意思就出去走走',
+      '到此为止吧，下次再聊',
+      '头晕到现在好多了',
+      '过年后家里冷清生活没劲',
+      '这几天忙得喘不过气',
+      '今天天氣真好',
+    ]) {
+      expect(preCheckCompanionInput(ok)).toMatchObject({ crisis: false, emergency: false });
+    }
+  });
+
+  it('识别结果转简体', () => {
+    expect(normalizeTranscript('血壓一百三十二，兩片藥')).toBe('血压一百三十二，两片药');
   });
 
   it.each([

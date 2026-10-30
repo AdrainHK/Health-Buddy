@@ -161,6 +161,9 @@ describe('guardrails', () => {
     expect(detectCrisisKeywords(['帮我写小结，她最近睡得少'])).toBe(false);
     expect(detectCrisisKeywords(['客户说觉得活着没什么意思'])).toBe(true);
     expect(detectCrisisKeywords(['有时候想一了百了'])).toBe(true);
+    // 共用表不收语音识别的同音字（只给福宝用），但认繁体
+    expect(detectCrisisKeywords(['客户说觉得活著沒意思'])).toBe(true);
+    expect(detectCrisisKeywords(['她说不如此了算了'])).toBe(false);
     for (const phrase of ['活不下去了', '她说想死', '攒了一些安眠药', '不想拖累家人', '写了遗书']) {
       expect(detectCrisisKeywords([phrase]), phrase).toBe(true);
     }
