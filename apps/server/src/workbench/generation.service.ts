@@ -48,6 +48,9 @@ import {
   redactAskClient,
   redactClientIdentity,
   redactIdentifiers,
+  companionFreeTexts,
+  redactCompanionDigest,
+  type CompanionDigest,
   twinFreeTexts,
   wordingCategories,
   skillUsesReport,
@@ -591,9 +594,16 @@ export class GenerationService {
         request.content,
         steps,
       );
+      // M6 规格 2.8：引用了客户、客户开通了伴侣时，读福宝近 14 天的收集信息、打卡和未处理的转交
+      const companion = turn.clientId ? await this.repo.companionDigest(ctx, turn.clientId) : null;
+      if (companion) {
+        const step = await steps.start('read_companion', 'steps.readCompanion');
+        await steps.finish(step, 'done');
+      }
       const askExtras: AskPlanExtras = {
         ...extras,
         ...(extras.plan ? { plan: redactPlanContext(extras.plan, redact) } : {}),
+        ...(companion ? { companion: redactCompanionDigest(companion, redact)! } : {}),
       };
 
       const step = await steps.start('answer', 'steps.answer');
@@ -617,6 +627,8 @@ export class GenerationService {
         ...twinFreeTexts(twin),
         // 随访记录的原文（去标识之前）里的危机、急症描述也算
         ...(extras.plan ? planFreeTexts(extras.plan) : []),
+        // 伴侣收集信息的原句、未处理的转交原话也算
+        ...companionFreeTexts(companion),
       ];
       const crisis = detectCrisisKeywords(signalTexts);
       const emergency = detectEmergencyKeywords(signalTexts);
@@ -769,9 +781,12 @@ export class GenerationService {
       // 读孪生的技能（/孪生小结、孪生复盘）：读档案 → 读数字孪生 → 技能
       // M5 方案和随访技能同样先读孪生（规格 2.7）
       const readsTwin = skillIds.some((id) => getSkill(id)?.usesTwin || getSkill(id)?.planContext);
+      // M6：/随访话术（含“伴侣跟进”计划）执行时读伴侣信息，计划里写出这一步
+      const readsCompanion = skillIds.some((id) => getSkill(id)?.planContext === 'visit_script');
       const plan = await this.repo.createPlan(ctx, turn.assistantMessageId, [
         { kind: 'read_client' },
         ...(readsTwin ? [{ kind: 'read_twin' as const }] : []),
+        ...(readsCompanion ? [{ kind: 'read_companion' as const }] : []),
         ...skillIds.map((skillId) => ({ kind: 'run_skill' as const, skillId })),
       ]);
       io.emit({ type: 'plan', plan });
@@ -840,6 +855,8 @@ export class GenerationService {
         ...(client.plan ? (client.snapshot.healthHistory ?? []).map((h) => h.content) : []),
         // /转交回复：客户的原话（语音识别的文字）里的危机、急症说法也算
         ...(handoff ? [handoff.question] : []),
+        // /随访话术：伴侣收集信息的原句、未处理的转交原话也算
+        ...companionFreeTexts(client.companion),
       ];
       const crisis = detectCrisisKeywords(signalTexts);
       const emergencyKeywords = detectEmergencyKeywords(signalTexts);
@@ -871,6 +888,9 @@ export class GenerationService {
         returnReason: run.returnReason === undefined ? undefined : redact(run.returnReason),
         riskTierCriteria: this.riskTierCriteria,
         ...(client.plan ? { plan: redactPlanContext(client.plan, redact) } : {}),
+        ...(client.companion !== undefined
+          ? { companion: redactCompanionDigest(client.companion, redact) }
+          : {}),
         // 客户原话已在福宝那边去掉电话、证件号；组装前再去掉客户姓名
         ...(handoff
           ? {
@@ -1415,6 +1435,13 @@ export class GenerationService {
       const step = await steps.start('read_visit_records', 'steps.readVisitRecords');
       await steps.finish(step, 'done');
     }
+    // M6：/随访话术 读伴侣“福宝”近 14 天的信息（规格 2.8，正在读取伴侣信息）
+    let companion: CompanionDigest | null | undefined;
+    if (script) {
+      const step = await steps.start('read_companion', 'steps.readCompanion');
+      companion = await this.repo.companionDigest(ctx, clientId);
+      await steps.finish(step, 'done');
+    }
     if (makesPlan) {
       const step = await steps.start('select_library_items', 'steps.selectLibraryItems');
       await steps.finish(step, 'done');
@@ -1425,7 +1452,12 @@ export class GenerationService {
     }
     const detect = await steps.start('detect_critical', 'steps.detectCritical');
     await steps.finish(detect, 'done');
-    return { ...client, snapshot: { ...client.snapshot, ...(twin ? { twin } : {}) }, plan };
+    return {
+      ...client,
+      snapshot: { ...client.snapshot, ...(twin ? { twin } : {}) },
+      plan,
+      ...(companion !== undefined ? { companion } : {}),
+    };
   }
 
   /**

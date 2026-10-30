@@ -85,11 +85,12 @@ describe('/随访话术', () => {
     expect(message).toContain('周末也散步');
   });
 
-  it('渲染：顶部有免责声明，问题按部分分组，有伴侣占位和不要说的话', () => {
+  it('渲染：顶部有免责声明，问题按部分分组，有伴侣对话要点和不要说的话', () => {
     const { professional, clientFacing } = visitScript.render(script(), input());
     expect(clientFacing).toBe('');
     expect(professional.startsWith('仅供参考，非医疗诊断')).toBe(true);
-    expect(professional).toContain('**伴侣对话要点（M6 接入）**');
+    // 没有读伴侣资料时按没有开通写（M6）
+    expect(professional).toContain('**伴侣对话要点**\n- 客户没有开通伴侣“福宝”');
     expect(professional.indexOf('**饮食**')).toBeLessThan(professional.indexOf('**运动**'));
     expect(professional).toContain('为什么问：上次约定周末也散步');
     expect(professional).toContain('## 不要说的话');

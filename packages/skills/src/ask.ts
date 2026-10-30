@@ -11,6 +11,11 @@ import {
   describeLibraryItems,
   type AskLibraryItem,
 } from './ask-plan.js';
+import {
+  COMPANION_DIGEST_RULES,
+  describeCompanionDigest,
+  type CompanionDigest,
+} from './companion-context.js';
 import { describeClient } from './client-recent-summary/index.js';
 import type { ClientSnapshot } from './framework.js';
 import { CRISIS_NOTICE } from './guardrails.js';
@@ -51,6 +56,8 @@ export interface AskPlanExtras {
   libraryItems?: readonly AskLibraryItem[];
   /** 问到吃什么、怎么运动时，按过敏史和运动安全规则筛过的候选条目 */
   candidates?: PlanLibraryContext;
+  /** 伴侣“福宝”近 14 天的信息（引用了客户、客户开通了伴侣时，M6 规格 2.8） */
+  companion?: CompanionDigest;
 }
 
 /**
@@ -71,6 +78,7 @@ export function buildAskUserContent(
   if (extras.plan) parts.push(describeAskPlan(extras.plan));
   if (extras.candidates) parts.push(describeLibraryCandidates(extras.candidates));
   if (extras.libraryItems?.length) parts.push(describeLibraryItems(extras.libraryItems));
+  if (extras.companion) parts.push(describeCompanionDigest(extras.companion));
   if (!parts.length) return question;
   return `${parts.join('\n\n')}\n\n## 健管师的问题\n${question}`;
 }
@@ -95,7 +103,8 @@ export function askSystemPrompt(
 ): string {
   const base = client?.twin ? ASK_TWIN_SYSTEM_PROMPT : ASK_SYSTEM_PROMPT;
   const readsPlan = Boolean(extras.plan || extras.candidates || extras.libraryItems?.length);
-  return readsPlan ? `${base}\n\n${ASK_PLAN_RULES}` : base;
+  const withPlan = readsPlan ? `${base}\n\n${ASK_PLAN_RULES}` : base;
+  return extras.companion ? `${withPlan}\n\n${COMPANION_DIGEST_RULES}` : withPlan;
 }
 
 /** 问一问的孪生资料去标识：手动调整理由、跟进备注里的姓名和联系方式（5.4 第 6 条） */

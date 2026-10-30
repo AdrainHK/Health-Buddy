@@ -93,7 +93,8 @@
       "confirm": "确认执行",
       "confirmed": "已确认",
       "revised": "已修改",
-      "readTwin": "读取数字孪生"
+      "readTwin": "读取数字孪生",
+      "readCompanion": "读取伴侣信息"
     },
     "suggestion": "使用 /{{name}}",
     "artifactDrafted": "已生成草稿，请在右侧结果区审核",
@@ -110,7 +111,8 @@
       "noTwinData": "这位客户的数字孪生还没有数据，请先录入监测或核对报告",
       "noPlanData": "这位客户的资料太少，请先补充档案或上传报告",
       "noMaterials": "请先上传随访素材，并在素材卡片上勾选要整理的素材",
-      "noHandoff": "请先在输入框上方选一个伴侣转交（客户问的问题）"
+      "noHandoff": "请先在输入框上方选一个伴侣转交（客户问的问题）",
+      "noCompanion": "这位客户还没有开通伴侣“福宝”，没有伴侣信息可以读"
     },
     "streamErrors": {
       "not_configured": "AI 服务尚未配置，请联系管理员",
@@ -218,7 +220,7 @@
     "readVisitMaterials": "正在读取随访素材",
     "generateVisitScript": "正在生成随访话术",
     "organizeVisitRecord": "正在整理随访记录",
-    "readCompanion": "正在读取伴侣信息",
+    "readCompanion": "读取伴侣信息",
     "generateHandoffReply": "正在起草转交回复"
   },
   "skills": {
@@ -269,6 +271,10 @@
     "handoff-reply": {
       "name": "转交回复",
       "description": "为福宝转来的一个客户问题起草念给客户听的回复；草稿只给健管师看，审核通过后点“发送给福宝”，客户下次唤醒时福宝原样念出"
+    },
+    "companion-follow-up": {
+      "name": "伴侣跟进",
+      "description": "先读取档案和伴侣“福宝”近 14 天收集的信息、打卡和未处理的转交，确认计划后起草随访话术；只给健管师看"
     }
   },
   "results": {

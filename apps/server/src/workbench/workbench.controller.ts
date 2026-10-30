@@ -159,6 +159,8 @@ export class WorkbenchController {
           twinRefs: input.twinRefs,
           ...(input.followUpItemId ? { followUpItemId: input.followUpItemId } : {}),
           requiresTwinData: usesTwin,
+          // “伴侣跟进”计划：客户没有开通伴侣时 409 no_companion（M6 规格 2.8）
+          requiresCompanion: Boolean(plan?.readsCompanion),
           requiresPlanData: makesPlan,
           planOptions,
           materialRefs: input.materialRefs,

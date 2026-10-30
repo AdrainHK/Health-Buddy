@@ -1,6 +1,12 @@
 import { DISCLAIMER } from '@health-buddy/shared';
 import { z } from 'zod';
 import { loadSkillMd, parseSkillMeta, type SkillDefinition } from '../framework.js';
+import {
+  COMPANION_DIGEST_RULES,
+  companionPoints,
+  describeCompanionDigest,
+  findCompanionVerbatim,
+} from '../companion-context.js';
 import { CRISIS_NOTICE, findRiskTierMentions } from '../guardrails.js';
 import { PLAN_SECTION_ZH, describePlanContext, describeVisit } from '../plan-input.js';
 import { appendRequest, describeReportClient } from '../report-input.js';
@@ -19,7 +25,7 @@ const { meta, body } = loadSkillMd(new URL('./skill.md', import.meta.url));
 /**
  * /随访话术（M5 规格 2.8）：只有专业版（Q20），产物 kind = visit_script，没有结构化内容。
  * 说给客户听的话按面向客户的标准检查（复用方案通俗版的措辞检查），检查不过重试一次，仍不过不保存草稿。
- * 伴侣对话要点是占位（Q27），由后端固定写。
+ * 伴侣对话要点（M6）由后端按伴侣资料确定性地写，只有条数和次数。
  */
 const QUESTION_SECTIONS = ['diet', 'exercise', 'routine', 'mind', 'general'] as const;
 
@@ -103,6 +109,7 @@ const WORDING_NOTE: Partial<Record<WordingCategory, string>> = {
   status_change: '汇总里写了孪生状态的结论；状态只能由健管师在孪生上手动调整',
   forecast_certainty: '汇总里用了“将会”“一定会”这类确定说法',
   disease_risk: '汇总里把指标走势说成了疾病或患病概率',
+  companion_rule: '复述了伴侣“福宝”记录的客户原话；请概括着说（如“福宝记录到近期几次提到夜里醒”）',
 };
 
 const VALIDATION_NOTE: Record<string, string> = {
@@ -130,10 +137,15 @@ export const visitScript: SkillDefinition<typeof visitScriptOutputSchema> = {
     const parts = [describeReportClient(input, { includeCriteria: false })];
     if (input.client.twin) parts.push('', describeTwin(input.client.twin));
     if (input.plan) parts.push('', describePlanContext(input.plan), '', describeVisit(input.plan));
+    // M6：伴侣“福宝”收集的信息、打卡和未处理的转交（规格 2.7、Q25）
+    if (input.companion !== undefined) {
+      parts.push('', describeCompanionDigest(input.companion));
+      if (input.companion) parts.push('', COMPANION_DIGEST_RULES);
+    }
     return appendRequest(parts, input);
   },
 
-  render(output) {
+  render(output, input) {
     const s = output.summary;
     const lines: string[] = [DISCLAIMER, ''];
     if (output.crisisSignal) lines.push('## 心理危机提示', CRISIS_NOTICE, '');
@@ -152,7 +164,9 @@ export const visitScript: SkillDefinition<typeof visitScriptOutputSchema> = {
       '**上次约定的事**',
       ...list(s.agreements),
       '',
-      '**伴侣对话要点（M6 接入）**',
+      // 伴侣对话要点由后端按资料确定性地写（只有条数和次数，不写原话），不让模型复述
+      '**伴侣对话要点**',
+      ...companionPoints(input?.companion ?? null),
       '',
       '## 开场',
       output.opening.trim(),
@@ -179,7 +193,7 @@ export const visitScript: SkillDefinition<typeof visitScriptOutputSchema> = {
     return { professional: lines.join('\n'), clientFacing: '', crisisSignal: output.crisisSignal };
   },
 
-  checkOutput(output) {
+  checkOutput(output, input) {
     const issues: WordingIssue[] = [];
     for (const t of visitScriptSpokenTexts(output)) {
       issues.push(...checkPlanClientText(t));
@@ -190,6 +204,12 @@ export const visitScript: SkillDefinition<typeof visitScriptOutputSchema> = {
     for (const t of visitScriptManagerTexts(output)) {
       issues.push(...checkRecordWording(t), ...checkTwinJudgments(t));
     }
+    // M6：不复述伴侣原句、转交原话（概括着说），原话跟着客户走
+    const verbatim = findCompanionVerbatim(
+      [...visitScriptSpokenTexts(output), ...visitScriptManagerTexts(output)],
+      input?.companion,
+    );
+    if (verbatim) issues.push({ category: 'companion_rule', term: verbatim, index: 0 });
     return issues;
   },
 

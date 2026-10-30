@@ -130,3 +130,4 @@ export { handoffReplyEvalCases } from './handoff-reply/evals/cases.js';
 export { visitScriptEvalCases } from './visit-script/evals/cases.js';
 export { visitRecordEvalCases } from './visit-record/evals/cases.js';
 export * from './companion/index.js';
+export * from './companion-context.js';

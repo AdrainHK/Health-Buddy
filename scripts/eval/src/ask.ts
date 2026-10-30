@@ -5,6 +5,7 @@
 import type { CallContext, LlmGateway, ProviderName } from '@health-buddy/ai-engine';
 import {
   askSystemPrompt,
+  redactCompanionDigest,
   buildAskUserContent,
   redactClientIdentity,
   redactPlanContext,
@@ -134,6 +135,8 @@ export async function runAskOnce(
       ...(c.plan ? { plan: redactPlanContext(c.plan, redact) } : {}),
       ...(c.candidates ? { candidates: c.candidates } : {}),
       ...(c.libraryItems ? { libraryItems: c.libraryItems } : {}),
+      // M6：伴侣信息里的原句同样先去标识
+      ...(c.companion ? { companion: redactCompanionDigest(c.companion, redact)! } : {}),
     };
     let answer = '';
     let refused = false;

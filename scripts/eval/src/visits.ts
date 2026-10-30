@@ -14,6 +14,7 @@ import {
   buildSystemPrompt,
   redactAskClient,
   redactClientIdentity,
+  redactCompanionDigest,
   redactPlanContext,
   validateVisitRecord,
   validateVisitScript,
@@ -49,10 +50,13 @@ export function visitInput(c: VisitCase): SkillInput {
         }
       : {}),
   };
+  const companion = 'companion' in c ? c.companion : undefined;
   return {
     client: redactAskClient(client, redact),
     managerRequest: redact(c.managerRequest),
     plan: redactPlanContext(c.plan, redact),
+    // M6：/随访话术 的伴侣信息，原句同样先去标识
+    ...(companion !== undefined ? { companion: redactCompanionDigest(companion, redact) } : {}),
   };
 }
 

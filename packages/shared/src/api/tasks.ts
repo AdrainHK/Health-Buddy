@@ -164,6 +164,8 @@ export const planStepSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('read_client') }),
   // M4“孪生复盘”：读取客户档案 → 读取数字孪生 → /孪生小结
   z.object({ kind: z.literal('read_twin') }),
+  // M6“伴侣跟进”：读取客户档案 → 读取伴侣信息 → /随访话术
+  z.object({ kind: z.literal('read_companion') }),
   z.object({ kind: z.literal('run_skill'), skillId: z.string().min(1) }),
 ]);
 export type PlanStep = z.infer<typeof planStepSchema>;

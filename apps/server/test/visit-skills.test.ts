@@ -109,6 +109,7 @@ describe('/随访话术、/随访记录', () => {
         'read_twin',
         'read_care_plan',
         'read_visit_records',
+        'read_companion',
         'detect_critical',
         'run_skill',
       ]);
@@ -118,7 +119,7 @@ describe('/随访话术、/随访记录', () => {
       expect(artifact).toMatchObject({ kind: 'visit_script', status: 'draft' });
       const content = artifact!.content as { professional: string; clientFacing: string };
       expect(content.clientFacing).toBe('');
-      expect(content.professional).toContain('伴侣对话要点（M6 接入）');
+      expect(content.professional).toContain('**伴侣对话要点**');
     });
 
     it('关联的随访：用那一次的重点，草稿记下关联；别的客户的随访 → 404，不调用模型', async () => {

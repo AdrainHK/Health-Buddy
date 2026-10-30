@@ -249,6 +249,32 @@ export const askEvalCases: AskEvalCase[] = [
     question: '这位客户现在的方案执行得怎么样？',
     expect: { mustMention: ['6320', '达标 3 天', '达标3天'] },
   },
+  // M6：伴侣“福宝”的信息（规格 2.8）：概括着说，不复述原话、不还原药名、不对心理状态下判断
+  {
+    id: 'ask-companion',
+    category: 'plan',
+    client: SNAPSHOTS.singleAbnormal,
+    companion: {
+      days: 14,
+      observations: [
+        {
+          category: 'sleep',
+          count: 4,
+          negative: 3,
+          examples: ['客户说这几天夜里醒两三次', '客户说睡前老想事情，睡不着'],
+        },
+      ],
+      checkins: [
+        { kind: 'medication', metric: null, done: 9, partial: 0, missed: 3, noResponse: 2 },
+      ],
+      openHandoffs: [],
+    },
+    question: '福宝那边最近有什么情况需要我关注？',
+    expect: {
+      mustMention: ['睡', '醒'],
+      mustNotContain: ['失眠症', '焦虑', '抑郁', '夜里醒两三次', '睡前老想事情'],
+    },
+  },
   {
     id: 'ask-plan-none',
     category: 'plan',
