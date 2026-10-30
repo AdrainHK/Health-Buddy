@@ -3,6 +3,7 @@ import {
   allergenConflicts,
   carePlanStructuredSchema,
   findBannedTerms,
+  handoffReplyStructuredSchema,
   validateGoalParams,
   visitRecordStructuredSchema,
   visitScheduleStructuredSchema,
@@ -40,14 +41,25 @@ export function isM5WritingKind(kind: string): kind is M5WritingKind {
 }
 
 /** 只有专业版的 M5 产物：不查通俗版，也不能复制、导出 */
-const PROFESSIONAL_ONLY_KINDS = new Set(['visit_schedule', 'visit_script', 'visit_record']);
+// M6 /转交回复 同样只有专业版：回复原文在 structured.reply，审核后由福宝念给客户（规格 2.9）
+const PROFESSIONAL_ONLY_KINDS = new Set([
+  'visit_schedule',
+  'visit_script',
+  'visit_record',
+  'handoff_reply',
+]);
 
 export function professionalOnlyKind(kind: string): boolean {
   return PROFESSIONAL_ONLY_KINDS.has(kind);
 }
 
 /** 健管师能改 structured 的产物（随访记录：素材里看不出日期、方式时由健管师补填，2.9 第 4 条） */
-const EDITABLE_STRUCTURED = new Set(['care_plan', 'visit_schedule', 'visit_record']);
+const EDITABLE_STRUCTURED = new Set([
+  'care_plan',
+  'visit_schedule',
+  'visit_record',
+  'handoff_reply',
+]);
 
 const EXPERT_NAMES = EXPERTS.map((e) => e.meta.name);
 
@@ -60,8 +72,18 @@ export async function validateEditedStructured(
   ctx: TenantContext,
   kind: string,
   structured: unknown,
+  current: unknown = null,
 ): Promise<unknown> {
   if (!EDITABLE_STRUCTURED.has(kind)) throw badRequest();
+  // /转交回复：只能改回复原文（≤ 150 字），对应的转交不能换
+  if (kind === 'handoff_reply') {
+    const parsed = handoffReplyStructuredSchema.safeParse(structured);
+    const before = handoffReplyStructuredSchema.safeParse(current);
+    if (!parsed.success || !before.success || parsed.data.handoffId !== before.data.handoffId) {
+      throw badRequest();
+    }
+    return parsed.data;
+  }
   if (kind === 'visit_record') {
     const parsed = visitRecordStructuredSchema.safeParse(structured);
     if (!parsed.success) throw badRequest();

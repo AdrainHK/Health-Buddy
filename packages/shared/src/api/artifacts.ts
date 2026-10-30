@@ -100,6 +100,8 @@ export const ARTIFACT_ACTIONS = [
   'companion_synced',
   /** 取消同步给伴侣 */
   'companion_withdrawn',
+  /** /转交回复 审核后发送给福宝（M6 规格 2.4） */
+  'companion_reply_sent',
 ] as const;
 
 /** 修改、审核、复制和导出记录。只记谁在什么时候做了什么，不记内容。 */
@@ -270,6 +272,9 @@ export const approveRejectionSchema = z.object({
       'schedule_mismatch',
       /** 随访记录还没填随访日期或方式，或日期在今天之后 */
       'record_incomplete',
+      // M6 规格 2.9：/转交回复
+      /** 回复为空、超过 150 字，或有只给健管师看的提示语，不能念给客户 */
+      'reply_invalid',
     ]),
   ),
   bannedTerms: z.array(z.object({ term: z.string(), index: z.number().int() })).optional(),

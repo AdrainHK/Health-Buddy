@@ -5,6 +5,7 @@ import {
   isKnownTwinRef,
   type Allergen,
   type ArtifactSummary,
+  type CompanionHandoffCategory,
   type ExerciseCategory,
   type LibraryTag,
   type MealType,
@@ -131,6 +132,8 @@ export interface RegenerationContext {
   materialIds?: string[];
   /** 关联的那一次随访（“准备随访”“记录随访”） */
   visitId?: string | null;
+  /** /转交回复 @ 的伴侣转交（发消息时的，退回重写时用上一版草稿的） */
+  handoffId?: string | null;
 }
 
 /** 重新请专家、补请专家：按原调用的问题和报告再请一次（M3 规格 6.4） */
@@ -208,6 +211,7 @@ export class WorkbenchRepository {
       materialRefs?: string[];
       visitId?: string;
       libraryRefs?: LibraryRef[];
+      handoffRefs?: string[];
     },
   ): Promise<void> {
     return withTenant(
@@ -234,9 +238,37 @@ export class WorkbenchRepository {
         }
         await checkVisitRefs(trx, clientId, input.materialRefs ?? [], input.visitId);
         await checkLibraryRefs(trx, input.libraryRefs ?? []);
+        await checkHandoffRefs(trx, ctx, clientId, input.handoffRefs ?? []);
       },
       this.libraryVisibility(),
     );
+  }
+
+  /**
+   * /转交回复 读 @ 的转交（M6 规格 2.9）：只读本人的、这位客户的、还没处理的；否则 undefined。
+   * 原话在这里只读，组装提示词前由调用方去标识
+   */
+  openHandoff(
+    ctx: TenantContext,
+    clientId: string,
+    handoffId: string,
+  ): Promise<
+    { category: CompanionHandoffCategory; question: string; createdAt: Date } | undefined
+  > {
+    return withTenant(this.db, ctx, async (trx) => {
+      if (ctx.role !== 'manager') return undefined;
+      const row = await trx
+        .selectFrom('companion_handoffs')
+        .select(['category', 'question', 'created_at'])
+        .where('id', '=', handoffId)
+        .where('client_id', '=', clientId)
+        .where('manager_id', '=', ctx.userId)
+        .where('status', '=', 'open')
+        .executeTakeFirst();
+      return row
+        ? { category: row.category, question: row.question, createdAt: row.created_at }
+        : undefined;
+    });
   }
 
   /** 客户的健康史（问一问只用来比对过敏原和运动安全规则，不进提示词）；看不到的客户为空 */
@@ -377,6 +409,8 @@ export class WorkbenchRepository {
       twinConsult?: boolean;
       /** 问一问 @ 的库条目：必须是当前健管师能看到的条目 */
       libraryRefs?: LibraryRef[];
+      /** /转交回复 @ 的伴侣转交：必须是任务关联客户的、本人的未处理转交 */
+      handoffRefs?: string[];
     },
     claim: (taskId: string) => boolean,
   ): Promise<PreparedTurn> {
@@ -439,6 +473,7 @@ export class WorkbenchRepository {
         await checkVisitRefs(trx, clientId, input.materialRefs ?? [], input.visitId);
         const libraryRefs = input.libraryRefs ?? [];
         await checkLibraryRefs(trx, libraryRefs);
+        await checkHandoffRefs(trx, ctx, clientId, input.handoffRefs ?? []);
         if (!claim(task.id)) throw conflict({ reasons: ['busy'] });
 
         await closeStaleTurns(trx, task.id);
@@ -471,6 +506,7 @@ export class WorkbenchRepository {
             plan_options: input.planOptions ? JSON.stringify(input.planOptions) : null,
             material_refs: input.materialRefs ?? [],
             library_refs: JSON.stringify(libraryRefs),
+            handoff_ref: input.handoffRefs?.[0] ?? null,
             status: 'complete',
             created_at: new Date(now),
           })
@@ -647,6 +683,8 @@ export class WorkbenchRepository {
           'plan_options',
           'visit_id',
           'material_ids',
+          'kind',
+          'structured',
         ])
         .where('id', '=', artifactId)
         .forUpdate()
@@ -716,6 +754,8 @@ export class WorkbenchRepository {
         // 随访记录沿用上一版整理的素材和关联的随访
         materialIds: artifact.material_ids ?? [],
         visitId: artifact.visit_id,
+        // 转交回复沿用上一版对应的转交
+        handoffId: handoffIdOf(artifact.kind, artifact.structured),
       };
     });
   }
@@ -1353,6 +1393,36 @@ async function checkLibraryRefs(
  * @ 的随访素材、关联的随访都要是任务关联客户的（素材还要是本人上传的、原文还在，行级安全只看得到本人的）；
  * 不是一律 404，在占用任务、调用任何模型之前
  */
+/** /转交回复 产物对应的转交（structured.handoffId） */
+export function handoffIdOf(kind: string, structured: unknown): string | null {
+  if (kind !== 'handoff_reply' || !structured || typeof structured !== 'object') return null;
+  const id = (structured as { handoffId?: unknown }).handoffId;
+  return typeof id === 'string' ? id : null;
+}
+
+/**
+ * /转交回复 @ 的伴侣转交（M6 规格 2.8）：必须是任务关联客户的、服务这位客户的健管师本人的、还没处理的转交。
+ * 机构管理员、运营商、平台看不到转交明细（Q28），一律按不存在处理
+ */
+async function checkHandoffRefs(
+  trx: TenantTransaction,
+  ctx: TenantContext,
+  clientId: string | null,
+  handoffRefs: readonly string[],
+): Promise<void> {
+  if (!handoffRefs.length) return;
+  if (!clientId || ctx.role !== 'manager') throw notFound();
+  const rows = await trx
+    .selectFrom('companion_handoffs')
+    .select('id')
+    .where('id', 'in', [...handoffRefs])
+    .where('client_id', '=', clientId)
+    .where('manager_id', '=', ctx.userId)
+    .where('status', '=', 'open')
+    .execute();
+  if (rows.length !== new Set(handoffRefs).size) throw notFound();
+}
+
 async function checkVisitRefs(
   trx: TenantTransaction,
   clientId: string | null,

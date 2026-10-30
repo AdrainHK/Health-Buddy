@@ -1,5 +1,6 @@
 import type { SkillSummary } from '@health-buddy/shared';
 import { carePlan } from './care-plan/index.js';
+import { handoffReply } from './handoff-reply/index.js';
 import { clientRecentSummary } from './client-recent-summary/index.js';
 import { skillUsesReport, type PlanTemplate, type SkillDefinition } from './framework.js';
 import { interviewOutline } from './interview-outline/index.js';
@@ -20,6 +21,7 @@ export const SKILLS: readonly SkillDefinition[] = [
   visitSchedule as unknown as SkillDefinition,
   visitScript as unknown as SkillDefinition,
   visitRecord as unknown as SkillDefinition,
+  handoffReply as unknown as SkillDefinition,
 ];
 
 /**
@@ -82,6 +84,7 @@ export function skillSummaries(expertsEnabled = false): SkillSummary[] {
       planSkills: [],
       experts: expertsEnabled ? (s.experts ?? 'none') : ('none' as const),
       usesMaterials: s.usesMaterials ?? false,
+      usesHandoff: s.usesHandoff ?? false,
       // /方案生成 有方案选项条（部分、周期，规格 2.2）
       usesPlanOptions: s.planContext === 'care_plan',
     })),
@@ -99,6 +102,7 @@ export function skillSummaries(expertsEnabled = false): SkillSummary[] {
         planSkills: [...p.skills],
         experts: 'none' as const,
         usesMaterials: false,
+        usesHandoff: false,
         usesPlanOptions: skills.some((s) => s.planContext === 'care_plan'),
       };
     }),

@@ -15,6 +15,7 @@ import type { Response } from 'express';
 import {
   approveArtifactRequestSchema,
   exportArtifactRequestSchema,
+  sendHandoffReplyRequestSchema,
   updateArtifactRequestSchema,
   type ArtifactDetailResponse,
   type ClientTextResponse,
@@ -139,6 +140,26 @@ export class ArtifactsController {
   ): Promise<ArtifactDetailResponse> {
     requireManager(session);
     return found(await this.artifacts.withdrawFromCompanion(session, parseId(id)));
+  }
+
+  /**
+   * /转交回复 审核后发送给福宝（M6 规格 2.4、2.9）：福宝在客户下次唤醒时原样念出。别人的产物或转交 404；
+   * 未审核 409 not_approved；转交已回复或关闭 409 handoff_closed；有药名等提醒没确认 400（红线 3，校验都在后端）
+   */
+  @Post(':id/send-handoff-reply')
+  @HttpCode(200)
+  async sendHandoffReply(
+    @CurrentSession() session: ResolvedSession,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ): Promise<ArtifactDetailResponse> {
+    requireManager(session);
+    const artifactId = parseId(id);
+    const parsed = sendHandoffReplyRequestSchema.safeParse(body ?? {});
+    if (!parsed.success) throw badRequest();
+    return found(
+      await this.artifacts.sendHandoffReply(session, artifactId, parsed.data.acknowledgeWarnings),
+    );
   }
 
   /** 复制通俗版。会记一条复制记录，所以用 POST，并且不允许缓存。 */

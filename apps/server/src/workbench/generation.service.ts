@@ -26,6 +26,7 @@ import {
   type TaskStep,
   type TaskStreamEvent,
   type TwinRef,
+  type CompanionHandoffCategory,
   allergenConflicts,
   planOptionsSchema,
   type LibraryRef,
@@ -46,6 +47,7 @@ import {
   knownNumbers,
   redactAskClient,
   redactClientIdentity,
+  redactIdentifiers,
   twinFreeTexts,
   wordingCategories,
   skillUsesReport,
@@ -71,6 +73,7 @@ import {
 import { ExpertQuotaExceeded, ExpertsRepository } from '../experts/experts.repository.js';
 import { allergyTextsOf, exerciseRestriction, restrictExercise } from '@health-buddy/plan-library';
 import { RISK_TIER_CRITERIA } from './risk-tier-criteria.js';
+import { localDate } from '../twin/time-zone.js';
 import {
   WorkbenchRepository,
   type ClientContext,
@@ -818,6 +821,12 @@ export class GenerationService {
             ? await this.readReport(ctx, run.clientId, steps, run.reportId ?? null, run.skills)
             : await this.readClient(ctx, run.clientId, steps, run.reportId ?? null);
       if (!client) return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
+      // /转交回复（M6 规格 2.9）：正在读取伴侣信息（@ 的转交）。转交已处理、不是本人的时不生成
+      const handoff = run.skills.some((s) => s.usesHandoff)
+        ? await this.readHandoff(ctx, run.clientId, run.handoffId ?? null, steps)
+        : null;
+      if (handoff === undefined)
+        return await this.finish(ctx, messageId, '', 'error', io, 'internal_error');
 
       // 心理危机和疑似急症信号不只依赖模型判断：健管师的原话、退回原因、本任务之前的消息里有关键词也算
       // 孪生小结、孪生复盘：手动调整理由、跟进备注的原文也算（M4 规格 5.4 第 7 条）
@@ -829,6 +838,8 @@ export class GenerationService {
         ...planFreeTexts(client.plan),
         // 方案和随访技能：健康史里写的危机、急症描述也算（M5 规格 5.4 第 7 条）
         ...(client.plan ? (client.snapshot.healthHistory ?? []).map((h) => h.content) : []),
+        // /转交回复：客户的原话（语音识别的文字）里的危机、急症说法也算
+        ...(handoff ? [handoff.question] : []),
       ];
       const crisis = detectCrisisKeywords(signalTexts);
       const emergencyKeywords = detectEmergencyKeywords(signalTexts);
@@ -860,6 +871,16 @@ export class GenerationService {
         returnReason: run.returnReason === undefined ? undefined : redact(run.returnReason),
         riskTierCriteria: this.riskTierCriteria,
         ...(client.plan ? { plan: redactPlanContext(client.plan, redact) } : {}),
+        // 客户原话已在福宝那边去掉电话、证件号；组装前再去掉客户姓名
+        ...(handoff
+          ? {
+              handoff: {
+                category: handoff.category,
+                question: redact(redactIdentifiers(handoff.question)),
+                createdOn: handoff.createdOn,
+              },
+            }
+          : {}),
       };
 
       for (const skill of run.skills) {
@@ -1023,7 +1044,15 @@ export class GenerationService {
           emergencySignal: emergency,
           // 模型自己标出的危机信号也要让审核栏醒目提示（M5 规格 2.9 第 5 条）
           crisisSignal: crisisSignal || rendered.crisisSignal,
-          ...(rendered.structured === undefined ? {} : { structured: rendered.structured }),
+          ...(rendered.structured === undefined
+            ? {}
+            : {
+                structured:
+                  skill.usesHandoff && handoff
+                    ? // 对应的转交以后端为准，模型输出里即使带了也覆盖掉
+                      { ...(rendered.structured as object), handoffId: handoff.id }
+                    : rendered.structured,
+              }),
           ...(skill.planContext === 'care_plan'
             ? { planOptions: client.plan?.library?.options ?? planOptionsSchema.parse({}) }
             : {}),
@@ -1397,6 +1426,34 @@ export class GenerationService {
     const detect = await steps.start('detect_critical', 'steps.detectCritical');
     await steps.finish(detect, 'done');
     return { ...client, snapshot: { ...client.snapshot, ...(twin ? { twin } : {}) }, plan };
+  }
+
+  /**
+   * /转交回复：正在读取伴侣信息（M6 规格 2.8）。读 @ 的转交，必须是本人的、还没处理的；
+   * 读不到时步骤失败，返回 undefined
+   */
+  private async readHandoff(
+    ctx: TenantContext,
+    clientId: string,
+    handoffId: string | null,
+    steps: StepRunner,
+  ): Promise<
+    | { id: string; category: CompanionHandoffCategory; question: string; createdOn: string }
+    | undefined
+  > {
+    const step = await steps.start('read_companion', 'steps.readCompanion');
+    const row = handoffId ? await this.repo.openHandoff(ctx, clientId, handoffId) : undefined;
+    if (!row || !handoffId) {
+      await steps.finish(step, 'failed');
+      return undefined;
+    }
+    await steps.finish(step, 'done');
+    return {
+      id: handoffId,
+      category: row.category,
+      question: row.question,
+      createdOn: localDate(row.createdAt, 'Asia/Shanghai'),
+    };
   }
 
   /** 读档案、识别危急指标，两步都推给前端 */

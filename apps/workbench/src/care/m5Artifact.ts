@@ -4,20 +4,24 @@ import {
   visitScheduleStructuredSchema,
   type Artifact,
   type CarePlanStructured,
+  type HandoffReplyStructured,
   type M5ArtifactKind,
   type VisitRecordStructured,
   type VisitScheduleStructured,
 } from '@health-buddy/shared';
 
-/** M5 四个技能的 id 和产物 kind（规格 5.1） */
-const SKILL_KINDS: Readonly<Record<string, M5ArtifactKind>> = {
+/** M5 四个技能的 id 和产物 kind（规格 5.1），加 M6 的 /转交回复（回复原文在结构化内容里） */
+const SKILL_KINDS: Readonly<Record<string, M5ArtifactKind | 'handoff_reply'>> = {
   'care-plan': 'care_plan',
   'visit-schedule': 'visit_schedule',
   'visit-script': 'visit_script',
   'visit-record': 'visit_record',
+  'handoff-reply': 'handoff_reply',
 };
 
-export function m5Kind(artifact: Pick<Artifact, 'skillId'>): M5ArtifactKind | null {
+export function m5Kind(
+  artifact: Pick<Artifact, 'skillId'>,
+): M5ArtifactKind | 'handoff_reply' | null {
   return SKILL_KINDS[artifact.skillId] ?? null;
 }
 
@@ -25,7 +29,8 @@ export function m5Kind(artifact: Pick<Artifact, 'skillId'>): M5ArtifactKind | nu
 export type M5Structured =
   | { kind: 'care_plan'; value: CarePlanStructured }
   | { kind: 'visit_schedule'; value: VisitScheduleStructured }
-  | { kind: 'visit_record'; value: VisitRecordStructured };
+  | { kind: 'visit_record'; value: VisitRecordStructured }
+  | { kind: 'handoff_reply'; value: HandoffReplyStructured };
 
 export function parseM5Structured(
   artifact: Pick<Artifact, 'skillId' | 'structured'>,
@@ -42,6 +47,13 @@ export function parseM5Structured(
   if (kind === 'visit_record') {
     const p = visitRecordStructuredSchema.safeParse(artifact.structured);
     return p.success ? { kind, value: p.data } : null;
+  }
+  if (kind === 'handoff_reply') {
+    // 编辑中的回复可以暂时为空或超长（界面提示），这里只取形状
+    const v = artifact.structured as Partial<HandoffReplyStructured> | null;
+    return typeof v?.handoffId === 'string' && typeof v.reply === 'string'
+      ? { kind, value: { handoffId: v.handoffId, reply: v.reply } }
+      : null;
   }
   return null;
 }

@@ -22,6 +22,7 @@
  *   pnpm eval --suite chat-transcription
  *   pnpm eval --suite companion         福宝对话和记忆整理（M6）
  *   pnpm eval --suite companion-speech  福宝语音：合成后识别（需要 OpenAI 密钥）
+ *   pnpm eval --suite handoff-reply     /转交回复（M6）
  *                                  M5：/随访计划（日期照抄、重点相关、措辞和越界指令）
  *
  *   pnpm eval --suite expert --show-failures  未通过用例的模型输出打进日志（合成数据）
@@ -57,6 +58,7 @@ import {
   companionEvalCases,
   companionMemoryEvalCases,
   companionSpeechEvalCases,
+  handoffReplyEvalCases,
 } from '@health-buddy/skills';
 import {
   runAskEval,
@@ -76,6 +78,7 @@ import {
   runVisitScheduleEval,
   runCompanionEval,
   runCompanionSpeechEval,
+  runHandoffReplyEval,
   summarize,
   type RunResult,
 } from './run.js';
@@ -146,6 +149,7 @@ const twinConsultCases = pick('twin-consult', twinConsultEvalCases);
 const companionCases = pick('companion', companionEvalCases);
 const companionMemoryCases = pick('companion', companionMemoryEvalCases);
 const companionSpeechCases = pick('companion-speech', companionSpeechEvalCases);
+const handoffReplyCases = pick('handoff-reply', handoffReplyEvalCases);
 const expertSynthesisCases = pick('expert-synthesis', synthesisEvalCases);
 const useJudge = !process.argv.includes('--no-judge');
 // 越界类问一问主要靠大模型评审判断，不开评审时不跑，免得“全部通过”有误导
@@ -161,7 +165,7 @@ const all: RunResult[] = [];
 for (const provider of providers) {
   const gateway = createGateway({ ...config, defaultProvider: provider, routes: {} });
   console.log(
-    `\n${provider}（${config.defaultModels[provider]}）：${cases.length + askCases.length + extractionCases.length + interpretationCases.length + outlineCases.length + planCases.length + expertCases.length + expertRoutingCases.length + expertSynthesisCases.length + twinSummaryCases.length + twinConsultCases.length + twinAskCases.length + visitScheduleCases.length + carePlanCases.length + visitScriptCases.length + visitRecordCases.length + chatCases.length + companionCases.length + companionMemoryCases.length + companionSpeechCases.length} 个用例 × ${runs} 次`,
+    `\n${provider}（${config.defaultModels[provider]}）：${cases.length + askCases.length + extractionCases.length + interpretationCases.length + outlineCases.length + planCases.length + expertCases.length + expertRoutingCases.length + expertSynthesisCases.length + twinSummaryCases.length + twinConsultCases.length + twinAskCases.length + visitScheduleCases.length + carePlanCases.length + visitScriptCases.length + visitRecordCases.length + chatCases.length + companionCases.length + companionMemoryCases.length + companionSpeechCases.length + handoffReplyCases.length} 个用例 × ${runs} 次`,
   );
   const results = [
     ...(await runEval({ gateway, provider, cases, runs, useJudge })),
@@ -210,6 +214,13 @@ for (const provider of providers) {
       useJudge,
     })),
     ...(await runCompanionSpeechEval({ gateway, provider, cases: companionSpeechCases, runs })),
+    ...(await runHandoffReplyEval({
+      gateway,
+      provider,
+      cases: handoffReplyCases,
+      runs,
+      useJudge,
+    })),
   ];
   all.push(...results);
   for (const s of summarize(results)) {

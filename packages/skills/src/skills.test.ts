@@ -67,6 +67,7 @@ describe('skill metadata', () => {
       planSkills: [],
       experts: 'none',
       usesMaterials: false,
+      usesHandoff: false,
       usesPlanOptions: false,
     });
     expect(getSkill('client-recent-summary')).toBe(clientRecentSummary);

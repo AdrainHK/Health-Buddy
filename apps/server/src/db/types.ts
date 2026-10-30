@@ -191,6 +191,8 @@ export interface TaskMessagesTable extends ManagerScoped {
   library_refs: ColumnType<unknown, string | undefined, never>;
   /** @ 引用的随访素材（迁移 0020），最多 3 份 */
   material_refs: ColumnType<string[], string[] | undefined, string[]>;
+  /** @ 引用的转交（迁移 0030，/转交回复），最多 1 个；客户转出时由系统置空 */
+  handoff_ref: ColumnType<string | null, string | null | undefined, never>;
   plan_options: ColumnType<unknown, string | null | undefined, never>;
   status: 'streaming' | 'complete' | 'stopped' | 'refused' | 'error';
   created_at: Timestamp;
@@ -217,7 +219,8 @@ export interface TaskStepsTable extends ManagerScoped {
     | 'select_library_items'
     | 'schedule_visits'
     | 'read_visit_materials'
-    | 'read_visit_records';
+    | 'read_visit_records'
+    | 'read_companion';
   label_key: string;
   expert_ids: ColumnType<string[], string[] | undefined, never>;
   label_date: ColumnType<string | null, string | null | undefined, string | null>;
@@ -280,7 +283,8 @@ export interface ArtifactEventsTable extends ManagerScoped {
     | 'copied'
     | 'exported'
     | 'companion_synced'
-    | 'companion_withdrawn';
+    | 'companion_withdrawn'
+    | 'companion_reply_sent';
   reason: string | null;
   format: 'png' | 'pdf' | null;
   created_at: Timestamp;
@@ -1073,6 +1077,8 @@ export interface CompanionHandoffsTable extends ClientScoped {
   closed_by: ColumnType<string | null, never, never>;
   closed_at: ColumnType<Date | null, never, never>;
   delivered_at: ColumnType<Date | null, never, never>;
+  /** 迁移 0030：回复来自哪份已审核的 /转交回复 草稿（健管师直接写的为空） */
+  reply_artifact_id: ColumnType<string | null, never, string>;
   created_at: ColumnType<Date, undefined, never>;
 }
 

@@ -21,6 +21,7 @@ import {
 } from '../api/companion';
 import { ApiError, isAbortError } from '../api/http';
 import { displayDateTime } from '../twin/errors';
+import { useTwinActions } from '../twin/TwinActions';
 import styles from '../twin/Twin.module.css';
 import care from './Companion.module.css';
 
@@ -191,6 +192,8 @@ export function HandoffItem({
   onChanged: () => void;
 }) {
   const { t } = useTranslation();
+  /** “让 AI 起草”：打开对话区，预填 /转交回复 和这个转交（M6 规格 2.9），草稿须审核后才能发 */
+  const actions = useTwinActions();
   const [replying, setReplying] = useState(false);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -306,6 +309,19 @@ export function HandoffItem({
               {handoff.status === 'open' && (
                 <Button variant="primary" disabled={busy} onClick={() => setReplying(true)}>
                   {t('companion.cases.writeReply')}
+                </Button>
+              )}
+              {handoff.status === 'open' && actions.handoffReply && (
+                <Button
+                  disabled={busy}
+                  onClick={() =>
+                    actions.handoffReply?.(
+                      { id: handoff.clientId, displayName: handoff.clientName },
+                      handoff.id,
+                    )
+                  }
+                >
+                  {t('companion.cases.draftWithAi')}
                 </Button>
               )}
               <Button

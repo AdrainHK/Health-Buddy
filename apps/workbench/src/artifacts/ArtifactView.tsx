@@ -43,6 +43,11 @@ import {
   useLibraryData,
 } from '../care/StructuredEditors';
 import { type M5Structured, parseM5Structured, sameStructured } from '../care/m5Artifact';
+import {
+  HandoffReplyEditor,
+  HandoffReplySend,
+  handoffReplyProblems,
+} from '../companion/HandoffReplyReview';
 import { ExpertReviewNotes } from '../experts/ExpertReviewNotes';
 import { useDynamicT, useStepLabel } from '../i18n/dynamic';
 import { useArtifactSource, useArtifactTitle } from './artifactTitle';
@@ -159,7 +164,14 @@ export function ArtifactView({
     ...(savedStructured ? (['structured'] as const) : []),
   ];
 
-  const [view, setView] = useState<View>(clientFacing ? 'clientFacing' : 'professional');
+  // /转交回复：先看念给客户的回复（结构化内容）
+  const [view, setView] = useState<View>(
+    clientFacing
+      ? 'clientFacing'
+      : savedStructured?.kind === 'handoff_reply'
+        ? 'structured'
+        : 'professional',
+  );
   const [text, setText] = useState(saved);
   /** 结构化内容的本地修改 */
   const [structured, setStructured] = useState<M5Structured | null>(savedStructured);
@@ -238,7 +250,9 @@ export function ArtifactView({
         ]
       : structured.kind === 'visit_schedule'
         ? scheduleProblems(structured.value)
-        : recordProblems(structured.value);
+        : structured.kind === 'handoff_reply'
+          ? handoffReplyProblems(structured.value)
+          : recordProblems(structured.value);
   const unsavedEdits = editable && dirty;
 
   useEffect(() => {
@@ -632,6 +646,12 @@ export function ArtifactView({
               disabled={!editable || working}
               onChange={(value) => setStructured({ kind: 'visit_schedule', value })}
             />
+          ) : structured.kind === 'handoff_reply' ? (
+            <HandoffReplyEditor
+              value={structured.value}
+              disabled={!editable || working}
+              onChange={(value) => setStructured({ kind: 'handoff_reply', value })}
+            />
           ) : (
             <RecordEditor
               value={structured.value}
@@ -959,6 +979,16 @@ export function ArtifactView({
                   />
                 )}
               </>
+            )}
+            {savedStructured?.kind === 'handoff_reply' && (
+              <HandoffReplySend
+                detail={detail}
+                disabled={readOnly || working}
+                onSent={(next) => {
+                  onDetail(next);
+                  onChanged();
+                }}
+              />
             )}
             <Button variant="ghost" disabled={readOnly || working} onClick={revise}>
               {t('results.artifacts.review.revise')}

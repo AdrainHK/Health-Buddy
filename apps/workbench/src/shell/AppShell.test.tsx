@@ -229,6 +229,7 @@ describe('AppShell return and rewrite', () => {
       twinRefs: [],
       libraryRefs: [],
       materialRefs: [],
+      handoffRefs: [],
       planOptions: null,
       status: 'complete',
       createdAt: NOW,

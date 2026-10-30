@@ -139,7 +139,11 @@ export type WordingCategory =
   | 'efficacy_claim'
   // M5 方案通俗版（规格 2.3）：孪生状态颜色和预测、风险分层字样
   | 'twin_term'
-  | 'risk_tier';
+  | 'risk_tier'
+  // M6 /转交回复（规格 2.9）：念给客户听的回复里有符号、字母，或命中福宝话术的其他规则（推荐医院、专家等）
+  | 'not_speakable'
+  | 'companion_rule'
+  | 'urgent_line';
 
 export interface WordingIssue {
   category: WordingCategory;

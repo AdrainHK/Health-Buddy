@@ -51,6 +51,7 @@ import { useTwinRefLabel } from '../twin/TwinActions';
 import reportStyles from '../reports/Reports.module.css';
 import { UploadCard } from '../reports/UploadCard';
 import { VisitMaterials } from '../care/VisitMaterials';
+import { HandoffPicker } from '../companion/HandoffPicker';
 import { DEFAULT_PLAN_OPTIONS, PlanOptionsBar } from '../care/PlanOptionsBar';
 import styles from './ChatPane.module.css';
 import { isReadOnlyTask } from './taskGroups';
@@ -75,6 +76,8 @@ export interface ComposerPrefill {
   followUpItemId?: string;
   /** “准备随访”“记录随访”（M5 规格 2.8、2.9）：关联的那一次随访 */
   visitId?: string;
+  /** “让 AI 起草”（M6 规格 2.9）：/转交回复 @ 的伴侣转交 */
+  handoffRefs?: string[];
 }
 
 export interface ChatPaneProps {
@@ -147,6 +150,8 @@ interface Draft {
   materialRefs?: string[];
   /** 关联的那一次随访 */
   visitId?: string | null;
+  /** /转交回复 选的伴侣转交（M6 规格 2.8），最多 1 个 */
+  handoffRefs?: string[];
   /**
    * 不是从输入框发出的（识别卡片上的“生成解读”、核对后自动解读）：
    * 发送时不清空、失败时也不恢复输入框，健管师正在输入的内容不受影响。
@@ -162,6 +167,7 @@ type ErrorKey =
   | 'noTwinData'
   | 'noPlanData'
   | 'noMaterials'
+  | 'noHandoff'
   | 'badRequest'
   | 'notFound'
   | 'conflict'
@@ -204,6 +210,8 @@ function errorKey(err: unknown): ErrorKey {
     // /方案生成：资料太少（M5 规格 2.2）；/随访记录：没有勾选素材（2.9）
     if (err.reasons.includes('no_plan_data')) return 'noPlanData';
     if (err.reasons.includes('no_materials')) return 'noMaterials';
+    // /转交回复：没有选伴侣转交（M6 规格 2.9）
+    if (err.reasons.includes('no_handoff')) return 'noHandoff';
     return 'conflict';
   }
   if (err.status === 400) return 'badRequest';
@@ -276,6 +284,7 @@ export function ChatPane({
   const [planOptions, setPlanOptions] = useState<PlanOptions>(DEFAULT_PLAN_OPTIONS);
   /** /随访记录 勾选的素材、关联的随访（只对这一条消息生效） */
   const [materialRefs, setMaterialRefs] = useState<string[]>([]);
+  const [handoffRefs, setHandoffRefs] = useState<string[]>([]);
   const [visitId, setVisitId] = useState<string | null>(null);
   /** @ 列表里的孪生项：当前客户的四个方面，加上有预测的指标 */
   const [twinMetrics, setTwinMetrics] = useState<string[]>([]);
@@ -473,6 +482,7 @@ export function ChatPane({
     setFollowUpItemId(prefill.followUpItemId ?? null);
     setVisitId(prefill.visitId ?? null);
     setMaterialRefs([]);
+    setHandoffRefs(prefill.handoffRefs ?? []);
     setExpertRefs([]);
     setExcludedExperts([]);
     inputRef.current?.focus();
@@ -504,6 +514,7 @@ export function ChatPane({
     setTwinConsult(false);
     setFollowUpItemId(null);
     setMaterialRefs([]);
+    setHandoffRefs([]);
     setVisitId(null);
   };
 
@@ -520,6 +531,7 @@ export function ChatPane({
     setFollowUpItemId(draft.followUpItemId ?? null);
     if (draft.planOptions) setPlanOptions(draft.planOptions);
     setMaterialRefs(draft.materialRefs ?? []);
+    setHandoffRefs(draft.handoffRefs ?? []);
     setVisitId(draft.visitId ?? null);
   };
 
@@ -733,6 +745,9 @@ export function ChatPane({
               : {}),
             ...(draft.skill?.usesMaterials && draft.materialRefs?.length
               ? { materialRefs: draft.materialRefs }
+              : {}),
+            ...(draft.skill?.usesHandoff && draft.handoffRefs?.length
+              ? { handoffRefs: draft.handoffRefs }
               : {}),
             ...(draft.skill && draft.visitId ? { visitId: draft.visitId } : {}),
           },
@@ -1255,6 +1270,14 @@ export function ChatPane({
           }}
         />
       )}
+      {materialClientId && skill?.usesHandoff && (
+        <HandoffPicker
+          clientId={materialClientId}
+          readOnly={readOnly}
+          selected={handoffRefs}
+          onSelect={setHandoffRefs}
+        />
+      )}
       <Composer
         inputRef={inputRef}
         text={text}
@@ -1285,6 +1308,7 @@ export function ChatPane({
             followUpItemId,
             planOptions,
             materialRefs,
+            handoffRefs,
             visitId,
           })
         }

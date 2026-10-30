@@ -53,6 +53,22 @@ export const replyHandoffRequestSchema = z.object({
 });
 export type ReplyHandoffRequest = z.infer<typeof replyHandoffRequestSchema>;
 
+/**
+ * /转交回复 产物的结构化内容（M6 规格 2.9）：只有专业版，回复原文放在这里。草稿时健管师可以改回复，
+ * 对应的转交不能改。审核通过后经 POST /api/artifacts/:id/send-handoff-reply 发送（红线 3）
+ */
+export const handoffReplyStructuredSchema = z.object({
+  handoffId: z.uuid(),
+  reply: z.string().trim().min(1).max(COMPANION_REPLY_MAX),
+});
+export type HandoffReplyStructured = z.infer<typeof handoffReplyStructuredSchema>;
+
+/** 发送已审核的回复：有药名等提醒时要带 acknowledgeWarnings（同健管师直接写的回复） */
+export const sendHandoffReplyRequestSchema = z.object({
+  acknowledgeWarnings: z.boolean().default(false),
+});
+export type SendHandoffReplyRequest = z.input<typeof sendHandoffReplyRequestSchema>;
+
 /** 已电话联系（closed_by_call）或直接关闭（closed） */
 export const closeHandoffRequestSchema = z.object({
   outcome: z.enum(['closed_by_call', 'closed']),

@@ -125,6 +125,7 @@ export const SKILL_AUTO: SkillSummary = {
   planSkills: [],
   experts: 'auto',
   usesMaterials: false,
+  usesHandoff: false,
   usesPlanOptions: false,
 };
 

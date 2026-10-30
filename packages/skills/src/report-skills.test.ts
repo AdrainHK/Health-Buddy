@@ -112,6 +112,7 @@ describe('M2 技能登记', () => {
       planSkills: ['report-interpretation', 'interview-outline'],
       experts: 'none',
       usesMaterials: false,
+      usesHandoff: false,
       usesPlanOptions: false,
     });
     // 验收反馈 8：三个技能都不需要再写要求，后端有默认要求
