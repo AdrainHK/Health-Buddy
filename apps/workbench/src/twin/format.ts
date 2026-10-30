@@ -46,6 +46,26 @@ export function useBasisText(): (item: TwinBasisItem) => string {
   const comparator = useComparator();
   return useCallback(
     (item: TwinBasisItem) => {
+      // 伴侣收集信息（M6 Q20）：只有条数，不写客户原话
+      if (item.source === 'companion') {
+        const category = t(`twin.basis.categories.${item.metric}`);
+        const head = t('twin.basis.companion', {
+          days: item.windowDays,
+          category,
+          value: item.value,
+          count: item.count,
+          from: item.from,
+          date: item.observedOn,
+        });
+        const parts = item.hits.map((hit) =>
+          hit.method === 'observation_count'
+            ? t('twin.basis.observationCount', { count: hit.snapshot.minCount })
+            : '',
+        );
+        return [head, ...(parts.length ? parts : [t('twin.basis.noHit')])].join(
+          t('twin.basis.separator'),
+        );
+      }
       const metric = metricName(item.metric);
       const head =
         item.source === 'report'
@@ -83,6 +103,8 @@ export function useBasisText(): (item: TwinBasisItem) => string {
               value: formatNumber(hit.snapshot.value),
               unit: hit.snapshot.unit,
             });
+          case 'observation_count':
+            return t('twin.basis.observationCount', { count: hit.snapshot.minCount });
         }
       };
       const parts = item.hits.map(hitText);

@@ -567,7 +567,7 @@ test('孪生：左侧栏点客户打开“客户 · 孪生”，375px 下单列�
     'high',
   );
   await expect(panel.getByTestId('forecast-insufficient')).toContainText('还需要 2 次');
-  // 四张状态卡片单列：左边对齐
+  // 五张状态卡片单列：左边对齐
   const xs = await panel
     .getByRole('article')
     .evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().left)));

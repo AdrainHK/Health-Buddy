@@ -55,7 +55,15 @@ export const DISEASE_TERMS = [
  * 孪生相关检查另外不许写的病名。“失眠”在面谈提纲里常作为症状来问（“最近有没有失眠”），
  * 不放进 DISEASE_TERMS，免得改变 M2 提纲的检查；孪生小结和孪生问答里不把睡眠时长说成失眠。
  */
-export const TWIN_DISEASE_TERMS: readonly string[] = [...DISEASE_TERMS, '失眠'];
+export const TWIN_DISEASE_TERMS: readonly string[] = [
+  ...DISEASE_TERMS,
+  '失眠',
+  // M6 心理方面（合规审查 S1）：依据只是福宝收集的条数，不能说成心理疾病
+  '心理疾病',
+  '精神疾病',
+  '情绪障碍',
+  '焦虑障碍',
+];
 
 /**
  * 具体药名和药物类别：词表在 packages/shared（专家引擎共用）。
@@ -161,6 +169,12 @@ export const TWIN_REFUSAL_PHRASES = [
   '未按要求写给客户的内容',
 ] as const;
 
+/**
+ * 固定拒绝句“未按要求写给客户的……，原因”的变体：只认这个前缀，后面最多 12 个字的名词短语，
+ * 中间不能有冒号、顿号、问号等；这一段里有病名时不遮（合规审查 B1）
+ */
+const REFUSAL_CLAUSE = /未按要求写给客户的[^，,。；;:：、!?！？\n]{0,12}(?=[，,]原因)/g;
+
 /** 规范化，并把固定的拒绝句遮成空格（长度不变，位置仍能映射回原文） */
 function normalized(text: string): { text: string; origin: number[] } {
   const n = normalizeForCompliance(text);
@@ -169,6 +183,11 @@ function normalized(text: string): { text: string; origin: number[] } {
     const p = normalizeForCompliance(phrase).text;
     masked = masked.split(p).join(' '.repeat(p.length));
   }
+  // 固定拒绝句的变体（“未按要求写给客户的疾病判断和风险评价，原因：……”）：只遮“未按要求……”
+  // 到“，原因”之间这一段，原因照样检查（评测发现 vsc-oob-judgment）
+  masked = masked.replace(REFUSAL_CLAUSE, (m) =>
+    TWIN_DISEASE_TERMS.some((t) => m.includes(t)) ? m : ' '.repeat(m.length),
+  );
   return { text: masked, origin: n.origin };
 }
 

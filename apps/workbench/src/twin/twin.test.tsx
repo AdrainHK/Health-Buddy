@@ -68,13 +68,13 @@ function renderTwin(props: Partial<Parameters<typeof TwinView>[0]> = {}) {
 }
 
 describe('孪生视图（规格 2.2）', () => {
-  it('从上到下：固定提示条、画像（人体轮廓 + 四张状态卡片）、趋势预测、待跟进、时间轴', async () => {
+  it('从上到下：固定提示条、画像（人体轮廓 + 五张状态卡片）、趋势预测、待跟进、时间轴', async () => {
     mockTwin(makeTwin(), {}, { followUps: [makeFollowUp()] });
     const { container } = renderTwin();
     expect(await screen.findByRole('heading', { name: '画像' })).toBeInTheDocument();
     expect(screen.getByRole('note')).toHaveTextContent('仅供参考，非医疗诊断');
     expect(screen.getByRole('group', { name: '人体轮廓：点一个区域查看对应方面' })).toBeVisible();
-    for (const name of ['代谢', '心血管', '睡眠', '体重'])
+    for (const name of ['代谢', '心血管', '睡眠', '体重', '心理'])
       expect(screen.getByRole('article', { name })).toBeInTheDocument();
     const headings = screen.getAllByRole('heading', { level: 5 }).map((h) => h.textContent);
     expect(headings.indexOf('画像')).toBeLessThan(headings.indexOf('趋势预测'));
@@ -90,6 +90,63 @@ describe('孪生视图（规格 2.2）', () => {
     expect(screen.getByTestId('twin-rules-note')).toHaveTextContent(
       '红黄绿的默认规则是初步做法，不是医学标准，还在等待医学审核。',
     );
+  });
+
+  it('心理方面（M6）：依据只写福宝收集的条数、不写原话，不给“在档案中查看”；没有依据时说明规则未启用或没有收集信息', async () => {
+    const mental = makeDomain('mental', 'yellow', {
+      computed: makeStatusRecord({
+        domain: 'mental',
+        level: 'yellow',
+        trigger: 'companion',
+        basis: [
+          {
+            source: 'companion',
+            metric: 'mood',
+            polarity: 'negative',
+            value: 3,
+            unit: '条',
+            count: 5,
+            windowDays: 14,
+            from: '2026-10-05',
+            observedOn: '2026-10-18',
+            outcome: 'yellow',
+            hits: [
+              {
+                ruleId: 'rule-mood',
+                method: 'observation_count',
+                level: 'yellow',
+                snapshot: {
+                  category: 'mood',
+                  polarity: 'negative',
+                  windowDays: 14,
+                  minCount: 3,
+                  count: 3,
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    });
+    const twin = makeTwin();
+    mockTwin({ ...twin, domains: [...twin.domains.slice(0, 4), mental] });
+    renderTwin();
+    const card = await screen.findByRole('article', { name: '心理' });
+    expect(card).toHaveTextContent(
+      '福宝收集 · 近 14 天客户提到消极情绪 3 条（共 5 条，2026-10-05 至 2026-10-18，客户自己说的）；达到平台规则的 3 条',
+    );
+    expect(within(card).queryByRole('button', { name: '在档案中查看' })).toBeNull();
+    expect(screen.getByRole('button', { name: /心理：/ })).toBeInTheDocument();
+
+    render(
+      <StatusCard
+        view={makeDomain('mental', 'unknown')}
+        clientId={A}
+        onOpenRecord={vi.fn()}
+        onChanged={vi.fn()}
+      />,
+    );
+    expect(screen.getAllByText(/规则还没启用，或近期没有收集到情绪信息/)).toHaveLength(1);
   });
 
   it('有未处理的危急指标：提示条变为醒目样式“有危急指标，请先电话联系客户”', async () => {

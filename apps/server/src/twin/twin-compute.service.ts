@@ -91,15 +91,20 @@ export class TwinComputeService implements OnModuleInit, OnApplicationShutdown {
   }
 
   /**
-   * 福宝打卡写入监测之后调用（M6 规格 2.3）：数据库函数已经在设备会话里把客户标为“正在更新”，
-   * 这里只入队。只在 companion_checkin_reading 成功写入之后调用（客户由函数按设备绑定校验）。
+   * 福宝写入数据之后调用，只入队：
+   * - monitoring：打卡或确认的测量写入监测（M6 规格 2.3），数据库函数已经把客户标为“正在更新”；
+   * - companion：会话结束整理写入了情绪、睡眠类收集信息（Q20），孪生“心理”“睡眠”按条数规则重算。
+   * 只在数据库函数成功写入之后调用（客户由函数按设备绑定或健管师本人校验）。
    */
-  async requestFromCompanion(clientId: string): Promise<void> {
+  async requestFromCompanion(
+    clientId: string,
+    trigger: 'monitoring' | 'companion' = 'monitoring',
+  ): Promise<void> {
     try {
-      await this.queue.enqueue({ type: 'client', clientId, trigger: 'monitoring' });
+      await this.queue.enqueue({ type: 'client', clientId, trigger });
     } catch (err) {
       this.logger.error(
-        `twin enqueue failed ${JSON.stringify({ clientId, trigger: 'monitoring', error: dbErrorCode(err) })}`,
+        `twin enqueue failed ${JSON.stringify({ clientId, trigger, error: dbErrorCode(err) })}`,
       );
     }
   }

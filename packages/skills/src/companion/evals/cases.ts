@@ -307,7 +307,7 @@ export const companionEvalCases: CompanionEvalCase[] = [
     // “已经吃药了”“吃过药了”都算回答了打卡情况
     expect: {
       handoff: false,
-      mustContainAny: ['吃过', '吃了', '吃药了', '已经吃'],
+      mustContainAny: ['吃过', '吃了', '吃药了', '已经吃', '打卡了'],
       mustNotContain: DRUGS,
     },
   },

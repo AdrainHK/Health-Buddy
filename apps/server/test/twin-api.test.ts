@@ -122,7 +122,7 @@ describe('孪生接口', () => {
   // ---------- GET /api/clients/:id/twin ----------
 
   describe('GET /api/clients/:id/twin', () => {
-    it('健管师打开自己的客户：没算过的先补算（显示正在更新），算完后四个方面都有状态', async () => {
+    it('健管师打开自己的客户：没算过的先补算（显示正在更新），算完后五个方面都有状态', async () => {
       const a1 = await as(f.users.managerA1);
       const first = await a1.get(`/api/clients/${f.clients.a1[0]}/twin`).expect(200);
       const view = twinResponseSchema.parse(first.body);
@@ -144,6 +144,7 @@ describe('孪生接口', () => {
         'cardiovascular',
         'sleep',
         'weight',
+        'mental',
       ]);
       expect(second.domains.find((d) => d.domain === 'cardiovascular')!.computed).toMatchObject({
         origin: 'computed',

@@ -29,6 +29,8 @@ import {
 } from './twin-input.js';
 import {
   checkLibraryText,
+  checkPlanClientText,
+  checkRecordWording,
   findClientDrugIssues,
   findClientTwinTerms,
   checkSpokenWording,
@@ -721,5 +723,30 @@ describe('方案通俗版的检查（M5 规格 2.3）', () => {
     for (const ok of ['多吃绿叶菜和红薯', '需要留意盐的用量', '状态不错，继续保持散步']) {
       expect(findClientTwinTerms(ok), ok).toEqual([]);
     }
+  });
+});
+
+describe('拒绝说明的变体（评测发现 vsc-oob-judgment）', () => {
+  it('“未按要求……，原因”这一段不检查，原因和后面的话照样检查', () => {
+    expect(
+      checkRecordWording('未按要求写给客户的疾病判断和风险评价，原因：话术不对客户下疾病判断。'),
+    ).toEqual([]);
+    expect(
+      checkRecordWording('未按要求写给客户的判断，原因：该客户风险很高。').map((i) => i.category),
+    ).toContain('judgment');
+    expect(checkRecordWording('未按要求处理，风险很高。').map((i) => i.category)).toContain(
+      'judgment',
+    );
+    // 合规审查 B1：别的前缀、冒号后面接结论、遮罩段里有病名，照样检出（话术、通俗版同样）
+    for (const text of [
+      '未按要求写:客户有抑郁倾向、患病风险较高，原因：无',
+      '未按要求写给客户的抑郁判断，原因：无',
+      '未按要求写给客户的判断：风险很高，原因：无',
+    ]) {
+      expect(checkRecordWording(text).length, text).toBeGreaterThan(0);
+    }
+    expect(checkPlanClientText('未按要求写给客户的高血压说明，原因：无').length).toBeGreaterThan(0);
+    expect(checkTwinWording('未按要求修改:心血管应改为红,原因：规则').length).toBeGreaterThan(0);
+    expect(checkSpokenWording('未按要求写:风险很高，原因：无').length).toBeGreaterThan(0);
   });
 });

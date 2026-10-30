@@ -1130,7 +1130,7 @@
     "computing": "正在更新：新数据还在计算，先显示上一次的结果",
     "empty": {
       "title": "还没有可用的数据：请上传并核对体检报告",
-      "hint": "四个方面都显示“数据不足”。核对报告或录入监测数据后会自动计算。"
+      "hint": "五个方面都显示“数据不足”。核对报告或录入监测数据后会自动计算。"
     },
     "levels": {
       "red": "需要尽快关注",
@@ -1148,7 +1148,8 @@
       "metabolic": "代谢",
       "cardiovascular": "心血管",
       "sleep": "睡眠",
-      "weight": "体重"
+      "weight": "体重",
+      "mental": "心理"
     },
     "domainLevel": "{{domain}}：{{level}}",
     "portrait": {
@@ -1181,7 +1182,8 @@
       "cancelAdjust": "取消调整",
       "cancelAdjustLabel": "取消调整：{{domain}}（恢复系统计算）",
       "cancelled": "已恢复系统计算",
-      "levelWithColor": "{{color}}（{{level}}）"
+      "levelWithColor": "{{color}}（{{level}}）",
+      "mentalUnknown": "心理方面只按福宝收集的情绪条目计算：规则还没启用，或近期没有收集到情绪信息。这不是心理评估。"
     },
     "basis": {
       "report": "{{metric}} {{value}} {{unit}}（{{date}} 报告）",
@@ -1194,7 +1196,13 @@
       "threshold": "近 {{days}} 天平均超出设定阈值 {{comparator}} {{value}} {{unit}}",
       "noReference": "报告未提供参考范围",
       "noHit": "未命中规则",
-      "separator": "；"
+      "separator": "；",
+      "companion": "福宝收集 · 近 {{days}} 天客户{{category}} {{value}} 条（共 {{count}} 条，{{from}} 至 {{date}}，客户自己说的）",
+      "observationCount": "达到平台规则的 {{count}} 条",
+      "categories": {
+        "mood": "提到消极情绪",
+        "sleep": "说睡眠不好"
+      }
     },
     "comparators": {
       "gte": "≥",
@@ -1305,7 +1313,8 @@
       "alertRule": {
         "critical": "达到危急阈值",
         "out_of_reference": "超出参考范围",
-        "threshold": "近期平均超出设定阈值"
+        "threshold": "近期平均超出设定阈值",
+        "observation_count": "收集信息条数达到规则"
       },
       "correction": "报告更正：{{metric}}（{{actor}}）",
       "correctionUnknown": "某一项",

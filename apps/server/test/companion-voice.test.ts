@@ -16,6 +16,7 @@ import { withDevice, withTenant, type Db } from '../src/db/database.js';
 import { localDate } from '../src/twin/time-zone.js';
 import { ownerDb, PASSWORD, seedFixtures, type Fixtures } from './fixtures.js';
 import { createTestApp, loginAs } from './http.js';
+import { TWIN_QUEUE, type InProcessTwinQueue } from '../src/twin/twin-queue.js';
 
 type Agent = Awaited<ReturnType<typeof loginAs>>;
 
@@ -2016,6 +2017,15 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
       metric: string | null;
     }[];
     expect(observations).toHaveLength(4);
+    // 有睡眠类（带极性）的收集信息：孪生按条数规则重算（6c，触发原因 companion）
+    await app.get<InProcessTwinQueue>(TWIN_QUEUE).idle();
+    const recomputed = await owner
+      .selectFrom('twin_status_history')
+      .select('trigger')
+      .where('client_id', '=', f.clients.a1[0])
+      .where('trigger', '=', 'companion')
+      .execute();
+    expect(recomputed.length).toBeGreaterThan(0);
     expect(observations.find((o) => o.category === 'adherence')!.text).toBe(
       '客户说昨天晚上药物忘吃了',
     );

@@ -23,6 +23,7 @@ import {
   type TwinDomain,
   type TwinLevel,
   type TwinMonitoringReading,
+  type TwinObservation,
   type TwinReportValue,
   type TwinStatusRule,
 } from '@health-buddy/shared';
@@ -61,6 +62,8 @@ export interface PlanInput {
   reportValues: readonly PlanReportValue[];
   /** 最近一段时间的监测读数 */
   readings: readonly PlanReading[];
+  /** 伴侣收集信息（情绪、睡眠类，只有类别、极性和日期，M6 Q20）。省略视为没有 */
+  observations?: readonly TwinObservation[];
   /** 每个方面最近一次系统计算的状态 */
   lastComputed: ReadonlyMap<TwinDomain, { level: TwinLevel; basis: unknown }>;
   /** 当前（未被替代的）预测，也就是“这批数据进来之前”的那份 */
@@ -167,6 +170,7 @@ export function planTwinUpdate(input: PlanInput): TwinPlan {
     criticalRules: input.criticalRules,
     reportValues: input.reportValues,
     readings: input.readings,
+    observations: input.observations ?? [],
     now: input.now,
   });
   const statuses: PlannedStatus[] = evaluated.map((s) => {

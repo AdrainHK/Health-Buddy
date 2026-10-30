@@ -1,7 +1,7 @@
 /**
  * 给模型的去标识化孪生摘要（M4 规格 5.2）。
  *
- * 只有健康数据：四个方面的状态和依据、预测（历次数值、3 和 6 个月的中间值和区间、数据次数、时间跨度、
+ * 只有健康数据：五个方面的状态和依据、预测（历次数值、3 和 6 个月的中间值和区间、数据次数、时间跨度、
  * 方法、不确定性）、未处理的跟进项。手动调整的理由和跟进备注是健管师写的自由文字，组装前由后端用
  * redactClientIdentity 去掉姓名和联系方式（redactTwin）。
  *
@@ -164,7 +164,13 @@ export const TWIN_DOMAIN_ZH: Record<TwinDomain, string> = {
   cardiovascular: '心血管',
   sleep: '睡眠',
   weight: '体重',
+  mental: '心理',
 };
+
+/** 条数规则统计的收集信息类别（M6） */
+const OBSERVATION_ZH = { mood: '情绪', sleep: '睡眠' } as const;
+/** 条数规则统计的说法：客户提到消极情绪、说睡眠不好（合规审查 S2） */
+const OBSERVATION_NEGATIVE_ZH = { mood: '提到消极情绪', sleep: '说睡眠不好' } as const;
 
 /** 状态名称（2.3，待审定）：文字和颜色一起写，模型照抄 */
 export const TWIN_LEVEL_ZH: Record<TwinLevel, string> = {
@@ -223,12 +229,19 @@ function describeHit(item: TwinBasisItem): string {
         const ref = `${h.snapshot.refLow ?? ''}–${h.snapshot.refHigh ?? ''}`;
         return `${h.snapshot.abnormal === 'high' ? '高于' : '低于'}报告上印的参考范围 ${ref} → ${h.level === 'red' ? '红' : '黄'}`;
       }
+      if (h.method === 'observation_count')
+        return `近 ${h.snapshot.windowDays} 天客户${OBSERVATION_NEGATIVE_ZH[h.snapshot.category]} ${h.snapshot.count} 条，达到平台规则的 ${h.snapshot.minCount} 条（只是条数，不代表心理状态）→ ${h.level === 'red' ? '红' : '黄'}`;
       return `最近 ${h.snapshot.windowDays} 天 ${h.snapshot.count} 条读数的平均值 ${h.snapshot.average} 超出平台阈值 ${COMPARATOR_ZH[h.snapshot.comparator]} ${h.snapshot.value} ${h.snapshot.unit} → ${h.level === 'red' ? '红' : '黄'}`;
     })
     .join('；');
 }
 
 function describeBasis(item: TwinBasisItem): string {
+  // 伴侣收集信息（M6 Q20）：只有条数，是客户和福宝聊天时自己说的，不是测量或评估
+  if (item.source === 'companion') {
+    const hits = item.hits.length ? `；${describeHit(item)}` : '；没有命中规则';
+    return `伴侣“福宝”收集的${OBSERVATION_ZH[item.metric]}类信息：${item.from} 至 ${item.observedOn} 共 ${item.count} 条，其中客户${OBSERVATION_NEGATIVE_ZH[item.metric]} ${item.value} 条（客户和福宝聊天时自己说的，不是测量或评估）${hits}`;
+  }
   const name = indicatorName(item.metric);
   const where =
     item.source === 'report'
@@ -328,7 +341,7 @@ export function describeTwin(twin: TwinSnapshot): string {
     lines.push('', `这次引用的孪生项：${twin.focus.map(twinRefLabel).join('、')}`);
   }
 
-  lines.push('', '### 四个方面的状态（照抄颜色）');
+  lines.push('', '### 各方面的状态（照抄颜色）');
   for (const d of twin.domains) {
     const source = d.manual
       ? `健管师手动调整为${TWIN_LEVEL_ZH[d.manual.level]}（系统计算：${d.computedLevel ? TWIN_LEVEL_ZH[d.computedLevel] : '还没有计算'}），理由：${d.manual.reason}`
@@ -419,6 +432,7 @@ export function twinFreeTexts(twin: TwinSnapshot | null | undefined): string[] {
 function hitDirection(item: TwinBasisItem): 'high' | 'low' {
   for (const h of item.hits) {
     if (h.method === 'out_of_reference') return h.snapshot.abnormal;
+    if (h.method === 'observation_count') return 'high';
     if (h.snapshot.comparator === 'lt' || h.snapshot.comparator === 'lte') return 'low';
     return 'high';
   }
@@ -447,8 +461,12 @@ export function twinFlaggedIndicators(
     if (ref.kind === 'domain') {
       const d = twin.domains.find((x) => x.domain === ref.code);
       const basis = d?.basis ?? [];
-      const flagged = basis.filter((b) => b.outcome !== 'green');
-      for (const b of flagged.length ? flagged : basis) put(b.metric, hitDirection(b), b.source);
+      // 伴侣收集信息没有指标，不交给按指标的规则路由（心理方面由路由模型按问题补专家）
+      const valued = basis.filter(
+        (b): b is Exclude<TwinBasisItem, { source: 'companion' }> => b.source !== 'companion',
+      );
+      const flagged = valued.filter((b) => b.outcome !== 'green');
+      for (const b of flagged.length ? flagged : valued) put(b.metric, hitDirection(b), b.source);
       // 还没有任何数据的方面：按方面包含的指标路由
       if (!basis.length && (TWIN_DOMAINS as readonly string[]).includes(ref.code)) {
         const m = domainMetrics[ref.code as TwinDomain];

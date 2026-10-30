@@ -212,7 +212,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
   `.execute(db);
 
   // 默认规则（第五节之二，待医学顾问审定）。在审计触发器之前写入，初始版本号为 1
-  for (const r of DEFAULT_TWIN_STATUS_RULES) {
+  // M6 的条数规则（来源 companion）由 0031 在扩展规则表之后写入
+  for (const r of DEFAULT_TWIN_STATUS_RULES.filter((x) => x.source !== 'companion')) {
     await sql`
       insert into twin_status_rules
         (domain, metric, source, method, comparator, value, unit, window_days, level)

@@ -90,7 +90,7 @@ export interface ReportOption {
   critical?: boolean;
 }
 
-/** @ 列表里的孪生项（M4 规格 2.8）：当前客户的四个方面和有预测的指标 */
+/** @ 列表里的孪生项（M4 规格 2.8）：当前客户的五个方面和有预测的指标 */
 export interface TwinItemOption {
   ref: TwinRef;
   label: string;

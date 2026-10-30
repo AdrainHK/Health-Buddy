@@ -85,6 +85,10 @@ export async function seedFixtures(db: Owner): Promise<Fixtures> {
         unit: r.unit,
         window_days: r.windowDays,
         level: r.level,
+        enabled: r.enabled ?? true,
+        category: r.category ?? null,
+        polarity: r.polarity ?? null,
+        min_count: r.minCount ?? null,
       })
       .execute();
   }

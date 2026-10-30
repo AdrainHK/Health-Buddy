@@ -148,16 +148,19 @@
       "metabolic": "代谢",
       "cardiovascular": "心血管",
       "sleep": "睡眠",
-      "weight": "体重"
+      "weight": "体重",
+      "mental": "心理"
     },
     "sources": {
       "report": "报告",
-      "monitoring": "监测"
+      "monitoring": "监测",
+      "companion": "伴侣收集信息"
     },
     "methods": {
       "critical": "命中危急阈值",
       "out_of_reference": "超出报告参考范围",
-      "threshold": "平均值超出固定阈值"
+      "threshold": "平均值超出固定阈值",
+      "observation_count": "收集信息条数"
     },
     "window": "最近 {{days}} 天",
     "noThreshold": "—",
@@ -202,7 +205,13 @@
       "noMetric": "这个方面没有这个来源的指标",
       "save": "保存",
       "saving": "正在保存…",
-      "cancel": "取消"
+      "cancel": "取消",
+      "category": "统计的收集信息",
+      "categoryHint": "情绪类只算心理，睡眠类只算睡眠；只统计客户说的消极条目，不看原话",
+      "minCount": "至少几条",
+      "minCountHint": "1–100 条",
+      "observationWindowHint": "统计最近几天的收集信息，1–90 天",
+      "observationPending": "条数规则的数值待心理、医学顾问审定，审定前请保持停用"
     },
     "resetConfirm": {
       "title": "恢复为默认值？",
@@ -222,7 +231,14 @@
       "not_found": "规则不存在，请刷新页面后再试",
       "forbidden": "只有平台管理员可以修改规则",
       "network": "网络连接失败，请检查网络后重试",
-      "unknown": "操作失败，请稍后再试"
+      "unknown": "操作失败，请稍后再试",
+      "invalid_count": "条数请填写 1–100 的整数"
+    },
+    "observationRule": "近 {{days}} 天{{category}}消极 ≥ {{count}} 条",
+    "observationPending": "数值待心理、医学顾问审定，审定前请保持停用",
+    "categories": {
+      "mood": "情绪",
+      "sleep": "睡眠"
     }
   },
   "twinStats": {

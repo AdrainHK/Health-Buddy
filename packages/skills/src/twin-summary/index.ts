@@ -122,7 +122,7 @@ export const twinSummary: SkillDefinition<typeof twinSummaryOutputSchema> = {
     lines.push('## 总体概述', p.overview.trim());
 
     // 状态：颜色和依据由后端照抄孪生（2.7），模型只写说明
-    lines.push('', '## 四个方面的状态');
+    lines.push('', '## 各方面的状态');
     for (const domain of TWIN_DOMAINS) {
       const d = twin?.domains.find((x) => x.domain === domain);
       const explanation = p.domains.find((x) => x.domain === domain)?.explanation.trim();
@@ -134,6 +134,13 @@ export const twinSummary: SkillDefinition<typeof twinSummaryOutputSchema> = {
           : '系统按规则计算';
         lines.push(`- **${TWIN_DOMAIN_ZH[domain]}**：${TWIN_LEVEL_ZH[d.level]} · ${origin}`);
         for (const b of d.basis) {
+          // 伴侣收集信息只有条数（M6 Q20），不写客户原话
+          if (b.source === 'companion') {
+            lines.push(
+              `  - 福宝收集：近 ${b.windowDays} 天客户${b.metric === 'mood' ? '提到消极情绪' : '说睡眠不好'} ${b.value} 条（共 ${b.count} 条，客户自己说的）`,
+            );
+            continue;
+          }
           const where = b.source === 'report' ? '体检报告' : `日常监测 ${b.count} 条平均`;
           lines.push(
             `  - ${indicatorName(b.metric)} ${b.value} ${b.unit}（${b.observedOn}，${where}）`,

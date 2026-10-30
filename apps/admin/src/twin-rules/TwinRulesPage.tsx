@@ -80,7 +80,8 @@ export function TwinRulesPage({ user }: { user: CurrentUser }) {
             ...(values.method === 'threshold'
               ? { comparator: values.comparator, value: values.value }
               : {}),
-            ...(values.source === 'monitoring' ? { windowDays: values.windowDays } : {}),
+            ...(values.source !== 'report' ? { windowDays: values.windowDays } : {}),
+            ...(values.method === 'observation_count' ? { minCount: values.minCount } : {}),
             level: values.level,
             enabled: values.enabled,
           })
@@ -127,7 +128,7 @@ export function TwinRulesPage({ user }: { user: CurrentUser }) {
 
   const ruleName = (item: TwinStatusRuleRecord) => ({
     domain: labels.domainName(item.domain),
-    metric: labels.metricName(item.metric),
+    metric: labels.ruleSubject(item),
     source: labels.sourceName(item.source),
     method: labels.methodName(item.method),
   });
@@ -237,9 +238,22 @@ export function TwinRulesPage({ user }: { user: CurrentUser }) {
                     )}
                   </td>
                   <td data-label={t('twinRules.columns.threshold')} className={styles.value}>
-                    {item.comparator !== null && item.value !== null
-                      ? `${labels.symbol(item.comparator)} ${item.value} ${labels.unitLabel(item.metric)}`
-                      : t('twinRules.noThreshold')}
+                    {item.method === 'observation_count' && item.category && item.minCount ? (
+                      <>
+                        <span>
+                          {t('twinRules.observationRule', {
+                            days: item.windowDays,
+                            category: labels.categoryName(item.category),
+                            count: item.minCount,
+                          })}
+                        </span>
+                        <small className={own.window}>{t('twinRules.observationPending')}</small>
+                      </>
+                    ) : item.comparator !== null && item.value !== null && item.metric ? (
+                      `${labels.symbol(item.comparator)} ${item.value} ${labels.unitLabel(item.metric)}`
+                    ) : (
+                      t('twinRules.noThreshold')
+                    )}
                   </td>
                   <td data-label={t('twinRules.columns.level')}>
                     <span className={`${styles.level} ${own[item.level]}`}>

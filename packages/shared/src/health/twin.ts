@@ -2,9 +2,9 @@
  * 客户数字孪生的红黄绿状态（M4 规格第四节、第五节之二）。
  *
  * 状态由后端按平台设定的规则确定性计算，AI 不参与（Q1、Q2、Q4）。
- * 这里放四个方面的指标映射、默认规则和计算状态的纯函数。
+ * 这里放五个方面的指标映射、默认规则和计算状态的纯函数（M6 新增“心理”方面，规格 Q20、N16）。
  *
- * **默认规则和各项参数（监测窗口 7 天、报告过期 12 个月）是候选做法，不是医学标准，
+ * **默认规则和各项参数（监测窗口 7 天、报告过期 12 个月、条数规则“近 14 天消极 ≥ 3 条”）是候选做法，不是医学标准，
  * 全部待产品负责人和医学顾问审定**；正式标准确定后只替换规则表。
  */
 import type { TwinBasisItem, TwinRuleHit, TwinSkippedValue } from '../api/twin.js';
@@ -20,24 +20,34 @@ import {
 } from './critical.js';
 import type { AbnormalFlag } from './reference.js';
 
-/** 四个方面：代谢、心血管、睡眠、体重 */
-export const TWIN_DOMAINS = ['metabolic', 'cardiovascular', 'sleep', 'weight'] as const;
+/** 五个方面：代谢、心血管、睡眠、体重、心理（M6） */
+export const TWIN_DOMAINS = ['metabolic', 'cardiovascular', 'sleep', 'weight', 'mental'] as const;
 export type TwinDomain = (typeof TWIN_DOMAINS)[number];
 
 /** 红（需要尽快关注）、黄（需要留意）、绿（平稳）、灰（数据不足） */
 export const TWIN_LEVELS = ['red', 'yellow', 'green', 'unknown'] as const;
 export type TwinLevel = (typeof TWIN_LEVELS)[number];
 
-export const TWIN_RULE_SOURCES = ['report', 'monitoring'] as const;
+/** companion：伴侣“福宝”收集的信息（M6 规格 2.6、Q20） */
+export const TWIN_RULE_SOURCES = ['report', 'monitoring', 'companion'] as const;
 export type TwinRuleSource = (typeof TWIN_RULE_SOURCES)[number];
+/** 有数值的来源（报告、监测）：预测和跳过的数值只来自这两种 */
+export type TwinValueSource = Exclude<TwinRuleSource, 'companion'>;
 
 /**
  * 判断方式（第五节之二）：
  * - critical：命中 M1 危急阈值；
  * - out_of_reference：报告指标超出报告上印的参考范围（M2 Q10），只用于报告；
- * - threshold：监测指标最近 N 天平均值超出平台设定的固定阈值，只用于监测。
+ * - threshold：监测指标最近 N 天平均值超出平台设定的固定阈值，只用于监测；
+ * - observation_count：近 N 天某类收集信息（情绪、睡眠）消极的条目达到 M 条（M6 N16），只用于伴侣。
+ *   只按条数判断，不做情绪曲线和趋势（Q26）。
  */
-export const TWIN_RULE_METHODS = ['critical', 'out_of_reference', 'threshold'] as const;
+export const TWIN_RULE_METHODS = [
+  'critical',
+  'out_of_reference',
+  'threshold',
+  'observation_count',
+] as const;
 export type TwinRuleMethod = (typeof TWIN_RULE_METHODS)[number];
 
 /** 规则只能得出红或黄；绿是“有数据且没有命中任何规则” */
@@ -65,13 +75,32 @@ export const domainMetrics = {
     report: ['weight', 'bmi', 'waist'],
     monitoring: ['weight'],
   },
+  mental: {
+    report: [],
+    monitoring: [],
+  },
 } as const satisfies Record<
   TwinDomain,
   { report: readonly ReportIndicatorCode[]; monitoring: readonly MonitoringMetricCode[] }
 >;
 
+/**
+ * 条数规则统计的收集信息类别和它所属的方面：情绪只算心理，睡眠只算睡眠
+ * （同一类条目不让两个方面一起变色）
+ */
+export const TWIN_OBSERVATION_DOMAINS = { mood: 'mental', sleep: 'sleep' } as const;
+export type TwinObservationCategory = keyof typeof TWIN_OBSERVATION_DOMAINS;
+export const TWIN_OBSERVATION_CATEGORIES = Object.keys(
+  TWIN_OBSERVATION_DOMAINS,
+) as TwinObservationCategory[];
+/** 先只统计消极的条目；中性、积极等顾问给出再开放 */
+export const TWIN_OBSERVATION_POLARITIES = ['negative'] as const;
+export type TwinObservationPolarity = (typeof TWIN_OBSERVATION_POLARITIES)[number];
+export const TWIN_OBSERVATION_MIN_COUNT_MAX = 100;
+
 /** 指标属于哪个方面（每个指标在每个来源里最多属于一个方面） */
 export function domainOfMetric(source: TwinRuleSource, metric: string): TwinDomain | null {
+  if (source === 'companion') return null;
   for (const d of TWIN_DOMAINS) {
     if ((domainMetrics[d][source] as readonly string[]).includes(metric)) return d;
   }
@@ -88,16 +117,23 @@ export const TWIN_REASON_MAX = 500;
 
 export interface TwinStatusRuleDef {
   domain: TwinDomain;
-  metric: IndicatorCode;
+  /** 条数规则没有指标 */
+  metric: IndicatorCode | null;
   source: TwinRuleSource;
   method: TwinRuleMethod;
   /** 只有 threshold 类有比较方式、阈值和单位 */
   comparator: CriticalComparator | null;
   value: number | null;
   unit: string | null;
-  /** 监测规则的时间窗口（天）；报告规则为空 */
+  /** 监测规则和条数规则的时间窗口（天）；报告规则为空 */
   windowDays: number | null;
   level: TwinRuleLevel;
+  /** 只有条数规则有：统计哪类收集信息、什么极性、至少几条 */
+  category?: TwinObservationCategory | null;
+  polarity?: TwinObservationPolarity | null;
+  minCount?: number | null;
+  /** 默认规则是否启用；省略为启用。条数规则的数值待顾问审定，默认停用（N16） */
+  enabled?: boolean;
 }
 
 export interface TwinStatusRule extends TwinStatusRuleDef {
@@ -162,12 +198,48 @@ export const DEFAULT_TWIN_STATUS_RULES: readonly TwinStatusRuleDef[] = TWIN_DOMA
     }
     return rules;
   },
+).concat(
+  // 条数规则：测试值，待心理、医学顾问审定（N16），审定前默认停用，只在预览环境启用
+  (['mood', 'sleep'] as const).map((category) => ({
+    domain: TWIN_OBSERVATION_DOMAINS[category],
+    metric: null,
+    source: 'companion' as const,
+    method: 'observation_count' as const,
+    comparator: null,
+    value: null,
+    unit: null,
+    windowDays: 14,
+    level: 'yellow' as const,
+    category,
+    polarity: 'negative' as const,
+    minCount: 3,
+    enabled: false,
+  })),
 );
 
 /** 规则的形状是否合法（数据库的 check 和触发器做同样的校验） */
 export function twinRuleShapeError(rule: TwinStatusRuleDef): string | null {
-  if (!(domainMetrics[rule.domain][rule.source] as readonly string[]).includes(rule.metric))
-    return 'metric not in domain';
+  const counting = rule.method === 'observation_count';
+  if (counting !== (rule.source === 'companion'))
+    return 'observation_count is the only method for companion';
+  if (counting) {
+    if (rule.metric !== null) return 'observation_count has no metric';
+    if (!rule.category || !rule.polarity || rule.minCount == null)
+      return 'observation_count needs category, polarity and min_count';
+    if (TWIN_OBSERVATION_DOMAINS[rule.category] !== rule.domain) return 'category not in domain';
+    if (
+      !Number.isInteger(rule.minCount) ||
+      rule.minCount < 1 ||
+      rule.minCount > TWIN_OBSERVATION_MIN_COUNT_MAX
+    )
+      return 'min_count out of range';
+  } else {
+    if (rule.category != null || rule.polarity != null || rule.minCount != null)
+      return 'only observation_count rules have category, polarity and min_count';
+    const metrics = domainMetrics[rule.domain][rule.source as 'report' | 'monitoring'];
+    if (rule.metric === null || !(metrics as readonly string[]).includes(rule.metric))
+      return 'metric not in domain';
+  }
   if (rule.method === 'out_of_reference' && rule.source !== 'report')
     return 'out_of_reference is for reports';
   if (rule.method === 'threshold' && rule.source !== 'monitoring')
@@ -175,14 +247,15 @@ export function twinRuleShapeError(rule: TwinStatusRuleDef): string | null {
   if (rule.method === 'threshold') {
     if (rule.comparator === null || rule.value === null || rule.unit === null)
       return 'threshold needs comparator, value and unit';
-    if (rule.unit !== indicatorUnit(rule.metric)) return 'unit must follow the catalog';
-    const b = THRESHOLD_BOUNDS[rule.metric];
+    const metric = rule.metric as IndicatorCode;
+    if (rule.unit !== indicatorUnit(metric)) return 'unit must follow the catalog';
+    const b = THRESHOLD_BOUNDS[metric];
     if (rule.value < b.min || rule.value > b.max) return 'value out of range';
   } else if (rule.comparator !== null || rule.value !== null || rule.unit !== null) {
     return 'only threshold rules have comparator, value and unit';
   }
-  if ((rule.source === 'monitoring') !== (rule.windowDays !== null))
-    return 'window_days is for monitoring rules';
+  if ((rule.source !== 'report') !== (rule.windowDays !== null))
+    return 'window_days is for monitoring and companion rules';
   if (rule.windowDays !== null && (rule.windowDays < 1 || rule.windowDays > 90))
     return 'window_days out of range';
   return null;
@@ -214,6 +287,14 @@ export interface TwinMonitoringReading {
   measuredAt: string;
 }
 
+/** 伴侣收集信息（M6）：只有类别、极性和日期，不带原文（依据里只写条数，验收 11） */
+export interface TwinObservation {
+  category: string;
+  polarity: string | null;
+  /** YYYY-MM-DD */
+  observedOn: string;
+}
+
 export interface EvaluateTwinInput {
   /** 平台规则（含停用的，函数自己跳过） */
   rules: readonly TwinStatusRule[];
@@ -222,6 +303,8 @@ export interface EvaluateTwinInput {
   criticalRules: readonly (CriticalRule & { enabled?: boolean })[];
   reportValues: readonly TwinReportValue[];
   readings: readonly TwinMonitoringReading[];
+  /** 伴侣收集信息（已去掉驳回的；客户撤回同意后为空）。省略视为没有 */
+  observations?: readonly TwinObservation[];
   /** 计算时刻（ISO），决定监测窗口和报告是否过期 */
   now: string;
 }
@@ -267,6 +350,10 @@ export function addMonthsIso(date: string, months: number): string {
   return target.toISOString().slice(0, 10);
 }
 
+function addDaysIso(date: string, days: number): string {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
+}
+
 /** 数值是否可用：单位跟目录一致、落在合理范围内 */
 function usability(metric: string, value: number, unit: string): TwinSkippedValue['reason'] | null {
   const code = metric as IndicatorCode;
@@ -291,7 +378,7 @@ function criticalHits(
       snapshot: {
         comparator: c.comparator,
         value: c.value,
-        unit: indicatorUnit(rule.metric),
+        unit: indicatorUnit(rule.metric as IndicatorCode),
         windowDays: rule.windowDays,
         criticalLevel: c.level,
       },
@@ -443,6 +530,51 @@ export function evaluateDomainStatus(
     });
   }
 
+  // 伴侣收集信息：每条启用的条数规则一项依据，窗口内有这一类条目才算有数据（没有就不出依据）。
+  // 按日期统计，“今天”取计算时刻的 UTC 日期，和报告过期的算法一致
+  for (const r of rules) {
+    if (r.method !== 'observation_count' || !r.category || !r.polarity || r.minCount == null)
+      continue;
+    const days = r.windowDays ?? 14;
+    const from = addDaysIso(today, -(days - 1));
+    const scoped = (input.observations ?? []).filter(
+      (o) => o.category === r.category && o.observedOn >= from && o.observedOn <= today,
+    );
+    if (scoped.length === 0) continue;
+    const matched = scoped.filter((o) => o.polarity === r.polarity).length;
+    const hits: TwinRuleHit[] =
+      matched >= r.minCount
+        ? [
+            {
+              ruleId: r.id,
+              method: 'observation_count',
+              level: r.level,
+              snapshot: {
+                category: r.category,
+                polarity: r.polarity,
+                windowDays: days,
+                minCount: r.minCount,
+                count: matched,
+              },
+            },
+          ]
+        : [];
+    const dates = scoped.map((o) => o.observedOn).sort();
+    basis.push({
+      source: 'companion',
+      metric: r.category,
+      polarity: r.polarity,
+      value: matched,
+      unit: '条',
+      count: scoped.length,
+      windowDays: days,
+      from,
+      observedOn: dates[dates.length - 1]!,
+      outcome: outcomeOf(hits),
+      hits,
+    });
+  }
+
   return {
     domain,
     level: worstTwinLevel(basis.map((b) => b.outcome)),
@@ -452,7 +584,7 @@ export function evaluateDomainStatus(
   };
 }
 
-/** 四个方面一起算 */
+/** 五个方面一起算 */
 export function evaluateTwinStatus(input: EvaluateTwinInput): TwinDomainStatus[] {
   return TWIN_DOMAINS.map((d) => evaluateDomainStatus(d, input));
 }

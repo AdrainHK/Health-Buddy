@@ -114,7 +114,7 @@ describe('孪生计算队列', () => {
       .select(['operator_id', 'org_id', 'manager_id', 'trigger'])
       .where('client_id', '=', f.clients.b1)
       .execute();
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(5);
     for (const r of rows) {
       expect(r).toEqual({
         operator_id: f.operatorB,

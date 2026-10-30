@@ -186,9 +186,15 @@ describe('四个方面和默认规则', () => {
 });
 
 describe('evaluateDomainStatus', () => {
-  it('没有任何数据：四个方面都是灰（数据不足）', () => {
+  it('没有任何数据：五个方面都是灰（数据不足）', () => {
     const all = evaluateTwinStatus(input({}));
-    expect(all.map((s) => s.level)).toEqual(['unknown', 'unknown', 'unknown', 'unknown']);
+    expect(all.map((s) => s.level)).toEqual([
+      'unknown',
+      'unknown',
+      'unknown',
+      'unknown',
+      'unknown',
+    ]);
     expect(all.every((s) => s.basis.length === 0 && s.rulesVersion === 3)).toBe(true);
   });
 
@@ -467,5 +473,113 @@ describe('evaluateDomainStatus', () => {
       input({ reportValues: [report('tc', 7.5, '2026-09-01', { abnormal: 'high' })] }),
     );
     expect(s.level).toBe('unknown');
+  });
+});
+
+describe('收集信息条数规则（M6 Q20、N16）', () => {
+  /** 从 NOW 往前 daysAgo 天的收集信息 */
+  const obs = (category: string, polarity: string | null, daysAgo: number) => ({
+    category,
+    polarity,
+    observedOn: new Date(Date.parse(NOW) - daysAgo * 86_400_000).toISOString().slice(0, 10),
+  });
+  const counting = RULES.filter((r) => r.method === 'observation_count');
+
+  it('默认两条条数规则：心理看情绪、睡眠看睡眠，近 14 天消极 ≥ 3 条为黄，默认停用', () => {
+    const defaults = DEFAULT_TWIN_STATUS_RULES.filter((r) => r.method === 'observation_count');
+    expect(
+      defaults.map((r) => [r.domain, r.category, r.polarity, r.windowDays, r.minCount]),
+    ).toEqual([
+      ['mental', 'mood', 'negative', 14, 3],
+      ['sleep', 'sleep', 'negative', 14, 3],
+    ]);
+    expect(defaults.every((r) => r.enabled === false && r.level === 'yellow')).toBe(true);
+    expect(defaults.every((r) => twinRuleShapeError(r) === null)).toBe(true);
+  });
+
+  it('消极条数达到为黄，差一条为绿；依据只有条数和日期，没有原文', () => {
+    const three = [
+      obs('mood', 'negative', 0),
+      obs('mood', 'negative', 3),
+      obs('mood', 'negative', 13),
+    ];
+    const s = evaluateDomainStatus(
+      'mental',
+      input({ observations: [...three, obs('mood', 'positive', 1)] }),
+    );
+    expect(s.level).toBe('yellow');
+    const item = s.basis[0]!;
+    expect(item).toMatchObject({
+      source: 'companion',
+      metric: 'mood',
+      polarity: 'negative',
+      value: 3,
+      unit: '条',
+      count: 4,
+      windowDays: 14,
+      from: '2026-10-05',
+      observedOn: '2026-10-18',
+      outcome: 'yellow',
+    });
+    expect(item.hits[0]).toMatchObject({
+      ruleId: counting.find((r) => r.domain === 'mental')!.id,
+      method: 'observation_count',
+      snapshot: { category: 'mood', polarity: 'negative', windowDays: 14, minCount: 3, count: 3 },
+    });
+    expect(JSON.stringify(s)).not.toMatch(/text/);
+    const two = evaluateDomainStatus('mental', input({ observations: three.slice(0, 2) }));
+    expect(two.level).toBe('green');
+  });
+
+  it('窗口外（第 15 天）的不算；只有积极、中性条目时为绿；没有条目为灰', () => {
+    const old = [
+      obs('mood', 'negative', 0),
+      obs('mood', 'negative', 1),
+      obs('mood', 'negative', 14),
+    ];
+    expect(evaluateDomainStatus('mental', input({ observations: old })).level).toBe('green');
+    expect(
+      evaluateDomainStatus('mental', input({ observations: [obs('mood', 'neutral', 2)] })).level,
+    ).toBe('green');
+    expect(evaluateDomainStatus('mental', input({ observations: [] })).level).toBe('unknown');
+  });
+
+  it('情绪只算心理、睡眠只算睡眠；睡眠方面和监测一起取最严重的', () => {
+    const moods = [0, 1, 2].map((d) => obs('mood', 'negative', d));
+    expect(evaluateDomainStatus('sleep', input({ observations: moods })).level).toBe('unknown');
+    const sleeps = [0, 1, 2].map((d) => obs('sleep', 'negative', d));
+    const s = evaluateDomainStatus(
+      'sleep',
+      input({ observations: sleeps, readings: [reading('sleep_hours', 7, 1)] }),
+    );
+    expect(s.level).toBe('yellow');
+    expect(s.basis.map((b) => b.source)).toEqual(['monitoring', 'companion']);
+    expect(evaluateDomainStatus('mental', input({ observations: sleeps })).level).toBe('unknown');
+  });
+
+  it('规则停用时不参与：心理方面为灰', () => {
+    const disabled = RULES.map((r) =>
+      r.method === 'observation_count' ? { ...r, enabled: false } : r,
+    );
+    const moods = [0, 1, 2].map((d) => obs('mood', 'negative', d));
+    const s = evaluateDomainStatus('mental', input({ rules: disabled, observations: moods }));
+    expect(s.level).toBe('unknown');
+    expect(s.basis).toEqual([]);
+  });
+
+  it('规则形状：条数规则没有指标和阈值，类别跟着方面走，条数 1–100，窗口 1–90 天', () => {
+    const base = DEFAULT_TWIN_STATUS_RULES.find((r) => r.domain === 'mental')!;
+    expect(twinRuleShapeError({ ...base, category: 'sleep' })).toBe('category not in domain');
+    expect(twinRuleShapeError({ ...base, domain: 'sleep' })).toBe('category not in domain');
+    expect(twinRuleShapeError({ ...base, metric: 'fpg' })).toBe('observation_count has no metric');
+    expect(twinRuleShapeError({ ...base, minCount: 0 })).toBe('min_count out of range');
+    expect(twinRuleShapeError({ ...base, minCount: 101 })).toBe('min_count out of range');
+    expect(twinRuleShapeError({ ...base, windowDays: null })).toMatch(/window_days/);
+    expect(twinRuleShapeError({ ...base, windowDays: 91 })).toBe('window_days out of range');
+    expect(twinRuleShapeError({ ...base, polarity: null })).toMatch(/needs category/);
+    expect(twinRuleShapeError({ ...base, source: 'monitoring' })).toMatch(/only method/);
+    expect(twinRuleShapeError({ ...base, method: 'threshold' })).toMatch(/only method/);
+    const report = DEFAULT_TWIN_STATUS_RULES.find((r) => r.source === 'report')!;
+    expect(twinRuleShapeError({ ...report, minCount: 3 })).toMatch(/only observation_count/);
   });
 });

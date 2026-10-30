@@ -1,6 +1,12 @@
 import { z } from 'zod';
 import { CRITICAL_COMPARATORS, INDICATOR_CODES, type IndicatorCode } from '../health/critical.js';
-import { twinRuleShapeError, type TwinStatusRuleDef } from '../health/twin.js';
+import {
+  TWIN_OBSERVATION_CATEGORIES,
+  TWIN_OBSERVATION_POLARITIES,
+  twinRuleShapeError,
+  type TwinObservationCategory,
+  type TwinStatusRuleDef,
+} from '../health/twin.js';
 import {
   twinDomainSchema,
   twinRuleLevelSchema,
@@ -15,7 +21,8 @@ import {
 
 const ruleFields = {
   domain: twinDomainSchema,
-  metric: z.enum(INDICATOR_CODES as unknown as [IndicatorCode, ...IndicatorCode[]]),
+  /** 条数规则（observation_count）没有指标 */
+  metric: z.enum(INDICATOR_CODES as unknown as [IndicatorCode, ...IndicatorCode[]]).nullable(),
   source: twinRuleSourceSchema,
   method: twinRuleMethodSchema,
   comparator: z.enum(CRITICAL_COMPARATORS).nullable(),
@@ -23,6 +30,13 @@ const ruleFields = {
   unit: z.string().nullable(),
   windowDays: z.number().int().nullable(),
   level: twinRuleLevelSchema,
+  /** 只有条数规则有（M6 N16）：统计哪类收集信息、什么极性、至少几条 */
+  category: z
+    .enum(TWIN_OBSERVATION_CATEGORIES as [TwinObservationCategory])
+    .nullable()
+    .default(null),
+  polarity: z.enum(TWIN_OBSERVATION_POLARITIES).nullable().default(null),
+  minCount: z.number().int().nullable().default(null),
 };
 
 export const twinStatusRuleSchema = z.object({
@@ -45,7 +59,9 @@ export const createTwinStatusRuleRequestSchema = z
   .superRefine(shapeRefinement);
 export type CreateTwinStatusRuleRequest = z.infer<typeof createTwinStatusRuleRequestSchema>;
 
-/** 修改时方面、指标、来源、判断方式不变（要换就新增一条）；形状由后端合并原规则后再校验 */
+/**
+ * 修改时方面、指标、来源、判断方式、类别和极性不变（要换就新增一条）；形状由后端合并原规则后再校验
+ */
 export const updateTwinStatusRuleRequestSchema = z
   .object({
     comparator: ruleFields.comparator.optional(),
@@ -53,6 +69,7 @@ export const updateTwinStatusRuleRequestSchema = z
     unit: ruleFields.unit.optional(),
     windowDays: ruleFields.windowDays.optional(),
     level: ruleFields.level.optional(),
+    minCount: z.number().int().nullable().optional(),
     enabled: z.boolean().optional(),
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), { message: 'nothing to update' });
