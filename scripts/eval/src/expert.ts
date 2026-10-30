@@ -95,9 +95,9 @@ export function opinionText(opinion: ExpertOpinion): string {
 
 /** 专家意见里不该出现的疾病判断提示词（和通俗版检查共用 guardrails 的 JUDGEMENT_HINT） */
 const JUDGEMENT_ALL = new RegExp(JUDGEMENT_HINT.source, 'g');
-/** “有……风险”中间是这些非疾病说法时不算疾病判断（“有使用需要及相关风险”“有跌倒风险”“了解有无安全风险”） */
+/** “有……风险”中间是这些非疾病说法时不算疾病判断（“有使用需要（必要）及相关风险”“有跌倒风险”“了解有无安全风险”） */
 const NON_DISEASE_RISK =
-  /^有(?:(使用需要及|使用|服用|补充|运动|活动)?(相关|跌倒|低血糖发作|运动损伤|受伤|副作用|不良反应)|(无|没有)(安全|自伤|自杀|伤害自己|伤害他人))的?风险$/;
+  /^有(?:(使用(?:需要|必要)及|使用|服用|补充|运动|活动)?(相关|跌倒|低血糖发作|运动损伤|受伤|副作用|不良反应)|(无|没有)(安全|自伤|自杀|伤害自己|伤害他人))的?风险$/;
 /** 健管师问题里原有的字眼，每一处都被否定说法直接管住（“不能仅以焦虑解释这些表现”）时不算专家下判断 */
 function negatedEcho(term: string, question: string, text: string): boolean {
   if (!question.includes(term)) return false;

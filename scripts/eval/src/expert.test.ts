@@ -208,6 +208,9 @@ describe('gradeExpertOpinion', () => {
       summary: '不要因客户未说明服药数量就推定为没有过量风险，按急症流程联系急救。',
     });
     expect(gradeExpertOpinion(baseCase, call(presumed))).toEqual([]);
+    // 评测误判（nutrition-no-supplements，run 41063058432）
+    const necessity = opinion({ summary: '建议转介医生评估是否有使用必要及相关风险。' });
+    expect(gradeExpertOpinion(baseCase, call(necessity))).toEqual([]);
     // 合规审查 B1：跨字段、改口、“没有”和“风险”之间是病名的仍然算
     for (const summary of [
       '不要自行停药\n评估后认为没有心血管风险。',
