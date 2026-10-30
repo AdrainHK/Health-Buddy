@@ -17,6 +17,7 @@ import {
   COMPANION_REPLY_FORMAT,
   companionMemoryOutputSchema,
   companionReplySchema,
+  normalizeTranscript,
   preCheckCompanionInput,
   type CompanionEvalCase,
   type CompanionMemoryEvalCase,
@@ -219,12 +220,19 @@ export async function runCompanionSpeechOnce(
       text: c.text,
       speed: 0.85,
     });
-    const { text } = await gateway.transcribe(ctx, {
-      route: 'speech_to_text',
-      audio: audio.audio,
-      mediaType: 'audio/ogg',
-      language: 'zh',
-    });
+    const transcribe = async () =>
+      (
+        await gateway.transcribe(ctx, {
+          route: 'speech_to_text',
+          audio: audio.audio,
+          mediaType: 'audio/ogg',
+          language: 'zh',
+        })
+      ).text;
+    // 识别偶尔返回空文字，重试一次；繁体转简体，和线上对话服务一致
+    let heard = await transcribe();
+    if (!heard.trim()) heard = await transcribe();
+    const text = normalizeTranscript(heard);
     const findings: Finding[] = [];
     const pre = preCheckCompanionInput(text);
     if (c.expect.crisis && !pre.crisis)

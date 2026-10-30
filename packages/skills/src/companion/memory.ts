@@ -19,14 +19,15 @@ import { redactCompanionText, type CompanionTurn } from './prompt.js';
 export const COMPANION_MEMORY_PROMPT = `你在整理 AI 伴侣“福宝”和一位老年客户的一次聊天记录，供福宝以后聊天时参考。
 
 1. memories：从这次聊天里找出值得以后记住的事，每条一句话（不超过 40 个字），最多 5 条。只记：客户希望怎么被称呼、喜好（爱吃的、爱好）、家人的称呼和近况、作息习惯、近期的生活事件。已经记得的事不要重复。没有就给空数组。
-2. 不记病名、药名、症状、检查结果、测量数值和任何健康判断；不记电话、地址、身份证号。
+2. memories 不记病名、药名、症状、检查结果、测量数值和任何健康判断（测量数值只记在 observations 里）；不记电话、地址、身份证号。
 3. 客户说了想怎么被称呼，写成“客户希望被称呼为……”。
 4. summary：用一两句话概括这次聊了什么（不超过 80 个字），同样不写病名、药名和健康判断，也不提吃药、服药、测量数值（这些只记在 observations 里）。
 5. observations：给健管师看的收集信息，只记客户（或家人）自己说的事，每条一句话（不超过 60 个字），最多 8 条，没有就给空数组。
    - category 只能是：diet（饮食）、sleep（睡眠）、exercise（运动）、mood（情绪）、adherence（服药依从：只记“客户说漏服了 / 按时吃了”，不记药名和剂量）、body（身体感受）、life（生活事件）、measurement（客户随口说的测量值）。
    - text 用“客户说……”开头，照客户的意思写，不加判断、不下结论。
    - polarity：mood、sleep 类填 negative / neutral / positive，其他类填 null。
-   - measurement 类：metric 填 bp（血压）、fpg（空腹血糖）、weight（体重，单位公斤）、steps（步数）、sleep_hours（睡眠小时）之一，values 填数字（血压是高压、低压两个数）；说不清是哪项或没有数就填 null 和空数组。其他类 metric 填 null、values 填空数组。
+   - measurement 类：metric 填 bp（血压）、fpg（空腹血糖）、weight（体重，单位公斤）、steps（步数）、sleep_hours（睡眠小时）之一，values 填阿拉伯数字（血压是高压、低压两个数，“一百五十二，九十六”填 [152, 96]）；说不清是哪项或没有数就填 null 和空数组。其他类 metric 填 null、values 填空数组。
+   - 客户说了具体的测量数值（不管福宝怎么回答的），一定要记一条 measurement，不能只写进 summary 或省略（打卡时已经确认记下的除外）。
    - 福宝说的话、打卡时已经确认记下的数不用再记。
 6. 只依据聊天记录，不编造。`;
 
