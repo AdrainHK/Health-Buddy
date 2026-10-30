@@ -144,6 +144,41 @@ describe('工作台读伴侣信息', () => {
     );
   });
 
+  it('客户撤回同意后不再读伴侣信息（产品负责人确认）：/随访话术写没有开通，“伴侣跟进”409', async () => {
+    const a1 = await as(f.users.managerA1.email);
+    await seedCompanion(f.clients.a1[0]);
+    // 平台先发布告知书模板，健管师记录同意，再记录撤回
+    const platform = await as(f.users.platform.email);
+    await platform
+      .put('/api/admin/companion/scripts/notice')
+      .send({ text: '测试用告知书：福宝不是医生，可以随时撤回同意。' })
+      .expect(200);
+    const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(
+      new Date(),
+    );
+    const base = `/api/clients/${f.clients.a1[0]}/companion`;
+    const recorded = await a1
+      .post(`${base}/consents?tz=Asia/Shanghai`)
+      .send({ noticeVersion: 1, consentedOn: today, confirmed: true, chatDataConfirmed: true });
+    expect(recorded.status, recorded.text).toBeLessThan(300);
+    const revoked = await a1
+      .post(`${base}/consents/revoke?tz=Asia/Shanghai`)
+      .send({ revokedOn: today });
+    expect(revoked.status, revoked.text).toBeLessThan(300);
+    const task = await newTask(a1, { clientId: f.clients.a1[0] });
+    provider.scripts.skill = scriptReply;
+    const res = await send(a1, task, { mode: 'craft', content: '', skillId: 'visit-script' });
+    expect(res.status, res.text).toBe(200);
+    expect(prompt()).toContain('客户没有开通伴侣“福宝”');
+    expect(prompt()).not.toContain('夜里醒两三次');
+    const plan = await send(a1, task, {
+      mode: 'plan',
+      content: '',
+      skillId: 'companion-follow-up',
+    });
+    expect(plan.status).toBe(409);
+  });
+
   it('问一问：引用了开通伴侣的客户时读伴侣信息；没有开通的不读、不显示这一步', async () => {
     const a1 = await as(f.users.managerA1.email);
     await seedCompanion(f.clients.a1[0]);

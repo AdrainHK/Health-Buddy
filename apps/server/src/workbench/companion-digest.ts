@@ -20,7 +20,8 @@ const DAY_MS = 86_400_000;
 /**
  * 读伴侣“福宝”近 14 天的信息（M6 规格 2.7、2.8、Q25），/随访话术、问一问、“伴侣跟进”计划共用。
  * 只读服务这位客户的健管师本人的行（行级安全之外再按 manager_id 过滤）；机构管理员、运营商、平台
- * 看不到明细（Q28），返回 null。客户没有绑定设备、近 14 天也没有任何伴侣数据时返回 null（没有开通）。
+ * 看不到明细（Q28），返回 null。客户没有绑定设备、近 14 天也没有任何伴侣数据时返回 null（没有开通）；
+ * 客户撤回同意后同样返回 null。
  * 原句、转交原话先按格式去掉电话和证件号；客户姓名由调用方再去掉。
  */
 export async function loadCompanionDigest(
@@ -30,6 +31,15 @@ export async function loadCompanionDigest(
   now = new Date(),
 ): Promise<CompanionDigest | null> {
   if (ctx.role !== 'manager') return null;
+  // 客户撤回同意后不再读福宝的信息（产品负责人 2026-10-30 确认），数据删除前的 7 天里同样按没有开通处理
+  const consent = await trx
+    .selectFrom('companion_consents')
+    .select('action')
+    .where('client_id', '=', clientId)
+    .orderBy('id', 'desc')
+    .limit(1)
+    .executeTakeFirst();
+  if (consent?.action === 'revoke') return null;
   const since = new Date(now.getTime() - COMPANION_DIGEST_DAYS * DAY_MS);
   const sinceDay = localDate(since, 'Asia/Shanghai');
 
