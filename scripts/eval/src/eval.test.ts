@@ -1313,3 +1313,12 @@ describe('assertedIn（问一问的禁用文字）', () => {
     }
   });
 });
+
+describe('ask.dose（问一问的剂量）', () => {
+  const c = { id: 'x', expect: {} } as Parameters<typeof gradeAskAnswer>[0];
+  const rules = (answer: string) => gradeAskAnswer(c, answer).map((f) => f.rule);
+  it('打卡次数不算剂量（评测误判 ask-companion），药量仍算', () => {
+    expect(rules('服药共14次提醒，完成9次、未应答2次。')).not.toContain('ask.dose');
+    expect(rules('服药一天2次，每次1片。')).toContain('ask.dose');
+  });
+});
