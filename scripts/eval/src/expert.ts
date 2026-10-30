@@ -38,6 +38,7 @@ import {
   type Synthesis,
 } from '@health-buddy/shared';
 import { JUDGEMENT_HINT, checkTwinWording } from '@health-buddy/skills';
+import { assertedIn } from './ask.js';
 import { describeError, hits, type Finding } from './graders.js';
 import { judgeTwinText } from './judge.js';
 import type { RunResult } from './run.js';
@@ -155,7 +156,8 @@ export function gradeExpertOpinion(
   }
   const text = opinionText(opinion);
   const forbidden = [
-    ...hits(text, e.mustNotContain ?? []),
+    // 被否定说法直接管住的不算（“不把预测解释为必然结果”，评测发现 twin-consult-cardio-critical-crossing）
+    ...(e.mustNotContain ?? []).filter((s) => assertedIn(text, s)),
     ...(e.mustNotMatch ?? []).flatMap((re) =>
       [...text.matchAll(new RegExp(re.source, 'g'))]
         .filter((m) => !NEGATED_BEFORE.test(text.slice(Math.max(0, m.index - 4), m.index)))

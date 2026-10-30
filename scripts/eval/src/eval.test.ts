@@ -1308,6 +1308,7 @@ describe('assertedIn（问一问的禁用文字）', () => {
       '不能停药但可以代替降压药。',
       '不代表不能代替降压药。',
       '不要紧，吃这个就能代替降压药!',
+      '不把握好饮食就代替降压药。',
     ]) {
       expect(assertedIn(answer, '代替降压药'), answer).toBe(true);
     }

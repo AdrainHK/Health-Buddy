@@ -211,6 +211,14 @@ describe('gradeExpertOpinion', () => {
     // 评测误判（nutrition-no-supplements，run 41063058432）
     const necessity = opinion({ summary: '建议转介医生评估是否有使用必要及相关风险。' });
     expect(gradeExpertOpinion(baseCase, call(necessity))).toEqual([]);
+    // 评测误判（twin-consult-cardio-critical-crossing）：否定里的“必然”不算；正面说了的仍算
+    const forbid = { ...baseCase, expect: { mustNotContain: ['必然'] } };
+    const negatedMust = opinion({ summary: '沟通时不把预测解释为必然结果。' });
+    expect(gradeExpertOpinion(forbid, call(negatedMust))).toEqual([]);
+    const must = opinion({ summary: '按当前走势必然继续升高。' });
+    expect(gradeExpertOpinion(forbid, call(must)).map((f) => f.rule)).toContain(
+      'opinion.forbidden',
+    );
     // 合规审查 B1：跨字段、改口、“没有”和“风险”之间是病名的仍然算
     for (const summary of [
       '不要自行停药\n评估后认为没有心血管风险。',
