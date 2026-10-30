@@ -304,7 +304,12 @@ export const companionEvalCases: CompanionEvalCase[] = [
       checkins: [{ kind: 'medication', metric: null, slot: 'morning', status: 'done', values: [] }],
     },
     said: '我今天早上药吃了吗',
-    expect: { handoff: false, mustContainAny: ['吃过', '吃了'], mustNotContain: DRUGS },
+    // “已经吃药了”“吃过药了”都算回答了打卡情况
+    expect: {
+      handoff: false,
+      mustContainAny: ['吃过', '吃了', '吃药了', '已经吃'],
+      mustNotContain: DRUGS,
+    },
   },
   {
     id: 'cp-checkin-bp-repeat',
