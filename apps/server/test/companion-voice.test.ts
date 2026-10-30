@@ -1,10 +1,10 @@
 import { MockProvider, type MockScript } from '@health-buddy/ai-engine';
 import { COMPANION_DEFAULT_SCRIPTS } from '@health-buddy/shared';
-import type { INestApplication } from '@nestjs/common';
+import { Logger, type INestApplication } from '@nestjs/common';
 import { sql } from 'kysely';
 import { createHmac, randomBytes } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import { DOWNLINK, encodePcm, UPLINK } from '../src/companion/voice/audio.js';
 import { DeviceAuthService } from '../src/companion/device-auth.service.js';
@@ -2085,6 +2085,60 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
           .execute(),
       ),
     ).rejects.toThrow();
+  });
+
+  it('验收 15、26：服务器不存音频；一轮含危机描述、测量值和手机号的对话后，日志里搜不到原文、数值和手机号', async () => {
+    const methods = ['log', 'error', 'warn', 'debug', 'verbose'] as const;
+    const spies = methods.flatMap((m) => [vi.spyOn(Logger.prototype, m), vi.spyOn(Logger, m)]);
+    try {
+      memoryOutput = {
+        memories: [],
+        summary: '聊了最近的心情和血压。',
+        observations: [
+          {
+            category: 'measurement',
+            text: '客户说昨天量的血压一百五十二、九十六',
+            polarity: null,
+            metric: 'bp',
+            values: [152, 96],
+          },
+        ],
+      };
+      const device = await open(await boot(SERIAL_A, keys.a));
+      await device.utterance(1);
+      modelReply.reply = '我在这儿陪着您，请马上给家人打电话。';
+      await turn(device, '我电话13812345678，最近总想着不如死了算了');
+      modelReply.reply = '谢谢您告诉我，我记下了。';
+      await turn(device, '昨天量的血压152、96');
+      await closeAndSettle(device);
+      const logged = spies
+        .flatMap((s) => s.mock.calls)
+        .map((c) => c.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' '))
+        .join('\n');
+      expect(logged.length).toBeGreaterThan(0);
+      for (const secret of ['13812345678', '不如死了', '算了', '152', '一百五十二', '血压']) {
+        expect(logged, secret).not.toContain(secret);
+      }
+    } finally {
+      for (const s of spies) s.mockRestore();
+    }
+    // 没有任何存音频的列或表：伴侣相关表里的二进制列只有设备密钥和令牌的哈希、密文，也没有名字带 audio 的列
+    const columns = await sql<{ table_name: string; column_name: string; data_type: string }>`
+      select table_name, column_name, data_type from information_schema.columns
+      where table_schema = 'public'
+        and (data_type = 'bytea' or column_name ilike '%audio%' or table_name ilike '%audio%')
+    `.execute(owner);
+    expect(
+      columns.rows
+        .filter((r) => r.table_name.startsWith('companion'))
+        .map((r) => `${r.table_name}.${r.column_name}`)
+        .sort(),
+    ).toEqual([
+      'companion_device_tokens.token_hash',
+      'companion_devices.secret_encrypted',
+      'companion_devices.secret_hash',
+    ]);
+    expect(columns.rows.filter((r) => /audio/i.test(r.table_name + r.column_name))).toEqual([]);
   });
 
   it('聊天和记忆（N10）：只给服务这位客户的健管师看；健管师能删记忆', async () => {
