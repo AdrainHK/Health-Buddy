@@ -128,11 +128,60 @@ describe('孪生状态规则', () => {
       windowDays: 7,
       level: 'yellow',
       enabled: true,
+      category: null,
+      polarity: null,
+      minCount: null,
     });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(await rowWith('睡眠', '< 5 小时')).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('后台按新规则重新计算');
     expect(screen.getByText('规则版本 4')).toBeInTheDocument();
+  });
+
+  it('心理方面只有“伴侣收集信息”来源和“收集信息条数”：没有指标和阈值，类别跟着方面走，条数 1–100（M6 N16）', async () => {
+    const { api, user } = renderAs(USERS.platform_admin);
+    await user.click(await screen.findByRole('button', { name: '新增规则' }));
+    const dialog = screen.getByRole('dialog', { name: '新增规则' });
+    await user.selectOptions(within(dialog).getByLabelText('方面'), 'mental');
+    const source = within(dialog).getByLabelText('数据来源');
+    expect(
+      within(source)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['伴侣收集信息']);
+    expect(
+      within(within(dialog).getByLabelText('判断方式'))
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['收集信息条数']);
+    expect(within(dialog).queryByLabelText('指标')).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText('阈值')).not.toBeInTheDocument();
+    expect(within(dialog).getByText('情绪')).toBeInTheDocument();
+    expect(within(dialog).getByRole('note')).toHaveTextContent('待心理、医学顾问审定');
+    const count = within(dialog).getByLabelText('至少几条');
+    await user.clear(count);
+    await user.type(count, '0');
+    await user.click(within(dialog).getByRole('button', { name: '保存' }));
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('1–100');
+    expect(api.callsTo('POST', '/admin/twin-status-rules')).toEqual([]);
+    await user.clear(count);
+    await user.type(count, '4');
+    await user.click(within(dialog).getByRole('button', { name: '保存' }));
+    expect(api.callsTo('POST', '/admin/twin-status-rules')[0]?.body).toEqual({
+      domain: 'mental',
+      metric: null,
+      source: 'companion',
+      method: 'observation_count',
+      comparator: null,
+      value: null,
+      unit: null,
+      windowDays: 7,
+      level: 'yellow',
+      enabled: true,
+      category: 'mood',
+      polarity: 'negative',
+      minCount: 4,
+    });
   });
 
   it('选报告来源时：可选指标换成报告指标，判断方式里没有固定阈值，也没有阈值和时间窗口', async () => {

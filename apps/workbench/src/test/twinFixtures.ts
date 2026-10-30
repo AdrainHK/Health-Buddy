@@ -149,6 +149,7 @@ export function makeTwin(overrides: Partial<TwinResponse> = {}): TwinResponse {
       makeDomain('cardiovascular', 'green'),
       makeDomain('sleep', 'unknown'),
       makeDomain('weight', 'green'),
+      makeDomain('mental', 'unknown'),
     ],
     riskTier: null,
     forecasts: [makeForecast()],

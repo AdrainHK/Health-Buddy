@@ -66,7 +66,7 @@ export interface SidebarProps {
   followUps?: { active: boolean; count: number | null; onOpen: () => void };
   /** 方案库（M5 规格 2.1、2.4）：所有健管师可见，只读 */
   library?: { active: boolean; onOpen: () => void };
-  /** 客户列表（M4 规格 2.1）：名字旁的小圆点是四个方面里最严重的状态，点客户打开孪生 */
+  /** 客户列表（M4 规格 2.1）：名字旁的小圆点是五个方面里最严重的状态，点客户打开孪生 */
   clientList?: SidebarClients;
 }
 

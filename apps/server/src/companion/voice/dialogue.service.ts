@@ -528,9 +528,12 @@ export class CompanionDialogue implements OnApplicationShutdown {
     await this.repo.saveSessionDigest(deviceId, clientId, sessionId, digest);
     // 收集信息只给健管师（规格 2.7）；闲聊里的测量值记成待确认，不直接写监测
     const observations = acceptCompanionObservations(result.data.observations);
-    await this.repo.addObservations(deviceId, clientId, sessionId, observations);
-    // 情绪、睡眠类收集信息参与孪生“心理”“睡眠”的条数规则（M6 Q20）
-    if (observations.some((o) => o.polarity && (o.category === 'mood' || o.category === 'sleep')))
+    const written = await this.repo.addObservations(deviceId, clientId, sessionId, observations);
+    // 情绪、睡眠类收集信息参与孪生“心理”“睡眠”的条数规则（M6 Q20）；没写进去（如已撤回同意）不重算
+    if (
+      written > 0 &&
+      observations.some((o) => o.polarity && (o.category === 'mood' || o.category === 'sleep'))
+    )
       void this.twin.requestFromCompanion(clientId, 'companion');
     this.logger.log(
       `companion digest ${JSON.stringify({ memories: digest.memories.length, observations: observations.length })}`,

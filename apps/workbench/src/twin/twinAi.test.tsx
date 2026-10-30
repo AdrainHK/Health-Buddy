@@ -68,7 +68,7 @@ function renderPane(props: Partial<ChatPaneProps> = {}) {
 }
 
 describe('@孪生项（规格 2.8）', () => {
-  it('@ 列表有“孪生项”组：当前客户的四个方面和有预测的指标；问一问发送时带 twinRefs', async () => {
+  it('@ 列表有“孪生项”组：当前客户的五个方面和有预测的指标；问一问发送时带 twinRefs', async () => {
     const api = chatRoutes();
     const user = userEvent.setup();
     renderPane();
@@ -86,6 +86,7 @@ describe('@孪生项（规格 2.8）', () => {
       '孪生 · 心血管',
       '孪生 · 睡眠',
       '孪生 · 体重',
+      '孪生 · 心理',
       '孪生 · 收缩压趋势',
     ]);
     await user.click(within(list).getByRole('option', { name: '孪生 · 心血管' }));

@@ -35,7 +35,7 @@ type DetailState = {
 
 export interface TwinViewProps {
   client: ClientSummary;
-  /** 手机宽度：人体轮廓缩小放在顶部，四个方面单列（data-layout="narrow"） */
+  /** 手机宽度：人体轮廓缩小放在顶部，五个方面单列（data-layout="narrow"） */
   narrow?: boolean;
   /** 改变时重新加载（如对话里核对了报告） */
   refreshKey?: string;
@@ -46,7 +46,7 @@ export interface TwinViewProps {
 }
 
 /**
- * 结果区“客户 · 孪生”（规格 2.2）。从上到下：固定提示条、画像（人体轮廓 + 四个方面的状态卡片）、
+ * 结果区“客户 · 孪生”（规格 2.2）。从上到下：固定提示条、画像（人体轮廓 + 五个方面的状态卡片）、
  * 趋势预测、待跟进、时间轴，以及手动录入监测数据（Q29）。
  * 状态、依据、预测全部由后端确定性计算，这里只按模板显示，不调用大模型。
  * “生成孪生小结”和“请专家看看”（专家预览打开时）都回到对话区，在这位客户的任务里预先填好，

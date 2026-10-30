@@ -200,6 +200,8 @@ describe('孪生演示客户（M4 规格 6.2）', () => {
         cardiovascular: 'green',
         sleep: 'green',
         weight: 'green',
+        // 演示数据没有伴侣收集信息，条数规则默认也停用
+        mental: 'unknown',
       });
     for (const c of byScenario('worsening'))
       expect(evaluate(c).status).toMatchObject({ metabolic: 'yellow', cardiovascular: 'red' });
@@ -213,6 +215,7 @@ describe('孪生演示客户（M4 规格 6.2）', () => {
         cardiovascular: 'unknown',
         sleep: 'unknown',
         weight: 'unknown',
+        mental: 'unknown',
       });
   });
 

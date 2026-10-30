@@ -10,7 +10,8 @@ import { TWIN_RULE_METRICS_SNAPSHOT } from './0016-client-twin.js';
  *   消极的条目达到 M 条”）。这类规则没有指标和阈值，有 category、polarity、min_count；
  *   情绪（mood）只算心理，睡眠（sleep）只算睡眠。修改记录、版本号、恢复默认值沿用 0016。
  * - 默认加两条条数规则（近 14 天消极 ≥ 3 条为黄），数值是测试值、待心理和医学顾问审定，**默认停用**。
- * - 状态历史的触发原因加 companion（收集信息写入或被驳回后重算）。
+ * - 状态历史的触发原因加 companion（会话结束整理写入情绪、睡眠类收集信息后重算；
+ *   情绪、睡眠类条目不能驳回，只有测量类待确认的能）。
  * 行级安全不变：规则全平台一套，平台管理员可写，其余角色只读。
  */
 export async function up(db: Kysely<unknown>): Promise<void> {
@@ -38,8 +39,10 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     do $$
     declare c text;
     begin
-      select conname into c from pg_constraint
-        where conrelid = 'twin_status_rules'::regclass and contype = 'u';
+      -- 0016 里没命名的唯一约束（domain, metric, source, method, comparator, level）
+      select conname into strict c from pg_constraint
+        where conrelid = 'twin_status_rules'::regclass and contype = 'u'
+          and conname like 'twin_status_rules_domain_metric%';
       execute format('alter table twin_status_rules drop constraint %I', c);
     end
     $$;
@@ -82,7 +85,9 @@ export async function up(db: Kysely<unknown>): Promise<void> {
 
   // 0016 的指标目录约束被上面替换成了“有无指标”，这里用触发器补回报告、监测规则的目录校验
   await sql`
-    create function twin_status_rules_catalog_guard() returns trigger language plpgsql as $$
+    create function twin_status_rules_catalog_guard() returns trigger
+      language plpgsql set search_path = pg_catalog, public, pg_temp
+    as $$
     begin
       if new.source <> 'companion' and not exists (
         select 1 from (values ${sql.raw(catalogTuples())}) as t(domain, source, metric)

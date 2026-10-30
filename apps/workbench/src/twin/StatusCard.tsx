@@ -102,18 +102,22 @@ export const StatusCard = forwardRef<HTMLElement, StatusCardProps>(function Stat
       <div className={styles.basis}>
         <h6 className={styles.basisTitle}>{t('twin.card.basis')}</h6>
         {basis.length === 0 ? (
-          <p className={styles.muted}>{t('twin.card.noBasis')}</p>
+          <p className={styles.muted}>
+            {view.domain === 'mental' ? t('twin.card.mentalUnknown') : t('twin.card.noBasis')}
+          </p>
         ) : (
           <ul className={styles.basisList}>
-            {basis.map((b) => (
-              <li key={`${b.source}:${b.metric}`} data-outcome={b.outcome}>
+            {basis.map((b, i) => (
+              <li key={`${b.source}:${b.metric}:${i}`} data-outcome={b.outcome}>
                 <span className={styles.marker} aria-hidden>
                   {LEVEL_MARKERS[b.outcome]}
                 </span>{' '}
-                {basisText(b)}{' '}
-                <button type="button" className={styles.linkButton} onClick={onOpenRecord}>
-                  {t('twin.card.openRecord')}
-                </button>
+                {basisText(b)} {/* 伴侣收集信息不在档案里，在伴侣视图里看 */}
+                {b.source !== 'companion' && (
+                  <button type="button" className={styles.linkButton} onClick={onOpenRecord}>
+                    {t('twin.card.openRecord')}
+                  </button>
+                )}
               </li>
             ))}
           </ul>

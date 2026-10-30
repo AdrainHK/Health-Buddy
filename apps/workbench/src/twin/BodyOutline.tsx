@@ -5,13 +5,14 @@ import { LEVEL_MARKERS } from './levels';
 import styles from './Twin.module.css';
 
 /**
- * 简化的二维人体轮廓（规格 2.3，Q18）：四个方面各对应一个区域，只是导航，
+ * 简化的二维人体轮廓（规格 2.3，Q18）：五个方面各对应一个区域，只是导航，
  * 点某个区域等同点对应的状态卡片。不画器官，不做三维。
- * 睡眠 → 头部，心血管 → 胸部，代谢 → 腹部，体重 → 全身轮廓。
+ * 睡眠 → 头部，心理 → 头部旁的小圆（M6），心血管 → 胸部，代谢 → 腹部，体重 → 全身轮廓。
  */
 const REGIONS: { domain: TwinDomain; marker: { x: number; y: number } }[] = [
   { domain: 'weight', marker: { x: 96, y: 214 } },
   { domain: 'sleep', marker: { x: 60, y: 30 } },
+  { domain: 'mental', marker: { x: 98, y: 22 } },
   { domain: 'cardiovascular', marker: { x: 60, y: 86 } },
   { domain: 'metabolic', marker: { x: 60, y: 128 } },
 ];
@@ -25,6 +26,8 @@ function RegionShape({ domain }: { domain: TwinDomain }) {
       );
     case 'sleep':
       return <ellipse cx="60" cy="28" rx="17" ry="20" />;
+    case 'mental':
+      return <circle cx="98" cy="22" r="12" />;
     case 'cardiovascular':
       return <rect x="38" y="62" width="44" height="46" rx="10" />;
     case 'metabolic':

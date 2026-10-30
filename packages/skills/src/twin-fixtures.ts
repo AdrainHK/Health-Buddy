@@ -134,6 +134,38 @@ function criticalBasis(
   };
 }
 
+/** 伴侣收集信息的条数依据（M6 Q20）：只有条数和日期，没有原话 */
+function companionBasis(
+  category: 'mood' | 'sleep',
+  negative: number,
+  total: number,
+  minCount: number,
+): TwinBasisItem {
+  const hit = negative >= minCount;
+  return {
+    source: 'companion',
+    metric: category,
+    polarity: 'negative',
+    value: negative,
+    unit: '条',
+    count: total,
+    windowDays: 14,
+    from: '2026-10-05',
+    observedOn: '2026-10-17',
+    outcome: hit ? 'yellow' : 'green',
+    hits: hit
+      ? [
+          {
+            ruleId: `rule-${category}-count`,
+            method: 'observation_count',
+            level: 'yellow',
+            snapshot: { category, polarity: 'negative', windowDays: 14, minCount, count: negative },
+          },
+        ]
+      : [],
+  };
+}
+
 function domain(
   d: TwinDomainSnapshot['domain'],
   level: TwinDomainSnapshot['level'],
@@ -602,6 +634,36 @@ export const TWIN_SNAPSHOTS = {
           2,
         ),
       ],
+      followUps: [],
+      focus: [],
+    },
+  },
+  /**
+   * 心理方面为黄（M6 6c）：近 14 天和福宝聊天时 4 次提到消极情绪（规则测试值 ≥ 3 条），
+   * 睡眠方面有 2 条消极（没到条数）。只有条数，没有原话
+   */
+  mentalYellow: {
+    ...BASE,
+    ageBand: '70-79',
+    twin: {
+      domains: [
+        domain('metabolic', 'green', [
+          reportBasis('fpg', 5.3, 'mmol/L', '2026-09-12', { low: 3.9, high: 6.1 }),
+        ]),
+        domain('cardiovascular', 'green', [
+          monitoringBasis('sbp', 124.2, 'mmHg', '2026-10-18', 7, { comparator: 'gt', value: 140 }),
+        ]),
+        domain('sleep', 'green', [
+          monitoringBasis('sleep_hours', 6.6, 'h', '2026-10-18', 7, null),
+          companionBasis('sleep', 2, 3, 3),
+        ]),
+        domain('weight', 'green', [monitoringBasis('weight', 61.2, 'kg', '2026-10-18', 6, null)]),
+        domain('mental', 'yellow', [companionBasis('mood', 4, 6, 3)], {
+          previousLevel: 'green',
+          changedOn: '2026-10-17',
+        }),
+      ],
+      forecasts: [],
       followUps: [],
       focus: [],
     },

@@ -3,8 +3,8 @@ import {
   THRESHOLD_BOUNDS,
   TWIN_DOMAINS,
   TWIN_MONITORING_WINDOW_DAYS,
+  TWIN_OBSERVATION_MIN_COUNT_MAX,
   TWIN_RULE_LEVELS,
-  TWIN_RULE_SOURCES,
   indicatorUnit,
   type CreateTwinStatusRuleRequest,
   type CriticalComparator,
@@ -23,6 +23,8 @@ import styles from '../thresholds/Thresholds.module.css';
 import {
   methodsFor,
   metricsFor,
+  observationCategoryFor,
+  sourcesFor,
   toTwinRuleError,
   useTwinRuleLabels,
   type TwinRuleErrorKey,
@@ -39,7 +41,8 @@ export interface TwinRuleFormProps {
 
 /**
  * 新增或修改一条孪生状态规则（M4 规格 2.10）。指标只能从方面的目录里选，单位跟目录走；
- * 只有“固定阈值”类有方向、阈值和单位，只有监测规则有时间窗口。形状和范围以后端校验为准。
+ * 只有“固定阈值”类有方向、阈值和单位，监测规则和条数规则有时间窗口。
+ * 条数规则（M6 N16）没有指标，统计的类别跟着方面走，只统计消极条目。形状和范围以后端校验为准。
  */
 export function TwinRuleForm({ initial, onSubmit, onCancel }: TwinRuleFormProps) {
   const { t } = useTranslation();
@@ -58,6 +61,7 @@ export function TwinRuleForm({ initial, onSubmit, onCancel }: TwinRuleFormProps)
   const [windowDays, setWindowDays] = useState(
     String(initial?.windowDays ?? TWIN_MONITORING_WINDOW_DAYS),
   );
+  const [minCount, setMinCount] = useState(String(initial?.minCount ?? 3));
   const [level, setLevel] = useState<TwinRuleLevel>(initial?.level ?? 'yellow');
   const [enabled, setEnabled] = useState(initial?.enabled ?? true);
   const [submitting, setSubmitting] = useState(false);
@@ -65,11 +69,16 @@ export function TwinRuleForm({ initial, onSubmit, onCancel }: TwinRuleFormProps)
 
   const metrics = metricsFor(domain, source);
   const methods = methodsFor(source);
+  const sources = sourcesFor(domain);
   const isThreshold = method === 'threshold';
-  const isMonitoring = source === 'monitoring';
+  const isCounting = source === 'companion';
+  const category = isCounting ? observationCategoryFor(domain) : null;
+  const hasWindow = source !== 'report';
 
-  /** 方面或来源变了：指标和判断方式换成新组合里的第一个可选项 */
-  const changeScope = (d: TwinDomain, s: TwinRuleSource) => {
+  /** 方面或来源变了：来源、指标和判断方式换成新组合里的第一个可选项 */
+  const changeScope = (d: TwinDomain, wanted: TwinRuleSource) => {
+    const allowedSources = sourcesFor(d);
+    const s = allowedSources.includes(wanted) ? wanted : allowedSources[0]!;
     setDomain(d);
     setSource(s);
     const ms = metricsFor(d, s);
@@ -80,7 +89,7 @@ export function TwinRuleForm({ initial, onSubmit, onCancel }: TwinRuleFormProps)
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!metric) return;
+    if (isCounting ? !category : !metric) return;
     let parsedValue: number | null = null;
     if (isThreshold) {
       parsedValue = Number(value);
@@ -90,10 +99,22 @@ export function TwinRuleForm({ initial, onSubmit, onCancel }: TwinRuleFormProps)
       }
     }
     let parsedWindow: number | null = null;
-    if (isMonitoring) {
+    if (hasWindow) {
       parsedWindow = Number(windowDays);
       if (!Number.isInteger(parsedWindow) || parsedWindow < 1 || parsedWindow > 90) {
         setError('invalid_window');
+        return;
+      }
+    }
+    let parsedCount: number | null = null;
+    if (isCounting) {
+      parsedCount = Number(minCount);
+      if (
+        !Number.isInteger(parsedCount) ||
+        parsedCount < 1 ||
+        parsedCount > TWIN_OBSERVATION_MIN_COUNT_MAX
+      ) {
+        setError('invalid_count');
         return;
       }
     }
@@ -102,15 +123,18 @@ export function TwinRuleForm({ initial, onSubmit, onCancel }: TwinRuleFormProps)
     try {
       await onSubmit({
         domain,
-        metric,
+        metric: isCounting ? null : metric,
         source,
         method,
         comparator: isThreshold ? comparator : null,
         value: parsedValue,
-        unit: isThreshold ? indicatorUnit(metric) : null,
+        unit: isThreshold && metric ? indicatorUnit(metric) : null,
         windowDays: parsedWindow,
         level,
         enabled,
+        category,
+        polarity: isCounting ? 'negative' : null,
+        minCount: parsedCount,
       });
     } catch (err) {
       setError(toTwinRuleError(err, isThreshold));
@@ -153,7 +177,7 @@ export function TwinRuleForm({ initial, onSubmit, onCancel }: TwinRuleFormProps)
             disabled={locked}
             onChange={(e) => changeScope(domain, e.target.value as TwinRuleSource)}
           >
-            {TWIN_RULE_SOURCES.map((s) => (
+            {sources.map((s) => (
               <option key={s} value={s}>
                 {labels.sourceName(s)}
               </option>
@@ -161,24 +185,42 @@ export function TwinRuleForm({ initial, onSubmit, onCancel }: TwinRuleFormProps)
           </select>
         </div>
 
-        <div className={styles.field}>
-          <label htmlFor={`${id}-metric`}>{t('twinRules.form.metric')}</label>
-          <select
-            id={`${id}-metric`}
-            value={metric ?? ''}
-            disabled={locked || metrics.length === 0}
-            onChange={(e) => setMetric(e.target.value as IndicatorCode)}
-          >
-            {metrics.map((m) => (
-              <option key={m} value={m}>
-                {labels.metricName(m)}
-              </option>
-            ))}
-          </select>
-          {metrics.length === 0 && (
-            <small className={styles.hint}>{t('twinRules.form.noMetric')}</small>
-          )}
-        </div>
+        {isCounting && category && (
+          <div className={styles.field}>
+            <span id={`${id}-category`}>{t('twinRules.form.category')}</span>
+            <output
+              className={styles.unit}
+              aria-labelledby={`${id}-category`}
+              aria-describedby={`${id}-category-hint`}
+            >
+              {labels.categoryName(category)}
+            </output>
+            <small id={`${id}-category-hint`} className={styles.hint}>
+              {t('twinRules.form.categoryHint')}
+            </small>
+          </div>
+        )}
+
+        {!isCounting && (
+          <div className={styles.field}>
+            <label htmlFor={`${id}-metric`}>{t('twinRules.form.metric')}</label>
+            <select
+              id={`${id}-metric`}
+              value={metric ?? ''}
+              disabled={locked || metrics.length === 0}
+              onChange={(e) => setMetric(e.target.value as IndicatorCode)}
+            >
+              {metrics.map((m) => (
+                <option key={m} value={m}>
+                  {labels.metricName(m)}
+                </option>
+              ))}
+            </select>
+            {metrics.length === 0 && (
+              <small className={styles.hint}>{t('twinRules.form.noMetric')}</small>
+            )}
+          </div>
+        )}
 
         <div className={styles.field}>
           <label htmlFor={`${id}-method`}>{t('twinRules.form.method')}</label>
@@ -243,7 +285,28 @@ export function TwinRuleForm({ initial, onSubmit, onCancel }: TwinRuleFormProps)
           </>
         )}
 
-        {isMonitoring && (
+        {isCounting && (
+          <div className={styles.field}>
+            <label htmlFor={`${id}-count`}>{t('twinRules.form.minCount')}</label>
+            <input
+              id={`${id}-count`}
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={TWIN_OBSERVATION_MIN_COUNT_MAX}
+              step={1}
+              value={minCount}
+              autoFocus={locked}
+              aria-describedby={`${id}-count-hint`}
+              onChange={(e) => setMinCount(e.target.value)}
+            />
+            <small id={`${id}-count-hint`} className={styles.hint}>
+              {t('twinRules.form.minCountHint')}
+            </small>
+          </div>
+        )}
+
+        {hasWindow && (
           <div className={styles.field}>
             <label htmlFor={`${id}-window`}>{t('twinRules.form.windowDays')}</label>
             <input
@@ -258,7 +321,7 @@ export function TwinRuleForm({ initial, onSubmit, onCancel }: TwinRuleFormProps)
               onChange={(e) => setWindowDays(e.target.value)}
             />
             <small id={`${id}-window-hint`} className={styles.hint}>
-              {t('twinRules.form.windowHint')}
+              {t(isCounting ? 'twinRules.form.observationWindowHint' : 'twinRules.form.windowHint')}
             </small>
           </div>
         )}
@@ -283,6 +346,12 @@ export function TwinRuleForm({ initial, onSubmit, onCancel }: TwinRuleFormProps)
           <span>{t('twinRules.form.enabled')}</span>
         </label>
 
+        {isCounting && (
+          <p className={styles.hint} role="note">
+            {t('twinRules.form.observationPending')}
+          </p>
+        )}
+
         {error && (
           <p className={styles.error} role="alert">
             {labels.errorText(error, metric ?? undefined)}
@@ -293,7 +362,11 @@ export function TwinRuleForm({ initial, onSubmit, onCancel }: TwinRuleFormProps)
           <Button onClick={onCancel} disabled={submitting}>
             {t('twinRules.form.cancel')}
           </Button>
-          <Button type="submit" variant="primary" disabled={submitting || !metric}>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={submitting || (isCounting ? !category : !metric)}
+          >
             {submitting ? t('twinRules.form.saving') : t('twinRules.form.save')}
           </Button>
         </div>

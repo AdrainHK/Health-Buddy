@@ -289,7 +289,7 @@ export function ChatPane({
   const [materialRefs, setMaterialRefs] = useState<string[]>([]);
   const [handoffRefs, setHandoffRefs] = useState<string[]>([]);
   const [visitId, setVisitId] = useState<string | null>(null);
-  /** @ 列表里的孪生项：当前客户的四个方面，加上有预测的指标 */
+  /** @ 列表里的孪生项：当前客户的五个方面，加上有预测的指标 */
   const [twinMetrics, setTwinMetrics] = useState<string[]>([]);
   /** 当前客户的报告：已核对的可以 @，还没核对完的列出来但不能选 */
   const [reportOptions, setReportOptions] = useState<ReportOption[]>([]);
@@ -457,7 +457,7 @@ export function ChatPane({
     return () => controller.abort();
   }, [reportClientId, uploadVersion]);
 
-  // @ 列表里的孪生项：只列当前客户的（四个方面 + 有预测的指标，M4 规格 2.8）
+  // @ 列表里的孪生项：只列当前客户的（五个方面 + 有预测的指标，M4 规格 2.8）
   useEffect(() => {
     setTwinRefs((refs) => (reportClientId === null ? [] : refs));
     if (reportClientId === null) {
@@ -1211,7 +1211,7 @@ export function ChatPane({
       </>
     ) : null;
 
-  // @ 列表里的孪生项：当前客户的四个方面和有预测的指标
+  // @ 列表里的孪生项：当前客户的五个方面和有预测的指标
   const twinItems: TwinItemOption[] =
     reportClientId === null
       ? []

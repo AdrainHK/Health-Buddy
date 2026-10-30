@@ -349,7 +349,7 @@ export type TwinRef = z.infer<typeof twinRefSchema>;
 export const TWIN_REFS_MAX = 3;
 
 /**
- * 孪生项的编码在目录里（2.8）：方面只能是四个方面之一，指标只能是做预测的指标（FORECAST_METRICS）。
+ * 孪生项的编码在目录里（2.8）：方面只能是五个方面之一，指标只能是做预测的指标（FORECAST_METRICS）。
  * 客户归属由后端在发消息时重新校验，不在这里判断。
  */
 export function isKnownTwinRef(ref: TwinRef): boolean {
@@ -558,7 +558,7 @@ export type TwinDomainResponse = z.infer<typeof twinDomainResponseSchema>;
 // ---------- 左侧栏客户列表的状态圆点（2.1） ----------
 
 /**
- * 当前健管师每位客户的整体状态：四个方面里最严重的那个（红 > 黄 > 绿 > 灰，worstTwinLevel），
+ * 当前健管师每位客户的整体状态：五个方面里最严重的那个（红 > 黄 > 绿 > 灰，worstTwinLevel），
  * 有效的手动调整优先。只有颜色等级，不含依据和数值。只给健管师。
  */
 export const twinClientLevelSchema = z.object({
