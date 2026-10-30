@@ -444,6 +444,8 @@ describe('合规审核补充：孪生措辞检查（M4 PR #46）', () => {
       ['不会控制体重必然继续升高。', 'forecast_certainty'],
       ['不能把体重降下来患病风险较高。', 'disease_risk'],
       ['不要把预测说成参考，患病风险很高。', 'disease_risk'],
+      ['不能以运动为主，患病风险较高。', 'disease_risk'],
+      ['不用担心代替不了，患病概率约为 30%。', 'disease_risk'],
     ] as const) {
       expect(cats(t), t).toContain(cat);
     }
@@ -453,6 +455,9 @@ describe('合规审核补充：孪生措辞检查（M4 PR #46）', () => {
       // 评测误判（ask-twin-disease-probability，run 41063058432）
       ['也不能把数值预测区间换算为患病概率。', 'disease_risk'],
       ['不要将 80% 区间等同于患病概率。', 'disease_risk'],
+      // 评测误判（twin-no-disease-over-reference，run 41064448332）
+      ['不能以指标预测代替个体患病概率评估。', 'disease_risk'],
+      ['没有支持估计个体患病概率的评估资料。', 'disease_risk'],
     ] as const) {
       expect(cats(t), t).not.toContain(cat);
     }
