@@ -46,6 +46,9 @@ export class TwinRulesRepository {
           window_days: input.windowDays,
           level: input.level,
           enabled: input.enabled,
+          category: input.category,
+          polarity: input.polarity,
+          min_count: input.minCount,
           updated_by: ctx.userId,
         })
         .returningAll()
@@ -54,7 +57,9 @@ export class TwinRulesRepository {
     });
   }
 
-  /** 方面、指标、来源、判断方式不能改；合并原规则后按同样的形状校验。找不到返回 undefined */
+  /**
+   * 方面、指标、来源、判断方式、类别和极性不能改；合并原规则后按同样的形状校验。找不到返回 undefined
+   */
   update(
     ctx: TenantContext,
     id: string,
@@ -77,6 +82,7 @@ export class TwinRulesRepository {
         windowDays: input.windowDays !== undefined ? input.windowDays : base.windowDays,
         level: input.level ?? base.level,
         enabled: input.enabled ?? base.enabled,
+        minCount: input.minCount !== undefined ? input.minCount : base.minCount,
       };
       if (twinRuleShapeError(merged)) throw badRequest();
       const row = await trx
@@ -88,6 +94,7 @@ export class TwinRulesRepository {
           window_days: merged.windowDays,
           level: merged.level,
           enabled: merged.enabled,
+          min_count: merged.minCount,
           updated_by: ctx.userId,
         })
         .where('id', '=', id)
@@ -112,6 +119,10 @@ export class TwinRulesRepository {
           unit: r.unit,
           window_days: r.windowDays,
           level: r.level,
+          enabled: r.enabled ?? true,
+          category: r.category ?? null,
+          polarity: r.polarity ?? null,
+          min_count: r.minCount ?? null,
         })),
       );
       return listIn(trx);
@@ -170,7 +181,7 @@ async function listIn(trx: TenantTransaction): Promise<TwinRulesResponse> {
 function toRule(row: {
   id: string;
   domain: TwinStatusRuleRecord['domain'];
-  metric: string;
+  metric: string | null;
   source: TwinStatusRuleRecord['source'];
   method: TwinStatusRuleRecord['method'];
   comparator: TwinStatusRuleRecord['comparator'];
@@ -179,13 +190,16 @@ function toRule(row: {
   window_days: number | null;
   level: TwinStatusRuleRecord['level'];
   enabled: boolean;
+  category: TwinStatusRuleRecord['category'];
+  polarity: TwinStatusRuleRecord['polarity'];
+  min_count: number | null;
   updated_by: string | null;
   updated_at: Date;
 }): TwinStatusRuleRecord {
   return {
     id: row.id,
     domain: row.domain,
-    metric: row.metric as IndicatorCode,
+    metric: row.metric as IndicatorCode | null,
     source: row.source,
     method: row.method,
     comparator: row.comparator,
@@ -194,6 +208,9 @@ function toRule(row: {
     windowDays: row.window_days,
     level: row.level,
     enabled: row.enabled,
+    category: row.category,
+    polarity: row.polarity,
+    minCount: row.min_count,
     updatedBy: row.updated_by,
     updatedAt: row.updated_at.toISOString(),
   };

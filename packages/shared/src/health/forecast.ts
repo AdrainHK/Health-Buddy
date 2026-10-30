@@ -9,7 +9,7 @@
  */
 import type { ForecastPoint, ForecastResult } from '../api/twin.js';
 import { THRESHOLD_BOUNDS, indicatorUnit, type IndicatorCode } from './critical.js';
-import { addMonthsIso, type TwinRuleSource } from './twin.js';
+import { addMonthsIso, type TwinValueSource } from './twin.js';
 
 /** 方法和参数的版本号，写进每条预测 */
 export const FORECAST_METHOD_VERSION = 'ols-linear-v1';
@@ -39,7 +39,7 @@ export type ForecastMetric = (typeof FORECAST_METRICS)[number];
  * 最少数据量（6.2，Q7）：报告指标至少 3 次已核对数值，监测至少 8 个有效周。
  * 预测时长还受数据跨度限制，见 forecastMetric。
  */
-export const FORECAST_MIN_POINTS: Record<TwinRuleSource, number> = { report: 3, monitoring: 8 };
+export const FORECAST_MIN_POINTS: Record<TwinValueSource, number> = { report: 3, monitoring: 8 };
 /** 报告指标取最近 24 个月 */
 export const FORECAST_REPORT_WINDOW_MONTHS = 24;
 /** 监测指标取最近 26 周的周平均 */
@@ -149,7 +149,7 @@ export interface ForecastObservation {
 
 export interface ForecastInput {
   metric: string;
-  source: TwinRuleSource;
+  source: TwinValueSource;
   observations: readonly ForecastObservation[];
   /** 计算时刻（ISO） */
   now: string;

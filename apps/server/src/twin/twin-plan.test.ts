@@ -86,13 +86,14 @@ function steadyWeeks(metric: string, base: number, createdDaysAgo = 200): PlanRe
 }
 
 describe('孪生计算计划（纯函数）', () => {
-  it('第一次计算：四个方面都写一行；没有数据的方面是灰色，不生成跟进项', () => {
+  it('第一次计算：五个方面都写一行；没有数据的方面是灰色，不生成跟进项', () => {
     const plan = planTwinUpdate(input());
     expect(plan.statuses.map((s) => [s.domain, s.level, s.insert])).toEqual([
       ['metabolic', 'unknown', true],
       ['cardiovascular', 'unknown', true],
       ['sleep', 'unknown', true],
       ['weight', 'unknown', true],
+      ['mental', 'unknown', true],
     ]);
     expect(plan.followUps).toEqual([]);
     expect(plan.rulesVersion).toBe(3);
@@ -112,6 +113,7 @@ describe('孪生计算计划（纯函数）', () => {
           ['cardiovascular', 'green', reordered],
           ['sleep', 'unknown'],
           ['weight', 'unknown'],
+          ['mental', 'unknown'],
         ]),
       }),
     );

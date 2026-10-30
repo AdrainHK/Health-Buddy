@@ -554,16 +554,20 @@ type InsertableNullable<T> = ColumnType<T | null, T | null | undefined, never>;
 
 export interface TwinStatusRulesTable {
   id: Generated<string>;
-  domain: 'metabolic' | 'cardiovascular' | 'sleep' | 'weight';
-  metric: string;
-  source: 'report' | 'monitoring';
-  method: 'critical' | 'out_of_reference' | 'threshold';
+  domain: 'metabolic' | 'cardiovascular' | 'sleep' | 'weight' | 'mental';
+  /** 条数规则（observation_count）为空 */
+  metric: string | null;
+  source: 'report' | 'monitoring' | 'companion';
+  method: 'critical' | 'out_of_reference' | 'threshold' | 'observation_count';
   comparator: 'gte' | 'gt' | 'lte' | 'lt' | null;
   value: NullableNumeric;
   unit: string | null;
   window_days: number | null;
   level: 'red' | 'yellow';
   enabled: Generated<boolean>;
+  category: 'mood' | 'sleep' | null;
+  polarity: 'negative' | null;
+  min_count: number | null;
   updated_by: string | null;
   updated_at: Timestamp;
 }
@@ -589,7 +593,7 @@ export interface TwinStatusRuleEventsTable {
 export interface TwinStatusHistoryTable extends ClientScoped {
   id: Generated<string>;
   client_id: Insertable<string>;
-  domain: Insertable<'metabolic' | 'cardiovascular' | 'sleep' | 'weight'>;
+  domain: Insertable<'metabolic' | 'cardiovascular' | 'sleep' | 'weight' | 'mental'>;
   level: Insertable<'red' | 'yellow' | 'green' | 'unknown'>;
   origin: Insertable<'computed' | 'manual' | 'manual_cleared'>;
   basis: ColumnType<unknown, string, never>;
@@ -605,6 +609,7 @@ export interface TwinStatusHistoryTable extends ClientScoped {
     | 'manual'
     | 'seed'
     | 'backfill'
+    | 'companion'
   >;
   set_by: InsertableNullable<string>;
   created_at: ColumnType<Date, Date | string | undefined, never>;
@@ -637,7 +642,7 @@ export interface FollowUpItemsTable extends ClientScoped {
   client_id: Insertable<string>;
   kind: Insertable<'critical' | 'status_red' | 'status_worsened' | 'forecast_deviation'>;
   severity: 1 | 2 | 3 | 4;
-  domain: InsertableNullable<'metabolic' | 'cardiovascular' | 'sleep' | 'weight'>;
+  domain: InsertableNullable<'metabolic' | 'cardiovascular' | 'sleep' | 'weight' | 'mental'>;
   metric: InsertableNullable<string>;
   basis: Json<unknown>;
   source_ref: Json<unknown>;

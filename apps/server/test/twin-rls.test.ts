@@ -1109,6 +1109,10 @@ describe('孪生数据表的行级安全和约束', () => {
           unit: r.unit,
           window_days: r.windowDays,
           level: r.level,
+          enabled: r.enabled ?? true,
+          category: r.category ?? null,
+          polarity: r.polarity ?? null,
+          min_count: r.minCount ?? null,
         })),
       );
       for (const c of [managerA1(), operatorAdminA()]) {

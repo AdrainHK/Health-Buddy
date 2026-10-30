@@ -8,6 +8,7 @@ import {
   type TwinDomain,
   type TwinLevel,
   type TwinStatusRule,
+  TWIN_OBSERVATION_CATEGORIES,
 } from '@health-buddy/shared';
 import { withTenant, type Db, type TenantContext, type TenantTransaction } from '../db/database.js';
 import { lockTwinCompute } from '../db/locks.js';
@@ -19,6 +20,9 @@ import { planTwinUpdate, type PlanInput, type TwinPlan } from './twin-plan.js';
 const REPORT_ROW_LIMIT = 5000;
 const READING_DAYS = 200;
 const READING_ROW_LIMIT = 20000;
+/** 收集信息读多少天、多少行：条数规则的窗口最多 90 天 */
+const OBSERVATION_DAYS = 91;
+const OBSERVATION_ROW_LIMIT = 5000;
 const DAY_MS = 86_400_000;
 /** 并发的计算写入冲突时最多重算几次 */
 const MAX_ATTEMPTS = 3;
@@ -145,6 +149,36 @@ export class TwinEngine {
       .limit(READING_ROW_LIMIT)
       .execute();
 
+    // 伴侣收集信息（M6 Q20）：只读服务这位客户的健管师本人的行，只取类别、极性和日期（不读原文）；
+    // 客户撤回同意后不再读（同 loadCompanionDigest，产品负责人 2026-10-30 确认）
+    const consent = await trx
+      .selectFrom('companion_consents')
+      .select('action')
+      .where('client_id', '=', clientId)
+      .orderBy('id', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+    const observationRows =
+      consent?.action === 'revoke'
+        ? []
+        : await trx
+            .selectFrom('companion_observations')
+            .select((eb) => [
+              'category',
+              'polarity',
+              eb
+                .fn<string>('to_char', [eb.ref('observed_on'), eb.val('YYYY-MM-DD')])
+                .as('observed_on'),
+            ])
+            .where('client_id', '=', clientId)
+            .where('manager_id', '=', ctx.userId)
+            .where('category', 'in', TWIN_OBSERVATION_CATEGORIES)
+            .where('polarity', 'is not', null)
+            .where('status', '<>', 'dismissed')
+            .where('observed_on', '>=', new Date(loadAt.getTime() - OBSERVATION_DAYS * DAY_MS))
+            .limit(OBSERVATION_ROW_LIMIT)
+            .execute();
+
     const lastRows = await trx
       .selectFrom('twin_status_history')
       .distinctOn('domain')
@@ -173,7 +207,7 @@ export class TwinEngine {
     const rules: TwinStatusRule[] = ruleRows.map((r) => ({
       id: r.id,
       domain: r.domain,
-      metric: r.metric as IndicatorCode,
+      metric: r.metric as IndicatorCode | null,
       source: r.source,
       method: r.method,
       comparator: r.comparator,
@@ -182,6 +216,9 @@ export class TwinEngine {
       windowDays: r.window_days,
       level: r.level,
       enabled: r.enabled,
+      category: r.category,
+      polarity: r.polarity,
+      minCount: r.min_count,
     }));
 
     const input: PlanInput = {
@@ -223,6 +260,11 @@ export class TwinEngine {
           createdAt: r.created_at.toISOString(),
         }))
         .reverse(),
+      observations: observationRows.map((o) => ({
+        category: o.category,
+        polarity: o.polarity,
+        observedOn: o.observed_on,
+      })),
       lastComputed: new Map(
         lastRows.map((r) => [
           r.domain as TwinDomain,

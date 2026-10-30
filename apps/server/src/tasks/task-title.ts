@@ -58,6 +58,7 @@ const DOMAIN_LABELS: Record<TwinDomain, string> = {
   cardiovascular: '心血管',
   sleep: '睡眠',
   weight: '体重',
+  mental: '心理',
 };
 
 export function buildTaskTitle(

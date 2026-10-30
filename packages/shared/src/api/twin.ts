@@ -9,6 +9,9 @@ import {
   TWIN_RULE_LEVELS,
   TWIN_RULE_METHODS,
   TWIN_RULE_SOURCES,
+  TWIN_OBSERVATION_CATEGORIES,
+  TWIN_OBSERVATION_POLARITIES,
+  type TwinObservationCategory,
 } from '../health/twin.js';
 import { planSectionSchema } from '../plan/library.js';
 import { visitMethodSchema, visitPurposeSchema } from '../plan/visit-schedule.js';
@@ -25,6 +28,8 @@ import { riskTierRecordSchema } from './risk-tiers.js';
 export const twinDomainSchema = z.enum(TWIN_DOMAINS);
 export const twinLevelSchema = z.enum(TWIN_LEVELS);
 export const twinRuleSourceSchema = z.enum(TWIN_RULE_SOURCES);
+/** 有数值的来源：预测、跳过的数值、实际数值只来自报告和监测 */
+export const twinValueSourceSchema = z.enum(['report', 'monitoring']);
 export const twinRuleMethodSchema = z.enum(TWIN_RULE_METHODS);
 export const twinRuleLevelSchema = z.enum(TWIN_RULE_LEVELS);
 
@@ -63,6 +68,18 @@ export const twinRuleHitSchema = z.discriminatedUnion('method', [
       windowDays: z.number().int(),
       average: z.number(),
       count: z.number().int().positive(),
+    }),
+  }),
+  z.object({
+    ruleId: z.string(),
+    method: z.literal('observation_count'),
+    level: twinRuleLevelSchema,
+    snapshot: z.object({
+      category: z.enum(TWIN_OBSERVATION_CATEGORIES as [TwinObservationCategory]),
+      polarity: z.enum(TWIN_OBSERVATION_POLARITIES),
+      windowDays: z.number().int().positive(),
+      minCount: z.number().int().positive(),
+      count: z.number().int().nonnegative(),
     }),
   }),
 ]);
@@ -104,13 +121,27 @@ export const twinBasisItemSchema = z.discriminatedUnion('source', [
     latestValue: z.number(),
     latestReadingId: z.string(),
   }),
+  /**
+   * 伴侣收集信息（M6 Q20）：metric 是类别（mood / sleep），value 是窗口内符合极性的条数，
+   * count 是这一类的总条数。只有条数和日期，不带客户原话（验收 11）
+   */
+  z.object({
+    ...basisCommon,
+    source: z.literal('companion'),
+    metric: z.enum(TWIN_OBSERVATION_CATEGORIES as [TwinObservationCategory]),
+    polarity: z.enum(TWIN_OBSERVATION_POLARITIES),
+    unit: z.literal('条'),
+    windowDays: z.number().int().positive(),
+    count: z.number().int().positive(),
+    from: z.iso.date(),
+  }),
 ]);
 export type TwinBasisItem = z.infer<typeof twinBasisItemSchema>;
 
 /** 没有参与判断的数值。不带数值，只说原因 */
 export const twinSkippedValueSchema = z.object({
   metric: z.string(),
-  source: twinRuleSourceSchema,
+  source: twinValueSourceSchema,
   observedOn: z.iso.date(),
   reason: z.enum(['unit_mismatch', 'out_of_bounds', 'stale', 'not_in_catalog']),
 });
@@ -140,6 +171,8 @@ export const TWIN_STATUS_TRIGGERS = [
   'manual',
   'seed',
   'backfill',
+  // 伴侣“福宝”收集信息写入或被健管师驳回（M6 Q20）
+  'companion',
 ] as const;
 export const twinStatusTriggerSchema = z.enum(TWIN_STATUS_TRIGGERS);
 export type TwinStatusTrigger = z.infer<typeof twinStatusTriggerSchema>;
@@ -153,6 +186,7 @@ export const TWIN_COMPUTE_TRIGGERS = [
   'thresholds_changed',
   'seed',
   'backfill',
+  'companion',
 ] as const satisfies readonly TwinStatusTrigger[];
 export type TwinComputeTrigger = (typeof TWIN_COMPUTE_TRIGGERS)[number];
 export const TWIN_BATCH_TRIGGERS = [
@@ -241,7 +275,7 @@ export const FORECAST_INSUFFICIENT_REASONS = [
  */
 export const forecastResultSchema = z.object({
   metric: z.string(),
-  source: twinRuleSourceSchema,
+  source: twinValueSourceSchema,
   methodVersion: z.string(),
   intervalLevel: z.number(),
   status: z.enum(['ok', 'insufficient_data']),
@@ -294,7 +328,7 @@ export const twinForecastDetailResponseSchema = z.object({
     z.object({
       at: z.iso.datetime(),
       value: z.number(),
-      source: twinRuleSourceSchema,
+      source: twinValueSourceSchema,
       /** 手动录入的监测读数标“手动” */
       manual: z.boolean(),
     }),
