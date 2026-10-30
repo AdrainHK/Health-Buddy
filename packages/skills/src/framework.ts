@@ -19,6 +19,7 @@ import {
   type RiskTierSuggestion,
 } from '@health-buddy/shared';
 import type { z } from 'zod';
+import type { CompanionDigest } from './companion-context.js';
 import type { PlanContext } from './plan-input.js';
 import type { TwinSnapshot } from './twin-input.js';
 import type { WordingIssue } from './wording.js';
@@ -155,6 +156,11 @@ export interface SkillInput {
    * 只给声明了 usesHandoff 的技能组装
    */
   handoff?: { category: CompanionHandoffCategory; question: string; createdOn: string } | undefined;
+  /**
+   * 伴侣“福宝”的信息（M6 规格 2.7、2.8）：/随访话术 读近 14 天的收集信息、打卡和未处理的转交。
+   * null 表示客户没有开通伴侣；undefined 表示没有读（不是读伴侣信息的技能）
+   */
+  companion?: CompanionDigest | null | undefined;
 }
 
 /** 技能输出渲染后的产物内容。clientFacing 还没有拼接免责声明。 */
@@ -259,6 +265,8 @@ export interface PlanTemplate {
   skills: string[];
   /** 计划里先读取数字孪生（M4“孪生复盘”）；客户没有任何数据时不出计划 */
   readsTwin?: boolean;
+  /** 计划里读取伴侣信息（M6“伴侣跟进”）；客户没有开通伴侣时不出计划（409 no_companion） */
+  readsCompanion?: boolean;
   requiresClient: boolean;
   requiresReport: boolean;
   /** 同 SkillMeta.defaultRequest */

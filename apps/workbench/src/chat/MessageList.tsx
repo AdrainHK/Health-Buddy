@@ -390,7 +390,9 @@ function PlanCard({
               ? t('chat.plan.readClient')
               : step.kind === 'read_twin'
                 ? t('chat.plan.readTwin')
-                : t('chat.plan.runSkill', { name: skillName(step.skillId) })}
+                : step.kind === 'read_companion'
+                  ? t('chat.plan.readCompanion')
+                  : t('chat.plan.runSkill', { name: skillName(step.skillId) })}
           </li>
         ))}
       </ol>

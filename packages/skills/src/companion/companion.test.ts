@@ -42,6 +42,8 @@ describe('调用模型前的检查', () => {
 
   it('语音识别容错：繁体、同音误识别、口语说法', () => {
     expect(preCheckCompanionInput('我最近总想着不如此了算了')).toMatchObject({ crisis: true });
+    // 识别时还会丢字（评测里出现过“我最近总想着,不如此算了。”）
+    expect(preCheckCompanionInput('我最近总想着,不如此算了。')).toMatchObject({ crisis: true });
     expect(preCheckCompanionInput('或者没什么意思')).toMatchObject({ crisis: true });
     expect(preCheckCompanionInput('我觉得或者没啥意思')).toMatchObject({ crisis: true });
     expect(preCheckCompanionInput('覺得活著沒意思')).toMatchObject({ crisis: true });

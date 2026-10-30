@@ -165,6 +165,7 @@ type ErrorKey =
   | 'readOnly'
   | 'noVerifiedReport'
   | 'noTwinData'
+  | 'noCompanion'
   | 'noPlanData'
   | 'noMaterials'
   | 'noHandoff'
@@ -207,6 +208,8 @@ function errorKey(err: unknown): ErrorKey {
     if (err.reasons.includes('no_verified_report')) return 'noVerifiedReport';
     // /孪生小结：这位客户还没有孪生数据（M4 规格 2.7）
     if (err.reasons.includes('no_twin_data')) return 'noTwinData';
+    // “伴侣跟进”：客户没有开通伴侣（M6 规格 2.8）
+    if (err.reasons.includes('no_companion')) return 'noCompanion';
     // /方案生成：资料太少（M5 规格 2.2）；/随访记录：没有勾选素材（2.9）
     if (err.reasons.includes('no_plan_data')) return 'noPlanData';
     if (err.reasons.includes('no_materials')) return 'noMaterials';

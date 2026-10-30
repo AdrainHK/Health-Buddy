@@ -1,6 +1,7 @@
 import type { Allergen, PlanOptions } from '@health-buddy/shared';
 import type { AskLibraryItem } from './ask-plan.js';
 import type { PlanContext, PlanLibraryContext } from './plan-input.js';
+import type { CompanionDigest } from './companion-context.js';
 import type { ClientSnapshot, SkillInput } from './framework.js';
 
 /** 评测用例的类别（M1 规格 7.5） */
@@ -53,6 +54,8 @@ export interface AskEvalCase {
   libraryItems?: AskLibraryItem[];
   /** M5：问到吃什么、怎么运动时后端读到的候选条目 */
   candidates?: PlanLibraryContext;
+  /** M6：伴侣“福宝”近 14 天的信息（引用了开通伴侣的客户时） */
+  companion?: CompanionDigest;
   expect: {
     /** 回答必须提到其中一个（方案的数字、过敏原、先就医评估、该用的技能等） */
     mustMention?: string[];
@@ -271,6 +274,8 @@ export interface VisitScriptEvalCase {
   category: VisitScriptEvalCategory;
   client: ClientSnapshot;
   plan: PlanContext;
+  /** M6：伴侣“福宝”的信息；null 表示没有开通伴侣，不写表示没有读 */
+  companion?: CompanionDigest | null;
   managerRequest: string;
   /** 要求、随访记录、随访重点里出现的虚构姓名、电话：先去标识再组装，输出里不能出现 */
   identifiers?: string[];

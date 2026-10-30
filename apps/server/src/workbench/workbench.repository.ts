@@ -41,8 +41,9 @@ import {
   toArtifactSummary,
 } from '../tasks/tasks.repository.js';
 import { loadTwinSnapshot } from '../twin/twin.repository.js';
-import type { PlanContext } from '@health-buddy/skills';
+import type { CompanionDigest, PlanContext } from '@health-buddy/skills';
 import { MaterialCipher } from '../care/material-cipher.js';
+import { loadCompanionDigest } from './companion-digest.js';
 import { loadPlanContext, type PlanContextOptions } from './plan-context.js';
 
 const readOnly = () => conflict({ reasons: ['read_only'] });
@@ -107,6 +108,8 @@ export interface ClientContext {
   displayName: string;
   /** M5 方案和随访技能的上下文（当前方案、随访记录、排好的日期），去标识前的原文 */
   plan?: PlanContext;
+  /** M6 伴侣“福宝”近 14 天的信息（/随访话术）；null 表示没有开通伴侣。原句已去掉电话、证件号 */
+  companion?: CompanionDigest | null;
 }
 
 export interface RegenerationContext {
@@ -271,6 +274,13 @@ export class WorkbenchRepository {
     });
   }
 
+  /** 伴侣“福宝”近 14 天的信息（M6 规格 2.8）；没有开通伴侣、看不到的客户为 null */
+  companionDigest(ctx: TenantContext, clientId: string): Promise<CompanionDigest | null> {
+    return withTenant(this.db, ctx, async (trx) =>
+      (await clientVisible(trx, clientId)) ? loadCompanionDigest(trx, ctx, clientId) : null,
+    );
+  }
+
   /** 客户的健康史（问一问只用来比对过敏原和运动安全规则，不进提示词）；看不到的客户为空 */
   clientHealthHistory(ctx: TenantContext, clientId: string): Promise<HealthHistoryEntry[]> {
     return withTenant(this.db, ctx, (trx) => healthHistory(trx, clientId));
@@ -411,6 +421,8 @@ export class WorkbenchRepository {
       libraryRefs?: LibraryRef[];
       /** /转交回复 @ 的伴侣转交：必须是任务关联客户的、本人的未处理转交 */
       handoffRefs?: string[];
+      /** “伴侣跟进”计划：客户要开通伴侣（409 no_companion） */
+      requiresCompanion?: boolean;
     },
     claim: (taskId: string) => boolean,
   ): Promise<PreparedTurn> {
@@ -465,6 +477,14 @@ export class WorkbenchRepository {
         }
         if (input.requiresTwinData && clientId && !(await hasTwinData(trx, clientId))) {
           throw noTwinData();
+        }
+        // “伴侣跟进”计划（M6 规格 2.8）：客户没有开通伴侣时不出计划
+        if (
+          input.requiresCompanion &&
+          clientId &&
+          !(await loadCompanionDigest(trx, ctx, clientId))
+        ) {
+          throw conflict({ reasons: ['no_companion'] });
         }
         if (input.requiresPlanData && clientId && !(await hasPlanData(trx, clientId))) {
           throw noPlanData();

@@ -55,6 +55,15 @@ export const PLAN_TEMPLATES: readonly PlanTemplate[] = [
     readsTwin: true,
     defaultRequest: '请为这位客户生成方案和随访计划',
   },
+  // M6 规格 2.8、Q25：伴侣跟进 = 读取客户档案 → 读取伴侣信息 → /随访话术
+  {
+    id: 'companion-follow-up',
+    skills: [visitScript.id],
+    requiresClient: true,
+    requiresReport: false,
+    readsCompanion: true,
+    defaultRequest: '请结合伴侣“福宝”收集的信息准备这次随访的话术',
+  },
 ];
 
 export function getSkill(id: string): SkillDefinition | undefined {
