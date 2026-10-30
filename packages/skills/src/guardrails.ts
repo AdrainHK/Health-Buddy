@@ -8,6 +8,7 @@ import {
   endsWithDisclaimer,
   findBannedTerms,
   normalizeForCompliance,
+  toSimplified,
   type ComplianceIssue,
 } from '@health-buddy/shared';
 import type { CriticalFlag } from '@health-buddy/shared';
@@ -203,19 +204,27 @@ export function checkClientText(
 
 /** 心理危机关键词。不依赖模型：模型拒答时也要能提示健管师（规格 7.3、Q13） */
 const CRISIS_KEYWORDS =
-  /轻生|自杀|自尽|自残|自伤|不想活|活着没.{0,2}意思|一了百了|活不下去|想死|死了算了|不想拖累|想不开|结束生命|寻死|跳楼|割腕|攒.{0,4}安眠药|遗书/;
+  /轻生|自杀|自尽|自残|自伤|不想活|活[着著得]没.{0,2}意思|一了百了|活不下去|想死|死了算了|不如死了|不想拖累|想不开|结束生命|寻死|跳楼|割腕|攒.{0,4}安眠药|遗书/;
+
+/** 匹配前去掉空白、繁体转简体（语音识别偶尔输出繁体） */
+function keywordText(text: string): string {
+  return toSimplified(text.replace(/\s+/g, ''));
+}
 
 /** 健管师的要求、退回原因、本任务的历史消息里有没有心理危机信号 */
 export function detectCrisisKeywords(texts: readonly string[]): boolean {
-  return texts.some((t) => CRISIS_KEYWORDS.test(t.replace(/\s+/g, '')));
+  return texts.some((t) => CRISIS_KEYWORDS.test(keywordText(t)));
 }
 
-/** 疑似急症关键词：不依赖模型，模型拒答时也能提示健管师（专家、工作台、伴侣共用） */
+/**
+ * 疑似急症关键词：不依赖模型，模型拒答时也能提示健管师（专家、工作台、伴侣共用）。
+ * 含老人常用的口语说法（“胸口疼”“心口疼”“喘不过气”“嘴歪了”“左边手脚没劲”）。
+ */
 const EMERGENCY_KEYWORDS =
-  /胸痛|胸口.{0,2}痛|胸闷痛|胸闷.{0,6}(?:出汗|喘|晕)|晕厥|昏厥|晕倒|昏迷|意识不清|意识模糊|叫不醒|呼吸困难|喘不上气|口角歪斜|说话不清|口齿不清|言语不清|一侧肢体(?:无力|麻木)|半边身子(?:无力|麻|不能动)|单侧肢体(?:无力|麻木)|抽搐|剧烈头痛|头痛欲裂|大汗淋漓|冒冷汗|出冷汗|大汗|低血糖昏迷|呕血|吐血|黑便|便血不止/;
+  /胸痛|胸疼|胸口.{0,2}[痛疼]|心口.{0,2}[痛疼]|(?<!忙得)喘不过气|昏倒|嘴(?:巴)?歪|[一左右半]边(?:的)?(?:手|脚|胳膊|腿|身子).{0,4}(?:没力气|没劲|无力|不能动|动不了|抬不起来|发麻)|晕厥|昏厥|晕倒|昏迷|意识不清|意识模糊|叫不醒|呼吸困难|喘不上气|口角歪斜|说话不清|口齿不清|言语不清|一侧肢体(?:无力|麻木)|半边身子(?:无力|麻|不能动)|单侧肢体(?:无力|麻木)|抽搐|剧烈头痛|头痛欲裂|大汗淋漓|冒冷汗|出冷汗|大汗|低血糖昏迷|呕血|吐血|黑便|便血不止/;
 
 export function detectEmergencyKeywords(texts: readonly string[]): boolean {
-  return texts.some((t) => EMERGENCY_KEYWORDS.test(t.replace(/\s+/g, '')));
+  return texts.some((t) => EMERGENCY_KEYWORDS.test(keywordText(t)));
 }
 
 /** 身份证号（18 位，末位可为 X）和大陆手机号；都允许按常见分组用空格或短横线隔开 */

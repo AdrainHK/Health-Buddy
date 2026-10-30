@@ -7,6 +7,7 @@ import {
   countDisclaimers,
   endsWithDisclaimer,
   findBannedTerms,
+  toSimplified,
 } from './index.js';
 
 describe('findBannedTerms', () => {
@@ -80,6 +81,22 @@ describe('findBannedTerms separators and traditional characters', () => {
 
   it('flags traditional-character variants', () => {
     expect(findBannedTerms('已確診，可治癒').map((i) => i.term)).toEqual(['确诊', '治愈']);
+    for (const [text, term] of [
+      ['確診', '确诊'],
+      ['診斷', '诊断'],
+      ['篩查', '筛查'],
+      ['治癒', '治愈'],
+      ['藥到病除', '药到病除'],
+    ] as const) {
+      expect(findBannedTerms(text).map((i) => i.term)).toContain(term);
+    }
+  });
+
+  it('toSimplified keeps length and positions', () => {
+    const text = '要不要去醫院，這個藥吃幾片';
+    expect(toSimplified(text)).toBe('要不要去医院，这个药吃几片');
+    expect(toSimplified(text)).toHaveLength(text.length);
+    expect(toSimplified('abc 123')).toBe('abc 123');
   });
 
   it('does not join words across commas or full stops', () => {

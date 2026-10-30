@@ -5,6 +5,9 @@
  * 这里只做确定性的词表匹配；语义层面的审查在 AI 评测和 compliance-reviewer 子代理里做。
  */
 import { PRODUCT_NAME } from '../brand.js';
+import { simplifyChar } from './simplified.js';
+
+export { simplifyChar, toSimplified } from './simplified.js';
 
 export interface BannedTerm {
   term: string;
@@ -106,19 +109,6 @@ const ZERO_WIDTH = /[\u200B-\u200D\u2060\uFEFF\u00AD]/;
  */
 const IN_WORD_PUNCT = /[·•・‧\-_~*/|.、]/;
 
-/** 禁用词里用到的繁体字，统一成简体再匹配 */
-const TRADITIONAL: Record<string, string> = {
-  診: '诊',
-  斷: '断',
-  確: '确',
-  篩: '筛',
-  癒: '愈',
-  藥: '药',
-  醫: '医',
-  療: '疗',
-  專: '专',
-};
-
 interface Normalized {
   text: string;
   /** 规范化后每个字符对应的原文位置 */
@@ -137,7 +127,7 @@ export function normalizeForCompliance(text: string): Normalized {
     if (!/\s/.test(ch) && !ZERO_WIDTH.test(ch)) {
       for (const n of ch.normalize('NFKC')) {
         if (IN_WORD_PUNCT.test(n) || /\s/.test(n)) continue;
-        out += TRADITIONAL[n] ?? n;
+        out += simplifyChar(n);
         for (let k = 0; k < n.length; k++) origin.push(i);
       }
     }

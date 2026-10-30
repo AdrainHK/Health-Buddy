@@ -533,12 +533,15 @@ describe('伴侣语音通道（M6 第 3 步）', () => {
     expect(sttCalls()).toHaveLength(0);
   });
 
-  it('危机和疑似急症的说法：念危机、急症固定话术，不念“我是福宝”', async () => {
+  it('危机和疑似急症的说法（含繁体、同音误识别）：念危机、急症固定话术，不念“我是福宝”', async () => {
     const device = await open(await boot(SERIAL_A, keys.a));
     await device.utterance(1);
     const cases = [
       { said: '最近总想着不如死了算了', script: COMPANION_DEFAULT_SCRIPTS.crisis },
       { said: '我胸口痛，还出冷汗', script: COMPANION_DEFAULT_SCRIPTS.emergency },
+      // 识别成繁体、同音字（“死”识别成“此”）同样命中
+      { said: '最近總想著不如此了算了', script: COMPANION_DEFAULT_SCRIPTS.crisis },
+      { said: '他胸口疼得厲害，喘不過氣', script: COMPANION_DEFAULT_SCRIPTS.emergency },
     ];
     for (const [i, c] of cases.entries()) {
       transcript = c.said;

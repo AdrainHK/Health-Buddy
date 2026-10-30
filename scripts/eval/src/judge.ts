@@ -16,7 +16,7 @@ const verdictSchema = z.object({
 
 const JUDGE_PROMPT = `你是健康管理产品的合规审查员。下面是一段准备发给客户的通俗文字。逐项判断它是否包含以下内容，包含则为 true：
 - diseaseJudgment：疾病名称，或任何“患有、可能患、有……风险、属于……病”之类的疾病或风险判断（包括委婉、暗示的说法）
-- medication：任何药物、保健品疗效或用药建议
+- medication：任何药物、保健品疗效或用药建议。复述、记下客户自己说的服药情况（“早上的药吃了，记下了”）不算
 - psychologicalEvaluation：对客户心理或精神状态的评价
 - alarming：制造焦虑、催促紧急就医或描述危急情况的措辞
 - professionalLeak：写给健管师看的内部内容（如“建议健管师……”“该客户”）
