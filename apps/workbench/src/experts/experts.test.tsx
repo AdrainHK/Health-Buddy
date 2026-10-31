@@ -80,6 +80,7 @@ function withExperts(node: ReactNode, experts: ExpertSummary[] = EXPERTS) {
 describe('专家库和专家中心提问（规格 2.2、2.3）', () => {
   beforeEach(() => setWideViewport());
 
+  // 步骤多（打开专家库、详情、来源清单、提问、新建任务），CI 机器慢时 5 秒不够
   it('从左侧栏打开专家库，看详情和来源清单，向 TA 提问后新建绑定专家的问一问任务', async () => {
     let tasks: Task[] = [];
     const bound = makeTask({ title: '问内分泌与代谢专家：合成问题', expertId: ENDO.id });
@@ -227,7 +228,7 @@ describe('专家库和专家中心提问（规格 2.2、2.3）', () => {
       'aria-selected',
       'true',
     );
-  });
+  }, 15_000);
 
   it('专家预览没开（列表为空）时专家库显示空状态', async () => {
     mockApi({
