@@ -146,6 +146,29 @@
   font-size: var(--hb-text-sm);
 }
 
+.accountButton {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  padding: var(--hb-space-1) var(--hb-space-2);
+  border: none;
+  border-radius: var(--hb-radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.accountButton:hover {
+  background: var(--hb-surface-2);
+}
+
+.accountButton:focus-visible {
+  outline: none;
+  box-shadow: var(--hb-focus-ring);
+}
+
 .accountName {
   flex: 1;
   min-width: 0;

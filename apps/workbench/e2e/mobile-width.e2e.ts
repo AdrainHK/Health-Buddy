@@ -12,6 +12,21 @@ import type {
   TaskDetailResponse,
 } from '@health-buddy/shared';
 
+/** 合成的试点版套餐：全部功能开、额度不另设上限 */
+const PILOT_PLAN = {
+  code: 'pilot',
+  name: '试点版',
+  features: { experts: true, twin: true, care: true, companion: true },
+  monthlyQuotas: {
+    llm_calls: null,
+    expert_calls: null,
+    report_pages: null,
+    companion_devices: null,
+  },
+  contractEnd: null,
+  usage: { llm_calls: 0, expert_calls: 0, report_pages: 0, companion_devices: 0 },
+};
+
 /**
  * M2 验收标准 25：手机宽度（375px）下，档案和核对界面不横向滚动；核对界面改为上下排列
  * （原件在上，数值在下，规格 2.1）。接口全部在浏览器里模拟，只用合成数据。
@@ -351,6 +366,9 @@ async function mockApi(page: Page): Promise<string[]> {
       switch (true) {
         case key === 'GET /api/auth/me':
           return json(route, { user });
+        // 套餐（M7 第 4 步）：试点版，全部功能开
+        case key === 'GET /api/me/plan':
+          return json(route, { plan: PILOT_PLAN });
         case key === 'GET /api/tasks':
           return json(route, { tasks: [task] });
         case key === 'GET /api/tasks?archived=true':

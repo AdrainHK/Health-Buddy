@@ -81,9 +81,12 @@ export const operatorInviteRequestSchema = z
     email: z.email().max(254),
     role: operatorInviteRoleSchema,
     orgId: z.uuid().nullable(),
+    /** 健管师的套餐（M7 第 4 步），只能选本协会可售的；不填按试点版 */
+    planId: z.uuid().nullable().optional(),
   })
   .strict()
-  .refine((v) => v.role !== 'org_admin' || v.orgId !== null, { path: ['orgId'] });
+  .refine((v) => v.role !== 'org_admin' || v.orgId !== null, { path: ['orgId'] })
+  .refine((v) => v.role === 'manager' || !v.planId, { path: ['planId'] });
 export type OperatorInviteRequest = z.infer<typeof operatorInviteRequestSchema>;
 
 /**
@@ -92,6 +95,9 @@ export type OperatorInviteRequest = z.infer<typeof operatorInviteRequestSchema>;
  */
 export const operatorAccountSchema = accountSummarySchema.extend({
   clientCount: z.number().int().nonnegative().nullable(),
+  /** 健管师的套餐（没分配时为试点版）；其他角色为 null */
+  planId: z.uuid().nullable(),
+  planName: z.string().nullable(),
 });
 export type OperatorAccount = z.infer<typeof operatorAccountSchema>;
 export const operatorAccountListResponseSchema = z.object({
@@ -143,6 +149,8 @@ export const ACCOUNT_IMPORT_ROW_ERRORS = [
   'org_required',
   /** 机构里已有客户，不能新开机构管理员 */
   'has_clients',
+  /** 套餐代码不在本协会可售范围，或填给了机构管理员 */
+  'plan_not_available',
 ] as const;
 export type AccountImportRowError = (typeof ACCOUNT_IMPORT_ROW_ERRORS)[number];
 
@@ -154,6 +162,8 @@ export const accountImportRowSchema = z
     email: z.string().max(320),
     role: z.string().max(40),
     orgName: z.string().max(200),
+    /** 套餐代码（第 5 列，可空，M7 第 4 步） */
+    planCode: z.string().max(40).default(''),
   })
   .strict();
 export type AccountImportRow = z.infer<typeof accountImportRowSchema>;
@@ -180,8 +190,8 @@ export const accountImportErrorSchema = z.object({
 });
 export type AccountImportError = z.infer<typeof accountImportErrorSchema>;
 
-/** CSV 模板的表头（套餐代码在第 4 步加） */
-export const ACCOUNT_IMPORT_HEADER = ['姓名', '邮箱', '角色', '机构名称'] as const;
+/** CSV 模板的表头。第 5 列“套餐代码”可以没有（第 2 步的旧模板照常能用） */
+export const ACCOUNT_IMPORT_HEADER = ['姓名', '邮箱', '角色', '机构名称', '套餐代码'] as const;
 const ROLE_ALIASES: Record<string, string> = {
   健管师: 'manager',
   健康管理师: 'manager',
@@ -222,19 +232,24 @@ export type AccountCsvParse =
 export function parseAccountCsv(text: string): AccountCsvParse {
   const lines = text.replace(/^\uFEFF/, '').split(/\r\n|\n|\r/);
   const header = csvFields(lines[0] ?? '');
-  if (ACCOUNT_IMPORT_HEADER.some((h, i) => header[i] !== h)) {
+  const planColumn = header[4] !== undefined && header[4] !== '';
+  if (
+    ACCOUNT_IMPORT_HEADER.slice(0, 4).some((h, i) => header[i] !== h) ||
+    (planColumn && header[4] !== ACCOUNT_IMPORT_HEADER[4])
+  ) {
     return { ok: false, error: lines.every((l) => l.trim() === '') ? 'empty' : 'bad_header' };
   }
   const rows: AccountImportRow[] = [];
   lines.slice(1).forEach((line, i) => {
     if (line.trim() === '') return;
-    const [displayName = '', email = '', role = '', orgName = ''] = csvFields(line);
+    const [displayName = '', email = '', role = '', orgName = '', planCode = ''] = csvFields(line);
     rows.push({
       row: i + 2,
       displayName: displayName.slice(0, 200),
       email: email.slice(0, 320),
       role: (ROLE_ALIASES[role] ?? role).slice(0, 40),
       orgName: orgName.slice(0, 200),
+      planCode: planColumn ? planCode.slice(0, 40) : '',
     });
   });
   if (rows.length === 0) return { ok: false, error: 'empty' };

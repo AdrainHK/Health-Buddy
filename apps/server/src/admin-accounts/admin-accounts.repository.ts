@@ -1,6 +1,7 @@
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import {
   AUDIT_LOG_LIMIT,
+  PILOT_PLAN_CODE,
   CONTRACT_EXPIRY_NOTICE_DAYS,
   type AccountSummary,
   type AuditLogEntry,
@@ -30,6 +31,8 @@ import {
   type ImportResult,
   type ImportRowInput,
 } from '../db/admin-accounts.js';
+import { adminAssignPlan } from '../db/plans.js';
+import { planNotAvailable } from '../plans/plans.repository.js';
 import { DB } from '../db/db.provider.js';
 import { withTenant, type Db, type TenantContext, type TenantTransaction } from '../db/database.js';
 import type { Role } from '../db/types.js';
@@ -202,6 +205,20 @@ export class AdminAccountsRepository {
     });
   }
 
+  /** 本协会可售、在售的套餐：代码 → id（批量导入的套餐代码列用） */
+  sellablePlans(ctx: TenantContext): Promise<Map<string, string>> {
+    return withTenant(this.db, ctx, async (trx) => {
+      const rows = await trx
+        .selectFrom('plans')
+        .innerJoin('operator_plans', 'operator_plans.plan_id', 'plans.id')
+        .select(['plans.id', 'plans.code'])
+        .where('operator_plans.operator_id', '=', ctx.operatorId!)
+        .where('plans.status', '=', 'active')
+        .execute();
+      return new Map(rows.map((r) => [r.code.toLowerCase(), r.id]));
+    });
+  }
+
   reinvite(
     ctx: TenantContext,
     userId: string,
@@ -267,8 +284,9 @@ export class AdminAccountsRepository {
           ? q.where('org_id', '=', ctx.orgId!)
           : q.where('operator_id', '=', ctx.operatorId!);
       const rows = await q.orderBy('created_at', 'desc').execute();
+      const plans = await managerPlans(trx, rows);
       if (ctx.role !== 'operator_admin') {
-        return rows.map((r) => ({ ...toAccount(r), clientCount: null }));
+        return rows.map((r) => ({ ...toAccount(r), clientCount: null, ...plans(r) }));
       }
       const counts = await adminClientCounts(trx);
       const byManager = new Map<string, number>();
@@ -279,6 +297,7 @@ export class AdminAccountsRepository {
       }
       return rows.map((r) => ({
         ...toAccount(r),
+        ...plans(r),
         clientCount:
           r.role === 'manager'
             ? (byManager.get(r.id) ?? 0)
@@ -303,6 +322,10 @@ export class AdminAccountsRepository {
         tokenHash: v.tokenHash,
         expiresAt: v.expiresAt,
       });
+      // 健管师的套餐（M7 第 4 步）：同一事务，不可售时整体回滚、返回 400 plan_not_available
+      if (v.role === 'manager' && v.planId && !(await adminAssignPlan(trx, id, v.planId))) {
+        throw planNotAvailable();
+      }
       return this.accountIn(trx, id);
     });
   }
@@ -313,7 +336,7 @@ export class AdminAccountsRepository {
    */
   importAccounts(
     ctx: TenantContext,
-    rows: (AccountImportRow & { tokenHash: Buffer })[],
+    rows: (AccountImportRow & { tokenHash: Buffer; planId?: string | null })[],
     expiresAt: Date,
     commit: boolean,
   ): Promise<ImportResult & { accounts: Map<number, AccountSummary> }> {
@@ -327,6 +350,12 @@ export class AdminAccountsRepository {
         token_hash: r.tokenHash.toString('hex'),
       }));
       const result = await adminImportAccounts(trx, input, expiresAt, commit);
+      // 套餐代码列：写入后在同一事务里分配，不可售时整批回滚
+      const planOf = new Map(rows.map((r) => [r.row, r.planId ?? null]));
+      for (const { row, id } of result.ids) {
+        const planId = planOf.get(row);
+        if (planId && !(await adminAssignPlan(trx, id, planId))) throw planNotAvailable();
+      }
       const accounts = new Map<number, AccountSummary>();
       for (const { row, id } of result.ids) {
         const account = await this.accountIn(trx, id);
@@ -434,9 +463,56 @@ export class AdminAccountsRepository {
       if (code === '23505') throw conflict();
       if (code === 'HB001') throw seatLimitReached({ seatsLeft: 0, needed: 1 });
       if (code === 'HB002') throw hasClients();
+      if (code === 'HB003') throw planNotAvailable();
       if (code === '23514' || code === '22023' || code === '22001') throw badRequest();
       if (code === 'P0002') return undefined as T;
       throw err;
     }
   }
+}
+
+/** 健管师的套餐（没分配的按试点版），其他角色为 null */
+async function managerPlans(
+  trx: TenantTransaction,
+  rows: { id: string; role: string }[],
+): Promise<
+  (r: { id: string; role: string }) => { planId: string | null; planName: string | null }
+> {
+  const managers = rows.filter((r) => r.role === 'manager').map((r) => r.id);
+  const assigned = managers.length
+    ? await trx
+        .selectFrom('user_plans')
+        .select(['user_id', 'plan_id'])
+        .where('user_id', 'in', managers)
+        .execute()
+    : [];
+  const byUser = new Map(assigned.map((a) => [a.user_id, a.plan_id]));
+  // 只读用到的套餐和试点版（最小读取，租户审查 N1）
+  const plans = managers.length
+    ? await trx
+        .selectFrom('plans')
+        .select(['id', 'code', 'name'])
+        .where((eb) =>
+          eb.or([
+            eb('code', '=', PILOT_PLAN_CODE),
+            ...(assigned.length
+              ? [
+                  eb(
+                    'id',
+                    'in',
+                    assigned.map((a) => a.plan_id),
+                  ),
+                ]
+              : []),
+          ]),
+        )
+        .execute()
+    : [];
+  const pilot = plans.find((p) => p.code === PILOT_PLAN_CODE);
+  const byId = new Map(plans.map((p) => [p.id, p.name]));
+  return (r) => {
+    if (r.role !== 'manager') return { planId: null, planName: null };
+    const id = byUser.get(r.id) ?? pilot?.id ?? null;
+    return { planId: id, planName: id ? (byId.get(id) ?? null) : null };
+  };
 }

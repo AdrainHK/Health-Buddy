@@ -13,18 +13,21 @@ import {
   type OperatorInviteRole,
   type OperatorSummary,
   type OrganizationSummary,
+  type Plan,
 } from '@health-buddy/shared';
 import { Button } from '@health-buddy/ui';
 import { Copy, Download, Info, Plus, Upload } from 'lucide-react';
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  assignAccountPlan,
   createOrganization,
   importAccounts,
   inviteAccount,
   inviteLink,
   listAccounts,
   listOrganizations,
+  listPlans,
   myOperator,
   reinviteAccount,
   setAccountSuspended,
@@ -37,6 +40,8 @@ import styles from '../thresholds/Thresholds.module.css';
 type Data = {
   operator: OperatorSummary | null;
   organizations: OrganizationSummary[];
+  /** 本协会可售的套餐（M7 第 4 步） */
+  plans: Plan[];
   accounts: OperatorAccount[];
 };
 type State = { status: 'loading' } | { status: 'error' } | ({ status: 'ready' } & Data);
@@ -47,6 +52,7 @@ type ErrorKey =
   | 'orgBadName'
   | 'orgHasClients'
   | 'seat_limit_reached'
+  | 'plan_not_available'
   | 'has_clients'
   | 'bad_request'
   | 'not_found'
@@ -58,6 +64,7 @@ function errorKey(err: unknown): ErrorKey {
   if (err.code === 'conflict') return 'duplicate';
   if (
     err.code === 'seat_limit_reached' ||
+    err.code === 'plan_not_available' ||
     err.code === 'has_clients' ||
     err.code === 'bad_request' ||
     err.code === 'not_found' ||
@@ -92,13 +99,16 @@ export function AccountsPage({ user }: { user: CurrentUser }) {
   useEffect(() => {
     let cancelled = false;
     const load = async (): Promise<Data> => {
-      if (!manage) return { operator: null, organizations: [], accounts: await listAccounts() };
-      const [operator, organizations, accounts] = await Promise.all([
+      if (!manage) {
+        return { operator: null, organizations: [], plans: [], accounts: await listAccounts() };
+      }
+      const [operator, organizations, accounts, plans] = await Promise.all([
         myOperator(),
         listOrganizations(),
         listAccounts(),
+        listPlans(),
       ]);
-      return { operator, organizations, accounts };
+      return { operator, organizations, accounts, plans };
     };
     load()
       .then((d) => !cancelled && setState({ status: 'ready', ...d }))
@@ -228,6 +238,7 @@ export function AccountsPage({ user }: { user: CurrentUser }) {
                   <th scope="col">{t('accounts.columns.name')}</th>
                   <th scope="col">{t('accounts.columns.role')}</th>
                   {manage && <th scope="col">{t('accounts.columns.org')}</th>}
+                  <th scope="col">{t('accounts.columns.plan')}</th>
                   <th scope="col">{t('accounts.columns.status')}</th>
                   <th scope="col">{t('accounts.columns.lastLogin')}</th>
                   {manage && <th scope="col">{t('accounts.columns.actions')}</th>}
@@ -247,6 +258,39 @@ export function AccountsPage({ user }: { user: CurrentUser }) {
                       </th>
                       <td data-label={t('accounts.columns.role')}>{t(`shell.roles.${a.role}`)}</td>
                       {manage && <td data-label={t('accounts.columns.org')}>{orgName(a.orgId)}</td>}
+                      <td data-label={t('accounts.columns.plan')}>
+                        {manage && a.role === 'manager' && state.plans.length > 0 ? (
+                          <select
+                            aria-label={t('accounts.planLabel', { name: a.displayName })}
+                            value={a.planId ?? ''}
+                            disabled={busy}
+                            onChange={(e) => {
+                              const planId = e.target.value;
+                              if (
+                                !planId ||
+                                !window.confirm(t('accounts.confirmPlan', { name: a.displayName }))
+                              ) {
+                                return;
+                              }
+                              void run(
+                                () => assignAccountPlan(a.id, planId),
+                                t('accounts.planSaved', { name: a.displayName }),
+                              );
+                            }}
+                          >
+                            {!state.plans.some((p) => p.id === a.planId) && (
+                              <option value={a.planId ?? ''}>{a.planName ?? '—'}</option>
+                            )}
+                            {state.plans.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          (a.planName ?? '—')
+                        )}
+                      </td>
                       <td data-label={t('accounts.columns.status')}>
                         {t(`operators.accountStatus.${a.status}`)}
                       </td>
@@ -360,6 +404,7 @@ export function AccountsPage({ user }: { user: CurrentUser }) {
       {dialog === 'invite' && state.status === 'ready' && (
         <InviteDialog
           organizations={state.organizations}
+          plans={state.plans}
           onClose={() => setDialog(null)}
           onInvited={(r) => {
             setDialog(null);
@@ -432,10 +477,12 @@ function OrgDialog({
 
 function InviteDialog({
   organizations,
+  plans,
   onClose,
   onInvited,
 }: {
   organizations: OrganizationSummary[];
+  plans: Plan[];
   onClose: () => void;
   onInvited: (r: InviteResponse) => void;
 }) {
@@ -446,6 +493,7 @@ function InviteDialog({
     email: '',
     role: 'manager' as OperatorInviteRole,
     orgId: '',
+    planId: '',
   });
   const [error, setError] = useState<ErrorKey | 'org_required' | null>(null);
   const [saving, setSaving] = useState(false);
@@ -456,6 +504,7 @@ function InviteDialog({
       ...values,
       email: values.email.trim(),
       orgId: values.orgId || null,
+      planId: values.role === 'manager' && values.planId ? values.planId : null,
     });
     if (!parsed.success) {
       return setError(
@@ -518,6 +567,23 @@ function InviteDialog({
             ))}
           </select>
         </div>
+        {values.role === 'manager' && plans.length > 0 && (
+          <div className={styles.field}>
+            <label htmlFor={`${id}-plan`}>{t('accounts.form.plan')}</label>
+            <select
+              id={`${id}-plan`}
+              value={values.planId}
+              onChange={(e) => set('planId')(e.target.value)}
+            >
+              <option value="">{t('accounts.form.defaultPlan')}</option>
+              {plans.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         {error && (
           <p className={styles.error} role="alert">
             {t(`accounts.errors.${error}`)}

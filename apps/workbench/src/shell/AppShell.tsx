@@ -5,7 +5,9 @@ import type {
   Task,
   TwinLevel,
 } from '@health-buddy/shared';
+import type { PlanFeatures } from '@health-buddy/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { fetchMyPlan } from '../api/plan';
 import { useTranslation } from 'react-i18next';
 import { listExperts } from '../api/experts';
 import { isAbortError } from '../api/http';
@@ -58,6 +60,19 @@ export function AppShell({ account }: AppShellProps = {}) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [resultsOpen, setResultsOpen] = useState(!narrow);
+  // 套餐的功能开关（M7 规格 2.5 第 4 条）：没有的功能不显示入口，后端照样拒绝。读不到时按全开
+  const [features, setFeatures] = useState<PlanFeatures | null>(null);
+  const signedIn = Boolean(account);
+  useEffect(() => {
+    if (!signedIn) return;
+    let cancelled = false;
+    fetchMyPlan()
+      .then((p) => !cancelled && setFeatures(p.features))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [signedIn]);
 
   const [view, setView] = useState<TaskListView>('active');
   const [taskList, setTaskList] = useState<TaskListState>({ status: 'loading', tasks: [] });
@@ -536,8 +551,12 @@ export function AppShell({ account }: AppShellProps = {}) {
               onArchive: archiveTask,
               onRetry: refreshTasks,
             }}
-            experts={{ active: centerView === 'experts', onOpen: openExpertCenter }}
-            library={{ active: centerView === 'library', onOpen: openLibrary }}
+            {...(features?.experts === false
+              ? {}
+              : { experts: { active: centerView === 'experts', onOpen: openExpertCenter } })}
+            {...(features?.care === false
+              ? {}
+              : { library: { active: centerView === 'library', onOpen: openLibrary } })}
             followUps={{
               active: centerView === 'followUps',
               count:

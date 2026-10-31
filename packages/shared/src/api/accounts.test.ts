@@ -13,13 +13,21 @@ describe('批量开通 CSV 解析（M7 规格 2.4）', () => {
     expect(r).toEqual({
       ok: true,
       rows: [
-        { row: 2, displayName: '合成甲', email: 'a@test.example', role: 'manager', orgName: '' },
+        {
+          row: 2,
+          displayName: '合成甲',
+          email: 'a@test.example',
+          role: 'manager',
+          orgName: '',
+          planCode: '',
+        },
         {
           row: 4,
           displayName: '合成,乙',
           email: 'b@test.example',
           role: 'org_admin',
           orgName: '一号机构',
+          planCode: '',
         },
       ],
     });
@@ -34,6 +42,19 @@ describe('批量开通 CSV 解析（M7 规格 2.4）', () => {
       ...Array.from({ length: 201 }, (_, i) => `n${i},e${i}@x.cn,健管师,`),
     ];
     expect(parseAccountCsv(many.join('\n'))).toEqual({ ok: false, error: 'too_many_rows' });
+  });
+});
+
+describe('套餐代码列（M7 第 4 步）', () => {
+  it('第 5 列是套餐代码；表头写错时整份拒绝', () => {
+    const r = parseAccountCsv(
+      '姓名,邮箱,角色,机构名称,套餐代码\n合成甲,a@test.example,健管师,,basic\n',
+    );
+    expect(r).toMatchObject({ ok: true, rows: [{ row: 2, planCode: 'basic' }] });
+    expect(parseAccountCsv('姓名,邮箱,角色,机构名称,套餐\nx,y,z,,w')).toEqual({
+      ok: false,
+      error: 'bad_header',
+    });
   });
 });
 

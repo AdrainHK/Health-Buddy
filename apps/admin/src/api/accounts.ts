@@ -208,3 +208,11 @@ export async function setOperatorPlans(operatorId: string, planIds: string[]): P
     )
   ).planIds;
 }
+
+/** 协会给本协会的健管师换套餐（只能选可售的） */
+export async function assignAccountPlan(accountId: string, planId: string): Promise<void> {
+  await apiRequest(`/admin/accounts/${encodeURIComponent(accountId)}`, null, {
+    method: 'PATCH',
+    body: { planId },
+  });
+}

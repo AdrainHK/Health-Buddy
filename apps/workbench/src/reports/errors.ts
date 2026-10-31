@@ -1,6 +1,7 @@
 import { ApiError } from '../api/http';
 
 export type UploadErrorKey =
+  | 'quotaExceeded'
   | 'notConfigured'
   | 'unsupportedType'
   | 'fileTooLarge'
@@ -27,6 +28,8 @@ export function uploadErrorKey(err: unknown): UploadErrorKey {
     if (err.reasons.includes('too_many_pages')) return 'tooManyPages';
     return 'fileTooLarge';
   }
+  // 套餐的本月识别页数用完（M7 规格 2.5）：提示人工查看原件
+  if (err.code === 'quota_exceeded') return 'quotaExceeded';
   if (err.status === 429)
     return err.reasons.includes('daily_page_limit') ? 'dailyLimit' : 'tooMany';
   if (err.status === 409) {

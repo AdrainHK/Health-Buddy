@@ -37,7 +37,8 @@ type ScreenshotError =
   | 'unsupported'
   | 'notConfigured'
   | 'notFound'
-  | 'busy';
+  | 'busy'
+  | 'quotaExceeded';
 
 function screenshotError(err: unknown): ScreenshotError | 'consent' {
   if (!(err instanceof ApiError)) return 'error';
@@ -50,6 +51,8 @@ function screenshotError(err: unknown): ScreenshotError | 'consent' {
   if (err.status === 400 && err.reasons.includes(VISIT_MATERIAL_CONSENT_REQUIRED)) return 'consent';
   if (err.status === 413) return err.reasons.includes('too_many_files') ? 'tooMany' : 'tooLarge';
   if (err.status === 415) return 'unsupported';
+  // 套餐的本月 AI 调用额度用完（M7 规格 2.5）：提示人工查看截图
+  if (err.code === 'quota_exceeded') return 'quotaExceeded';
   if (err.status === 429) return 'busy';
   if (err.code === 'not_configured') return 'notConfigured';
   if (err.status === 404) return 'notFound';

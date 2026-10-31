@@ -15,6 +15,21 @@ import type {
   TwinTimelineResponse,
 } from '@health-buddy/shared';
 
+/** 合成的试点版套餐：全部功能开、额度不另设上限 */
+const PILOT_PLAN = {
+  code: 'pilot',
+  name: '试点版',
+  features: { experts: true, twin: true, care: true, companion: true },
+  monthlyQuotas: {
+    llm_calls: null,
+    expert_calls: null,
+    report_pages: null,
+    companion_devices: null,
+  },
+  contractEnd: null,
+  usage: { llm_calls: 0, expert_calls: 0, report_pages: 0, companion_devices: 0 },
+};
+
 /**
  * M4 工作台孪生（规格 2.1–2.6，验收标准 1、12、31）在手机宽度（375px）下：
  * 左侧栏点客户 → 底部面板打开“客户 · 孪生” → 点小图看大图；今日跟进 → 处理一项。
@@ -435,6 +450,9 @@ async function mockApi(page: Page) {
       switch (true) {
         case key === 'GET /api/auth/me':
           return json(route, { user });
+        // 套餐（M7 第 4 步）：试点版，全部功能开
+        case key === 'GET /api/me/plan':
+          return json(route, { plan: PILOT_PLAN });
         case key === 'GET /api/tasks':
           return json(route, { tasks: url.search ? [] : [task] });
         case key === 'GET /api/clients':
