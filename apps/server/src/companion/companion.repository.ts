@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { quotaCompanionDeviceOk } from '../db/plans.js';
 import {
   COMPANION_ONLINE_WINDOW_MS,
   companionStatusOf,
@@ -31,7 +32,12 @@ import { verifyActivationCode, verifyAgainstDummyCode } from './device-credentia
  */
 
 export type BindResult =
-  CompanionOverview | 'not_found' | 'already_bound' | 'no_consent' | 'unavailable';
+  | CompanionOverview
+  | 'not_found'
+  | 'already_bound'
+  | 'no_consent'
+  | 'unavailable'
+  | 'quota_exceeded';
 export type DeviceActionResult = CompanionOverview | 'not_found' | 'no_device' | 'invalid_state';
 export type ConsentResult =
   CompanionOverview | 'not_found' | 'unknown_notice' | 'future_date' | 'bad_date' | 'not_consented';
@@ -149,6 +155,8 @@ export class CompanionRepository {
     if (!candidate || !codeOk) return 'unavailable';
 
     return withTenant(this.db, ctx, async (trx) => {
+      // 套餐的伴侣设备数上限（M7 规格 2.5）；不涉及危机处理，不放行
+      if (!(await quotaCompanionDeviceOk(trx))) return 'quota_exceeded' as const;
       const result = await bindCompanionDevice(trx, candidate.id, clientId);
       if (result !== 'ok') {
         return result === 'not_found' || result === 'already_bound' || result === 'no_consent'

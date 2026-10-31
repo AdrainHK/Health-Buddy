@@ -7,6 +7,7 @@ import {
   type AccountSummary,
   type InviteResponse,
   type OperatorSummary,
+  type Plan,
 } from '@health-buddy/shared';
 import { Button } from '@health-buddy/ui';
 import { Copy, Info, Plus } from 'lucide-react';
@@ -14,12 +15,15 @@ import { useEffect, useId, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   createOperator,
+  getOperatorPlans,
   inviteLink,
   inviteOperatorAdmin,
   listOperatorAccounts,
   listOperators,
+  listPlans,
   reinviteAccount,
   setAccountSuspended,
+  setOperatorPlans,
   setOperatorSuspended,
   updateOperator,
 } from '../api/accounts';
@@ -394,6 +398,8 @@ function DetailDialog({
         </div>
       </form>
 
+      <SellablePlans operatorId={operator.id} />
+
       <h3 className={styles.dialogTitle}>{t('operators.statusTitle')}</h3>
       {operator.status === 'active' ? (
         <div className={styles.form}>
@@ -587,5 +593,84 @@ export function InviteLink({ invite }: { invite: InviteResponse }) {
         </Button>
       </div>
     </div>
+  );
+}
+
+/** 协会可售的套餐（M7 规格 2.1、2.5）：只能选在售的；已分配给账号的套餐即使取消可售也保留 */
+function SellablePlans({ operatorId }: { operatorId: string }) {
+  const { t } = useTranslation();
+  const [plans, setPlans] = useState<Plan[] | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([listPlans(), getOperatorPlans(operatorId)])
+      .then(([all, ids]) => {
+        if (cancelled) return;
+        setPlans(all);
+        setSelected(new Set(ids));
+      })
+      .catch(() => !cancelled && setStatus('error'));
+    return () => {
+      cancelled = true;
+    };
+  }, [operatorId]);
+
+  if (!plans) return null;
+  const choosable = plans.filter((p) => p.status === 'active' || selected.has(p.id));
+  return (
+    <fieldset className={styles.field} data-testid="sellable-plans">
+      <legend>{t('operators.plansTitle')}</legend>
+      {choosable.map((p) => (
+        <label key={p.id} className={styles.checkbox}>
+          <input
+            type="checkbox"
+            checked={selected.has(p.id)}
+            disabled={p.status !== 'active'}
+            onChange={(e) => {
+              setStatus('idle');
+              setSelected((cur) => {
+                const next = new Set(cur);
+                if (e.target.checked) next.add(p.id);
+                else next.delete(p.id);
+                return next;
+              });
+            }}
+          />
+          {p.name}
+        </label>
+      ))}
+      <small className={styles.hint}>{t('operators.plansHint')}</small>
+      {status === 'saved' && (
+        <p className={styles.notice} role="status">
+          {t('operators.plansSaved')}
+        </p>
+      )}
+      {status === 'error' && (
+        <p className={styles.error} role="alert">
+          {t('operators.errors.unknown')}
+        </p>
+      )}
+      <div className={styles.dialogActions}>
+        <Button
+          disabled={status === 'saving'}
+          onClick={() => {
+            setStatus('saving');
+            setOperatorPlans(
+              operatorId,
+              [...selected].filter((id) => plans.some((p) => p.id === id && p.status === 'active')),
+            )
+              .then((ids) => {
+                setSelected(new Set(ids));
+                setStatus('saved');
+              })
+              .catch(() => setStatus('error'));
+          }}
+        >
+          {t('operators.plansSave')}
+        </Button>
+      </div>
+    </fieldset>
   );
 }

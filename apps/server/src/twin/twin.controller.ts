@@ -1,3 +1,4 @@
+import { PlanFeatureGuard, RequiresFeature } from '../plans/plan-feature.guard.js';
 import {
   Body,
   Controller,
@@ -8,6 +9,7 @@ import {
   Param,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import {
   createMonitoringReadingRequestSchema,
@@ -64,6 +66,9 @@ function normalizeTimelineQuery(query: Record<string, unknown>) {
  * 客户数字孪生接口（M4 规格 7.4）。孪生接口只读已算好的结果，不调用大模型，
  * 不计入每分钟 20 次的大模型调用上限。别人的客户一律 404。
  */
+// 套餐没有数字孪生时，健管师的写操作 403（M7 规格 2.5 第 4 条），只读照常
+@UseGuards(PlanFeatureGuard)
+@RequiresFeature('twin')
 @Controller()
 export class TwinController {
   constructor(

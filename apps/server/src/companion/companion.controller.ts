@@ -1,3 +1,4 @@
+import { PlanFeatureGuard, RequiresFeature } from '../plans/plan-feature.guard.js';
 import {
   Body,
   Controller,
@@ -9,6 +10,7 @@ import {
   Post,
   Put,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import {
   bindCompanionDeviceRequestSchema,
@@ -48,6 +50,7 @@ import {
   tooManyRequests,
 } from '../common/api-error.js';
 import { requireManager } from '../common/manager-only.js';
+import { quotaExceeded } from '../plans/quota.service.js';
 import type { Role } from '../db/types.js';
 import { CheckinsRepository, type CheckinPlanResult } from './checkins.repository.js';
 import { CompanionAdminRepository } from './companion-admin.repository.js';
@@ -146,6 +149,9 @@ export class CompanionController {
     return consentResult(result);
   }
 
+  // 套餐没有 AI 健康伴侣时不能绑定新设备（M7 规格 2.5 第 4 条）。撤回同意、解绑、处理预警不受限
+  @UseGuards(PlanFeatureGuard)
+  @RequiresFeature('companion')
   @Post('clients/:id/companion/device')
   @HttpCode(200)
   async bind(
@@ -165,6 +171,7 @@ export class CompanionController {
     }
     if (result === 'already_bound') throw conflict({ reasons: ['already_bound'] });
     if (result === 'no_consent') throw conflict({ reasons: ['no_consent'] });
+    if (result === 'quota_exceeded') throw quotaExceeded('companion_devices');
     return result;
   }
 

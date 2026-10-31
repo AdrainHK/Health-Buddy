@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { quotaConsume } from '../db/plans.js';
 import type { ExpertCallResult } from '@health-buddy/ai-engine';
 import {
   expertOpinionSchema,
@@ -189,6 +190,10 @@ export class ExpertsRepository {
       if (calls.length) {
         await lockExpertQuota(trx, ctx.userId);
         if ((await countToday(trx)) + calls.length > dailyLimit) throw new ExpertQuotaExceeded();
+        // 套餐的每月专家调用额度（M7 规格 2.5），和每日技术上限在同一个事务里，回滚时一起撤销
+        if (!(await quotaConsume(trx, 'expert_calls', calls.length, false))) {
+          throw new ExpertQuotaExceeded();
+        }
       }
       const row = await trx
         .insertInto('expert_consultations')

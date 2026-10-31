@@ -1,4 +1,5 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Put } from '@nestjs/common';
+import { PlanFeatureGuard, RequiresFeature } from '../plans/plan-feature.guard.js';
+import { Body, Controller, Get, HttpCode, Param, Patch, Put, UseGuards } from '@nestjs/common';
 import { expertDetail, expertSummary, getExpert, isAvailable } from '@health-buddy/experts';
 import {
   EXPERT_ID_PATTERN,
@@ -35,6 +36,9 @@ function parseExpertId(id: string): string {
  * 专家调用、意见、反馈只对健管师本人开放，别人的一律 404。
  * 专家只面向健管师和后台账号，客户角色（M6 起）没有任何专家接口（规格 7.2 第 2 条）。
  */
+// 套餐没有专家中心时，健管师的写操作 403（M7 规格 2.5 第 4 条），只读照常
+@UseGuards(PlanFeatureGuard)
+@RequiresFeature('experts')
 @Controller()
 export class ExpertsController {
   constructor(

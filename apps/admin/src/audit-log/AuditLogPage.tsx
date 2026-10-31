@@ -35,6 +35,9 @@ const FIELDS = [
   'brand_color',
   'login_greeting',
   'logo',
+  'plans',
+  'plan',
+  'code',
 ] as const;
 
 function show(v: unknown): string {

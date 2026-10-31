@@ -30,6 +30,12 @@ export const API_ERROR_CODES = [
   'seat_limit_reached',
   /** 账号还能看到客户明细：名下有客户的健管师不能停用、不能重发邀请，有客户的机构不能新开机构管理员（M7 Q8），HTTP 409 */
   'has_clients',
+  /** 本月套餐额度用完（M7 规格 2.5 第 3 条），HTTP 429；带 metric。危机、急症的处理不受限制 */
+  'quota_exceeded',
+  /** 套餐里没有这个功能（M7 规格 2.5 第 4 条），HTTP 403；带 feature。已有数据仍可查看 */
+  'plan_feature_disabled',
+  /** 套餐不在本协会可售范围或已停售，HTTP 400 */
+  'plan_not_available',
   'internal_error',
 ] as const;
 

@@ -13,6 +13,7 @@ import {
 } from '@health-buddy/shared';
 import {
   PLAN_TEMPLATES,
+  detectCrisisKeywords,
   getPlanTemplate,
   getSkill,
   skillUsesReport,
@@ -30,6 +31,7 @@ import { ConsultationService } from '../experts/consultation.service.js';
 import { ExpertsRepository } from '../experts/experts.repository.js';
 import { GenerationService, type SkillExpertOptions, type TurnIo } from './generation.service.js';
 import { GenerationRegistry } from './generation-registry.js';
+import { planFeatureDisabled, QuotaService } from '../plans/quota.service.js';
 import { LLM_RATE_LIMITER, type LlmRateLimiter } from './llm-rate-limiter.js';
 import { WorkbenchRepository, type RegenerationContext } from './workbench.repository.js';
 
@@ -69,6 +71,7 @@ export class WorkbenchController {
     @Inject(LLM_RATE_LIMITER) private readonly limiter: LlmRateLimiter,
     private readonly consultation: ConsultationService,
     private readonly experts: ExpertsRepository,
+    private readonly quota: QuotaService,
   ) {}
 
   @Post('tasks/:id/messages')
@@ -139,7 +142,8 @@ export class WorkbenchController {
       skill?.planContext === 'care_plan' ||
       Boolean(plan?.skills.some((id) => getSkill(id)?.planContext === 'care_plan'));
     const planOptions = makesPlan ? planOptionsSchema.parse(input.planOptions ?? {}) : null;
-    this.acquire(session);
+    // 危机、急症的说法不受套餐额度限制（M7 规格 2.5 第 3 条，红线 4）：照常生成，固定话术和置顶照常出现
+    await this.acquire(session, detectCrisisKeywords([input.content]));
 
     const turn = await this.claim(session, (claim) =>
       this.repo.prepareTurn(
@@ -240,6 +244,13 @@ export class WorkbenchController {
     plan: PlanTemplate | undefined,
   ): Promise<boolean> {
     const { expertRefs, excludedExperts } = input;
+    // 套餐没有专家中心：直接 @专家、“请专家看看”403（M7 规格 2.5 第 4 条，验收 8）
+    if (
+      (expertRefs.length || input.twinConsult) &&
+      !(await this.quota.featureEnabled(session, 'experts'))
+    ) {
+      throw planFeatureDisabled('experts');
+    }
     if (expertRefs.length || excludedExperts.length) {
       if (plan) throw badRequest();
       if (skill && skill.experts !== 'auto') throw badRequest();
@@ -280,7 +291,7 @@ export class WorkbenchController {
     requireManager(session);
     const taskId = parseId(id);
     const plan = parseId(planId);
-    this.acquire(session);
+    await this.acquire(session);
     const run = await this.claim(session, (claim) =>
       this.repo.confirmPlan(
         session,
@@ -323,7 +334,7 @@ export class WorkbenchController {
       if (!this.consultation.preview) throw badRequest();
       if ((await this.consultation.remainingToday(session)) <= 0) throw tooManyRequests();
     }
-    this.acquire(session);
+    await this.acquire(session);
     const run = await this.claim(session, (claim) =>
       this.repo.returnArtifact(session, artifactId, parsed.data.reason, claim, (skillId) => [
         skillId,
@@ -372,7 +383,7 @@ export class WorkbenchController {
     if (excluded.some((e) => !getExpert(e))) throw notFound();
     const remaining = await this.consultation.remainingToday(session);
     if (direct ? remaining < forced.length : remaining <= 0) throw tooManyRequests();
-    this.acquire(session);
+    await this.acquire(session);
     // 带孪生项的调用（“请专家看看”，或问一问里同时 @专家 和 @孪生项）重新请时沿用原来的孪生项；
     // “请专家看看”依据的是孪生，不要求报告，只按规则路由
     const twinData = original.twinRefs.length > 0;
@@ -425,7 +436,7 @@ export class WorkbenchController {
     if (!original.routing.overCap.includes(expertId)) throw badRequest();
     if (!(await this.consultation.allAvailable(session, [expertId]))) throw notFound();
     if ((await this.consultation.remainingToday(session)) < 1) throw tooManyRequests();
-    this.acquire(session);
+    await this.acquire(session);
     const turn = await this.claim(session, (claim) =>
       this.repo.prepareFollowUp(session, original.id, claim, { requiresReport: false }),
     );
@@ -501,8 +512,10 @@ export class WorkbenchController {
     });
   }
 
-  private acquire(session: ResolvedSession): void {
+  /** 技术性上限（每分钟次数）之外，再记一次套餐的大模型调用额度（M7 规格 2.5），超额 429 quota_exceeded */
+  private async acquire(session: ResolvedSession, crisis = false): Promise<void> {
     if (!this.limiter.tryAcquire(session.userId)) throw tooManyRequests();
+    await this.quota.consume(session, 'llm_calls', 1, { bypass: crisis });
   }
 
   /**

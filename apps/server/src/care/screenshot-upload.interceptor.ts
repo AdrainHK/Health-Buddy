@@ -13,6 +13,7 @@ import { z } from 'zod';
 import type { AuthedRequest } from '../auth/decorators.js';
 import { badRequest, notFound, payloadTooLarge, tooManyRequests } from '../common/api-error.js';
 import { LLM_RATE_LIMITER, type LlmRateLimiter } from '../workbench/llm-rate-limiter.js';
+import { QuotaService } from '../plans/quota.service.js';
 import { VisitMaterialsRepository } from './visit-materials.repository.js';
 
 /** 上传表单里截图字段的名称 */
@@ -39,6 +40,7 @@ export class ScreenshotUploadInterceptor implements NestInterceptor {
   constructor(
     @Inject(LLM_RATE_LIMITER) private readonly limiter: LlmRateLimiter,
     private readonly materials: VisitMaterialsRepository,
+    private readonly quota: QuotaService,
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
@@ -56,6 +58,8 @@ export class ScreenshotUploadInterceptor implements NestInterceptor {
         throw notFound();
       }
       if (!this.limiter.tryAcquire(session.userId)) throw tooManyRequests();
+      // 截图转写调用大模型，计入套餐的大模型调用额度（M7 规格 2.5）
+      await this.quota.consume(session, 'llm_calls');
       await new Promise<void>((resolve, reject) => {
         this.parse(req, res, (err: unknown) => (err ? reject(toApiError(err)) : resolve()));
       });
