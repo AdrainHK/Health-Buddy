@@ -12,6 +12,21 @@ import type {
   TaskStreamEvent,
 } from '@health-buddy/shared';
 
+/** 合成的试点版套餐：全部功能开、额度不另设上限 */
+const PILOT_PLAN = {
+  code: 'pilot',
+  name: '试点版',
+  features: { experts: true, twin: true, care: true, companion: true },
+  monthlyQuotas: {
+    llm_calls: null,
+    expert_calls: null,
+    report_pages: null,
+    companion_devices: null,
+  },
+  contractEnd: null,
+  usage: { llm_calls: 0, expert_calls: 0, report_pages: 0, companion_devices: 0 },
+};
+
 /**
  * M3 工作台界面在手机宽度（375px）下：专家库 → 向专家提问 → 执行步骤和回答；任务里 @专家；
  * 专家标签的危机提示。接口全部在浏览器里模拟，只用合成数据；长名称检查不会把页面撑宽。
@@ -276,6 +291,9 @@ async function mockApi(page: Page, { followUp = false } = {}): Promise<Mock> {
       switch (true) {
         case key === 'GET /api/auth/me':
           return json(route, { user });
+        // 套餐（M7 第 4 步）：试点版，全部功能开
+        case key === 'GET /api/me/plan':
+          return json(route, { plan: PILOT_PLAN });
         case key === 'GET /api/tasks':
           return json(route, { tasks });
         case key === 'GET /api/tasks?archived=true':
