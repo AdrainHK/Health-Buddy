@@ -140,6 +140,7 @@ export type ImportRowInput = {
   token_hash: string;
 };
 export type ImportResult = {
+  committed: boolean;
   errors: { row: number; code: string }[];
   seats_left: number;
   needed: number;

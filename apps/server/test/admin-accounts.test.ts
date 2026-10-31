@@ -167,6 +167,12 @@ describe('协会和账号开通', () => {
     const m = await as(f.users.managerA2.email);
     await platform.post(`/api/admin/accounts/${f.users.managerA2.id}/suspend`).expect(200);
     await m.get('/api/auth/me').expect(401);
+    // 恢复健管师要重新占一个席位（夹具的席位数是 0）
+    await owner
+      .updateTable('operators')
+      .set({ seat_limit: 10 } as never)
+      .where('id', '=', f.operatorA)
+      .execute();
     const back = await platform
       .post(`/api/admin/accounts/${f.users.managerA2.id}/resume`)
       .expect(200);

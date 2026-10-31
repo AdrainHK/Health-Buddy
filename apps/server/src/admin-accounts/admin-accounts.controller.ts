@@ -344,10 +344,13 @@ export class AdminAccountsController {
     ].sort((a, b) => a.row - b.row);
     const needed = rows.filter((r) => r.role === 'manager').length;
     const seats = { seatsLeft: result.seats_left, needed };
-    if (rowErrors.length > 0) {
-      throw new ApiException(HttpStatus.BAD_REQUEST, 'bad_request', { rowErrors, ...seats });
+    // 以数据库是否写入为准：写入后的 seats_left 已扣减，不能再拿来比（租户审查 B1）
+    if (!result.committed) {
+      if (rowErrors.length > 0) {
+        throw new ApiException(HttpStatus.BAD_REQUEST, 'bad_request', { rowErrors, ...seats });
+      }
+      throw seatLimitReached(seats);
     }
-    if (needed > result.seats_left) throw seatLimitReached(seats);
     return {
       invites: [...result.accounts].map(([row, account]) => ({
         row,

@@ -275,6 +275,100 @@ describe('协会开通机构和账号', () => {
     await opA.post(`/api/admin/accounts/${f.users.operatorAdminA.id}/suspend`).expect(400);
   });
 
+  it('租户审查 B1：剩余席位正好等于导入的健管师数时写入成功，返回全部链接', async () => {
+    await setSeats(f.operatorA, 5);
+    const res = await opA
+      .post('/api/admin/accounts/import')
+      .send({ rows: [row(2), row(3)] })
+      .expect(201);
+    expect(res.body.invites).toHaveLength(2);
+    expect(await usersWithEmail('m7-batch-%')).toHaveLength(2);
+  });
+
+  it('租户审查 B2：席位满时不能恢复停用的健管师；有空位后可以', async () => {
+    await setSeats(f.operatorA, 3);
+    expect(
+      (await opA.post(`/api/admin/accounts/${f.users.disabledManagerA.id}/resume`).expect(409)).body
+        .error,
+    ).toBe('seat_limit_reached');
+    const platform = await as(f.users.platform.email);
+    await platform.post(`/api/admin/accounts/${f.users.disabledManagerA.id}/resume`).expect(409);
+    await setSeats(f.operatorA, 4);
+    await opA.post(`/api/admin/accounts/${f.users.disabledManagerA.id}/resume`).expect(200);
+  });
+
+  it('租户审查 B3：客户转出后仍留有服务记录的健管师不能重发邀请；只是停用可以', async () => {
+    await owner
+      .updateTable('clients')
+      .set({ manager_id: f.users.managerA1.id } as never)
+      .where('id', '=', f.clients.a2)
+      .execute();
+    // A2 名下没有客户了，但留着一条和客户相关的任务（客户转出时任务归档、不删除）
+    await owner
+      .insertInto('tasks' as never)
+      .values({
+        operator_id: f.operatorA,
+        org_id: f.orgA,
+        manager_id: f.users.managerA2.id,
+        title: '合成历史任务',
+        archived_at: new Date(),
+        detached_reason: 'client_transferred',
+      } as never)
+      .execute();
+    expect(
+      (await opA.post(`/api/admin/accounts/${f.users.managerA2.id}/reinvite`).expect(409)).body,
+    ).toEqual({ error: 'has_clients' });
+    await opA.post(`/api/admin/accounts/${f.users.managerA2.id}/suspend`).expect(200);
+  });
+
+  it('Q16：平台不能代办协会开机构和账号（接口 403，数据库函数 42501）', async () => {
+    const platform = await as(f.users.platform.email);
+    await platform.get('/api/admin/my-operator').expect(403);
+    await platform.get('/api/admin/organizations').expect(403);
+    await platform.post('/api/admin/organizations').send({ name: '平台代办机构' }).expect(403);
+    await platform.get('/api/admin/accounts').expect(403);
+    await platform
+      .post('/api/admin/accounts')
+      .send({ displayName: 'x', email: 'm7-pf@test.example', role: 'manager', orgId: null })
+      .expect(403);
+    await platform
+      .post('/api/admin/accounts/import')
+      .send({ rows: [row(2)] })
+      .expect(403);
+    const db = app.get<Db>(DB);
+    const ctx = {
+      userId: f.users.platform.id,
+      role: 'platform_admin' as const,
+      operatorId: null,
+      orgId: null,
+    };
+    const exp = new Date(Date.now() + 3_600_000);
+    for (const q of [
+      sql`select admin_create_organization('平台代办')`,
+      sql`select admin_import_accounts('[]'::jsonb, ${exp}, true)`,
+      sql`select * from admin_client_counts()`,
+    ]) {
+      await expect(withTenant(db, ctx, (trx) => q.execute(trx))).rejects.toMatchObject({
+        code: '42501',
+      });
+    }
+    // 机构管理员的会话同样被拒绝
+    const ctxOrg = {
+      userId: f.users.orgAdminA.id,
+      role: 'org_admin' as const,
+      operatorId: f.operatorA,
+      orgId: f.orgA,
+    };
+    for (const q of [
+      sql`select admin_create_organization('机构代办')`,
+      sql`select admin_import_accounts('[]'::jsonb, ${exp}, true)`,
+    ]) {
+      await expect(withTenant(db, ctxOrg, (trx) => q.execute(trx))).rejects.toMatchObject({
+        code: '42501',
+      });
+    }
+  });
+
   it('列表：运营商管理员看本协会账号和客户数；机构管理员只看本机构、只读；健管师 403', async () => {
     const list = (await opA.get('/api/admin/accounts').expect(200)).body.accounts as {
       id: string;
@@ -334,6 +428,10 @@ describe('协会开通机构和账号', () => {
       .post('/api/admin/accounts')
       .send({ displayName: '合成', email: 'm7-x2@test.example', role: 'org_admin', orgId: f.orgB })
       .expect(404);
+    await opA
+      .post('/api/admin/accounts/import')
+      .send({ rows: [row(2, { orgName: '测试机构B' }), row(3, { orgName: f.orgB })] })
+      .expect(400);
     for (const action of ['suspend', 'resume', 'reinvite']) {
       await opA.post(`/api/admin/accounts/${f.users.managerB1.id}/${action}`).expect(404);
       await opA.post(`/api/admin/accounts/${f.users.operatorAdminB.id}/${action}`).expect(404);
