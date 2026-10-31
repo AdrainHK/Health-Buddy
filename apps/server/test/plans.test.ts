@@ -4,6 +4,7 @@ import type {
   Provider,
   ResolvedRoute,
 } from '@health-buddy/ai-engine';
+import { EMERGENCY_NOTICE } from '@health-buddy/shared';
 import { CRISIS_NOTICE } from '@health-buddy/skills';
 import type { INestApplication } from '@nestjs/common';
 import { sql } from 'kysely';
@@ -265,35 +266,70 @@ describe('套餐和额度', () => {
     ).rejects.toMatchObject({ code: '42501' });
   });
 
-  it('验收 9：大模型调用额度用完后 429 quota_exceeded，不调用模型；危机说法照常生成并带固定提示', async () => {
+  it('验收 9：大模型额度用完后不调用模型、返回 quota_exceeded；危机、急症（含之前的消息里出现过的）照常生成', async () => {
     await assignA1({ monthlyQuotas: { ...NO_QUOTAS, llm_calls: 1 } });
     const m = await as(f.users.managerA1.email);
     const taskId = await newTask(m);
     await ask(m, taskId, '高血压客户的运动建议有哪些').expect(200);
     const before = provider.calls;
-    const res = await ask(m, taskId, '再说详细一点').expect(429);
-    expect(res.body).toEqual({ error: 'quota_exceeded', metric: 'llm_calls' });
+    const res = await ask(m, taskId, '再说详细一点').expect(200);
+    expect(res.text).toContain('"kind":"quota_exceeded"');
     expect(provider.calls).toBe(before);
-    // 危机：不受额度限制（红线 4）
+    // 危机：不受额度限制（红线 4），固定提示照常出现
     const crisis = await ask(m, taskId, '客户说活不下去了，怎么办').expect(200);
     expect(crisis.text).toContain(CRISIS_NOTICE);
+    expect(provider.calls).toBe(before + 1);
+    // 同一任务之前出现过危机说法：后续追问同样放行（生成时的信号来源包括之前的消息）
+    const follow = await ask(m, taskId, '接下来怎么跟进').expect(200);
+    expect(follow.text).not.toContain('quota_exceeded');
+    expect(follow.text).toContain(CRISIS_NOTICE);
+    // 疑似急症同样放行
+    const urgent = await ask(m, await newTask(m), '客户说胸口剧痛、喘不上气，怎么办').expect(200);
+    expect(urgent.text).toContain(EMERGENCY_NOTICE);
+    expect(urgent.text).not.toContain('quota_exceeded');
     // 别的健管师（试点版，不另设额度）不受影响
     const other = await as(f.users.managerA2.email);
     await ask(other, await newTask(other), '你好').expect(200);
 
-    // 验收 10：我的账号
+    // 验收 10：我的账号（放行的危机、急症照常记数）
     const plan = (await m.get('/api/me/plan').expect(200)).body.plan;
     expect(plan).toMatchObject({
       code: 'basic',
       name: '合成基础版',
       monthlyQuotas: { llm_calls: 1 },
-      usage: { llm_calls: 2, expert_calls: 0, report_pages: 0 },
+      usage: { llm_calls: 4, expert_calls: 0, report_pages: 0 },
     });
     expect((await other.get('/api/me/plan').expect(200)).body.plan).toMatchObject({
       code: 'pilot',
       name: '试点版',
     });
     await opA.get('/api/me/plan').expect(403);
+  });
+
+  it('伴侣设备数、专家额度：超额时返回 quota_exceeded，专家额度在路由之前就停下', async () => {
+    await assignA1({ monthlyQuotas: { ...NO_QUOTAS, expert_calls: 0, companion_devices: 0 } });
+    const db = app.get<Db>(DB);
+    const ctx = {
+      userId: f.users.managerA1.id,
+      role: 'manager' as const,
+      operatorId: f.operatorA,
+      orgId: f.orgA,
+    };
+    const remaining = await withTenant(db, ctx, (trx) =>
+      sql<{ n: string }>`select quota_remaining('expert_calls') as n`.execute(trx),
+    );
+    expect(Number(remaining.rows[0]!.n)).toBe(0);
+    const ok = await withTenant(db, ctx, (trx) =>
+      sql<{ ok: boolean }>`select quota_companion_device_ok() as ok`.execute(trx),
+    );
+    expect(ok.rows[0]!.ok).toBe(false);
+    // 非健管师会话不计、不受限
+    const ctxOrg = { ...ctx, userId: f.users.orgAdminA.id, role: 'org_admin' as const };
+    const free = await withTenant(db, ctxOrg, (trx) =>
+      sql<{ ok: boolean }>`select quota_consume('llm_calls', 1, false) as ok`.execute(trx),
+    );
+    expect(free.rows[0]!.ok).toBe(true);
+    expect(await owner.selectFrom('quota_usage_daily').selectAll().execute()).toEqual([]);
   });
 
   it('额度并发：两个请求同时用最后 1 次额度，只成功一个', async () => {
@@ -338,6 +374,12 @@ describe('套餐和额度', () => {
       .post(`/api/tasks/${taskId}/messages`)
       .send({ mode: 'ask', content: '请看看', expertRefs: ['nutrition'] })
       .expect(403);
+    // 有危机说法时不拦：当作没请专家，危机提示照常出现（红线 4）
+    const crisis = await m
+      .post(`/api/tasks/${taskId}/messages`)
+      .send({ mode: 'ask', content: '客户说不想活了，请专家看看', expertRefs: ['nutrition'] })
+      .expect(200);
+    expect(crisis.text).toContain(CRISIS_NOTICE);
     // 别的健管师（试点版）不受影响：同样的请求按正常流程处理（参数或对象不对），不是 403
     const other = await as(f.users.managerA2.email);
     const res = await other

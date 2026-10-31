@@ -10,8 +10,8 @@ const PLAN_FEATURE = 'hb:plan-feature';
 export const RequiresFeature = (feature: PlanFeature) => SetMetadata(PLAN_FEATURE, feature);
 
 /**
- * 套餐里没有这个功能时，健管师的写操作（非 GET）返回 403 plan_feature_disabled。
- * 只读请求照常放行：已有的数据仍可查看（规格 2.5 第 4 条）。其他角色不受套餐限制。
+ * 套餐里没有这个功能时，健管师的新增和修改返回 403 plan_feature_disabled。
+ * 只读和删除照常放行：已有的数据仍可查看、可以删除（规格 2.5 第 4 条）。其他角色不受套餐限制。
  */
 @Injectable()
 export class PlanFeatureGuard implements CanActivate {
@@ -27,7 +27,8 @@ export class PlanFeatureGuard implements CanActivate {
     ]);
     if (!feature) return true;
     const req = context.switchToHttp().getRequest<AuthedRequest>();
-    if (req.method === 'GET' || req.method === 'HEAD') return true;
+    // 删除也放行：删除素材、撤销手动调整属于数据最小化和纠错（租户审查 N3）
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'DELETE') return true;
     const session = req.session;
     if (!session || session.role !== 'manager') return true;
     if (!(await this.quota.featureEnabled(session, feature))) throw planFeatureDisabled(feature);

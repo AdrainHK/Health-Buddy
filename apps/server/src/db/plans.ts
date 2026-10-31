@@ -91,3 +91,14 @@ export async function myPlan(trx: TenantTransaction): Promise<MyPlanRow | undefi
   const { rows } = await sql<MyPlanRow>`select * from my_plan()`.execute(trx);
   return rows[0];
 }
+
+/** 本月剩余额度（null 为不另设上限） */
+export async function quotaRemaining(
+  trx: TenantTransaction,
+  metric: MeteredQuota,
+): Promise<number | null> {
+  const { rows } = await sql<{ n: string | null }>`select quota_remaining(${metric}) as n`.execute(
+    trx,
+  );
+  return rows[0]?.n === null || rows[0]?.n === undefined ? null : Number(rows[0].n);
+}

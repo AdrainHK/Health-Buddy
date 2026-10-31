@@ -221,6 +221,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       select * into u from users where id = p_user and operator_id = v_op and role = 'manager'
         for update;
       if not found then return false; end if;
+      -- 和停售并发时不分配出刚停售的套餐（租户审查 N4）
+      perform 1 from plans where id = p_plan for share;
       if not plan_sellable(v_op, p_plan) then
         raise exception 'plan not available' using errcode = 'HB003';
       end if;
@@ -284,13 +286,32 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     end
     $$;
 
-    -- 伴侣设备数：本人名下客户已绑定的设备，加上这一台是否超过套餐上限（null 不限）
-    create function quota_companion_device_ok() returns boolean
+    -- 本月剩余额度（只读预检查，调用模型之前用）；null 为不另设上限
+    create function quota_remaining(p_metric text) returns bigint
       language plpgsql stable security definer set search_path = pg_catalog, public, pg_temp
+    as $$
+    declare v_user uuid := app_user_id(); v_limit bigint; v_used bigint;
+      v_today date := (now() at time zone 'Asia/Shanghai')::date;
+    begin
+      if app_role() is distinct from 'manager' or v_user is null then return null; end if;
+      v_limit := ((effective_plan(v_user)).monthly_quotas ->> p_metric)::bigint;
+      if v_limit is null then return null; end if;
+      select coalesce(sum(count), 0) into v_used from quota_usage_daily
+        where user_id = v_user and metric = p_metric
+          and day >= date_trunc('month', v_today)::date;
+      return greatest(v_limit - v_used, 0);
+    end
+    $$;
+
+    -- 伴侣设备数：本人名下客户已绑定的设备，加上这一台是否超过套餐上限（null 不限）。
+    -- 先按健管师拿咨询锁再数，同一事务里接着绑定，并发绑定不会超过上限（租户审查 S3）
+    create function quota_companion_device_ok() returns boolean
+      language plpgsql security definer set search_path = pg_catalog, public, pg_temp
     as $$
     declare v_user uuid := app_user_id(); v_limit bigint;
     begin
       if app_role() is distinct from 'manager' or v_user is null then return true; end if;
+      perform pg_advisory_xact_lock(5001, hashtext(v_user::text || ':companion_devices'));
       v_limit := ((effective_plan(v_user)).monthly_quotas ->> 'companion_devices')::bigint;
       if v_limit is null then return true; end if;
       return (select count(*) from companion_devices where manager_id = v_user
@@ -338,6 +359,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     'admin_assign_plan(uuid, uuid)',
     'quota_consume(text, int, boolean)',
     'quota_companion_device_ok()',
+    'quota_remaining(text)',
     'my_plan()',
     'plan_feature_enabled(text)',
   ]) {

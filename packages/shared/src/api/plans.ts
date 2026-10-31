@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { findBannedTerms } from '../compliance/index.js';
 
 /**
  * 套餐和额度（M7 规格 2.5，Q6）。平台定义套餐（功能开关、每月额度），给协会设可售套餐；
@@ -46,7 +47,13 @@ export const planQuotasSchema = z
 export type PlanQuotas = z.infer<typeof planQuotasSchema>;
 
 const planFields = {
-  name: z.string().trim().min(1).max(PLAN_NAME_MAX),
+  // 套餐名会出现在协会后台和健管师“我的账号”，不能含禁用词和看不见的格式字符（合规审查 S3）
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(PLAN_NAME_MAX)
+    .refine((v) => !/[\p{Cf}\p{Cc}]/u.test(v) && findBannedTerms(v).length === 0),
   features: planFeaturesSchema,
   monthlyQuotas: planQuotasSchema,
 };

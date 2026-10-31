@@ -7,6 +7,7 @@ import {
   planFeatureEnabled,
   quotaCompanionDeviceOk,
   quotaConsume,
+  quotaRemaining,
   type MeteredQuota,
 } from '../db/plans.js';
 
@@ -35,6 +36,18 @@ export class QuotaService {
       quotaConsume(trx, metric, n, opts.bypass ?? false),
     );
     if (!ok) throw quotaExceeded(metric);
+  }
+
+  /** 记一次用量，返回是否在额度内（超额时不记数，bypass 时照常记数）；不抛错 */
+  async tryConsume(ctx: TenantContext, metric: MeteredQuota, n: number, bypass: boolean) {
+    if (ctx.role !== 'manager' || n <= 0) return true;
+    return withTenant(this.db, ctx, (trx) => quotaConsume(trx, metric, n, bypass));
+  }
+
+  /** 本月还剩多少（null 为不另设上限）；只读，用在调用模型之前的预检查 */
+  async remaining(ctx: TenantContext, metric: MeteredQuota): Promise<number | null> {
+    if (ctx.role !== 'manager') return null;
+    return withTenant(this.db, ctx, (trx) => quotaRemaining(trx, metric));
   }
 
   /** 健管师的套餐是否包含这个功能；其他角色不受套餐限制 */

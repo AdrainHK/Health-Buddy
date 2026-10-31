@@ -14,6 +14,7 @@ import {
 import {
   PLAN_TEMPLATES,
   detectCrisisKeywords,
+  detectEmergencyKeywords,
   getPlanTemplate,
   getSkill,
   skillUsesReport,
@@ -131,6 +132,15 @@ export class WorkbenchController {
     const usesHandoff = Boolean(skill?.usesHandoff);
     if (input.handoffRefs.length && !usesHandoff) throw badRequest();
     if (usesHandoff && !input.handoffRefs.length) throw conflict({ reasons: ['no_handoff'] });
+    // 套餐没有专家中心、这句话又有危机或急症说法：不拦（红线 4），当作没有请专家，固定提示照常出现
+    if (
+      (input.expertRefs.length || input.twinConsult) &&
+      (detectCrisisKeywords([input.content]) || detectEmergencyKeywords([input.content])) &&
+      !(await this.quota.featureEnabled(session, 'experts'))
+    ) {
+      input.expertRefs = [];
+      input.twinConsult = false;
+    }
     const direct = await this.checkExperts(session, taskId, input, skill, plan);
     // “请专家看看”超出当天的专家调用次数时返回 429
     if (input.twinConsult && (await this.consultation.remainingToday(session)) <= 0) {
@@ -142,8 +152,7 @@ export class WorkbenchController {
       skill?.planContext === 'care_plan' ||
       Boolean(plan?.skills.some((id) => getSkill(id)?.planContext === 'care_plan'));
     const planOptions = makesPlan ? planOptionsSchema.parse(input.planOptions ?? {}) : null;
-    // 危机、急症的说法不受套餐额度限制（M7 规格 2.5 第 3 条，红线 4）：照常生成，固定话术和置顶照常出现
-    await this.acquire(session, detectCrisisKeywords([input.content]));
+    await this.acquire(session);
 
     const turn = await this.claim(session, (claim) =>
       this.repo.prepareTurn(
@@ -512,10 +521,23 @@ export class WorkbenchController {
     });
   }
 
-  /** 技术性上限（每分钟次数）之外，再记一次套餐的大模型调用额度（M7 规格 2.5），超额 429 quota_exceeded */
-  private async acquire(session: ResolvedSession, crisis = false): Promise<void> {
+  /** 技术性上限：每分钟次数（Q10）。套餐的每月额度在生成时、识别完危机和急症信号之后再查（见 quotaGate） */
+  private async acquire(session: ResolvedSession): Promise<void> {
     if (!this.limiter.tryAcquire(session.userId)) throw tooManyRequests();
-    await this.quota.consume(session, 'llm_calls', 1, { bypass: crisis });
+  }
+
+  /**
+   * 套餐的大模型调用额度（M7 规格 2.5）：先试着记一次；额度用完时不在这里拒绝，交给生成流程——
+   * 它按完整的信号来源（本次和之前的消息、退回原因、孪生和随访原文、转交原话、伴侣原句）识别危机、急症，
+   * 有信号就照常放行并记数（红线 4），没有才不调用模型、返回 quota_exceeded，危急指标提醒照常保留。
+   */
+  private async quotaGate(session: ResolvedSession): Promise<(risk: boolean) => Promise<boolean>> {
+    if (await this.quota.tryConsume(session, 'llm_calls', 1, false)) return async () => false;
+    return async (risk) => {
+      if (!risk) return true;
+      await this.quota.tryConsume(session, 'llm_calls', 1, true);
+      return false;
+    };
   }
 
   /**
@@ -557,7 +579,9 @@ export class WorkbenchController {
     res.flushHeaders();
 
     const token: unknown = req.cookies?.[SESSION_COOKIE];
+    const quotaGate = await this.quotaGate(session);
     const io: TurnIo = {
+      quotaGate,
       emit: (event: TaskStreamEvent) => {
         if (!res.writableEnded) res.write(`data: ${JSON.stringify(event)}\n\n`);
       },

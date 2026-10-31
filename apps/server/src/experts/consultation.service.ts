@@ -24,7 +24,7 @@ import { LLM_GATEWAY, type AppGateway } from '../ai/gateway.provider.js';
 import { APP_CONFIG, type AppConfig } from '../config.js';
 import type { TenantContext } from '../db/database.js';
 import { QuotaService } from '../plans/quota.service.js';
-import { ExpertsRepository } from './experts.repository.js';
+import { ExpertMonthlyQuotaExceeded, ExpertsRepository } from './experts.repository.js';
 
 /** 每位健管师每天最多 200 次专家调用（Q12，路由和汇总不计） */
 export const DAILY_EXPERT_CALLS = 200;
@@ -185,6 +185,10 @@ export class ConsultationService {
   ): Promise<ConsultOutcome | undefined> {
     // 套餐没有专家中心：对话里不发起专家咨询，当作没有可用专家（验收 8）
     if (!(await this.quota.featureEnabled(ctx, 'experts'))) return undefined;
+    // 每月专家额度已用完：路由（会调用模型）之前就停下（M7 规格 7.1），危机、急症提示由调用方保留
+    if ((await this.quota.remaining(ctx, 'expert_calls')) === 0) {
+      throw new ExpertMonthlyQuotaExceeded();
+    }
     const paused = await this.repo.pausedExperts(ctx);
     const available: ExpertProfile[] = availableExperts({ preview: this.preview, paused }).map(
       (e) => toProfile(e, { preview: this.preview }),

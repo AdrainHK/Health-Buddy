@@ -309,6 +309,8 @@ export const streamErrorKindSchema = z.enum([
   'invalid_output',
   /** 输出两次都没通过保存前的措辞检查（/面谈提纲：禁用词、疾病名称），没有保存草稿 */
   'wording_check_failed',
+  /** 套餐的本月额度用完（M7 规格 2.5）：没有调用模型；危机、急症信号时不受限制 */
+  'quota_exceeded',
   'internal_error',
 ]);
 
