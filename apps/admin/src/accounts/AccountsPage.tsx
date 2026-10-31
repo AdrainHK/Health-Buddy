@@ -43,6 +43,9 @@ type State = { status: 'loading' } | { status: 'error' } | ({ status: 'ready' } 
 
 type ErrorKey =
   | 'duplicate'
+  | 'orgDuplicate'
+  | 'orgBadName'
+  | 'orgHasClients'
   | 'seat_limit_reached'
   | 'has_clients'
   | 'bad_request'
@@ -326,7 +329,12 @@ export function AccountsPage({ user }: { user: CurrentUser }) {
                           )}
                           {editable && seesClients && (
                             <small className={styles.hint}>
-                              {t('accounts.hasClientsHint', { count: a.clientCount ?? 0 })}
+                              {t(
+                                a.role === 'manager'
+                                  ? 'accounts.hasClientsHint'
+                                  : 'accounts.hasClientsHintOrg',
+                                { count: a.clientCount ?? 0 },
+                              )}
                             </small>
                           )}
                         </td>
@@ -388,12 +396,13 @@ function OrgDialog({
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const parsed = createOrganizationRequestSchema.safeParse({ name });
-    if (!parsed.success) return setError('bad_request');
+    if (!parsed.success) return setError('orgBadName');
     setSaving(true);
     try {
       onCreated(await createOrganization(parsed.data.name));
     } catch (err) {
-      setError(errorKey(err));
+      const key = errorKey(err);
+      setError(key === 'duplicate' ? 'orgDuplicate' : key === 'bad_request' ? 'orgBadName' : key);
       setSaving(false);
     }
   };
@@ -403,6 +412,7 @@ function OrgDialog({
         <div className={styles.field}>
           <label htmlFor={`${id}-name`}>{t('accounts.form.orgName')}</label>
           <input id={`${id}-name`} value={name} onChange={(e) => setName(e.target.value)} />
+          <small className={styles.hint}>{t('accounts.form.orgNameHint')}</small>
         </div>
         {error && (
           <p className={styles.error} role="alert">
@@ -456,7 +466,8 @@ function InviteDialog({
     try {
       onInvited(await inviteAccount(parsed.data));
     } catch (err) {
-      setError(errorKey(err));
+      const key = errorKey(err);
+      setError(key === 'has_clients' ? 'orgHasClients' : key);
       setSaving(false);
     }
   };

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { operatorInviteRequestSchema, parseAccountCsv } from './accounts.js';
+import {
+  createOrganizationRequestSchema,
+  operatorInviteRequestSchema,
+  parseAccountCsv,
+} from './accounts.js';
 
 describe('批量开通 CSV 解析（M7 规格 2.4）', () => {
   it('跳过空行，行号按文件里的行算，中文角色转成代码，引号里的逗号不拆', () => {
@@ -41,6 +45,17 @@ describe('单个开通请求', () => {
       false,
     );
     expect(operatorInviteRequestSchema.safeParse({ ...base, role: 'operator_admin' }).success).toBe(
+      false,
+    );
+  });
+});
+
+describe('机构名称', () => {
+  it('不能含禁用词', () => {
+    expect(createOrganizationRequestSchema.safeParse({ name: '合成健康管理中心' }).success).toBe(
+      true,
+    );
+    expect(createOrganizationRequestSchema.safeParse({ name: '合成慢病筛查中心' }).success).toBe(
       false,
     );
   });

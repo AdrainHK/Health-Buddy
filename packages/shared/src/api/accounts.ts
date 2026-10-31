@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { findBannedTerms } from '../compliance/index.js';
 import { roleSchema } from './auth.js';
 
 /**
@@ -100,7 +101,15 @@ export type OperatorAccountListResponse = z.infer<typeof operatorAccountListResp
 
 export const ORGANIZATION_NAME_MAX = 60;
 export const createOrganizationRequestSchema = z
-  .object({ name: z.string().trim().min(1).max(ORGANIZATION_NAME_MAX) })
+  .object({
+    // 机构名称会显示在工作台，不能含禁用词（红线 5，合规审查 S3）
+    name: z
+      .string()
+      .trim()
+      .min(1)
+      .max(ORGANIZATION_NAME_MAX)
+      .refine((v) => findBannedTerms(v).length === 0),
+  })
   .strict();
 export type CreateOrganizationRequest = z.infer<typeof createOrganizationRequestSchema>;
 

@@ -1003,7 +1003,7 @@
     "orgCreated": "已新建机构“{{name}}”",
     "reinviteBlocked": "这个账号还能看到客户，不能重发邀请",
     "disableBlocked": "名下还有 {{count}} 位客户，请先转给别的健管师",
-    "hasClientsHint": "能看到 {{count}} 位客户：不能重发邀请",
+    "hasClientsHint": "能看到 {{count}} 位客户，不能停用或重发邀请",
     "form": {
       "orgName": "机构名称",
       "name": "姓名",
@@ -1011,9 +1011,10 @@
       "role": "角色",
       "seatHint": "健管师占用席位，机构管理员不占",
       "org": "所属机构",
-      "noOrg": "不属于任何机构"
+      "noOrg": "不属于任何机构",
+      "orgNameHint": "填机构的正式名称，不要填个人姓名或联系方式"
     },
-    "importHint": "按模板填写姓名、邮箱、角色（健管师或机构管理员）和机构名称，一次最多 {{max}} 行。任何一行有错，整批都不导入。",
+    "importHint": "按模板填写姓名、工作邮箱、角色（健管师或机构管理员）和机构名称，一次最多 {{max}} 行，不要填手机号、身份证号。任何一行有错，整批都不导入。",
     "template": "下载模板",
     "file": "CSV 文件",
     "importSubmit": "上传并导入",
@@ -1044,14 +1045,18 @@
       "read": "文件读取失败，请重新选择"
     },
     "errors": {
-      "duplicate": "邮箱或机构名称已被使用",
+      "duplicate": "该邮箱不可用",
       "seat_limit_reached": "席位已用完，请联系平台增加席位",
       "has_clients": "这个账号还能看到客户：请先把客户转给别的健管师",
       "org_required": "机构管理员必须选择机构",
       "bad_request": "填写的内容不符合要求，请检查后再保存",
       "not_found": "账号或机构不存在，请刷新页面",
       "network": "网络连接失败，请检查网络后重试",
-      "unknown": "操作失败，请稍后再试"
-    }
+      "unknown": "操作失败，请稍后再试",
+      "orgDuplicate": "本协会已有同名机构",
+      "orgBadName": "机构名称为空、超过 60 个字或含不合规的用词，请修改",
+      "orgHasClients": "这个机构已有客户，不能新开机构管理员"
+    },
+    "hasClientsHintOrg": "本机构有 {{count}} 位客户，不能重发邀请"
   }
 }
