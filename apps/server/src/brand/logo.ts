@@ -3,7 +3,8 @@ import type { BrandLogoType } from '@health-buddy/shared';
 /**
  * 协会 Logo 的格式检查（M7 规格 2.2）：按内容判断，不信文件名和 Content-Type。
  * - PNG：文件头和 IHDR 里的宽高（32–2048 像素，宽高比不超过 4:1）；
- * - SVG：根元素是 <svg>，有 viewBox 或宽高；不能带脚本、事件属性、外部引用和实体声明。
+ * - SVG：根元素是 <svg>，有 viewBox 或宽高；元素按白名单（只有画图用的），不能带脚本、事件属性、
+ *   外部引用、实体声明、字符引用、CSS 转义、命名空间前缀和非 UTF-8 编码声明。
  *   SVG 只在 <img> 里显示（不执行脚本），下载接口另加 CSP sandbox，这里再挡一层。
  */
 export type LogoCheck =
@@ -18,7 +19,7 @@ const MAX_RATIO = 4;
 const UNSAFE_SVG = [
   /<\s*script/i,
   /<\s*foreignObject/i,
-  /<\s*(?:iframe|embed|object|audio|video|image)\b/i,
+  /<\s*(?:iframe|embed|object|audio|video|image|style|animate\w*|set)\b/i,
   /<!\s*(?:ENTITY|DOCTYPE)/i,
   /javascript\s*:/i,
   /\son[a-z]+\s*=/i,
@@ -26,7 +27,50 @@ const UNSAFE_SVG = [
   /\bhref\s*=\s*["']\s*(?!#)/i,
   /url\(\s*["']?\s*(?!#)/i,
   /@import/i,
+  // 字符引用、CSS 转义可以把上面的词拆开写（租户审查 S1）
+  /&#/,
+  /\\/,
+  // 带命名空间前缀的元素（如 <h:script>）
+  /<\s*\/?\s*[A-Za-z][\w.-]*:/,
+  // 声明成别的编码（浏览器按声明解码，正则看到的字节和浏览器看到的不一样）
+  /<\?xml[^>]*encoding\s*=\s*["'](?!utf-8["'])/i,
+  // 控制字符（ESC 等）
+  // eslint-disable-next-line no-control-regex
+  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/,
 ];
+
+/** 只允许画图用的元素（白名单），别的元素一律拒绝 */
+const ALLOWED_ELEMENTS = new Set([
+  'svg',
+  'g',
+  'path',
+  'rect',
+  'circle',
+  'ellipse',
+  'line',
+  'polyline',
+  'polygon',
+  'defs',
+  'lineargradient',
+  'radialgradient',
+  'stop',
+  'use',
+  'symbol',
+  'clippath',
+  'mask',
+  'title',
+  'desc',
+  'text',
+  'tspan',
+  'metadata',
+]);
+
+function elementsAllowed(text: string): boolean {
+  for (const m of text.matchAll(/<\s*\/?\s*([A-Za-z][\w.-]*)/g)) {
+    if (!ALLOWED_ELEMENTS.has(m[1]!.toLowerCase())) return false;
+  }
+  return true;
+}
 
 function dimensionsOk(w: number, h: number): boolean {
   return (
@@ -60,7 +104,7 @@ function checkSvg(buf: Buffer): LogoCheck {
     .replace(/^(?:\s*<!--[\s\S]*?-->)*/, '')
     .trimStart();
   // 先查危险内容（DOCTYPE、实体声明会写在根元素之前）
-  if (/<svg\b/i.test(text) && UNSAFE_SVG.some((re) => re.test(text))) {
+  if (/<svg\b/i.test(text) && (UNSAFE_SVG.some((re) => re.test(text)) || !elementsAllowed(text))) {
     return { ok: false, reason: 'unsafe_svg' };
   }
   const root = /^<svg\b[^>]*>/i.exec(body);

@@ -156,6 +156,20 @@ describe('协会品牌', () => {
       .put('/api/admin/brand')
       .send({ ...BRAND, primaryColor: 'red;x' })
       .expect(400);
+    // 看不见的格式字符拆开或倒序禁用词（合规审查 B1）；显示名称含产品名（S4）
+    await opA
+      .put('/api/admin/brand')
+      .send({ ...BRAND, loginGreeting: '诊\u200E断服务' })
+      .expect(400);
+    await opA
+      .put('/api/admin/brand')
+      .send({ ...BRAND, loginGreeting: '\u202E断诊' })
+      .expect(400);
+    const product = await opA
+      .put('/api/admin/brand')
+      .send({ ...BRAND, displayName: 'Health Buddy 协会' })
+      .expect(400);
+    expect(product.body.issues).toEqual([{ field: 'displayName', reason: 'product_name' }]);
     expect(await owner.selectFrom('operator_brands').selectAll().execute()).toEqual([]);
   });
 
@@ -171,6 +185,13 @@ describe('协会品牌', () => {
       '<svg viewBox="0 0 10 10"><a href="https://example.com/x"><rect/></a></svg>',
       '<svg viewBox="0 0 10 10"><image href="data:image/png;base64,AAAA"/></svg>',
       '<!DOCTYPE svg [<!ENTITY x "y">]><svg viewBox="0 0 10 10"></svg>',
+      // 租户审查 S1 的绕过样本：命名空间前缀、字符引用、CSS 转义、别的编码、style/animate
+      '<svg viewBox="0 0 10 10"><h:script xmlns:h="http://www.w3.org/1999/xhtml">x</h:script></svg>',
+      '<svg viewBox="0 0 10 10"><s:foreignObject><h:iframe/></s:foreignObject></svg>',
+      '<svg viewBox="0 0 10 10"><a><animate attributeName="href" values="&#106;avascript:x"/></a></svg>',
+      '<svg viewBox="0 0 10 10"><style>rect{fill:u\\72l(https://evil/x)}</style></svg>',
+      '<?xml version="1.0" encoding="ISO-2022-JP"?><svg viewBox="0 0 10 10"></svg>',
+      '<svg viewBox="0 0 10 10"><unknownelement/></svg>',
     ]) {
       expect((await upload(opA, Buffer.from(bad), 'x.svg').expect(400)).body.reasons).toEqual([
         'unsafe_svg',
@@ -239,6 +260,8 @@ describe('协会品牌', () => {
     };
     for (const ctx of [
       { ...ctxA, operatorId: f.operatorB },
+      // 健管师冒充运营商管理员角色
+      { ...ctxA, userId: f.users.managerA1.id },
       {
         userId: f.users.managerA1.id,
         role: 'manager' as const,
@@ -255,6 +278,11 @@ describe('协会品牌', () => {
       await expect(
         withTenant(db, ctx, (trx) => sql`select admin_update_brand('x', null, null)`.execute(trx)),
       ).rejects.toMatchObject({ code: '42501' });
+      await expect(
+        withTenant(db, ctx, (trx) =>
+          sql`select admin_set_brand_logo(${'brands/' + 'a'.repeat(32)}, 'image/png')`.execute(trx),
+        ),
+      ).rejects.toMatchObject({ code: '42501' });
     }
     // 应用角色不能直接写品牌表
     await expect(
@@ -264,6 +292,37 @@ describe('协会品牌', () => {
         ),
       ),
     ).rejects.toMatchObject({ code: '42501' });
+    // 内部快照函数应用角色不能调用（否则能读任意协会品牌）
+    await expect(
+      withTenant(db, ctxA, (trx) =>
+        sql`select admin_brand_snapshot(${f.operatorB}::uuid)`.execute(trx),
+      ),
+    ).rejects.toMatchObject({ code: '42501' });
+    // 行级安全：协会 A 的会话读不到 B 的品牌行
+    await owner
+      .insertInto('operator_brands' as never)
+      .values({ operator_id: f.operatorB, display_name: '合成协会B' } as never)
+      .execute();
+    const seen = await withTenant(db, ctxA, (trx) =>
+      trx.selectFrom('operator_brands').select('operator_id').execute(),
+    );
+    expect(seen.map((r) => r.operator_id)).not.toContain(f.operatorB);
+    const opB = await as(f.users.operatorAdminB.email);
+    expect((await opB.get('/api/admin/brand').expect(200)).body.brand.displayName).toBe(
+      '合成协会B',
+    );
+    // 停用协会的管理员不能改
+    await owner
+      .updateTable('operators')
+      .set({ status: 'suspended', suspended_reason: '合成停用原因' } as never)
+      .where('id', '=', f.operatorA)
+      .execute();
+    await expect(
+      withTenant(db, ctxA, (trx) => sql`select admin_update_brand('x', null, null)`.execute(trx)),
+    ).rejects.toMatchObject({ code: '42501' });
+    const slugA = await slugOf(f.operatorA);
+    await anon().get(`/api/public/brand?slug=${slugA}`).expect(404);
+    await anon().get(`/api/public/brand/logo/${slugA}`).expect(404);
     const slugC = (
       await owner
         .selectFrom('operators')

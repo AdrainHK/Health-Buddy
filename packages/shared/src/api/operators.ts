@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { findBannedTerms } from '../compliance/index.js';
 
 /**
  * 运营商（协会）开通和管理（M7 规格 2.1、6.4）。只有平台管理员能开通、修改、停用和恢复。
@@ -20,7 +21,13 @@ export const CONTRACT_EXPIRY_NOTICE_DAYS = 30;
 export const SUSPEND_REASON_MIN = 5;
 
 const operatorFields = {
-  name: z.string().trim().min(1).max(60),
+  // 协会没设显示名称时，登录页公开显示这个名称，同样不能含禁用词（合规审查 S1）
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(60)
+    .refine((v) => findBannedTerms(v).length === 0),
   region: z.array(regionCodeSchema).max(50).default([]),
   seatLimit: z.number().int().min(0).max(100000),
   contractStart: z.iso.date().nullable(),

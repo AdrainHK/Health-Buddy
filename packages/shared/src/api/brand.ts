@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { brandColorContrastOk, isHexColor } from '../brand-color.js';
+import { PRODUCT_NAME } from '../brand.js';
 import { findBannedTerms } from '../compliance/index.js';
 
 /**
@@ -16,6 +17,13 @@ export type BrandLogoType = (typeof BRAND_LOGO_TYPES)[number];
 
 const noBannedTerms = (v: string | null) => v === null || findBannedTerms(v).length === 0;
 
+/**
+ * 看不见的格式字符（双向控制、零宽、变体选择符等）和控制字符：名称和欢迎语没有正当用途，
+ * 还能把禁用词拆开或倒序显示来绕过检查（合规审查 B1），一律拒绝
+ */
+const INVISIBLE = /[\p{Cf}\p{Cc}\u034F\uFE00-\uFE0F]/u;
+const visibleOnly = (v: string) => !INVISIBLE.test(v);
+
 /** 保存品牌。空字符串当作不设置（显示协会名称、默认欢迎语） */
 export const updateBrandRequestSchema = z
   .object({
@@ -23,6 +31,7 @@ export const updateBrandRequestSchema = z
       .string()
       .trim()
       .max(BRAND_NAME_MAX)
+      .refine(visibleOnly)
       .transform((v) => v || null)
       .nullable(),
     primaryColor: z
@@ -34,6 +43,7 @@ export const updateBrandRequestSchema = z
       .string()
       .trim()
       .max(BRAND_GREETING_MAX)
+      .refine(visibleOnly)
       .transform((v) => v || null)
       .nullable(),
   })
@@ -43,11 +53,17 @@ export type UpdateBrandRequest = z.infer<typeof updateBrandRequestSchema>;
 /** 品牌内容问题：含禁用词（红线 5）、主色对比度不够（规格 2.2） */
 export type BrandContentIssue =
   | { field: 'displayName' | 'loginGreeting'; reason: 'banned_term' }
+  | { field: 'displayName'; reason: 'product_name' }
   | { field: 'primaryColor'; reason: 'low_contrast' };
 
 export function brandContentIssues(v: UpdateBrandRequest): BrandContentIssue[] {
   const issues: BrandContentIssue[] = [];
   if (!noBannedTerms(v.displayName)) issues.push({ field: 'displayName', reason: 'banned_term' });
+  // 显示名称里不放产品名（界面已经并排显示“××协会 · Health Buddy”，合规审查 S4）
+  const product = PRODUCT_NAME.replace(/\s/g, '').toLowerCase();
+  if (v.displayName && v.displayName.replace(/\s/g, '').toLowerCase().includes(product)) {
+    issues.push({ field: 'displayName', reason: 'product_name' });
+  }
   if (!noBannedTerms(v.loginGreeting)) {
     issues.push({ field: 'loginGreeting', reason: 'banned_term' });
   }

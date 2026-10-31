@@ -191,7 +191,7 @@ export function BrandPage() {
             </small>
             {issueFor('displayName') && (
               <p className={styles.error} role="alert">
-                {t('brand.errors.banned_term')}
+                {t(`brand.errors.${issueFor('displayName')!.reason}`)}
               </p>
             )}
           </div>

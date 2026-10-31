@@ -51,3 +51,33 @@ describe('品牌保存请求', () => {
     ).toBe(false);
   });
 });
+
+describe('绕过禁用词检查（合规审查 B1、S4）', () => {
+  it('含看不见的格式字符（LRM、RLO、变体选择符）时直接拒绝', () => {
+    for (const text of ['诊\u200E断', '\u202E断诊', '治\uFE0F愈', '合成\u0007协会']) {
+      expect(
+        updateBrandRequestSchema.safeParse({
+          displayName: null,
+          primaryColor: null,
+          loginGreeting: text,
+        }).success,
+      ).toBe(false);
+      expect(
+        updateBrandRequestSchema.safeParse({
+          displayName: text,
+          primaryColor: null,
+          loginGreeting: null,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it('显示名称不能包含产品名', () => {
+    const v = updateBrandRequestSchema.parse({
+      displayName: 'health buddy 协会',
+      primaryColor: null,
+      loginGreeting: null,
+    });
+    expect(brandContentIssues(v)).toEqual([{ field: 'displayName', reason: 'product_name' }]);
+  });
+});

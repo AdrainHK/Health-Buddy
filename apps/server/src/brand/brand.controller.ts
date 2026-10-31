@@ -96,6 +96,10 @@ export class BrandController {
     @CurrentSession() session: ResolvedSession,
     @Req() req: AuthedRequest & { file?: { buffer: Buffer } },
   ): Promise<BrandResponse> {
+    // 拦截器已经查过，这里再查一次，拦截器被移走时也不失守（租户审查 N1）
+    requireOperatorAdmin(session);
+    const storage = this.storage;
+    if (!storage) throw notFound();
     const file = req.file;
     if (!file) throw badRequest();
     const check = checkLogo(file.buffer);
@@ -103,7 +107,6 @@ export class BrandController {
       if (check.reason === 'unsupported_type') throw unsupportedMediaType();
       throw new ApiException(HttpStatus.BAD_REQUEST, 'bad_request', { reasons: [check.reason] });
     }
-    const storage = this.storage!;
     const key = `brands/${randomBytes(16).toString('hex')}`;
     await storage.put(key, file.buffer, check.type);
     let result;
@@ -156,7 +159,8 @@ export class BrandController {
       'Content-Security-Policy',
       "default-src 'none'; style-src 'unsafe-inline'; sandbox",
     );
-    res.setHeader('Cache-Control', 'public, max-age=86400');
+    // 协会停用后尽快不再显示（租户审查 N3）；地址带版本号，换 Logo 立即生效
+    res.setHeader('Cache-Control', 'public, max-age=300');
     res.send(body);
   }
 
