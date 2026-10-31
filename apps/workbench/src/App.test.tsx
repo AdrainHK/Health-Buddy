@@ -7,7 +7,13 @@ const USER = {
   email: 'manager@test.example',
   displayName: '测试健管师',
   role: 'manager',
-  operator: { id: '22222222-2222-4222-8222-222222222222', name: '测试协会', brandColor: '#3355aa' },
+  operator: {
+    id: '22222222-2222-4222-8222-222222222222',
+    name: '测试协会',
+    brandColor: '#3355aa',
+    brandName: '合成品牌',
+    logoUrl: '/api/public/brand/logo/assoc-test?v=1',
+  },
   orgId: null,
 };
 
@@ -36,6 +42,16 @@ function mockServer() {
       loggedIn = false;
       return new Response(null, { status: 204 });
     }
+    if (url === '/api/public/brand?slug=assoc-test') {
+      return json(200, {
+        brand: {
+          name: '合成品牌',
+          primaryColor: '#1d4ed8',
+          loginGreeting: '欢迎使用合成协会的工作台',
+          logoUrl: '/api/public/brand/logo/assoc-test?v=1',
+        },
+      });
+    }
     return json(404, { error: 'not_found' });
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -54,7 +70,35 @@ describe('App login flow', () => {
   });
   afterEach(() => {
     vi.unstubAllGlobals();
-    document.documentElement.style.removeProperty('--hb-brand');
+    document.documentElement.style.removeProperty('--hb-brand-custom');
+    document.documentElement.style.removeProperty('--hb-brand-custom-dark');
+    window.location.hash = '';
+  });
+
+  it('协会登录地址显示协会 Logo、名称、欢迎语和主色；不认识的协会显示默认品牌（M7 规格 2.3）', async () => {
+    mockServer();
+    window.location.hash = '#/login/assoc-test';
+    render(<App />);
+    const brand = await screen.findByTestId('login-brand');
+    await waitFor(() => expect(brand).toHaveTextContent('合成品牌 · Health Buddy'));
+    expect(brand.querySelector('img')).toHaveAttribute(
+      'src',
+      '/api/public/brand/logo/assoc-test?v=1',
+    );
+    expect(screen.getByText('欢迎使用合成协会的工作台')).toBeInTheDocument();
+    expect(document.documentElement.style.getPropertyValue('--hb-brand-custom')).toBe('#1d4ed8');
+    expect(document.documentElement.style.getPropertyValue('--hb-brand-custom-dark')).toMatch(
+      /^#[0-9a-f]{6}$/,
+    );
+  });
+
+  it('识别不出协会时显示 Health Buddy 默认品牌', async () => {
+    mockServer();
+    window.location.hash = '#/login/no-such';
+    render(<App />);
+    const brand = await screen.findByTestId('login-brand');
+    expect(brand).toHaveTextContent(/^Health Buddy$/);
+    expect(screen.getByText('健康管理师的 AI 工作台')).toBeInTheDocument();
   });
 
   it('shows the login page when not signed in', async () => {
@@ -85,12 +129,13 @@ describe('App login flow', () => {
 
     expect(await screen.findByText('今天想让我帮你做什么？')).toBeInTheDocument();
     expect(screen.getByText('测试健管师')).toBeInTheDocument();
-    expect(document.documentElement.style.getPropertyValue('--hb-brand')).toBe('#3355aa');
+    expect(document.documentElement.style.getPropertyValue('--hb-brand-custom')).toBe('#3355aa');
+    expect(screen.getByTestId('sidebar-brand')).toHaveTextContent('合成品牌 · Health Buddy');
 
     await user.click(screen.getByRole('button', { name: '退出登录' }));
     expect(await screen.findByRole('heading', { name: '登录' })).toBeInTheDocument();
     await waitFor(() =>
-      expect(document.documentElement.style.getPropertyValue('--hb-brand')).toBe(''),
+      expect(document.documentElement.style.getPropertyValue('--hb-brand-custom')).toBe(''),
     );
   });
 

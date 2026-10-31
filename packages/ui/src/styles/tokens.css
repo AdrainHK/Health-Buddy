@@ -5,9 +5,12 @@
  * 运营商品牌定制只需要覆盖 --hb-brand 一个变量，其余品牌相关颜色自动推导。
  */
 
-:root {
+/* data-hb-theme：在页面局部强制浅色或深色（后台品牌页的预览，M7 规格 2.2） */
+:root,
+[data-hb-theme='light'] {
   /* 品牌色：运营商可覆盖 */
-  --hb-brand: #0e7c6b;
+  /* 协会主色由 applyBrandColor 写入 --hb-brand-custom（深色模式用 --hb-brand-custom-dark） */
+  --hb-brand: var(--hb-brand-custom, #0e7c6b);
   --hb-brand-hover: color-mix(in oklab, var(--hb-brand) 86%, black);
   --hb-brand-soft: color-mix(in oklab, var(--hb-brand) 12%, var(--hb-surface));
   --hb-brand-contrast: #ffffff;
@@ -87,7 +90,7 @@
 /* 深色模式：跟随系统，可用 data-theme 强制指定 */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --hb-brand: #2bb39a;
+    --hb-brand: var(--hb-brand-custom-dark, #2bb39a);
     --hb-brand-contrast: #06120f;
     --hb-bg: #0e1311;
     --hb-surface: #151b18;
@@ -121,8 +124,9 @@
   }
 }
 
-:root[data-theme='dark'] {
-  --hb-brand: #2bb39a;
+:root[data-theme='dark'],
+[data-hb-theme='dark'] {
+  --hb-brand: var(--hb-brand-custom-dark, #2bb39a);
   --hb-brand-contrast: #06120f;
   --hb-bg: #0e1311;
   --hb-surface: #151b18;

@@ -1,0 +1,109 @@
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--hb-space-6);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.colorRow {
+  display: flex;
+  align-items: center;
+  gap: var(--hb-space-2);
+}
+
+.colorRow input[type='color'] {
+  width: 44px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-sm);
+  background: var(--hb-surface);
+}
+
+.previews {
+  display: grid;
+  gap: var(--hb-space-4);
+}
+
+.preview {
+  display: grid;
+  gap: var(--hb-space-3);
+  padding: var(--hb-space-4);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-lg);
+  background: var(--hb-bg);
+  color: var(--hb-text);
+}
+
+.previewLabel {
+  margin: 0;
+  font-size: var(--hb-text-sm);
+  color: var(--hb-text-2);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--hb-space-2);
+  padding: var(--hb-space-2) var(--hb-space-3);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-md);
+  background: var(--hb-surface);
+  font-weight: 600;
+  min-width: 0;
+}
+
+.loginCard {
+  display: grid;
+  gap: var(--hb-space-2);
+  padding: var(--hb-space-4);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-lg);
+  background: var(--hb-surface);
+}
+
+.loginCard p {
+  margin: 0;
+  color: var(--hb-text-2);
+  font-size: var(--hb-text-sm);
+}
+
+.mark {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--hb-radius-sm);
+  background: var(--hb-brand);
+  color: var(--hb-brand-contrast);
+}
+
+.markImage {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  border-radius: var(--hb-radius-sm);
+}
+
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fakeButton {
+  padding: var(--hb-space-2) var(--hb-space-3);
+  border-radius: var(--hb-radius-md);
+  background: var(--hb-brand);
+  color: var(--hb-brand-contrast);
+  text-align: center;
+  font-weight: 600;
+}

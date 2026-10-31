@@ -37,6 +37,13 @@
   color: var(--hb-brand-contrast);
 }
 
+.logoImage {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  border-radius: var(--hb-radius-md);
+}
+
 .title {
   margin: var(--hb-space-2) 0 0;
   font-size: var(--hb-text-xl);

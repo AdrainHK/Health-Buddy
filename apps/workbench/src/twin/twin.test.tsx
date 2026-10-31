@@ -1051,7 +1051,7 @@ describe('设计令牌（验收标准 31）', () => {
       `--hb-twin-${l}-text`,
     ]);
     const blocks = [
-      css.slice(css.indexOf(':root {'), css.indexOf('@media (prefers-color-scheme: dark)')),
+      css.slice(css.indexOf(':root,'), css.indexOf('@media (prefers-color-scheme: dark)')),
       css.slice(
         css.indexOf('@media (prefers-color-scheme: dark)'),
         css.indexOf(":root[data-theme='dark']"),

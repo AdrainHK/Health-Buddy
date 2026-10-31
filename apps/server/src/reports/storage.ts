@@ -12,6 +12,8 @@ import type { StorageConfig } from '../config.js';
  *
  * key 是随机 id（reports/ + 32 位十六进制），不含客户姓名和原文件名。
  * 存储桶不公开访问，原件只能通过后端接口查看（验收标准 23），不生成直链。
+ * 同一个桶里还有协会 Logo（brands/ 前缀，M7）：不要给桶或任何前缀配公开读、CDN 回源，
+ * Logo 也只经后端公开接口读取。
  */
 export interface ObjectStorage {
   put(key: string, body: Buffer, contentType: string): Promise<void>;

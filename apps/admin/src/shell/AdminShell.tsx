@@ -29,11 +29,23 @@ export function AdminShell({ user, onLogout, sections, current, children }: Admi
   return (
     <div className={styles.root}>
       <header className={styles.header}>
-        <div className={styles.brand}>
-          <span className={styles.logo} aria-hidden>
-            <Heart size={16} strokeWidth={2.5} />
+        <div className={styles.brand} data-testid="admin-brand">
+          {user.operator?.logoUrl ? (
+            <img className={styles.logoImage} src={user.operator.logoUrl} alt="" />
+          ) : (
+            <span className={styles.logo} aria-hidden>
+              <Heart size={16} strokeWidth={2.5} />
+            </span>
+          )}
+          {/* 协会账号显示“××协会 · Health Buddy”（M7 规格 2.3） */}
+          <span className={styles.productName}>
+            {user.operator
+              ? t('shell.withProduct', {
+                  name: user.operator.brandName ?? user.operator.name,
+                  product: PRODUCT_NAME,
+                })
+              : PRODUCT_NAME}
           </span>
-          <span>{PRODUCT_NAME}</span>
           <span className={styles.console}>{t('shell.console')}</span>
         </div>
         <div className={styles.account}>

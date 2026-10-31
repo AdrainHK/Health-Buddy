@@ -31,6 +31,10 @@ const FIELDS = [
   'email',
   'display_name',
   'org_id',
+  'brand_name',
+  'brand_color',
+  'login_greeting',
+  'logo',
 ] as const;
 
 function show(v: unknown): string {

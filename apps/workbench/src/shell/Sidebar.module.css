@@ -48,6 +48,19 @@
   white-space: nowrap;
 }
 
+.logoImage {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  border-radius: var(--hb-radius-sm);
+}
+
+.brand > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .logo {
   display: grid;
   place-items: center;

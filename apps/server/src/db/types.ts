@@ -688,6 +688,18 @@ export interface TwinComputeStateTable extends ClientScoped {
   computed_at: Nullable<Date>;
 }
 
+/** M7 协会品牌（只读；写入只经 admin_update_brand、admin_set_brand_logo） */
+export interface OperatorBrandsTable {
+  operator_id: ColumnType<string, never, never>;
+  display_name: ColumnType<string | null, never, never>;
+  login_greeting: ColumnType<string | null, never, never>;
+  logo_object_key: ColumnType<string | null, never, never>;
+  logo_content_type: ColumnType<'image/png' | 'image/svg+xml' | null, never, never>;
+  logo_updated_at: ColumnType<Date | null, never, never>;
+  updated_by: ColumnType<string | null, never, never>;
+  updated_at: ColumnType<Date, never, never>;
+}
+
 /** M7 审计日志（只能追加，应用角色只读；写入只经 admin_* 函数） */
 export interface AdminAuditLogTable {
   id: ColumnType<string, never, never>;
@@ -751,6 +763,7 @@ export interface Database {
   follow_up_events: FollowUpEventsTable;
   twin_compute_state: TwinComputeStateTable;
   admin_audit_log: AdminAuditLogTable;
+  operator_brands: OperatorBrandsTable;
   account_invites: AccountInvitesTable;
   plan_library_recipes: PlanLibraryRecipesTable;
   plan_library_exercises: PlanLibraryExercisesTable;
