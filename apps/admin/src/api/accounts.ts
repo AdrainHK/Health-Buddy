@@ -1,11 +1,20 @@
 import {
+  accountImportResponseSchema,
   accountListResponseSchema,
+  operatorAccountListResponseSchema,
+  organizationListResponseSchema,
+  organizationResponseSchema,
   accountResponseSchema,
   auditLogResponseSchema,
   inviteResponseSchema,
   operatorListResponseSchema,
   operatorResponseSchema,
+  type AccountImportResponse,
+  type AccountImportRow,
   type AccountSummary,
+  type OperatorAccount,
+  type OperatorInviteRequest,
+  type OrganizationSummary,
   type AuditLogQuery,
   type AuditLogResponse,
   type CreateOperatorRequest,
@@ -89,6 +98,42 @@ export async function setAccountSuspended(id: string, suspend: boolean): Promise
       { method: 'POST' },
     )
   ).account;
+}
+
+/* ---------- 第 2 步：协会在本协会开机构和账号（规格 2.4） ---------- */
+
+export async function myOperator(): Promise<OperatorSummary> {
+  return (await apiRequest('/admin/my-operator', operatorResponseSchema)).operator;
+}
+
+export async function listOrganizations(): Promise<OrganizationSummary[]> {
+  return (await apiRequest('/admin/organizations', organizationListResponseSchema)).organizations;
+}
+
+export async function createOrganization(name: string): Promise<OrganizationSummary> {
+  return (
+    await apiRequest('/admin/organizations', organizationResponseSchema, {
+      method: 'POST',
+      body: { name },
+    })
+  ).organization;
+}
+
+/** 协会管理员看本协会全部账号，机构管理员看本机构的 */
+export async function listAccounts(): Promise<OperatorAccount[]> {
+  return (await apiRequest('/admin/accounts', operatorAccountListResponseSchema)).accounts;
+}
+
+export function inviteAccount(body: OperatorInviteRequest): Promise<InviteResponse> {
+  return apiRequest('/admin/accounts', inviteResponseSchema, { method: 'POST', body });
+}
+
+/** 批量开通：任何一行有错整批不导入，错误细节在 ApiError.details（rowErrors、seatsLeft、needed） */
+export function importAccounts(rows: AccountImportRow[]): Promise<AccountImportResponse> {
+  return apiRequest('/admin/accounts/import', accountImportResponseSchema, {
+    method: 'POST',
+    body: { rows },
+  });
 }
 
 function auditQuery(q: AuditLogQuery): string {

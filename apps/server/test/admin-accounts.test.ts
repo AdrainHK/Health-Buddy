@@ -157,14 +157,27 @@ describe('协会和账号开通', () => {
     await platform.post(`/api/admin/operators/${f.operatorA}/resume`).expect(200);
     await as(f.users.managerA1.email);
 
-    const m = await as(f.users.managerA1.email);
-    await platform.post(`/api/admin/accounts/${f.users.managerA1.id}/suspend`).expect(200);
+    // 名下有客户的健管师不能停用（Q8），先把 A2 的客户转给 A1 再停用 A2
+    await platform.post(`/api/admin/accounts/${f.users.managerA2.id}/suspend`).expect(409);
+    await owner
+      .updateTable('clients')
+      .set({ manager_id: f.users.managerA1.id } as never)
+      .where('id', '=', f.clients.a2)
+      .execute();
+    const m = await as(f.users.managerA2.email);
+    await platform.post(`/api/admin/accounts/${f.users.managerA2.id}/suspend`).expect(200);
     await m.get('/api/auth/me').expect(401);
+    // 恢复健管师要重新占一个席位（夹具的席位数是 0）
+    await owner
+      .updateTable('operators')
+      .set({ seat_limit: 10 } as never)
+      .where('id', '=', f.operatorA)
+      .execute();
     const back = await platform
-      .post(`/api/admin/accounts/${f.users.managerA1.id}/resume`)
+      .post(`/api/admin/accounts/${f.users.managerA2.id}/resume`)
       .expect(200);
     expect(back.body.account.status).toBe('active');
-    await as(f.users.managerA1.email);
+    await as(f.users.managerA2.email);
     // 平台不能停用自己
     await platform.post(`/api/admin/accounts/${f.users.platform.id}/suspend`).expect(400);
   });
@@ -285,8 +298,10 @@ describe('协会和账号开通', () => {
         })
         .expect(403);
       await agent.get(`/api/admin/operators/${f.operatorB}/accounts`).expect(403);
-      await agent.post(`/api/admin/accounts/${f.users.managerB1.id}/suspend`).expect(403);
-      await agent.post(`/api/admin/accounts/${f.users.managerB1.id}/reinvite`).expect(403);
+      // 运营商管理员能停用、重发本协会的账号（第 2 步），别的协会的 404；其他角色 403
+      const status = email === f.users.operatorAdminA.email ? 404 : 403;
+      await agent.post(`/api/admin/accounts/${f.users.managerB1.id}/suspend`).expect(status);
+      await agent.post(`/api/admin/accounts/${f.users.managerB1.id}/reinvite`).expect(status);
     }
     for (const email of [f.users.orgAdminA.email, f.users.managerA1.email]) {
       const agent = await as(email);

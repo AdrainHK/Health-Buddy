@@ -5,7 +5,7 @@ import { roleSchema } from './auth.js';
  * 后台审计日志（M7 规格 2.7）：只能追加。平台看全部，运营商管理员只看本协会的。
  * before、after 只有业务字段，邮箱是掩码，没有密码和令牌。
  */
-export const AUDIT_OBJECT_TYPES = ['operator', 'user'] as const;
+export const AUDIT_OBJECT_TYPES = ['operator', 'organization', 'user'] as const;
 export const AUDIT_ACTIONS = [
   'created',
   'updated',

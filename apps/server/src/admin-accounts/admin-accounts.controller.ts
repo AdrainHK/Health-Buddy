@@ -15,13 +15,22 @@ import {
 } from '@nestjs/common';
 import {
   INVITE_TTL_HOURS,
+  OPERATOR_INVITE_ROLES,
   acceptInviteRequestSchema,
+  accountImportRequestSchema,
+  createOrganizationRequestSchema,
+  operatorInviteRequestSchema,
   auditLogQuerySchema,
   createOperatorRequestSchema,
   inviteAccountRequestSchema,
   suspendOperatorRequestSchema,
   updateOperatorRequestSchema,
   type AcceptInviteResponse,
+  type AccountImportResponse,
+  type AccountImportRowError,
+  type OperatorAccountListResponse,
+  type OrganizationListResponse,
+  type OrganizationResponse,
   type AccountListResponse,
   type AccountResponse,
   type AuditLogResponse,
@@ -44,7 +53,7 @@ import {
   notFound,
   tooManyRequests,
 } from '../common/api-error.js';
-import { AdminAccountsRepository } from './admin-accounts.repository.js';
+import { AdminAccountsRepository, seatLimitReached } from './admin-accounts.repository.js';
 
 const idSchema = z.uuid();
 const HOUR_MS = 3_600_000;
@@ -52,6 +61,31 @@ const HOUR_MS = 3_600_000;
 /** 只有平台管理员（M7 第 1 步）；其他后台角色和健管师 403（按角色拒绝，不涉及具体资源） */
 function requirePlatform(session: ResolvedSession): void {
   if (session.role !== 'platform_admin') throw forbidden();
+}
+
+/** 运营商管理员（本协会）；其他角色 403 */
+function requireOperatorAdmin(session: ResolvedSession): void {
+  if (session.role !== 'operator_admin' || !session.operatorId) throw forbidden();
+}
+
+/** 停用、恢复、重发邀请：平台和运营商管理员（能动哪些账号由数据库函数决定，别人的 404） */
+function requireAccountAdmin(session: ResolvedSession): void {
+  if (session.role !== 'platform_admin' && session.role !== 'operator_admin') throw forbidden();
+}
+
+const importEmailSchema = z.email().max(254);
+
+/** 批量开通的格式检查（业务校验在数据库函数里） */
+function rowFormatError(r: {
+  displayName: string;
+  email: string;
+  role: string;
+}): AccountImportRowError | null {
+  if (!(OPERATOR_INVITE_ROLES as readonly string[]).includes(r.role)) return 'role_invalid';
+  const name = r.displayName.trim();
+  if (name.length < 1 || name.length > 40) return 'name_invalid';
+  if (!importEmailSchema.safeParse(r.email.trim()).success) return 'email_invalid';
+  return null;
 }
 
 function parseId(id: string): string {
@@ -78,7 +112,10 @@ function csvCell(v: unknown): string {
 /**
  * 协会和账号开通（M7 规格 2.1、2.4、2.7、6.4）。
  * - /api/admin/operators[...]：开通、修改、停用、恢复协会，开通协会的运营商管理员——只有平台管理员；
- * - /api/admin/accounts/:id/{suspend,resume,reinvite}：停用、恢复账号、重发邀请（找回密码）——只有平台；
+ * - /api/admin/my-operator、/api/admin/organizations、POST /api/admin/accounts[/import]：
+ *   运营商管理员在本协会开机构、开健管师和机构管理员（第 2 步）；GET /api/admin/accounts 机构管理员只读本机构；
+ * - /api/admin/accounts/:id/{suspend,resume,reinvite}：停用、恢复账号、重发邀请（找回密码）——平台和
+ *   运营商管理员，能动哪些账号由数据库函数限定；
  * - /api/admin/audit-log[/export]：平台看全部、运营商管理员看本协会（行级安全），其他 403；
  * - /api/auth/invite/accept：未登录，凭一次性令牌设置密码。失败统一 410，不区分原因。
  * 邀请链接只在开通、重发邀请的响应里出现一次；日志里不记邮箱、令牌、链接（红线 2、6）。
@@ -204,6 +241,126 @@ export class AdminAccountsController {
     };
   }
 
+  @Get('admin/my-operator')
+  async myOperator(@CurrentSession() session: ResolvedSession): Promise<OperatorResponse> {
+    requireOperatorAdmin(session);
+    const operator = await this.repo.myOperator(session);
+    if (!operator) throw notFound();
+    return { operator };
+  }
+
+  @Get('admin/organizations')
+  async organizations(
+    @CurrentSession() session: ResolvedSession,
+  ): Promise<OrganizationListResponse> {
+    requireOperatorAdmin(session);
+    return { organizations: await this.repo.listOrganizations(session) };
+  }
+
+  @Post('admin/organizations')
+  async createOrganization(
+    @CurrentSession() session: ResolvedSession,
+    @Body() body: unknown,
+  ): Promise<OrganizationResponse> {
+    requireOperatorAdmin(session);
+    const parsed = createOrganizationRequestSchema.safeParse(body);
+    if (!parsed.success) throw badRequest();
+    return { organization: await this.repo.createOrganization(session, parsed.data.name) };
+  }
+
+  @Get('admin/accounts')
+  async operatorAccounts(
+    @CurrentSession() session: ResolvedSession,
+  ): Promise<OperatorAccountListResponse> {
+    if (session.role === 'org_admin') {
+      if (!session.orgId) throw forbidden();
+    } else {
+      requireOperatorAdmin(session);
+    }
+    return { accounts: await this.repo.listOperatorAccounts(session) };
+  }
+
+  @Post('admin/accounts')
+  @Header('Cache-Control', 'no-store')
+  async inviteInOperator(
+    @CurrentSession() session: ResolvedSession,
+    @Body() body: unknown,
+  ): Promise<InviteResponse> {
+    requireOperatorAdmin(session);
+    const parsed = operatorInviteRequestSchema.safeParse(body);
+    if (!parsed.success) throw badRequest();
+    const invite = newInvite();
+    const account = await this.repo.inviteInOperator(session, {
+      ...parsed.data,
+      tokenHash: invite.tokenHash,
+      expiresAt: invite.expiresAt,
+    });
+    if (!account) throw notFound();
+    return {
+      account,
+      invitePath: `/#/invite/${invite.token}`,
+      expiresAt: invite.expiresAt.toISOString(),
+    };
+  }
+
+  /**
+   * 批量开通（规格 2.4 第 2 条）：先查格式，再由数据库逐行查邮箱、机构、席位；
+   * 任何一行有错 400（带每行原因），只有席位不够 409 seat_limit_reached，全对才写入。
+   */
+  @Post('admin/accounts/import')
+  @Header('Cache-Control', 'no-store')
+  async importAccounts(
+    @CurrentSession() session: ResolvedSession,
+    @Body() body: unknown,
+  ): Promise<AccountImportResponse> {
+    requireOperatorAdmin(session);
+    const parsed = accountImportRequestSchema.safeParse(body);
+    if (!parsed.success) throw badRequest();
+    const rows = parsed.data.rows;
+    if (new Set(rows.map((r) => r.row)).size !== rows.length) throw badRequest();
+    const formatErrors = rows.flatMap((r) => {
+      const code = rowFormatError(r);
+      return code ? [{ row: r.row, code }] : [];
+    });
+    const bad = new Set(formatErrors.map((e) => e.row));
+    const expiresAt = new Date(Date.now() + INVITE_TTL_HOURS * HOUR_MS);
+    const tokens = new Map<number, string>();
+    const checked = rows
+      .filter((r) => !bad.has(r.row))
+      .map((r) => {
+        const token = randomBytes(32).toString('base64url');
+        tokens.set(r.row, token);
+        return { ...r, tokenHash: hashToken(token) };
+      });
+    const result = await this.repo.importAccounts(
+      session,
+      checked,
+      expiresAt,
+      formatErrors.length === 0,
+    );
+    const rowErrors = [
+      ...formatErrors,
+      ...result.errors.map((e) => ({ row: e.row, code: e.code as AccountImportRowError })),
+    ].sort((a, b) => a.row - b.row);
+    const needed = rows.filter((r) => r.role === 'manager').length;
+    const seats = { seatsLeft: result.seats_left, needed };
+    // 以数据库是否写入为准：写入后的 seats_left 已扣减，不能再拿来比（租户审查 B1）
+    if (!result.committed) {
+      if (rowErrors.length > 0) {
+        throw new ApiException(HttpStatus.BAD_REQUEST, 'bad_request', { rowErrors, ...seats });
+      }
+      throw seatLimitReached(seats);
+    }
+    return {
+      invites: [...result.accounts].map(([row, account]) => ({
+        row,
+        account,
+        invitePath: `/#/invite/${tokens.get(row)}`,
+        expiresAt: expiresAt.toISOString(),
+      })),
+    };
+  }
+
   @Post('admin/accounts/:id/reinvite')
   @HttpCode(200)
   @Header('Cache-Control', 'no-store')
@@ -211,7 +368,7 @@ export class AdminAccountsController {
     @CurrentSession() session: ResolvedSession,
     @Param('id') id: string,
   ): Promise<InviteResponse> {
-    requirePlatform(session);
+    requireAccountAdmin(session);
     const invite = newInvite();
     const account = await this.repo.reinvite(
       session,
@@ -233,7 +390,7 @@ export class AdminAccountsController {
     @CurrentSession() session: ResolvedSession,
     @Param('id') id: string,
   ): Promise<AccountResponse> {
-    requirePlatform(session);
+    requireAccountAdmin(session);
     if (id === session.userId) throw badRequest();
     const account = await this.repo.setAccountStatus(session, parseId(id), true);
     if (!account) throw notFound();
@@ -246,7 +403,7 @@ export class AdminAccountsController {
     @CurrentSession() session: ResolvedSession,
     @Param('id') id: string,
   ): Promise<AccountResponse> {
-    requirePlatform(session);
+    requireAccountAdmin(session);
     const account = await this.repo.setAccountStatus(session, parseId(id), false);
     if (!account) throw notFound();
     return { account };

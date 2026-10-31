@@ -1,4 +1,5 @@
 import {
+  ACCOUNT_IMPORT_ROW_ERRORS,
   ALLERGENS,
   EXERCISE_CATEGORIES,
   EXERCISE_INTENSITIES,
@@ -52,6 +53,7 @@ describe('后台界面文字', () => {
     ['planLibrary.metrics', ['none', ...GOAL_METRICS]],
     ['visitFrequency.tiers', VISIT_RISK_TIERS],
     ['visitFrequency.methods', VISIT_METHODS],
+    ['accounts.rowErrors', ACCOUNT_IMPORT_ROW_ERRORS],
   ] as const)('%s 覆盖全部取值', (path, values) => {
     expect(Object.keys(lookup(path)).sort()).toEqual([...values].sort());
   });

@@ -4,7 +4,7 @@ import type { Db } from './database.js';
 import type { Role } from './types.js';
 
 /**
- * M7 账号开通的数据库函数（迁移 0032）。函数开头校验调用者角色、写审计、停用时撤销会话；
+ * M7 账号开通的数据库函数（迁移 0032、0033）。函数开头校验调用者角色、写审计、停用时撤销会话；
  * 这里只负责传参。返回 false / null 表示对象不存在或不可操作。
  */
 
@@ -59,7 +59,7 @@ export async function adminSetOperatorStatus(
 export async function adminInviteUser(
   trx: TenantTransaction,
   v: {
-    role: 'operator_admin';
+    role: 'operator_admin' | 'manager' | 'org_admin';
     operatorId: string;
     orgId: string | null;
     email: string;
@@ -118,4 +118,54 @@ export async function seatsUsed(trx: TenantTransaction): Promise<Map<string, num
     group by operator_id
   `.execute(trx);
   return new Map(rows.map((r) => [r.operator_id, Number(r.n)]));
+}
+
+/** 运营商管理员在本协会开机构（协会由会话决定） */
+export async function adminCreateOrganization(
+  trx: TenantTransaction,
+  name: string,
+): Promise<string> {
+  const { rows } = await sql<{ id: string }>`
+    select admin_create_organization(${name}) as id
+  `.execute(trx);
+  return rows[0]!.id;
+}
+
+export type ImportRowInput = {
+  row: number;
+  role: string;
+  name: string;
+  email: string;
+  org_name: string;
+  token_hash: string;
+};
+export type ImportResult = {
+  committed: boolean;
+  errors: { row: number; code: string }[];
+  seats_left: number;
+  needed: number;
+  ids: { row: number; id: string }[];
+};
+
+/** 批量开通：commit = false 只校验；有错或席位不够时什么都不写 */
+export async function adminImportAccounts(
+  trx: TenantTransaction,
+  rows: ImportRowInput[],
+  expiresAt: Date,
+  commit: boolean,
+): Promise<ImportResult> {
+  const { rows: out } = await sql<{ r: ImportResult }>`
+    select admin_import_accounts(${JSON.stringify(rows)}::jsonb, ${expiresAt}, ${commit}) as r
+  `.execute(trx);
+  return out[0]!.r;
+}
+
+/** 本协会每位健管师、每个机构的客户数（只有数字） */
+export async function adminClientCounts(
+  trx: TenantTransaction,
+): Promise<{ manager_id: string; org_id: string | null; n: number }[]> {
+  const { rows } = await sql<{ manager_id: string; org_id: string | null; n: string }>`
+    select manager_id, org_id, n from admin_client_counts()
+  `.execute(trx);
+  return rows.map((r) => ({ ...r, n: Number(r.n) }));
 }
