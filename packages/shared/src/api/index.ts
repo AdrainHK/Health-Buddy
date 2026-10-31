@@ -22,3 +22,6 @@ export * from './companion.js';
 export * from './companion-device.js';
 export * from './companion-checkins.js';
 export * from './companion-inbox.js';
+export * from './operators.js';
+export * from './accounts.js';
+export * from './audit-log.js';

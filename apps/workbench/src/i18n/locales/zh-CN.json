@@ -2298,5 +2298,24 @@
         "failed": "发送失败，请稍后再试"
       }
     }
+  },
+  "invite": {
+    "title": "设置密码",
+    "subtitle": "欢迎使用。请设置登录密码，至少 {{min}} 位。",
+    "password": "新密码",
+    "confirm": "再输入一次",
+    "submit": "设置密码",
+    "submitting": "正在设置…",
+    "done": "密码已设置，现在可以用邮箱和新密码登录了。",
+    "goToLogin": "前往登录",
+    "goToAdmin": "前往后台登录",
+    "errors": {
+      "mismatch": "两次输入的密码不一样",
+      "too_short": "密码至少 {{min}} 位",
+      "expired": "链接已失效，请联系管理员重发",
+      "too_many_requests": "尝试次数过多，请稍后再试",
+      "network": "网络连接失败，请检查网络后重试",
+      "unknown": "设置失败，请稍后再试"
+    }
   }
 }

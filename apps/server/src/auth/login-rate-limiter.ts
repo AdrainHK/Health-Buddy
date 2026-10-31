@@ -44,6 +44,11 @@ export class LoginRateLimiter {
     this.failures.delete(emailKey(email));
   }
 
+  /** 清空全部计数（测试之间用） */
+  clear(): void {
+    this.failures.clear();
+  }
+
   private count(key: string): number {
     const cutoff = this.now() - this.limits.windowMs;
     const recent = (this.failures.get(key) ?? []).filter((t) => t > cutoff);

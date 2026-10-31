@@ -4,6 +4,7 @@ import { APP_FILTER } from '@nestjs/core';
 import { AiModule } from './ai/ai.module.js';
 import { ArtifactsModule } from './artifacts/artifacts.module.js';
 import { LLM_PROVIDERS } from './ai/gateway.provider.js';
+import { AdminAccountsModule } from './admin-accounts/admin-accounts.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { ClientsModule } from './clients/clients.module.js';
 import {
@@ -60,6 +61,7 @@ export class AppModule {
         PlanLibraryModule,
         CareModule,
         CompanionModule,
+        AdminAccountsModule,
       ],
       controllers: [HealthController, SkillsController],
       providers: [
