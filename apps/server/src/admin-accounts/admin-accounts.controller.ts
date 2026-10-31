@@ -318,8 +318,18 @@ export class AdminAccountsController {
     if (!parsed.success) throw badRequest();
     const rows = parsed.data.rows;
     if (new Set(rows.map((r) => r.row)).size !== rows.length) throw badRequest();
+    // 套餐代码列（M7 第 4 步）：只能填本协会可售的，只能填给健管师
+    const sellable = rows.some((r) => r.planCode.trim())
+      ? await this.repo.sellablePlans(session)
+      : new Map<string, string>();
+    const planIdOf = (r: (typeof rows)[number]) =>
+      r.planCode.trim() ? (sellable.get(r.planCode.trim().toLowerCase()) ?? null) : null;
     const formatErrors = rows.flatMap((r) => {
-      const code = rowFormatError(r);
+      const code =
+        rowFormatError(r) ??
+        (r.planCode.trim() && (r.role !== 'manager' || !planIdOf(r))
+          ? ('plan_not_available' as const)
+          : null);
       return code ? [{ row: r.row, code }] : [];
     });
     const bad = new Set(formatErrors.map((e) => e.row));
@@ -330,7 +340,7 @@ export class AdminAccountsController {
       .map((r) => {
         const token = randomBytes(32).toString('base64url');
         tokens.set(r.row, token);
-        return { ...r, tokenHash: hashToken(token) };
+        return { ...r, tokenHash: hashToken(token), planId: planIdOf(r) };
       });
     const result = await this.repo.importAccounts(
       session,

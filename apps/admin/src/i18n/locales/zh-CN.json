@@ -1011,6 +1011,7 @@
       "name": "姓名",
       "role": "角色",
       "org": "机构",
+      "plan": "套餐",
       "status": "状态",
       "lastLogin": "最近登录（UTC）",
       "actions": "操作"
@@ -1029,9 +1030,11 @@
       "seatHint": "健管师占用席位，机构管理员不占",
       "org": "所属机构",
       "noOrg": "不属于任何机构",
-      "orgNameHint": "填机构的正式名称，不要填个人姓名或联系方式"
+      "orgNameHint": "填机构的正式名称，不要填个人姓名或联系方式",
+      "plan": "套餐",
+      "defaultPlan": "试点版（默认）"
     },
-    "importHint": "按模板填写姓名、工作邮箱、角色（健管师或机构管理员）和机构名称，一次最多 {{max}} 行，不要填手机号、身份证号。任何一行有错，整批都不导入。",
+    "importHint": "按模板填写姓名、工作邮箱、角色（健管师或机构管理员）、机构名称和套餐代码（可空，只能填给健管师），一次最多 {{max}} 行，不要填手机号、身份证号。任何一行有错，整批都不导入。",
     "template": "下载模板",
     "file": "CSV 文件",
     "importSubmit": "上传并导入",
@@ -1053,7 +1056,8 @@
       "email_taken": "该邮箱不可用",
       "org_not_found": "本协会没有这个机构",
       "org_required": "机构管理员必须填机构",
-      "has_clients": "这个机构已有客户或服务记录，不能新开机构管理员"
+      "has_clients": "这个机构已有客户或服务记录，不能新开机构管理员",
+      "plan_not_available": "套餐代码不在本协会可售范围，或填给了机构管理员"
     },
     "fileErrors": {
       "empty": "文件里没有数据行",
@@ -1072,9 +1076,13 @@
       "unknown": "操作失败，请稍后再试",
       "orgDuplicate": "本协会已有同名机构",
       "orgBadName": "机构名称为空、超过 60 个字或含不合规的用词，请修改",
-      "orgHasClients": "这个机构已有客户或服务记录，不能新开机构管理员"
+      "orgHasClients": "这个机构已有客户或服务记录，不能新开机构管理员",
+      "plan_not_available": "这个套餐不在本协会可售范围，请刷新页面后重选"
     },
-    "hasClientsHintOrg": "本机构有 {{count}} 位客户，不能重发邀请"
+    "hasClientsHintOrg": "本机构有 {{count}} 位客户，不能重发邀请",
+    "planLabel": "{{name}}的套餐",
+    "confirmPlan": "换套餐后，{{name}} 的功能和本月额度立即按新套餐计算。确定更换吗？",
+    "planSaved": "已更换{{name}}的套餐"
   },
   "brand": {
     "nav": "品牌",

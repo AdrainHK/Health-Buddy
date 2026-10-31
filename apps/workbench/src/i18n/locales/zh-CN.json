@@ -2321,5 +2321,25 @@
   },
   "brand": {
     "withProduct": "{{name}} · {{product}}"
+  },
+  "myAccount": {
+    "open": "我的账号",
+    "title": "我的账号",
+    "close": "关闭",
+    "loading": "正在加载…",
+    "loadFailed": "加载失败，请稍后再试",
+    "name": "姓名",
+    "plan": "套餐",
+    "expires": "到期日",
+    "noExpiry": "未设置",
+    "quotas": {
+      "llm_calls": "本月 AI 调用",
+      "expert_calls": "本月专家调用",
+      "report_pages": "本月报告识别",
+      "companion_devices": "伴侣设备"
+    },
+    "usedOf": "已用 {{used}} / {{limit}}",
+    "usedUnlimited": "已用 {{used}}（不限）",
+    "hint": "额度按自然月计算，用完后请联系所属协会。危机、急症的提示不受额度限制。"
   }
 }

@@ -1,4 +1,5 @@
 import { Button, IconButton } from '@health-buddy/ui';
+import { MyAccountDialog } from '../account/MyAccountDialog';
 import { BrandMark } from '../brand/BrandMark';
 import { PRODUCT_NAME, type ClientSummary, type Task, type TwinLevel } from '@health-buddy/shared';
 import {
@@ -18,7 +19,7 @@ import {
   Timer,
   X,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ExpertAvatar } from '../experts/ExpertBadges';
 import { useExpertName } from '../experts/ExpertsContext';
@@ -96,6 +97,7 @@ export function Sidebar({
   clientList,
 }: SidebarProps) {
   const { t } = useTranslation();
+  const [accountOpen, setAccountOpen] = useState(false);
   const classes = [
     styles.sidebar,
     mode === 'drawer' && styles.drawer,
@@ -167,11 +169,15 @@ export function Sidebar({
           />
         )}
         <NavItem icon={<Sparkles size={18} />} label={t('nav.skills')} />
-        <NavItem
-          icon={<Stethoscope size={18} />}
-          label={t('nav.experts')}
-          {...(experts ? { onClick: experts.onOpen, current: experts.active } : {})}
-        />
+        {/* 套餐没有专家中心时不显示入口（M7 规格 2.5 第 4 条） */}
+        {experts && (
+          <NavItem
+            icon={<Stethoscope size={18} />}
+            label={t('nav.experts')}
+            onClick={experts.onOpen}
+            current={experts.active}
+          />
+        )}
         {library && (
           <NavItem
             icon={<BookOpen size={18} />}
@@ -191,9 +197,15 @@ export function Sidebar({
         {account && (
           <div className={styles.account}>
             {!collapsed && (
-              <span className={styles.accountName} title={account.name}>
-                {account.name}
-              </span>
+              <button
+                type="button"
+                className={styles.accountButton}
+                title={t('myAccount.open')}
+                aria-label={t('myAccount.open')}
+                onClick={() => setAccountOpen(true)}
+              >
+                <span className={styles.accountName}>{account.name}</span>
+              </button>
             )}
             <IconButton
               label={t('auth.logout')}
@@ -203,6 +215,9 @@ export function Sidebar({
           </div>
         )}
       </div>
+      {account && accountOpen && (
+        <MyAccountDialog name={account.name} onClose={() => setAccountOpen(false)} />
+      )}
     </aside>
   );
 }

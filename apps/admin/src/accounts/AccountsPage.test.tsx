@@ -12,6 +12,23 @@ import { ids, json, makeThresholds, mockApi, USERS } from '../test/mockApi';
 const TOKEN = 'B'.repeat(43);
 const M1 = '44444444-4444-4444-8444-444444444441';
 const M2 = '44444444-4444-4444-8444-444444444442';
+const PLAN_ID = '55555555-5555-4555-8555-555555555552';
+const PLAN_PRO = '55555555-5555-4555-8555-555555555553';
+const plan = (id: string, name: string) => ({
+  id,
+  code: name,
+  name,
+  features: { experts: true, twin: true, care: true, companion: true },
+  monthlyQuotas: {
+    llm_calls: null,
+    expert_calls: null,
+    report_pages: null,
+    companion_devices: null,
+  },
+  status: 'active',
+  assignedCount: null,
+  updatedAt: '2026-10-31T00:00:00.000Z',
+});
 
 const OPERATOR: OperatorSummary = {
   id: ids.operator,
@@ -48,6 +65,8 @@ function account(over: Partial<OperatorAccount>): OperatorAccount {
     createdAt: '2026-10-01T00:00:00.000Z',
     lastLoginAt: '2026-10-30T02:00:00.000Z',
     clientCount: 3,
+    planId: PLAN_ID,
+    planName: '合成基础版',
     ...over,
   };
 }
@@ -67,6 +86,8 @@ function renderPage(
     'GET /admin/my-operator': () => json(200, { operator: OPERATOR }),
     'GET /admin/organizations': () => json(200, { organizations: [ORG] }),
     'GET /admin/accounts': () => json(200, { accounts: ACCOUNTS }),
+    'GET /admin/plans': () =>
+      json(200, { plans: [plan(PLAN_ID, '合成基础版'), plan(PLAN_PRO, '合成专业版')] }),
     ...routes,
   });
   render(<App />);
@@ -124,6 +145,7 @@ describe('协会账号页（M7 规格 2.4）', () => {
       email: 'new@test.example',
       role: 'manager',
       orgId: ids.org,
+      planId: null,
     });
     const link = await screen.findByTestId('invite-link');
     expect(within(link).getByRole('textbox')).toHaveValue(
@@ -177,6 +199,7 @@ describe('协会账号页（M7 规格 2.4）', () => {
           email: 'a@test.example',
           role: 'manager',
           orgName: '',
+          planCode: '',
         },
         {
           row: 3,
@@ -184,6 +207,7 @@ describe('协会账号页（M7 规格 2.4）', () => {
           email: 'b@test.example',
           role: 'manager',
           orgName: '',
+          planCode: '',
         },
         {
           row: 4,
@@ -191,6 +215,7 @@ describe('协会账号页（M7 规格 2.4）', () => {
           email: 'c@test.example',
           role: 'manager',
           orgName: '不存在的机构',
+          planCode: '',
         },
       ],
     });
@@ -224,5 +249,18 @@ describe('协会账号页（M7 规格 2.4）', () => {
     expect(screen.queryByRole('button', { name: /停用/ })).toBeNull();
     expect(api.callsTo('GET', '/admin/organizations')).toHaveLength(0);
     expect(api.callsTo('GET', '/admin/my-operator')).toHaveLength(0);
+  });
+
+  it('换套餐：确认后保存（M7 第 4 步）', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { api, user } = renderPage({
+      [`PATCH /admin/accounts/${M2}`]: () => json(200, { ok: true }),
+    });
+    const select = await screen.findByRole('combobox', { name: '合成健管师乙的套餐' });
+    expect(select).toHaveValue(PLAN_ID);
+    await user.selectOptions(select, PLAN_PRO);
+    expect(api.callsTo('PATCH', `/admin/accounts/${M2}`)[0]?.body).toEqual({ planId: PLAN_PRO });
+    expect(await screen.findByRole('status')).toHaveTextContent('已更换合成健管师乙的套餐');
+    vi.restoreAllMocks();
   });
 });

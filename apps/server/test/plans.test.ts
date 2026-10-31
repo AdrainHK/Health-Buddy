@@ -387,4 +387,76 @@ describe('套餐和额度', () => {
       .send({});
     expect(res.status).not.toBe(403);
   });
+
+  it('4b：单个开通、批量导入时选套餐；不可售的整批拒绝；账号列表显示套餐', async () => {
+    await owner
+      .updateTable('operators')
+      .set({ seat_limit: 20 } as never)
+      .where('id', '=', f.operatorA)
+      .execute();
+    const plan = await createPlan();
+    const other = await createPlan({ code: 'other', name: '合成别的版' });
+    await platform
+      .put(`/api/admin/operators/${f.operatorA}/plans`)
+      .send({ planIds: [plan.id] })
+      .expect(200);
+    const one = await opA
+      .post('/api/admin/accounts')
+      .send({
+        displayName: '合成甲',
+        email: 'm7-p1@test.example',
+        role: 'manager',
+        orgId: null,
+        planId: plan.id,
+      })
+      .expect(201);
+    await opA
+      .post('/api/admin/accounts')
+      .send({
+        displayName: '合成乙',
+        email: 'm7-p2@test.example',
+        role: 'manager',
+        orgId: null,
+        planId: other.id,
+      })
+      .expect(400);
+    expect(
+      await owner
+        .selectFrom('users')
+        .select('id')
+        .where('email', '=', 'm7-p2@test.example')
+        .execute(),
+    ).toEqual([]);
+    const row = (n: number, planCode: string, role = 'manager') => ({
+      row: n,
+      displayName: `合成${n}`,
+      email: `m7-pb-${n}@test.example`,
+      role,
+      orgName: '',
+      planCode,
+    });
+    const bad = await opA
+      .post('/api/admin/accounts/import')
+      .send({ rows: [row(2, 'BASIC'), row(3, 'other'), row(4, 'basic', 'org_admin')] })
+      .expect(400);
+    expect(bad.body.rowErrors).toEqual([
+      { row: 3, code: 'plan_not_available' },
+      { row: 4, code: 'plan_not_available' },
+    ]);
+    await opA
+      .post('/api/admin/accounts/import')
+      .send({ rows: [row(2, 'basic'), row(3, '')] })
+      .expect(201);
+    const accounts = (await opA.get('/api/admin/accounts').expect(200)).body.accounts as {
+      id: string;
+      email: string;
+      planName: string | null;
+    }[];
+    const byEmail = (e: string) => accounts.find((a) => a.email === e);
+    expect(byEmail('m7-p1@test.example')?.planName).toBe('合成基础版');
+    expect(byEmail('m7-pb-2@test.example')?.planName).toBe('合成基础版');
+    expect(byEmail('m7-pb-3@test.example')?.planName).toBe('试点版');
+    expect(accounts.find((a) => a.id === f.users.operatorAdminA.id)?.planName).toBeNull();
+    expect(one.body.account.id).toBe(byEmail('m7-p1@test.example')?.id);
+  });
 });
