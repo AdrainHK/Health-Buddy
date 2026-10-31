@@ -694,7 +694,7 @@ export interface AdminAuditLogTable {
   operator_id: ColumnType<string | null, never, never>;
   actor_id: ColumnType<string | null, never, never>;
   actor_role: ColumnType<Role | null, never, never>;
-  object_type: ColumnType<'operator' | 'user', never, never>;
+  object_type: ColumnType<'operator' | 'organization' | 'user', never, never>;
   object_id: ColumnType<string, never, never>;
   action: ColumnType<string, never, never>;
   before: ColumnType<Record<string, unknown> | null, never, never>;

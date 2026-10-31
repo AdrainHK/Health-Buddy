@@ -26,6 +26,10 @@ export const API_ERROR_CODES = [
   'transcription_failed',
   /** 邀请链接无效、过期或已用过（M7 规格 2.4），HTTP 410；不区分具体原因 */
   'invite_expired',
+  /** 协会席位用完（M7 规格 2.4 第 5 条），HTTP 409；带 seatsLeft、needed */
+  'seat_limit_reached',
+  /** 账号还能看到客户明细：名下有客户的健管师不能停用、不能重发邀请，有客户的机构不能新开机构管理员（M7 Q8），HTTP 409 */
+  'has_clients',
   'internal_error',
 ] as const;
 

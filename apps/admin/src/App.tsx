@@ -12,9 +12,11 @@ import {
   History,
   MessageSquareText,
   ShieldAlert,
+  Users,
 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { AccountsPage } from './accounts/AccountsPage';
 import { AuditLogPage } from './audit-log/AuditLogPage';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { LoginPage } from './auth/LoginPage';
@@ -43,13 +45,14 @@ type SectionId =
   | 'companion-scripts'
   | 'device-batches'
   | 'operators'
+  | 'accounts'
   | 'audit-log';
 
 /**
  * 各角色能看到的版块。危急指标、孪生状态规则、方案库、随访频次规则：所有后台角色
  * （只有平台能改，M4 规格 2.10、M5 规格 2.12）；
  * 专家管理、伴侣话术和出厂设备、运营商开通：只有平台管理员（Q11、M6 规格 2.10、M7 规格 2.1）；
- * 操作记录：平台和协会管理员（M7 规格 2.7）；专家统计、孪生统计：平台和协会管理员（M3 规格 1.3、M4 规格 7.2）。
+ * 账号：协会管理员开通和管理，机构管理员只读本机构（M7 规格 2.4、Q9）；操作记录：平台和协会管理员（M7 规格 2.7）；专家统计、孪生统计：平台和协会管理员（M3 规格 1.3、M4 规格 7.2）。
  * 界面只决定显示什么，权限在后端。
  */
 function sectionsFor(role: CurrentUser['role']): SectionId[] {
@@ -71,7 +74,10 @@ function sectionsFor(role: CurrentUser['role']): SectionId[] {
       'audit-log',
     ];
   }
-  if (role === 'operator_admin') return [...shared, 'expert-stats', 'twin-stats', 'audit-log'];
+  if (role === 'operator_admin') {
+    return [...shared, 'expert-stats', 'twin-stats', 'accounts', 'audit-log'];
+  }
+  if (role === 'org_admin') return [...shared, 'accounts'];
   return shared;
 }
 
@@ -86,6 +92,7 @@ const ICONS: Record<SectionId, ReactNode> = {
   'companion-scripts': <MessageSquareText size={16} aria-hidden />,
   'device-batches': <Cpu size={16} aria-hidden />,
   operators: <Building2 size={16} aria-hidden />,
+  accounts: <Users size={16} aria-hidden />,
   'audit-log': <History size={16} aria-hidden />,
 };
 
@@ -156,6 +163,7 @@ function Console({ user, onLogout }: { user: CurrentUser; onLogout: () => void }
     'companion-scripts': t('companionScripts.nav'),
     'device-batches': t('deviceBatches.nav'),
     operators: t('operators.nav'),
+    accounts: t('accounts.nav'),
     'audit-log': t('auditLog.nav'),
   };
   const sections: AdminSection[] = allowed.map((id) => ({
@@ -175,6 +183,7 @@ function Console({ user, onLogout }: { user: CurrentUser; onLogout: () => void }
       {current === 'companion-scripts' && <CompanionScriptsPage />}
       {current === 'device-batches' && <DeviceBatchesPage />}
       {current === 'operators' && <OperatorsPage />}
+      {current === 'accounts' && <AccountsPage user={user} />}
       {current === 'audit-log' && <AuditLogPage user={user} />}
     </AdminShell>
   );

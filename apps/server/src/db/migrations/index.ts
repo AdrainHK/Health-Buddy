@@ -31,6 +31,7 @@ import * as m0029 from './0029-companion-inbox.js';
 import * as m0030 from './0030-handoff-reply.js';
 import * as m0031 from './0031-twin-mental.js';
 import * as m0032 from './0032-account-provisioning.js';
+import * as m0033 from './0033-operator-accounts.js';
 
 export interface Migration {
   name: string;
@@ -71,4 +72,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { name: '0030-handoff-reply', up: m0030.up },
   { name: '0031-twin-mental', up: m0031.up },
   { name: '0032-account-provisioning', up: m0032.up },
+  { name: '0033-operator-accounts', up: m0033.up },
 ];

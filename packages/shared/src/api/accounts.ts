@@ -65,3 +65,170 @@ export type AcceptInviteRequest = z.infer<typeof acceptInviteRequestSchema>;
 
 export const acceptInviteResponseSchema = z.object({ role: roleSchema });
 export type AcceptInviteResponse = z.infer<typeof acceptInviteResponseSchema>;
+
+/* ---------- 第 2 步：协会开通机构和账号（规格 2.4，Q7–Q9） ---------- */
+
+/** 运营商管理员能开的角色（机构管理员只读，Q9） */
+export const OPERATOR_INVITE_ROLES = ['manager', 'org_admin'] as const;
+export const operatorInviteRoleSchema = z.enum(OPERATOR_INVITE_ROLES);
+export type OperatorInviteRole = z.infer<typeof operatorInviteRoleSchema>;
+
+/** 单个开通：机构管理员必须选机构，健管师的机构可空 */
+export const operatorInviteRequestSchema = z
+  .object({
+    displayName: z.string().trim().min(1).max(40),
+    email: z.email().max(254),
+    role: operatorInviteRoleSchema,
+    orgId: z.uuid().nullable(),
+  })
+  .strict()
+  .refine((v) => v.role !== 'org_admin' || v.orgId !== null, { path: ['orgId'] });
+export type OperatorInviteRequest = z.infer<typeof operatorInviteRequestSchema>;
+
+/**
+ * 协会“账号”页的一行。clientCount 只是数字（协会看不到客户明细），用来提示能否停用、重发邀请；
+ * 机构管理员查看时为 null
+ */
+export const operatorAccountSchema = accountSummarySchema.extend({
+  clientCount: z.number().int().nonnegative().nullable(),
+});
+export type OperatorAccount = z.infer<typeof operatorAccountSchema>;
+export const operatorAccountListResponseSchema = z.object({
+  accounts: z.array(operatorAccountSchema),
+});
+export type OperatorAccountListResponse = z.infer<typeof operatorAccountListResponseSchema>;
+
+export const ORGANIZATION_NAME_MAX = 60;
+export const createOrganizationRequestSchema = z
+  .object({ name: z.string().trim().min(1).max(ORGANIZATION_NAME_MAX) })
+  .strict();
+export type CreateOrganizationRequest = z.infer<typeof createOrganizationRequestSchema>;
+
+export const organizationSummarySchema = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  managerCount: z.number().int().nonnegative(),
+  clientCount: z.number().int().nonnegative(),
+  createdAt: z.iso.datetime(),
+});
+export type OrganizationSummary = z.infer<typeof organizationSummarySchema>;
+export const organizationListResponseSchema = z.object({
+  organizations: z.array(organizationSummarySchema),
+});
+export type OrganizationListResponse = z.infer<typeof organizationListResponseSchema>;
+export const organizationResponseSchema = z.object({ organization: organizationSummarySchema });
+export type OrganizationResponse = z.infer<typeof organizationResponseSchema>;
+
+/** 批量开通（规格 2.4 第 2 条）：一次最多 200 行，任何一行有错整批不导入 */
+export const ACCOUNT_IMPORT_MAX_ROWS = 200;
+export const ACCOUNT_IMPORT_ROW_ERRORS = [
+  'role_invalid',
+  'name_invalid',
+  'email_invalid',
+  /** 同一个文件里重复 */
+  'email_repeated',
+  /** 已被使用（不说被谁用，验收 16） */
+  'email_taken',
+  'org_not_found',
+  /** 机构管理员必须填机构 */
+  'org_required',
+  /** 机构里已有客户，不能新开机构管理员 */
+  'has_clients',
+] as const;
+export type AccountImportRowError = (typeof ACCOUNT_IMPORT_ROW_ERRORS)[number];
+
+/** 行内容原样上传（只限长度），逐行校验在后端，错误按行号返回 */
+export const accountImportRowSchema = z
+  .object({
+    row: z.number().int().min(1).max(10_000),
+    displayName: z.string().max(200),
+    email: z.string().max(320),
+    role: z.string().max(40),
+    orgName: z.string().max(200),
+  })
+  .strict();
+export type AccountImportRow = z.infer<typeof accountImportRowSchema>;
+
+export const accountImportRequestSchema = z
+  .object({ rows: z.array(accountImportRowSchema).min(1).max(ACCOUNT_IMPORT_MAX_ROWS) })
+  .strict();
+export type AccountImportRequest = z.infer<typeof accountImportRequestSchema>;
+
+/** 导入成功：每人的一次性链接只在这里出现一次 */
+export const accountImportResponseSchema = z.object({
+  invites: z.array(inviteResponseSchema.extend({ row: z.number().int() })),
+});
+export type AccountImportResponse = z.infer<typeof accountImportResponseSchema>;
+
+/** 导入失败（HTTP 400 bad_request，或只有席位不够时 409 seat_limit_reached）的细节 */
+export const accountImportErrorSchema = z.object({
+  error: z.enum(['bad_request', 'seat_limit_reached']),
+  rowErrors: z
+    .array(z.object({ row: z.number().int(), code: z.enum(ACCOUNT_IMPORT_ROW_ERRORS) }))
+    .default([]),
+  seatsLeft: z.number().int(),
+  needed: z.number().int(),
+});
+export type AccountImportError = z.infer<typeof accountImportErrorSchema>;
+
+/** CSV 模板的表头（套餐代码在第 4 步加） */
+export const ACCOUNT_IMPORT_HEADER = ['姓名', '邮箱', '角色', '机构名称'] as const;
+const ROLE_ALIASES: Record<string, string> = {
+  健管师: 'manager',
+  健康管理师: 'manager',
+  机构管理员: 'org_admin',
+};
+
+/** 解析一个 CSV 行（支持双引号转义） */
+function csvFields(line: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i]!;
+    if (quoted) {
+      if (c === '"' && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else if (c === '"') quoted = false;
+      else cur += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ',') {
+      out.push(cur);
+      cur = '';
+    } else cur += c;
+  }
+  out.push(cur);
+  return out.map((s) => s.trim());
+}
+
+export type AccountCsvParse =
+  | { ok: true; rows: AccountImportRow[] }
+  | { ok: false; error: 'empty' | 'bad_header' | 'too_many_rows' };
+
+/**
+ * 解析批量开通的 CSV。行号按文件里的行算（表头是第 1 行），空行跳过；
+ * 角色可以写中文（健管师、机构管理员）。只拆字段，不做业务校验。
+ */
+export function parseAccountCsv(text: string): AccountCsvParse {
+  const lines = text.replace(/^\uFEFF/, '').split(/\r\n|\n|\r/);
+  const header = csvFields(lines[0] ?? '');
+  if (ACCOUNT_IMPORT_HEADER.some((h, i) => header[i] !== h)) {
+    return { ok: false, error: lines.every((l) => l.trim() === '') ? 'empty' : 'bad_header' };
+  }
+  const rows: AccountImportRow[] = [];
+  lines.slice(1).forEach((line, i) => {
+    if (line.trim() === '') return;
+    const [displayName = '', email = '', role = '', orgName = ''] = csvFields(line);
+    rows.push({
+      row: i + 2,
+      displayName: displayName.slice(0, 200),
+      email: email.slice(0, 320),
+      role: (ROLE_ALIASES[role] ?? role).slice(0, 40),
+      orgName: orgName.slice(0, 200),
+    });
+  });
+  if (rows.length === 0) return { ok: false, error: 'empty' };
+  if (rows.length > ACCOUNT_IMPORT_MAX_ROWS) return { ok: false, error: 'too_many_rows' };
+  return { ok: true, rows };
+}

@@ -939,7 +939,8 @@
     },
     "objects": {
       "operator": "运营商",
-      "user": "账号"
+      "user": "账号",
+      "organization": "机构"
     },
     "actions": {
       "created": "开通",
@@ -966,6 +967,91 @@
       "email": "邮箱",
       "display_name": "姓名",
       "org_id": "机构"
+    }
+  },
+  "accounts": {
+    "nav": "账号",
+    "title": "账号",
+    "disclaimer": "在本协会开通机构、健管师和机构管理员。邀请链接只显示一次，请复制后线下发给本人。名下还有客户的健管师需先把客户转给别的健管师，才能停用或重发邀请；有客户的机构不能新开机构管理员，也不能给它的机构管理员重发邀请。",
+    "disclaimerOrg": "本机构的健管师和管理员账号，只能查看。开通、停用和重发邀请请联系协会管理员。",
+    "seats": "席位：已用 {{used}} / {{limit}}（只算待激活和已激活的健管师）",
+    "createOrg": "新建机构",
+    "invite": "开通账号",
+    "import": "批量导入",
+    "loading": "正在加载…",
+    "loadFailed": "加载失败",
+    "retry": "重试",
+    "orgsTitle": "机构",
+    "noOrgs": "还没有机构",
+    "orgColumns": {
+      "name": "机构名称",
+      "managers": "健管师",
+      "clients": "客户数"
+    },
+    "accountsTitle": "账号",
+    "noAccounts": "还没有账号",
+    "columns": {
+      "name": "姓名",
+      "role": "角色",
+      "org": "机构",
+      "status": "状态",
+      "lastLogin": "最近登录（UTC）",
+      "actions": "操作"
+    },
+    "never": "从未登录",
+    "disabled": "已停用，该账号已退出登录",
+    "orgCreated": "已新建机构“{{name}}”",
+    "reinviteBlocked": "这个账号还能看到客户，不能重发邀请",
+    "disableBlocked": "名下还有 {{count}} 位客户，请先转给别的健管师",
+    "hasClientsHint": "能看到 {{count}} 位客户：不能重发邀请",
+    "form": {
+      "orgName": "机构名称",
+      "name": "姓名",
+      "email": "邮箱",
+      "role": "角色",
+      "seatHint": "健管师占用席位，机构管理员不占",
+      "org": "所属机构",
+      "noOrg": "不属于任何机构"
+    },
+    "importHint": "按模板填写姓名、邮箱、角色（健管师或机构管理员）和机构名称，一次最多 {{max}} 行。任何一行有错，整批都不导入。",
+    "template": "下载模板",
+    "file": "CSV 文件",
+    "importSubmit": "上传并导入",
+    "importing": "正在导入…",
+    "imported": "已开通 {{count}} 个账号",
+    "importColumns": {
+      "row": "行号",
+      "link": "邀请链接"
+    },
+    "copyAll": "复制全部链接",
+    "importRejected": "整批没有导入，请改正后重新上传：",
+    "importSeats": "需要 {{needed}} 个席位，只剩 {{left}} 个，请联系平台增加席位",
+    "rowError": "第 {{row}} 行：{{reason}}",
+    "rowErrors": {
+      "role_invalid": "角色只能填健管师或机构管理员",
+      "name_invalid": "姓名为空或超过 40 个字",
+      "email_invalid": "邮箱格式不对",
+      "email_repeated": "邮箱和文件里前面的行重复",
+      "email_taken": "该邮箱不可用",
+      "org_not_found": "本协会没有这个机构",
+      "org_required": "机构管理员必须填机构",
+      "has_clients": "这个机构已有客户，不能新开机构管理员"
+    },
+    "fileErrors": {
+      "empty": "文件里没有数据行",
+      "bad_header": "表头和模板不一致，请下载模板重新填写",
+      "too_many_rows": "一次最多 {{max}} 行，请分批导入",
+      "read": "文件读取失败，请重新选择"
+    },
+    "errors": {
+      "duplicate": "邮箱或机构名称已被使用",
+      "seat_limit_reached": "席位已用完，请联系平台增加席位",
+      "has_clients": "这个账号还能看到客户：请先把客户转给别的健管师",
+      "org_required": "机构管理员必须选择机构",
+      "bad_request": "填写的内容不符合要求，请检查后再保存",
+      "not_found": "账号或机构不存在，请刷新页面",
+      "network": "网络连接失败，请检查网络后重试",
+      "unknown": "操作失败，请稍后再试"
     }
   }
 }

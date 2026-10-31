@@ -562,7 +562,7 @@ function DetailDialog({
 }
 
 /** 一次性邀请链接：只显示这一次，关闭后不能再查看（Q3） */
-function InviteLink({ invite }: { invite: InviteResponse }) {
+export function InviteLink({ invite }: { invite: InviteResponse }) {
   const { t } = useTranslation();
   const id = useId();
   const link = inviteLink(invite.invitePath);

@@ -1,18 +1,25 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import {
   AUDIT_LOG_LIMIT,
   CONTRACT_EXPIRY_NOTICE_DAYS,
   type AccountSummary,
   type AuditLogEntry,
   type AuditLogQuery,
+  type AccountImportRow,
   type CreateOperatorRequest,
+  type OperatorAccount,
+  type OperatorInviteRequest,
   type OperatorSummary,
+  type OrganizationSummary,
   type UpdateOperatorRequest,
 } from '@health-buddy/shared';
-import { badRequest, conflict } from '../common/api-error.js';
+import { ApiException, badRequest, conflict } from '../common/api-error.js';
 import { dbErrorCode } from '../common/db-error.js';
 import {
+  adminClientCounts,
   adminCreateOperator,
+  adminCreateOrganization,
+  adminImportAccounts,
   adminInviteUser,
   adminReinvite,
   adminSetOperatorStatus,
@@ -20,12 +27,18 @@ import {
   adminUpdateOperator,
   authAcceptInvite,
   seatsUsed,
+  type ImportResult,
+  type ImportRowInput,
 } from '../db/admin-accounts.js';
 import { DB } from '../db/db.provider.js';
 import { withTenant, type Db, type TenantContext, type TenantTransaction } from '../db/database.js';
 import type { Role } from '../db/types.js';
 
 const DAY_MS = 86_400_000;
+
+export const seatLimitReached = (details: { seatsLeft: number; needed: number }) =>
+  new ApiException(HttpStatus.CONFLICT, 'seat_limit_reached', details);
+export const hasClients = () => new ApiException(HttpStatus.CONFLICT, 'has_clients');
 
 type OperatorRow = {
   id: string;
@@ -212,6 +225,117 @@ export class AdminAccountsRepository {
     );
   }
 
+  /* ---------- 第 2 步：运营商管理员在本协会（协会由会话决定） ---------- */
+
+  /** 本协会的信息和席位（运营商管理员读得到自己协会这一行） */
+  myOperator(ctx: TenantContext): Promise<OperatorSummary | undefined> {
+    return withTenant(this.db, ctx, (trx) =>
+      ctx.operatorId ? this.operatorIn(trx, ctx.operatorId) : Promise.resolve(undefined),
+    );
+  }
+
+  listOrganizations(ctx: TenantContext): Promise<OrganizationSummary[]> {
+    return withTenant(this.db, ctx, async (trx) => {
+      const rows = await trx
+        .selectFrom('organizations')
+        .select(['id', 'name', 'created_at'])
+        .where('operator_id', '=', ctx.operatorId!)
+        .orderBy('created_at', 'asc')
+        .execute();
+      return this.withOrgCounts(trx, ctx, rows);
+    });
+  }
+
+  createOrganization(ctx: TenantContext, name: string): Promise<OrganizationSummary> {
+    return this.write(ctx, async (trx) => {
+      const id = await adminCreateOrganization(trx, name);
+      const rows = await trx
+        .selectFrom('organizations')
+        .select(['id', 'name', 'created_at'])
+        .where('id', '=', id)
+        .execute();
+      return (await this.withOrgCounts(trx, ctx, rows))[0]!;
+    });
+  }
+
+  /** 运营商管理员看本协会全部账号；机构管理员只看本机构的（行级安全之外再按会话限定） */
+  listOperatorAccounts(ctx: TenantContext): Promise<OperatorAccount[]> {
+    return withTenant(this.db, ctx, async (trx) => {
+      let q = trx.selectFrom('users').select(ACCOUNT_COLUMNS);
+      q =
+        ctx.role === 'org_admin'
+          ? q.where('org_id', '=', ctx.orgId!)
+          : q.where('operator_id', '=', ctx.operatorId!);
+      const rows = await q.orderBy('created_at', 'desc').execute();
+      if (ctx.role !== 'operator_admin') {
+        return rows.map((r) => ({ ...toAccount(r), clientCount: null }));
+      }
+      const counts = await adminClientCounts(trx);
+      const byManager = new Map<string, number>();
+      const byOrg = new Map<string, number>();
+      for (const c of counts) {
+        byManager.set(c.manager_id, (byManager.get(c.manager_id) ?? 0) + c.n);
+        if (c.org_id) byOrg.set(c.org_id, (byOrg.get(c.org_id) ?? 0) + c.n);
+      }
+      return rows.map((r) => ({
+        ...toAccount(r),
+        clientCount:
+          r.role === 'manager'
+            ? (byManager.get(r.id) ?? 0)
+            : r.role === 'org_admin' && r.org_id
+              ? (byOrg.get(r.org_id) ?? 0)
+              : 0,
+      }));
+    });
+  }
+
+  inviteInOperator(
+    ctx: TenantContext,
+    v: OperatorInviteRequest & { tokenHash: Buffer; expiresAt: Date },
+  ): Promise<AccountSummary | undefined> {
+    return this.write(ctx, async (trx) => {
+      const id = await adminInviteUser(trx, {
+        role: v.role,
+        operatorId: ctx.operatorId!,
+        orgId: v.orgId,
+        email: v.email,
+        displayName: v.displayName,
+        tokenHash: v.tokenHash,
+        expiresAt: v.expiresAt,
+      });
+      return this.accountIn(trx, id);
+    });
+  }
+
+  /**
+   * 批量开通。rows 里已带好每行的令牌哈希；formatErrors 是服务器先查出来的格式错误，
+   * 有的话只让数据库校验其余行、不写入。成功返回每行的账号。
+   */
+  importAccounts(
+    ctx: TenantContext,
+    rows: (AccountImportRow & { tokenHash: Buffer })[],
+    expiresAt: Date,
+    commit: boolean,
+  ): Promise<ImportResult & { accounts: Map<number, AccountSummary> }> {
+    return this.write(ctx, async (trx) => {
+      const input: ImportRowInput[] = rows.map((r) => ({
+        row: r.row,
+        role: r.role,
+        name: r.displayName,
+        email: r.email,
+        org_name: r.orgName,
+        token_hash: r.tokenHash.toString('hex'),
+      }));
+      const result = await adminImportAccounts(trx, input, expiresAt, commit);
+      const accounts = new Map<number, AccountSummary>();
+      for (const { row, id } of result.ids) {
+        const account = await this.accountIn(trx, id);
+        if (account) accounts.set(row, account);
+      }
+      return { ...result, accounts };
+    });
+  }
+
   /** 接受邀请，返回账号角色（激活前不在任何租户上下文里，只经函数） */
   async acceptInvite(tokenHash: Buffer, passwordHash: string): Promise<Role | null> {
     return authAcceptInvite(this.db, tokenHash, passwordHash);
@@ -266,6 +390,29 @@ export class AdminAccountsRepository {
     return toOperator(row as OperatorRow, used.get(id) ?? 0, new Date());
   }
 
+  private async withOrgCounts(
+    trx: TenantTransaction,
+    ctx: TenantContext,
+    rows: { id: string; name: string; created_at: Date }[],
+  ): Promise<OrganizationSummary[]> {
+    const managers = await trx
+      .selectFrom('users')
+      .select(['org_id', (eb) => eb.fn.countAll<string>().as('n')])
+      .where('operator_id', '=', ctx.operatorId!)
+      .where('role', '=', 'manager')
+      .where('status', 'in', ['pending', 'active'])
+      .groupBy('org_id')
+      .execute();
+    const clients = ctx.role === 'operator_admin' ? await adminClientCounts(trx) : [];
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      managerCount: Number(managers.find((m) => m.org_id === r.id)?.n ?? 0),
+      clientCount: clients.filter((c) => c.org_id === r.id).reduce((a, c) => a + c.n, 0),
+      createdAt: r.created_at.toISOString(),
+    }));
+  }
+
   private async accountIn(trx: TenantTransaction, id: string): Promise<AccountSummary | undefined> {
     const row = await trx
       .selectFrom('users')
@@ -275,13 +422,18 @@ export class AdminAccountsRepository {
     return row && toAccount(row);
   }
 
-  /** 简称、邮箱重复 409；形状、长度不对（数据库 check）400；对象不存在（P0002）由调用方按 404 处理 */
+  /**
+   * 简称、邮箱、机构名重复 409；席位不够 409 seat_limit_reached；有客户 409 has_clients；
+   * 形状、长度不对（数据库 check）400；对象不存在（P0002）由调用方按 404 处理
+   */
   private async write<T>(ctx: TenantContext, fn: (trx: TenantTransaction) => Promise<T>) {
     try {
       return await withTenant(this.db, ctx, fn);
     } catch (err) {
       const code = dbErrorCode(err);
       if (code === '23505') throw conflict();
+      if (code === 'HB001') throw seatLimitReached({ seatsLeft: 0, needed: 1 });
+      if (code === 'HB002') throw hasClients();
       if (code === '23514' || code === '22023' || code === '22001') throw badRequest();
       if (code === 'P0002') return undefined as T;
       throw err;
