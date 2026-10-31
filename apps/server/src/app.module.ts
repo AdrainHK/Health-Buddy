@@ -6,6 +6,7 @@ import { ArtifactsModule } from './artifacts/artifacts.module.js';
 import { LLM_PROVIDERS } from './ai/gateway.provider.js';
 import { AdminAccountsModule } from './admin-accounts/admin-accounts.module.js';
 import { BrandModule } from './brand/brand.module.js';
+import { PlansModule } from './plans/plans.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { ClientsModule } from './clients/clients.module.js';
 import {
@@ -64,6 +65,7 @@ export class AppModule {
         CompanionModule,
         AdminAccountsModule,
         BrandModule,
+        PlansModule,
       ],
       controllers: [HealthController, SkillsController],
       providers: [

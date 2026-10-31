@@ -914,7 +914,11 @@
       "unknown": "操作失败，请稍后再试"
     },
     "confirmReinvite": "重发后，{{name}} 原来的密码立即失效并退出登录，需要用新链接重新设置密码。确定重发吗？",
-    "confirmDisable": "停用后，{{name}} 立即退出登录，不能再登录，直到恢复。确定停用吗？"
+    "confirmDisable": "停用后，{{name}} 立即退出登录，不能再登录，直到恢复。确定停用吗？",
+    "plansTitle": "可售套餐",
+    "plansHint": "协会只能给健管师分配这里勾选的套餐；取消可售不影响已经分配的账号。",
+    "plansSave": "保存可售套餐",
+    "plansSaved": "已保存可售套餐"
   },
   "auditLog": {
     "nav": "操作记录",
@@ -941,7 +945,8 @@
     "objects": {
       "operator": "运营商",
       "user": "账号",
-      "organization": "机构"
+      "organization": "机构",
+      "plan": "套餐"
     },
     "actions": {
       "created": "开通",
@@ -952,7 +957,9 @@
       "reinvited": "重发邀请",
       "activated": "激活",
       "disabled": "停用账号",
-      "enabled": "恢复账号"
+      "enabled": "恢复账号",
+      "retired": "停售",
+      "plan_assigned": "分配套餐"
     },
     "noChange": "—",
     "fields": {
@@ -971,7 +978,12 @@
       "brand_name": "显示名称",
       "brand_color": "主色",
       "login_greeting": "登录页欢迎语",
-      "logo": "Logo 更换时间"
+      "logo": "Logo 更换时间",
+      "plans": "可售套餐",
+      "plan": "套餐",
+      "features": "功能",
+      "monthly_quotas": "每月额度",
+      "code": "代码"
     }
   },
   "accounts": {
@@ -1109,6 +1121,67 @@
       "too_large": "图片不能超过 500 KB",
       "not_configured": "文件存储还没有配置，暂时不能上传 Logo",
       "failed": "上传失败，请稍后再试"
+    }
+  },
+  "plans": {
+    "nav": "套餐",
+    "title": "套餐",
+    "subtitle": "定义套餐包含的功能和每月额度，再在运营商详情里设定协会可售的套餐。",
+    "disclaimer": "套餐档位和额度是商业规则，待产品负责人确定；在此之前使用内置的“试点版”（全部功能、不另设额度）。额度留空表示只受系统的技术性上限。修改套餐会影响所有使用它的健管师；危机、急症的处理不受额度限制；报告识别、截图转写的额度用完后，请人工查看原件。",
+    "create": "新建套餐",
+    "loading": "正在加载…",
+    "loadFailed": "加载失败",
+    "retry": "重试",
+    "columns": {
+      "name": "名称",
+      "features": "功能",
+      "quotas": "每月额度",
+      "assigned": "使用人数",
+      "actions": "操作"
+    },
+    "status": {
+      "retired": "已停售"
+    },
+    "features": {
+      "experts": "专家中心",
+      "twin": "数字孪生",
+      "care": "方案与随访",
+      "companion": "AI 健康伴侣"
+    },
+    "quotas": {
+      "llm_calls": "大模型调用（次/月）",
+      "expert_calls": "专家调用（次/月）",
+      "report_pages": "报告识别（页/月）",
+      "companion_devices": "伴侣设备（台）"
+    },
+    "noFeatures": "无",
+    "unlimited": "不限",
+    "edit": "编辑",
+    "editLabel": "编辑{{name}}",
+    "editTitle": "编辑：{{name}}",
+    "retire": "停售",
+    "retireLabel": "停售{{name}}",
+    "retired": "已停售“{{name}}”",
+    "saved": "已保存“{{name}}”",
+    "confirmUpdate": "正在使用这个套餐的有 {{count}} 位健管师，修改会立即影响他们的功能和额度。确定保存吗？",
+    "confirmRetire": "停售后不能再分配给新账号，协会也不能再选；正在使用的 {{count}} 位健管师保持不变。确定停售“{{name}}”吗？",
+    "form": {
+      "code": "代码",
+      "codeHint": "小写字母、数字和连字符，用于批量导入文件，创建后不能修改",
+      "name": "名称",
+      "features": "包含的功能",
+      "featuresHint": "没有的功能，健管师不能新建和修改相关内容，已有数据仍可查看和删除。关闭 AI 健康伴侣只是不能绑定新设备：已绑定的福宝照常工作，预警和转交照常送达健管师。",
+      "quotasHint": "留空表示不另设上限。大模型、专家、报告按北京时间的自然月计，伴侣设备是同时绑定的台数。"
+    },
+    "save": "保存",
+    "saving": "正在保存…",
+    "cancel": "取消",
+    "errors": {
+      "duplicate": "代码已被使用",
+      "bad_request": "填写的内容不符合要求：额度须为非负整数或留空",
+      "not_found": "套餐不存在，请刷新页面",
+      "network": "网络连接失败，请检查网络后重试",
+      "unknown": "操作失败，请稍后再试"
     }
   }
 }

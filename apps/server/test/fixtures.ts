@@ -64,6 +64,11 @@ export async function seedFixtures(db: Owner): Promise<Fixtures> {
   await sql`truncate twin_usage_daily, twin_compute_state, twin_rules_reset_marker, follow_up_events, follow_up_items, twin_forecasts, twin_status_history, twin_status_rule_events, twin_status_rules, expert_feedback, expert_calls, expert_consultations, expert_availability_events, expert_availability, storage_purge_queue, client_risk_tiers, client_health_history, artifact_events, artifacts, task_plans, task_steps, task_messages, tasks, critical_threshold_events, critical_thresholds, llm_usage, monitoring_readings, report_indicators, health_reports, sessions, clients, users, organizations, operators cascade`.execute(
     db,
   );
+  // 试点版套餐由迁移写入（M7），级联清空（plans.updated_by 引用 users）后补回来
+  await sql`insert into plans (code, name, features, monthly_quotas) values ('pilot', '试点版',
+    '{"experts": true, "twin": true, "care": true, "companion": true}',
+    '{"llm_calls": null, "expert_calls": null, "report_pages": null, "companion_devices": null}')
+    on conflict do nothing`.execute(db);
   // 阈值由迁移写入（全平台一套），清空后补回来
   for (const r of DEFAULT_CRITICAL_RULES) {
     await db

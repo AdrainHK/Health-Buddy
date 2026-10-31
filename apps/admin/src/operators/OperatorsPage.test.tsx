@@ -157,4 +157,47 @@ describe('运营商开通（M7 规格 2.1）', () => {
       }),
     ).toBeInTheDocument();
   });
+
+  it('可售套餐：只列在售的，勾选后保存（M7 规格 2.5）', async () => {
+    const plan = (id: string, name: string, status: 'active' | 'retired') => ({
+      id,
+      code: name,
+      name,
+      features: { experts: true, twin: true, care: true, companion: true },
+      monthlyQuotas: {
+        llm_calls: null,
+        expert_calls: null,
+        report_pages: null,
+        companion_devices: null,
+      },
+      status,
+      assignedCount: 0,
+      updatedAt: '2026-10-31T00:00:00.000Z',
+    });
+    const P1 = '66666666-6666-4666-8666-666666666661';
+    const P2 = '66666666-6666-4666-8666-666666666662';
+    const P3 = '66666666-6666-4666-8666-666666666663';
+    const { api, user } = renderPage({
+      'GET /admin/plans': () =>
+        json(200, {
+          plans: [
+            plan(P1, '试点版', 'active'),
+            plan(P2, '合成基础版', 'active'),
+            plan(P3, '旧套餐', 'retired'),
+          ],
+        }),
+      [`GET /admin/operators/${OP_ID}/plans`]: () => json(200, { planIds: [P1] }),
+      [`PUT /admin/operators/${OP_ID}/plans`]: () => json(200, { planIds: [P1, P2] }),
+    });
+    await user.click(await screen.findByRole('button', { name: '管理合成协会 M7' }));
+    const box = await screen.findByTestId('sellable-plans');
+    expect(within(box).getByLabelText('试点版')).toBeChecked();
+    expect(within(box).queryByLabelText('旧套餐')).toBeNull();
+    await user.click(within(box).getByLabelText('合成基础版'));
+    await user.click(within(box).getByRole('button', { name: '保存可售套餐' }));
+    expect(await within(box).findByRole('status')).toHaveTextContent('已保存可售套餐');
+    expect(api.callsTo('PUT', `/admin/operators/${OP_ID}/plans`)[0]?.body).toEqual({
+      planIds: [P1, P2],
+    });
+  });
 });

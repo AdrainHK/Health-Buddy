@@ -73,7 +73,11 @@ import {
   type ConsultRun,
   type ExpertSteps,
 } from '../experts/consultation.service.js';
-import { ExpertQuotaExceeded, ExpertsRepository } from '../experts/experts.repository.js';
+import {
+  ExpertMonthlyQuotaExceeded,
+  ExpertQuotaExceeded,
+  ExpertsRepository,
+} from '../experts/experts.repository.js';
 import { allergyTextsOf, exerciseRestriction, restrictExercise } from '@health-buddy/plan-library';
 import { RISK_TIER_CRITERIA } from './risk-tier-criteria.js';
 import { localDate } from '../twin/time-zone.js';
@@ -92,6 +96,11 @@ export interface TurnIo {
   signal: AbortSignal;
   /** 会话仍然有效（没有退出登录、账号没有停用） */
   sessionValid: () => Promise<boolean>;
+  /**
+   * 套餐的大模型调用额度（M7 规格 2.5）：识别完危机、急症信号、调用模型之前调用。
+   * 返回 true 表示本月额度已用完、这一轮不调用模型；有危机或急症信号（risk）时照常放行并记数（红线 4）
+   */
+  quotaGate?: (risk: boolean) => Promise<boolean>;
 }
 
 type DoneReason = 'complete' | 'stopped' | 'refused' | 'error';
@@ -102,6 +111,7 @@ type ErrorKind =
   | 'provider_error'
   | 'invalid_output'
   | 'wording_check_failed'
+  | 'quota_exceeded'
   | 'internal_error';
 
 /** 流式回答期间多久把已生成的文本存一次库，刷新页面也能看到 */
@@ -363,6 +373,9 @@ export class GenerationService {
         crisis: detectCrisisKeywords(signalTexts),
         emergency: detectEmergencyKeywords(signalTexts),
       };
+      if (await io.quotaGate?.(signals.crisis || signals.emergency)) {
+        return await this.finish(ctx, messageId, '', 'error', io, 'quota_exceeded');
+      }
       const client = turn.clientId
         ? await this.readClient(ctx, turn.clientId, steps, turn.reportId ?? null, true)
         : undefined;
@@ -637,6 +650,10 @@ export class GenerationService {
         (emergency ? EMERGENCY_HEADER : '') +
         (client ? criticalNotice(client.snapshot.criticalFlags) : '');
       push(notices);
+      // 额度用完：危急指标提醒照常保留，不调用模型（危机、急症信号时已放行）
+      if (await io.quotaGate?.(crisis || emergency)) {
+        return await this.finish(ctx, messageId, text, 'error', io, 'quota_exceeded');
+      }
 
       let finishReason: 'complete' | 'truncated' | 'refused' = 'complete';
       for await (const event of this.gateway.stream(
@@ -860,6 +877,9 @@ export class GenerationService {
       ];
       const crisis = detectCrisisKeywords(signalTexts);
       const emergencyKeywords = detectEmergencyKeywords(signalTexts);
+      if (await io.quotaGate?.(crisis || emergencyKeywords)) {
+        return await this.finish(ctx, messageId, '', 'error', io, 'quota_exceeded');
+      }
       // 运动安全规则（Q8）：有疑似急症信号时运动部分同样只写“先就医评估”
       if (emergencyKeywords && client.plan?.library && !client.plan.library.exerciseRestriction) {
         client.plan = {
@@ -1541,6 +1561,8 @@ export class GenerationService {
 }
 
 function errorKind(err: unknown): ErrorKind {
+  // 套餐的每月专家调用额度用完（M7 规格 2.5）
+  if (err instanceof ExpertMonthlyQuotaExceeded) return 'quota_exceeded';
   // 每日专家调用次数在并发时用完：和限流一样提示稍后再试
   if (err instanceof ExpertQuotaExceeded) return 'rate_limited';
   if (err instanceof GatewayError) {

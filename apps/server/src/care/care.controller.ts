@@ -1,3 +1,4 @@
+import { PlanFeatureGuard, RequiresFeature } from '../plans/plan-feature.guard.js';
 import {
   Body,
   Controller,
@@ -12,6 +13,7 @@ import {
   Query,
   Req,
   UseInterceptors,
+  UseGuards,
 } from '@nestjs/common';
 import {
   VISIT_MATERIAL_CONSENT_REQUIRED,
@@ -97,6 +99,9 @@ function settleVisit(result: VisitWriteResult) {
  * 别人的客户、方案、随访、素材、记录都按不存在处理（404），不写任何行。
  * 方案文字、重点、备注、素材原文和记录内容都不进日志。
  */
+// 套餐没有方案与随访时，健管师的写操作 403（M7 规格 2.5 第 4 条），只读照常
+@UseGuards(PlanFeatureGuard)
+@RequiresFeature('care')
 @Controller()
 export class CareController {
   private readonly cipher: MaterialCipher | null;

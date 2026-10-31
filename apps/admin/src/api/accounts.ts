@@ -1,4 +1,10 @@
 import {
+  operatorPlansResponseSchema,
+  planListResponseSchema,
+  planResponseSchema,
+  type CreatePlanRequest,
+  type Plan,
+  type UpdatePlanRequest,
   accountImportResponseSchema,
   accountListResponseSchema,
   operatorAccountListResponseSchema,
@@ -155,4 +161,50 @@ export function auditLogExportUrl(q: AuditLogQuery): string {
 /** 后端只返回路径（同一个域名），这里拼上当前地址给管理员复制 */
 export function inviteLink(path: string): string {
   return `${window.location.origin}${path}`;
+}
+
+/* ---------- 第 4 步：套餐（规格 2.5） ---------- */
+
+export async function listPlans(): Promise<Plan[]> {
+  return (await apiRequest('/admin/plans', planListResponseSchema)).plans;
+}
+
+export async function createPlan(body: CreatePlanRequest): Promise<Plan> {
+  return (await apiRequest('/admin/plans', planResponseSchema, { method: 'POST', body })).plan;
+}
+
+export async function updatePlan(id: string, body: UpdatePlanRequest): Promise<Plan> {
+  return (
+    await apiRequest(`/admin/plans/${encodeURIComponent(id)}`, planResponseSchema, {
+      method: 'PATCH',
+      body,
+    })
+  ).plan;
+}
+
+export async function retirePlan(id: string): Promise<Plan> {
+  return (
+    await apiRequest(`/admin/plans/${encodeURIComponent(id)}/retire`, planResponseSchema, {
+      method: 'POST',
+    })
+  ).plan;
+}
+
+export async function getOperatorPlans(operatorId: string): Promise<string[]> {
+  return (
+    await apiRequest(
+      `/admin/operators/${encodeURIComponent(operatorId)}/plans`,
+      operatorPlansResponseSchema,
+    )
+  ).planIds;
+}
+
+export async function setOperatorPlans(operatorId: string, planIds: string[]): Promise<string[]> {
+  return (
+    await apiRequest(
+      `/admin/operators/${encodeURIComponent(operatorId)}/plans`,
+      operatorPlansResponseSchema,
+      { method: 'PUT', body: { planIds } },
+    )
+  ).planIds;
 }

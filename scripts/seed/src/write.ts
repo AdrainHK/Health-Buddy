@@ -63,6 +63,9 @@ export async function writeDemoData(
         contract_end: '2026-12-31',
       });
       summary.operators++;
+      // M7 第 4 步：演示协会可售试点版（健管师没分配套餐时也按试点版处理）
+      await sql`insert into operator_plans (operator_id, plan_id)
+        select ${operatorId}::uuid, id from plans where code = 'pilot'`.execute(trx);
       // M7 第 3 步：演示协会的品牌（合成名称和欢迎语，不上传 Logo）
       await trx
         .insertInto('operator_brands')
@@ -203,6 +206,7 @@ async function removeDemoData(trx: Trx): Promise<void> {
     .execute();
   await trx.deleteFrom('account_invites').where('created_by', 'in', users).execute();
   await trx.deleteFrom('operator_brands').where('operator_id', 'in', ops).execute();
+  await trx.deleteFrom('operator_plans').where('operator_id', 'in', ops).execute();
   await trx.deleteFrom('clients').where('operator_id', 'in', ops).execute();
   await trx.deleteFrom('users').where('operator_id', 'in', ops).execute();
   await trx.deleteFrom('organizations').where('operator_id', 'in', ops).execute();

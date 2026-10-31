@@ -1,4 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { quotaConsume } from '../db/plans.js';
+import { quotaExceeded } from '../plans/quota.service.js';
 import {
   abnormalFromColumns,
   detectCriticalFlags,
@@ -1112,6 +1114,8 @@ async function addEvent(
  */
 async function reservePages(trx: TenantTransaction, ctx: TenantContext, pages: number) {
   if (pages > REPORT_UPLOAD_LIMITS.dailyPages) throw tooManyRequests(['daily_page_limit']);
+  // 套餐的每月识别页数（M7 规格 2.5），在每天 200 页的技术上限之外；同一事务，失败一起回滚
+  if (!(await quotaConsume(trx, 'report_pages', pages, false))) throw quotaExceeded('report_pages');
   try {
     await trx
       .insertInto('report_extraction_quota')

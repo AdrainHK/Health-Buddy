@@ -700,13 +700,57 @@ export interface OperatorBrandsTable {
   updated_at: ColumnType<Date, never, never>;
 }
 
+/** M7 套餐（只读；写入只经 admin_* 函数） */
+export interface PlansTable {
+  id: ColumnType<string, never, never>;
+  code: ColumnType<string, never, never>;
+  name: ColumnType<string, never, never>;
+  features: ColumnType<
+    { experts: boolean; twin: boolean; care: boolean; companion: boolean },
+    never,
+    never
+  >;
+  monthly_quotas: ColumnType<
+    {
+      llm_calls: number | null;
+      expert_calls: number | null;
+      report_pages: number | null;
+      companion_devices: number | null;
+    },
+    never,
+    never
+  >;
+  status: ColumnType<'active' | 'retired', never, never>;
+  updated_by: ColumnType<string | null, never, never>;
+  created_at: ColumnType<Date, never, never>;
+  updated_at: ColumnType<Date, never, never>;
+}
+export interface OperatorPlansTable {
+  operator_id: ColumnType<string, never, never>;
+  plan_id: ColumnType<string, never, never>;
+}
+export interface UserPlansTable {
+  user_id: ColumnType<string, never, never>;
+  plan_id: ColumnType<string, never, never>;
+  assigned_by: ColumnType<string | null, never, never>;
+  assigned_at: ColumnType<Date, never, never>;
+}
+export interface QuotaUsageDailyTable {
+  user_id: ColumnType<string, never, never>;
+  operator_id: ColumnType<string | null, never, never>;
+  org_id: ColumnType<string | null, never, never>;
+  day: ColumnType<Date, never, never>;
+  metric: ColumnType<'llm_calls' | 'expert_calls' | 'report_pages', never, never>;
+  count: ColumnType<number, never, never>;
+}
+
 /** M7 审计日志（只能追加，应用角色只读；写入只经 admin_* 函数） */
 export interface AdminAuditLogTable {
   id: ColumnType<string, never, never>;
   operator_id: ColumnType<string | null, never, never>;
   actor_id: ColumnType<string | null, never, never>;
   actor_role: ColumnType<Role | null, never, never>;
-  object_type: ColumnType<'operator' | 'organization' | 'user', never, never>;
+  object_type: ColumnType<'operator' | 'organization' | 'user' | 'plan', never, never>;
   object_id: ColumnType<string, never, never>;
   action: ColumnType<string, never, never>;
   before: ColumnType<Record<string, unknown> | null, never, never>;
@@ -764,6 +808,10 @@ export interface Database {
   twin_compute_state: TwinComputeStateTable;
   admin_audit_log: AdminAuditLogTable;
   operator_brands: OperatorBrandsTable;
+  plans: PlansTable;
+  operator_plans: OperatorPlansTable;
+  user_plans: UserPlansTable;
+  quota_usage_daily: QuotaUsageDailyTable;
   account_invites: AccountInvitesTable;
   plan_library_recipes: PlanLibraryRecipesTable;
   plan_library_exercises: PlanLibraryExercisesTable;

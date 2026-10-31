@@ -23,7 +23,8 @@ import type {
 import { LLM_GATEWAY, type AppGateway } from '../ai/gateway.provider.js';
 import { APP_CONFIG, type AppConfig } from '../config.js';
 import type { TenantContext } from '../db/database.js';
-import { ExpertsRepository } from './experts.repository.js';
+import { QuotaService } from '../plans/quota.service.js';
+import { ExpertMonthlyQuotaExceeded, ExpertsRepository } from './experts.repository.js';
 
 /** 每位健管师每天最多 200 次专家调用（Q12，路由和汇总不计） */
 export const DAILY_EXPERT_CALLS = 200;
@@ -133,6 +134,7 @@ export class ConsultationService {
     private readonly repo: ExpertsRepository,
     @Inject(LLM_GATEWAY) private readonly gateway: AppGateway,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly quota: QuotaService,
   ) {}
 
   get preview(): boolean {
@@ -141,6 +143,8 @@ export class ConsultationService {
 
   /** 当前账号可用的专家 id（预览开关 + 平台暂停） */
   async availableIds(ctx: TenantContext): Promise<Set<string>> {
+    // 套餐没有专家中心时一位都不可用（M7 规格 2.5 第 4 条）
+    if (!(await this.quota.featureEnabled(ctx, 'experts'))) return new Set();
     const paused = await this.repo.pausedExperts(ctx);
     return new Set(availableExperts({ preview: this.preview, paused }).map((e) => e.meta.id));
   }
@@ -148,6 +152,7 @@ export class ConsultationService {
   /** 这些专家都可用；有一位不可用就按“不存在”处理（规格 2.4） */
   async allAvailable(ctx: TenantContext, ids: readonly string[]): Promise<boolean> {
     if (!ids.length) return true;
+    if (!(await this.quota.featureEnabled(ctx, 'experts'))) return false;
     const paused = await this.repo.pausedExperts(ctx);
     return ids.every((id) => {
       const def = getExpert(id);
@@ -178,6 +183,12 @@ export class ConsultationService {
     run: ConsultRun,
     io: { emit: (event: TaskStreamEvent) => void; signal: AbortSignal; steps: ExpertSteps },
   ): Promise<ConsultOutcome | undefined> {
+    // 套餐没有专家中心：对话里不发起专家咨询，当作没有可用专家（验收 8）
+    if (!(await this.quota.featureEnabled(ctx, 'experts'))) return undefined;
+    // 每月专家额度已用完：路由（会调用模型）之前就停下（M7 规格 7.1），危机、急症提示由调用方保留
+    if ((await this.quota.remaining(ctx, 'expert_calls')) === 0) {
+      throw new ExpertMonthlyQuotaExceeded();
+    }
     const paused = await this.repo.pausedExperts(ctx);
     const available: ExpertProfile[] = availableExperts({ preview: this.preview, paused }).map(
       (e) => toProfile(e, { preview: this.preview }),
