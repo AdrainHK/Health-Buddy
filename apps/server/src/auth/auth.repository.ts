@@ -6,7 +6,8 @@ import type { Role } from '../db/types.js';
 
 export interface LoginCandidate {
   id: string;
-  passwordHash: string;
+  /** 待激活（M7）的账号还没有密码 */
+  passwordHash: string | null;
   role: Role;
   operatorId: string | null;
   orgId: string | null;
@@ -28,7 +29,7 @@ export class AuthRepository {
   async findLoginCandidate(email: string): Promise<LoginCandidate | undefined> {
     const { rows } = await sql<{
       id: string;
-      password_hash: string;
+      password_hash: string | null;
       role: Role;
       operator_id: string | null;
       org_id: string | null;

@@ -825,5 +825,147 @@
       "notConfigured": "服务器还没有配置设备密钥的加密密钥（COMPANION_DEVICE_KEY），暂时不能导入。",
       "unknown": "导入没有成功，请稍后重试。"
     }
+  },
+  "operators": {
+    "nav": "运营商",
+    "title": "运营商",
+    "subtitle": "开通各地协会，设定管辖区域、席位和合同期限，为协会开第一位管理员。",
+    "disclaimer": "合同到期只提醒，不会自动停用；停用协会后，该协会所有后台和工作台账号立即退出登录，数据保留，恢复后重新登录即可使用。",
+    "create": "开通运营商",
+    "loading": "正在加载…",
+    "loadFailed": "加载失败",
+    "retry": "重试",
+    "empty": "还没有开通任何运营商",
+    "columns": {
+      "name": "名称",
+      "status": "状态",
+      "seats": "席位",
+      "contractEnd": "合同到期",
+      "actions": "操作"
+    },
+    "status": {
+      "active": "已开通",
+      "suspended": "已停用"
+    },
+    "seats": "已用 {{used}} / {{limit}}",
+    "noContract": "未填写",
+    "expired": "（已到期）",
+    "expiringSoon": "（30 天内到期）",
+    "manage": "管理",
+    "manageLabel": "管理{{name}}",
+    "created": "已开通“{{name}}”",
+    "detailTitle": "{{name}}",
+    "statusTitle": "停用和恢复",
+    "suspendReason": "停用原因",
+    "suspendHint": "至少 {{min}} 个字，会记入操作记录，协会管理员也能看到；请勿填写个人或健康信息",
+    "suspend": "停用这个协会",
+    "suspended": "已停用，该协会所有账号已退出登录",
+    "suspendedBecause": "已停用：{{reason}}",
+    "resume": "恢复",
+    "resumed": "已恢复",
+    "accountsTitle": "协会账号",
+    "noAccounts": "还没有账号",
+    "accountColumns": {
+      "name": "姓名",
+      "role": "角色",
+      "status": "状态"
+    },
+    "accountStatus": {
+      "pending": "待激活",
+      "active": "已激活",
+      "disabled": "已停用"
+    },
+    "reinvite": "重发邀请",
+    "reinviteLabel": "给{{name}}重发邀请",
+    "disable": "停用",
+    "enable": "恢复",
+    "disableLabel": "停用{{name}}",
+    "enableLabel": "恢复{{name}}",
+    "inviteTitle": "开通协会管理员",
+    "invite": "生成邀请链接",
+    "invited": "已生成邀请链接",
+    "inviteLinkFor": "{{name}} 的邀请链接",
+    "inviteLinkHint": "请复制后线下发给本人，{{hours}} 小时内有效，只能用一次；关闭后不能再查看，需要时点“重发邀请”。",
+    "copy": "复制链接",
+    "copied": "已复制",
+    "form": {
+      "name": "协会名称",
+      "slug": "简称",
+      "slugHint": "用在登录地址里，小写字母、数字和连字符，开通后不能修改",
+      "region": "管辖区域",
+      "regionHint": "省市代码，多个用逗号分隔，如 44, 4403；只作记录和筛选",
+      "seatLimit": "席位数",
+      "contractStart": "合同开始",
+      "contractEnd": "合同结束",
+      "adminName": "姓名",
+      "adminEmail": "邮箱"
+    },
+    "save": "保存",
+    "saving": "正在保存…",
+    "saved": "已保存",
+    "cancel": "取消",
+    "close": "关闭",
+    "errors": {
+      "duplicate": "简称或邮箱已被使用",
+      "bad_request": "填写的内容不符合要求，请检查后再保存",
+      "not_found": "运营商或账号不存在，请刷新页面",
+      "network": "网络连接失败，请检查网络后重试",
+      "unknown": "操作失败，请稍后再试"
+    },
+    "confirmReinvite": "重发后，{{name}} 原来的密码立即失效并退出登录，需要用新链接重新设置密码。确定重发吗？",
+    "confirmDisable": "停用后，{{name}} 立即退出登录，不能再登录，直到恢复。确定停用吗？"
+  },
+  "auditLog": {
+    "nav": "操作记录",
+    "title": "操作记录",
+    "disclaimerPlatform": "开通、停用、恢复、修改合同和邀请账号的记录，只能查看和导出，不能修改。邮箱只显示掩码。",
+    "disclaimerOperator": "本协会账号和协会信息的变更记录，只能查看和导出，不能修改。邮箱只显示掩码。",
+    "from": "开始日期",
+    "to": "结束日期",
+    "export": "导出 CSV",
+    "badRange": "结束日期不能早于开始日期",
+    "loading": "正在加载…",
+    "loadFailed": "加载失败",
+    "retry": "重试",
+    "empty": "这段时间没有记录",
+    "truncated": "记录太多，只显示最近 2000 条，请缩小时间范围",
+    "system": "系统",
+    "columns": {
+      "time": "时间（UTC）",
+      "actor": "操作人",
+      "object": "对象",
+      "action": "动作",
+      "change": "改动"
+    },
+    "objects": {
+      "operator": "运营商",
+      "user": "账号"
+    },
+    "actions": {
+      "created": "开通",
+      "updated": "修改",
+      "suspended": "停用",
+      "resumed": "恢复",
+      "invited": "邀请",
+      "reinvited": "重发邀请",
+      "activated": "激活",
+      "disabled": "停用账号",
+      "enabled": "恢复账号"
+    },
+    "noChange": "—",
+    "fields": {
+      "name": "名称",
+      "slug": "简称",
+      "region": "管辖区域",
+      "seat_limit": "席位数",
+      "contract_start": "合同开始",
+      "contract_end": "合同结束",
+      "status": "状态",
+      "suspended_reason": "停用原因",
+      "role": "角色",
+      "email": "邮箱",
+      "display_name": "姓名",
+      "org_id": "机构"
+    }
   }
 }

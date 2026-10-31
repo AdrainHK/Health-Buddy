@@ -57,6 +57,10 @@ export async function writeDemoData(
         name: op.name,
         slug: op.slug,
         brand_color: op.brandColor,
+        // M7：演示协会的席位和合同（一年期）
+        seat_limit: 20,
+        contract_start: '2026-01-01',
+        contract_end: '2026-12-31',
       });
       summary.operators++;
       const orgId = await insertId(trx, 'organizations', {
@@ -176,6 +180,19 @@ async function removeDemoData(trx: Trx): Promise<void> {
   }
   // 客户删除会级联删掉报告、指标和监测数据；会话随用户级联删除
   await trx.deleteFrom('llm_usage').where('user_id', 'in', users).execute();
+  // M7 后台操作记录（只能追加，所有者身份才能删）：演示协会和它的账号相关的记录；
+  // 演示账号发出的邀请（created_by 不级联）一并删除
+  await trx
+    .deleteFrom('admin_audit_log')
+    .where((eb) =>
+      eb.or([
+        eb('operator_id', 'in', ops),
+        eb('actor_id', 'in', users),
+        eb('object_id', 'in', users),
+      ]),
+    )
+    .execute();
+  await trx.deleteFrom('account_invites').where('created_by', 'in', users).execute();
   await trx.deleteFrom('clients').where('operator_id', 'in', ops).execute();
   await trx.deleteFrom('users').where('operator_id', 'in', ops).execute();
   await trx.deleteFrom('organizations').where('operator_id', 'in', ops).execute();

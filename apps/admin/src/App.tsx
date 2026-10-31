@@ -5,14 +5,17 @@ import {
   BarChart3,
   BookOpen,
   Bot,
+  Building2,
   CalendarClock,
   Cpu,
   HeartPulse,
+  History,
   MessageSquareText,
   ShieldAlert,
 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { AuditLogPage } from './audit-log/AuditLogPage';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { LoginPage } from './auth/LoginPage';
 import loginStyles from './auth/LoginPage.module.css';
@@ -22,6 +25,7 @@ import { ExpertStatsPage } from './experts/ExpertStatsPage';
 import { ExpertsPage } from './experts/ExpertsPage';
 import { AdminShell, type AdminSection } from './shell/AdminShell';
 import { ManagerNotice } from './shell/ManagerNotice';
+import { OperatorsPage } from './operators/OperatorsPage';
 import { PlanLibraryPage } from './plan-library/PlanLibraryPage';
 import { ThresholdsPage } from './thresholds/ThresholdsPage';
 import { TwinRulesPage } from './twin-rules/TwinRulesPage';
@@ -37,12 +41,15 @@ type SectionId =
   | 'expert-stats'
   | 'twin-stats'
   | 'companion-scripts'
-  | 'device-batches';
+  | 'device-batches'
+  | 'operators'
+  | 'audit-log';
 
 /**
  * 各角色能看到的版块。危急指标、孪生状态规则、方案库、随访频次规则：所有后台角色
  * （只有平台能改，M4 规格 2.10、M5 规格 2.12）；
- * 专家管理、伴侣话术和出厂设备：只有平台管理员（Q11、M6 规格 2.10）；专家统计、孪生统计：平台和协会管理员（M3 规格 1.3、M4 规格 7.2）。
+ * 专家管理、伴侣话术和出厂设备、运营商开通：只有平台管理员（Q11、M6 规格 2.10、M7 规格 2.1）；
+ * 操作记录：平台和协会管理员（M7 规格 2.7）；专家统计、孪生统计：平台和协会管理员（M3 规格 1.3、M4 规格 7.2）。
  * 界面只决定显示什么，权限在后端。
  */
 function sectionsFor(role: CurrentUser['role']): SectionId[] {
@@ -60,9 +67,11 @@ function sectionsFor(role: CurrentUser['role']): SectionId[] {
       'twin-stats',
       'companion-scripts',
       'device-batches',
+      'operators',
+      'audit-log',
     ];
   }
-  if (role === 'operator_admin') return [...shared, 'expert-stats', 'twin-stats'];
+  if (role === 'operator_admin') return [...shared, 'expert-stats', 'twin-stats', 'audit-log'];
   return shared;
 }
 
@@ -76,6 +85,8 @@ const ICONS: Record<SectionId, ReactNode> = {
   'twin-stats': <Activity size={16} aria-hidden />,
   'companion-scripts': <MessageSquareText size={16} aria-hidden />,
   'device-batches': <Cpu size={16} aria-hidden />,
+  operators: <Building2 size={16} aria-hidden />,
+  'audit-log': <History size={16} aria-hidden />,
 };
 
 function hashSection(): string {
@@ -144,6 +155,8 @@ function Console({ user, onLogout }: { user: CurrentUser; onLogout: () => void }
     'twin-stats': t('twinStats.nav'),
     'companion-scripts': t('companionScripts.nav'),
     'device-batches': t('deviceBatches.nav'),
+    operators: t('operators.nav'),
+    'audit-log': t('auditLog.nav'),
   };
   const sections: AdminSection[] = allowed.map((id) => ({
     id,
@@ -161,6 +174,8 @@ function Console({ user, onLogout }: { user: CurrentUser; onLogout: () => void }
       {current === 'twin-stats' && <TwinStatsPage user={user} />}
       {current === 'companion-scripts' && <CompanionScriptsPage />}
       {current === 'device-batches' && <DeviceBatchesPage />}
+      {current === 'operators' && <OperatorsPage />}
+      {current === 'audit-log' && <AuditLogPage user={user} />}
     </AdminShell>
   );
 }

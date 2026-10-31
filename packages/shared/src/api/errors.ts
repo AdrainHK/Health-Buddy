@@ -24,6 +24,8 @@ export const API_ERROR_CODES = [
   'invalid_content',
   /** 聊天截图没能转写成文字（M5 规格 2.9“聊天截图”），HTTP 422，reasons 见 CHAT_TRANSCRIPTION_FAILURES */
   'transcription_failed',
+  /** 邀请链接无效、过期或已用过（M7 规格 2.4），HTTP 410；不区分具体原因 */
+  'invite_expired',
   'internal_error',
 ] as const;
 

@@ -1,6 +1,7 @@
 import { applyBrandColor } from '@health-buddy/ui';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { AcceptInvitePage, inviteTokenFromHash } from './auth/AcceptInvitePage';
 import { AdminNotice } from './auth/AdminNotice';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { LoginPage } from './auth/LoginPage';
@@ -8,6 +9,9 @@ import loginStyles from './auth/LoginPage.module.css';
 import { AppShell } from './shell/AppShell';
 
 export function App() {
+  // 邀请链接（M7）：设置密码的页面不需要登录，也不读登录状态
+  const [inviteToken] = useState(() => inviteTokenFromHash());
+  if (inviteToken) return <AcceptInvitePage token={inviteToken} />;
   return (
     <AuthProvider>
       <Gate />

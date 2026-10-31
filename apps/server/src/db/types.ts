@@ -20,6 +20,12 @@ export interface OperatorsTable {
   brand_color: string | null;
   status: Generated<'active' | 'suspended'>;
   created_at: Timestamp;
+  /** M7：管辖区域（省市代码）、席位数、合同起止日期、停用原因。只经 admin_* 函数修改 */
+  region: Generated<string[]>;
+  seat_limit: Generated<number>;
+  contract_start: Date | null;
+  contract_end: Date | null;
+  suspended_reason: string | null;
 }
 
 export interface OrganizationsTable {
@@ -37,7 +43,7 @@ export interface UsersTable {
   role: Role;
   operator_id: string | null;
   org_id: string | null;
-  status: Generated<'active' | 'disabled'>;
+  status: Generated<'pending' | 'active' | 'disabled'>;
   created_at: Timestamp;
   last_login_at: Date | null;
   /** 健管师的时区（M4 Q13）；只能经 user_set_timezone 修改 */
@@ -682,6 +688,31 @@ export interface TwinComputeStateTable extends ClientScoped {
   computed_at: Nullable<Date>;
 }
 
+/** M7 审计日志（只能追加，应用角色只读；写入只经 admin_* 函数） */
+export interface AdminAuditLogTable {
+  id: ColumnType<string, never, never>;
+  operator_id: ColumnType<string | null, never, never>;
+  actor_id: ColumnType<string | null, never, never>;
+  actor_role: ColumnType<Role | null, never, never>;
+  object_type: ColumnType<'operator' | 'user', never, never>;
+  object_id: ColumnType<string, never, never>;
+  action: ColumnType<string, never, never>;
+  before: ColumnType<Record<string, unknown> | null, never, never>;
+  after: ColumnType<Record<string, unknown> | null, never, never>;
+  created_at: ColumnType<Date, never, never>;
+}
+
+/** M7 一次性邀请（应用角色无权限；所有者身份的种子脚本清理时用） */
+export interface AccountInvitesTable {
+  id: Generated<string>;
+  user_id: string;
+  token_hash: Buffer;
+  expires_at: Date;
+  used_at: Date | null;
+  created_by: string;
+  created_at: Generated<Date>;
+}
+
 export interface Database {
   operators: OperatorsTable;
   organizations: OrganizationsTable;
@@ -719,6 +750,8 @@ export interface Database {
   follow_up_items: FollowUpItemsTable;
   follow_up_events: FollowUpEventsTable;
   twin_compute_state: TwinComputeStateTable;
+  admin_audit_log: AdminAuditLogTable;
+  account_invites: AccountInvitesTable;
   plan_library_recipes: PlanLibraryRecipesTable;
   plan_library_exercises: PlanLibraryExercisesTable;
   plan_goal_templates: PlanGoalTemplatesTable;

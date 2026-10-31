@@ -52,7 +52,8 @@ export class AuthController {
 
     const candidate = await this.auth.findLoginCandidate(email);
     // 无论邮箱是否存在都做一次密码验证，并且先验证密码再看账号状态，响应时间保持一致。
-    const passwordOk = candidate
+    // 待激活的账号还没有密码（M7）：同样做一次假验证
+    const passwordOk = candidate?.passwordHash
       ? await verifyPassword(candidate.passwordHash, password)
       : await verifyAgainstDummy(password);
     if (!candidate || !passwordOk || !candidate.active) {
