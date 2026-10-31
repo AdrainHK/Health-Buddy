@@ -35,15 +35,15 @@ function setup() {
 describe('我的账号和按套餐隐藏入口（M7 规格 2.5）', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('“我的账号”显示套餐、到期日和本月用量，不限的显示“不限”', async () => {
+  it('“我的账号”显示套餐、到期日和本月用量，不另设上限的照实说明', async () => {
     const user = setup();
     await user.click(await screen.findByRole('button', { name: '我的账号' }));
     const dialog = await screen.findByRole('dialog', { name: '我的账号' });
     expect(await within(dialog).findByText('合成基础版')).toBeInTheDocument();
     expect(dialog).toHaveTextContent('2026-12-31');
     expect(dialog).toHaveTextContent('本月 AI 调用已用 12 / 500');
-    expect(dialog).toHaveTextContent('本月专家调用已用 3（不限）');
-    expect(dialog).toHaveTextContent('危机、急症的提示不受额度限制');
+    expect(dialog).toHaveTextContent('本月专家调用已用 3（不另设上限）');
+    expect(dialog).toHaveTextContent('危机、急症相关的提示和处理不受额度限制');
   });
 
   it('套餐没有专家中心、方案与随访时，侧栏不显示对应入口', async () => {

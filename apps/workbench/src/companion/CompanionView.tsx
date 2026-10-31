@@ -140,6 +140,8 @@ function errorText(t: TFunction, err: unknown): string {
     if (err.code === 'network') return t('companion.errors.network');
     if (err.status === 400) return t('companion.errors.badRequest');
     if (err.status === 404) return t('companion.errors.notFound');
+    // 套餐的伴侣设备数已满（M7 规格 2.5）：已绑定的福宝不受影响
+    if (err.code === 'quota_exceeded') return t('companion.errors.quotaExceeded');
     if (err.status === 429) return t('companion.errors.tooMany');
   }
   return t('companion.errors.unknown');

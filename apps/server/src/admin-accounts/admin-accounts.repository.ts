@@ -323,7 +323,9 @@ export class AdminAccountsRepository {
         expiresAt: v.expiresAt,
       });
       // 健管师的套餐（M7 第 4 步）：同一事务，不可售时整体回滚、返回 400 plan_not_available
-      if (v.role === 'manager' && v.planId) await adminAssignPlan(trx, id, v.planId);
+      if (v.role === 'manager' && v.planId && !(await adminAssignPlan(trx, id, v.planId))) {
+        throw planNotAvailable();
+      }
       return this.accountIn(trx, id);
     });
   }
@@ -352,7 +354,7 @@ export class AdminAccountsRepository {
       const planOf = new Map(rows.map((r) => [r.row, r.planId ?? null]));
       for (const { row, id } of result.ids) {
         const planId = planOf.get(row);
-        if (planId) await adminAssignPlan(trx, id, planId);
+        if (planId && !(await adminAssignPlan(trx, id, planId))) throw planNotAvailable();
       }
       const accounts = new Map<number, AccountSummary>();
       for (const { row, id } of result.ids) {
@@ -477,8 +479,6 @@ async function managerPlans(
   (r: { id: string; role: string }) => { planId: string | null; planName: string | null }
 > {
   const managers = rows.filter((r) => r.role === 'manager').map((r) => r.id);
-  const plans = await trx.selectFrom('plans').select(['id', 'code', 'name']).execute();
-  const pilot = plans.find((p) => p.code === PILOT_PLAN_CODE);
   const assigned = managers.length
     ? await trx
         .selectFrom('user_plans')
@@ -487,6 +487,28 @@ async function managerPlans(
         .execute()
     : [];
   const byUser = new Map(assigned.map((a) => [a.user_id, a.plan_id]));
+  // 只读用到的套餐和试点版（最小读取，租户审查 N1）
+  const plans = managers.length
+    ? await trx
+        .selectFrom('plans')
+        .select(['id', 'code', 'name'])
+        .where((eb) =>
+          eb.or([
+            eb('code', '=', PILOT_PLAN_CODE),
+            ...(assigned.length
+              ? [
+                  eb(
+                    'id',
+                    'in',
+                    assigned.map((a) => a.plan_id),
+                  ),
+                ]
+              : []),
+          ]),
+        )
+        .execute()
+    : [];
+  const pilot = plans.find((p) => p.code === PILOT_PLAN_CODE);
   const byId = new Map(plans.map((p) => [p.id, p.name]));
   return (r) => {
     if (r.role !== 'manager') return { planId: null, planName: null };

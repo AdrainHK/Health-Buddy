@@ -459,4 +459,102 @@ describe('套餐和额度', () => {
     expect(accounts.find((a) => a.id === f.users.operatorAdminA.id)?.planName).toBeNull();
     expect(one.body.account.id).toBe(byEmail('m7-p1@test.example')?.id);
   });
+
+  it('4b 跨租户：只卖给别的协会的套餐不能用；套餐列不越出本协会、本机构；其他角色不能开通', async () => {
+    await owner
+      .updateTable('operators')
+      .set({ seat_limit: 20 } as never)
+      .where('id', '=', f.operatorA)
+      .execute();
+    const bOnly = await createPlan({ code: 'b-only', name: '合成 B 专属' });
+    await platform
+      .put(`/api/admin/operators/${f.operatorB}/plans`)
+      .send({ planIds: [bOnly.id] })
+      .expect(200);
+    expect(
+      (
+        await opA
+          .post('/api/admin/accounts')
+          .send({
+            displayName: '合成',
+            email: 'm7-x1@test.example',
+            role: 'manager',
+            orgId: null,
+            planId: bOnly.id,
+          })
+          .expect(400)
+      ).body,
+    ).toEqual({ error: 'plan_not_available' });
+    const bad = await opA
+      .post('/api/admin/accounts/import')
+      .send({
+        rows: [
+          {
+            row: 2,
+            displayName: '合成',
+            email: 'm7-x2@test.example',
+            role: 'manager',
+            orgName: '',
+            planCode: 'b-only',
+          },
+        ],
+      })
+      .expect(400);
+    expect(bad.body.rowErrors).toEqual([{ row: 2, code: 'plan_not_available' }]);
+    expect(
+      await owner.selectFrom('users').select('id').where('email', 'like', 'm7-x%').execute(),
+    ).toEqual([]);
+    expect(await owner.selectFrom('user_plans').selectAll().execute()).toEqual([]);
+
+    // 给 A1 分配 A 的套餐；机构管理员 A2 只看到本机构的健管师；协会 B 看不到 A 的账号
+    await assignA1();
+    const orgAdmin2 = await as(f.users.orgAdminA2.email);
+    const own = (await orgAdmin2.get('/api/admin/accounts').expect(200)).body.accounts as {
+      id: string;
+      planName: string | null;
+    }[];
+    expect(own.map((a) => a.id)).not.toContain(f.users.managerA1.id);
+    expect(own.find((a) => a.id === f.users.managerA3.id)?.planName).toBe('试点版');
+    const opB = await as(f.users.operatorAdminB.email);
+    const listB = (await opB.get('/api/admin/accounts').expect(200)).body.accounts as {
+      id: string;
+    }[];
+    expect(listB.map((a) => a.id)).not.toContain(f.users.managerA1.id);
+    // 机构管理员、平台、健管师带套餐开通、导入一律 403
+    for (const email of [
+      f.users.orgAdminA.email,
+      f.users.platform.email,
+      f.users.managerA1.email,
+    ]) {
+      const agent = await as(email);
+      await agent
+        .post('/api/admin/accounts')
+        .send({
+          displayName: '合成',
+          email: 'm7-x3@test.example',
+          role: 'manager',
+          orgId: null,
+          planId: bOnly.id,
+        })
+        .expect(403);
+      await agent
+        .post('/api/admin/accounts/import')
+        .send({
+          rows: [
+            {
+              row: 2,
+              displayName: '合成',
+              email: 'm7-x4@test.example',
+              role: 'manager',
+              orgName: '',
+              planCode: 'basic',
+            },
+          ],
+        })
+        .expect(403);
+    }
+    const m = await as(f.users.managerA1.email);
+    await m.get('/api/admin/accounts').expect(403);
+    await platform.get('/api/admin/accounts').expect(403);
+  });
 });
