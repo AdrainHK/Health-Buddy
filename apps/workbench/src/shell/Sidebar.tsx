@@ -1,4 +1,5 @@
 import { Button, IconButton } from '@health-buddy/ui';
+import { BrandMark } from '../brand/BrandMark';
 import { PRODUCT_NAME, type ClientSummary, type Task, type TwinLevel } from '@health-buddy/shared';
 import {
   Archive,
@@ -6,7 +7,6 @@ import {
   BookOpen,
   ArchiveRestore,
   ArrowLeft,
-  Heart,
   Lock,
   LogOut,
   PanelLeftClose,
@@ -29,6 +29,8 @@ import { groupTasks, isReadOnlyTask, type TaskGroup } from './taskGroups';
 export interface SidebarAccount {
   name: string;
   onLogout: () => void;
+  /** 所属协会的品牌（M7 规格 2.3）：显示“××协会 · Health Buddy”和 Logo */
+  brand?: { name: string; logoUrl: string | null };
 }
 
 export type TaskListView = 'active' | 'archived';
@@ -112,11 +114,14 @@ export function Sidebar({
       inert={mode === 'drawer' && !open ? true : undefined}
     >
       <div className={styles.header}>
-        <div className={styles.brand}>
-          <span className={styles.logo} aria-hidden>
-            <Heart size={16} strokeWidth={2.5} />
-          </span>
-          {!collapsed && <span>{PRODUCT_NAME}</span>}
+        <div className={styles.brand} data-testid="sidebar-brand">
+          <BrandMark
+            name={account?.brand?.name ?? null}
+            logoUrl={account?.brand?.logoUrl ?? null}
+            logoClass={styles.logo}
+            imageClass={styles.logoImage}
+            showName={!collapsed}
+          />
         </div>
         {mode === 'drawer' ? (
           <IconButton label={t('nav.closeMenu')} icon={<X size={18} />} onClick={onClose} />

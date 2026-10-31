@@ -20,6 +20,9 @@ export const currentUserSchema = z.object({
       id: z.uuid(),
       name: z.string(),
       brandColor: z.string().nullable(),
+      /** 协会品牌（M7 规格 2.3）：显示名称（没设为 null，界面用 name）和 Logo 地址 */
+      brandName: z.string().nullable().default(null),
+      logoUrl: z.string().nullable().default(null),
     })
     .nullable(),
   orgId: z.uuid().nullable(),

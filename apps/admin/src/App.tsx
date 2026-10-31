@@ -1,5 +1,6 @@
 import type { CurrentUser } from '@health-buddy/shared';
-import { applyBrandColor } from '@health-buddy/ui';
+import { brandDarkVariant } from '@health-buddy/shared';
+import { applyBrandColor, clearBrandColor } from '@health-buddy/ui';
 import {
   Activity,
   BarChart3,
@@ -11,6 +12,7 @@ import {
   HeartPulse,
   History,
   MessageSquareText,
+  Palette,
   ShieldAlert,
   Users,
 } from 'lucide-react';
@@ -18,6 +20,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AccountsPage } from './accounts/AccountsPage';
 import { AuditLogPage } from './audit-log/AuditLogPage';
+import { BrandPage } from './brand/BrandPage';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { LoginPage } from './auth/LoginPage';
 import loginStyles from './auth/LoginPage.module.css';
@@ -46,13 +49,14 @@ type SectionId =
   | 'device-batches'
   | 'operators'
   | 'accounts'
+  | 'brand'
   | 'audit-log';
 
 /**
  * 各角色能看到的版块。危急指标、孪生状态规则、方案库、随访频次规则：所有后台角色
  * （只有平台能改，M4 规格 2.10、M5 规格 2.12）；
  * 专家管理、伴侣话术和出厂设备、运营商开通：只有平台管理员（Q11、M6 规格 2.10、M7 规格 2.1）；
- * 账号：协会管理员开通和管理，机构管理员只读本机构（M7 规格 2.4、Q9）；操作记录：平台和协会管理员（M7 规格 2.7）；专家统计、孪生统计：平台和协会管理员（M3 规格 1.3、M4 规格 7.2）。
+ * 品牌：只有协会管理员（M7 规格 2.2，Q16）；账号：协会管理员开通和管理，机构管理员只读本机构（M7 规格 2.4、Q9）；操作记录：平台和协会管理员（M7 规格 2.7）；专家统计、孪生统计：平台和协会管理员（M3 规格 1.3、M4 规格 7.2）。
  * 界面只决定显示什么，权限在后端。
  */
 function sectionsFor(role: CurrentUser['role']): SectionId[] {
@@ -75,7 +79,7 @@ function sectionsFor(role: CurrentUser['role']): SectionId[] {
     ];
   }
   if (role === 'operator_admin') {
-    return [...shared, 'expert-stats', 'twin-stats', 'accounts', 'audit-log'];
+    return [...shared, 'expert-stats', 'twin-stats', 'accounts', 'brand', 'audit-log'];
   }
   if (role === 'org_admin') return [...shared, 'accounts'];
   return shared;
@@ -93,6 +97,7 @@ const ICONS: Record<SectionId, ReactNode> = {
   'device-batches': <Cpu size={16} aria-hidden />,
   operators: <Building2 size={16} aria-hidden />,
   accounts: <Users size={16} aria-hidden />,
+  brand: <Palette size={16} aria-hidden />,
   'audit-log': <History size={16} aria-hidden />,
 };
 
@@ -124,12 +129,11 @@ function Gate() {
   const { state, logout } = useAuth();
   const brandColor = state.status === 'authenticated' ? state.user.operator?.brandColor : null;
 
-  // 协会管理员按所属运营商换品牌色；退出后恢复默认。
+  // 协会管理员按所属运营商换品牌色（深色模式用变体）；退出后恢复默认。
   useEffect(() => {
-    if (brandColor) applyBrandColor(brandColor);
-    return () => {
-      document.documentElement.style.removeProperty('--hb-brand');
-    };
+    if (!brandColor) return;
+    applyBrandColor(brandColor, document.documentElement, brandDarkVariant(brandColor));
+    return () => clearBrandColor();
   }, [brandColor]);
 
   if (state.status === 'loading') {
@@ -164,6 +168,7 @@ function Console({ user, onLogout }: { user: CurrentUser; onLogout: () => void }
     'device-batches': t('deviceBatches.nav'),
     operators: t('operators.nav'),
     accounts: t('accounts.nav'),
+    brand: t('brand.nav'),
     'audit-log': t('auditLog.nav'),
   };
   const sections: AdminSection[] = allowed.map((id) => ({
@@ -184,6 +189,7 @@ function Console({ user, onLogout }: { user: CurrentUser; onLogout: () => void }
       {current === 'device-batches' && <DeviceBatchesPage />}
       {current === 'operators' && <OperatorsPage />}
       {current === 'accounts' && <AccountsPage user={user} />}
+      {current === 'brand' && <BrandPage />}
       {current === 'audit-log' && <AuditLogPage user={user} />}
     </AdminShell>
   );

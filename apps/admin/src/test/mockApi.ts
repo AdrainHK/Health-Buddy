@@ -25,7 +25,13 @@ export const ids = {
   ruleFpgRef: '81000000-0000-4000-8000-000000000003',
 };
 
-const OPERATOR = { id: ids.operator, name: '合成协会', brandColor: null };
+const OPERATOR = {
+  id: ids.operator,
+  name: '合成协会',
+  brandColor: null,
+  brandName: null,
+  logoUrl: null,
+};
 
 export const USERS = {
   platform_admin: {

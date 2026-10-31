@@ -1,4 +1,4 @@
-import { applyBrandColor, isValidBrandColor } from './brand';
+import { applyBrandColor, clearBrandColor, isValidBrandColor } from './brand';
 
 describe('brand color', () => {
   it('accepts 3- and 6-digit hex colors', () => {
@@ -12,11 +12,15 @@ describe('brand color', () => {
     expect(isValidBrandColor('#fff; background: url(x)')).toBe(false);
   });
 
-  it('sets the brand variable only for valid colors', () => {
+  it('sets the brand variables only for valid colors, and clears them', () => {
     const el = document.createElement('div');
-    expect(applyBrandColor('#c0392b', el)).toBe(true);
-    expect(el.style.getPropertyValue('--hb-brand')).toBe('#c0392b');
+    expect(applyBrandColor('#c0392b', el, '#f0a99f')).toBe(true);
+    expect(el.style.getPropertyValue('--hb-brand-custom')).toBe('#c0392b');
+    expect(el.style.getPropertyValue('--hb-brand-custom-dark')).toBe('#f0a99f');
     expect(applyBrandColor('not-a-color', el)).toBe(false);
-    expect(el.style.getPropertyValue('--hb-brand')).toBe('#c0392b');
+    expect(el.style.getPropertyValue('--hb-brand-custom')).toBe('#c0392b');
+    clearBrandColor(el);
+    expect(el.style.getPropertyValue('--hb-brand-custom')).toBe('');
+    expect(el.style.getPropertyValue('--hb-brand-custom-dark')).toBe('');
   });
 });

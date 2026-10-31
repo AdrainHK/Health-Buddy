@@ -51,6 +51,7 @@ export const REPORT_INFRA_OVERRIDES = Symbol('REPORT_INFRA_OVERRIDES');
       },
     },
   ],
-  exports: [ReportsRepository],
+  // 对象存储也给协会品牌（Logo）用
+  exports: [ReportsRepository, OBJECT_STORAGE],
 })
 export class ReportsModule {}

@@ -63,6 +63,15 @@ export async function writeDemoData(
         contract_end: '2026-12-31',
       });
       summary.operators++;
+      // M7 第 3 步：演示协会的品牌（合成名称和欢迎语，不上传 Logo）
+      await trx
+        .insertInto('operator_brands')
+        .values({
+          operator_id: operatorId,
+          display_name: `${op.name}（演示）`,
+          login_greeting: '欢迎使用演示协会的健康管理工作台',
+        })
+        .execute();
       const orgId = await insertId(trx, 'organizations', {
         operator_id: operatorId,
         name: op.org.name,
@@ -193,6 +202,7 @@ async function removeDemoData(trx: Trx): Promise<void> {
     )
     .execute();
   await trx.deleteFrom('account_invites').where('created_by', 'in', users).execute();
+  await trx.deleteFrom('operator_brands').where('operator_id', 'in', ops).execute();
   await trx.deleteFrom('clients').where('operator_id', 'in', ops).execute();
   await trx.deleteFrom('users').where('operator_id', 'in', ops).execute();
   await trx.deleteFrom('organizations').where('operator_id', 'in', ops).execute();

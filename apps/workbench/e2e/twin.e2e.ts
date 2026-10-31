@@ -48,7 +48,13 @@ const user: CurrentUser = {
   email: 'manager@test.example',
   displayName: '合成健管师',
   role: 'manager',
-  operator: { id: ids.operator, name: '合成协会', brandColor: null },
+  operator: {
+    id: ids.operator,
+    name: '合成协会',
+    brandColor: null,
+    brandName: null,
+    logoUrl: null,
+  },
   orgId: ids.org,
 };
 const client: ClientSummary = {

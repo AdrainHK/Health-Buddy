@@ -6,7 +6,7 @@ import { json, makeThresholds, mockApi, USERS } from './test/mockApi';
 describe('后台登录和角色分流', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
-    document.documentElement.style.removeProperty('--hb-brand');
+    document.documentElement.style.removeProperty('--hb-brand-custom');
   });
 
   it('未登录时显示登录页，产品名只用 Health Buddy', async () => {
@@ -92,6 +92,7 @@ describe('后台登录和角色分流', () => {
         '专家统计',
         '孪生统计',
         '账号',
+        '品牌',
         '操作记录',
       ],
     ],

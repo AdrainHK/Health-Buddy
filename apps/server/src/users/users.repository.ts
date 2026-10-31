@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { CurrentUser } from '@health-buddy/shared';
+import { brandLogoPath, type CurrentUser } from '@health-buddy/shared';
 import { DB } from '../db/db.provider.js';
 import { dbErrorCode } from '../common/db-error.js';
 import { withTenant, type Db, type TenantContext } from '../db/database.js';
@@ -15,6 +15,7 @@ export class UsersRepository {
       trx
         .selectFrom('users')
         .leftJoin('operators', 'operators.id', 'users.operator_id')
+        .leftJoin('operator_brands', 'operator_brands.operator_id', 'users.operator_id')
         .select([
           'users.id',
           'users.email',
@@ -24,6 +25,9 @@ export class UsersRepository {
           'operators.id as operator_id',
           'operators.name as operator_name',
           'operators.brand_color',
+          'operators.slug',
+          'operator_brands.display_name as brand_name',
+          'operator_brands.logo_updated_at',
         ])
         .where('users.id', '=', ctx.userId)
         .executeTakeFirst(),
@@ -36,7 +40,16 @@ export class UsersRepository {
       role: row.role,
       operator:
         row.operator_id && row.operator_name
-          ? { id: row.operator_id, name: row.operator_name, brandColor: row.brand_color }
+          ? {
+              id: row.operator_id,
+              name: row.operator_name,
+              brandColor: row.brand_color,
+              brandName: row.brand_name,
+              logoUrl:
+                row.slug && row.logo_updated_at
+                  ? brandLogoPath(row.slug, row.logo_updated_at)
+                  : null,
+            }
           : null,
       orgId: row.org_id,
     };
