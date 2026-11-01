@@ -1,11 +1,14 @@
 import {
+  POPSCI_SKILL_KINDS,
   carePlanStructuredSchema,
+  popsciContentSchema,
   visitRecordStructuredSchema,
   visitScheduleStructuredSchema,
   type Artifact,
   type CarePlanStructured,
   type HandoffReplyStructured,
   type M5ArtifactKind,
+  type PopsciContent,
   type VisitRecordStructured,
   type VisitScheduleStructured,
 } from '@health-buddy/shared';
@@ -30,11 +33,17 @@ export type M5Structured =
   | { kind: 'care_plan'; value: CarePlanStructured }
   | { kind: 'visit_schedule'; value: VisitScheduleStructured }
   | { kind: 'visit_record'; value: VisitRecordStructured }
-  | { kind: 'handoff_reply'; value: HandoffReplyStructured };
+  | { kind: 'handoff_reply'; value: HandoffReplyStructured }
+  /** M8 科普：文章、PPT、社群稿；编辑中可以暂时不合规（空字段、超长），保存前前端提示 */
+  | { kind: 'popsci'; value: PopsciContent };
 
 export function parseM5Structured(
   artifact: Pick<Artifact, 'skillId' | 'structured'>,
 ): M5Structured | null {
+  if (artifact.skillId in POPSCI_SKILL_KINDS) {
+    const p = popsciContentSchema.safeParse(artifact.structured);
+    return p.success ? { kind: 'popsci', value: p.data } : null;
+  }
   const kind = m5Kind(artifact);
   if (kind === 'care_plan') {
     const p = carePlanStructuredSchema.safeParse(artifact.structured);
@@ -56,6 +65,11 @@ export function parseM5Structured(
       : null;
   }
   return null;
+}
+
+/** 科普内容能不能保存：字段为空、超长时不能（后端同一套 schema 再校验） */
+export function popsciProblems(value: PopsciContent): 'popsciInvalid'[] {
+  return popsciContentSchema.safeParse(value).success ? [] : ['popsciInvalid'];
 }
 
 /** 两份结构化内容是否相同（判断有没有未保存的修改） */
