@@ -60,7 +60,7 @@ describe('科普的复制和导出', () => {
 
   const insert = async (
     scope: Scope,
-    structured: { kind: string },
+    structured: { kind: string; [key: string]: unknown },
     status: 'draft' | 'approved' = 'approved',
   ) => {
     const taskId = await insertTask(owner, scope);
