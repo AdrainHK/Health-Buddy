@@ -1,6 +1,7 @@
 import type {
   ClientSummary,
   ExpertSummary,
+  HomeDraft,
   SkillSummary,
   Task,
   TwinLevel,
@@ -26,6 +27,7 @@ import {
   updateTask,
 } from '../api/workbench';
 import { PlanLibrary } from '../care/PlanLibrary';
+import { HomeSections } from '../home/HomeSections';
 import {
   FollowUpCenter,
   type FollowUpListState,
@@ -136,6 +138,10 @@ export function AppShell({ account }: AppShellProps = {}) {
   /** 孪生里点了“请专家看看”“生成孪生小结”：对话区在这位客户的任务里预先填好输入框 */
   const [prefill, setPrefill] = useState<ComposerPrefill | null>(null);
   /** 对话区里点了“查看专家意见”：结果区切到专家标签 */
+  /** 首页里点了待审核草稿：结果区打开这份产物（M8 规格 2.4） */
+  const [artifactRequest, setArtifactRequest] = useState<{ id: string; key: number } | null>(null);
+  /** 首页的待审核草稿和快捷入口重新加载 */
+  const [homeVersion, setHomeVersion] = useState(0);
   const [expertsTabRequest, setExpertsTabRequest] = useState<{
     key: number;
     consultationId: string | null;
@@ -276,6 +282,42 @@ export function AppShell({ account }: AppShellProps = {}) {
   const openLibrary = () => {
     setCenterView('library');
     closeDrawerOnNarrow();
+  };
+
+  /** 首页（M8 规格 2.4）：就是没有任务时的欢迎页，各分区重新加载 */
+  const openHome = () => {
+    selectTask(null);
+    setHomeVersion((v) => v + 1);
+    setTwinSummaryVersion((v) => v + 1);
+  };
+
+  /** 首页里点了待审核草稿：打开它所在的任务，结果区打开这份产物 */
+  const openDraft = (draft: HomeDraft) => {
+    const known = taskList.tasks.find((task) => task.id === draft.taskId);
+    const open = (task: Task) => {
+      selectTask(task);
+      setArtifactRequest((r) => ({ id: draft.artifactId, key: (r?.key ?? 0) + 1 }));
+      setDrawerOpen(false);
+      setResultsOpen(true);
+    };
+    if (known) {
+      open(known);
+      return;
+    }
+    // 归档任务不在当前列表里：按 id 取（后端按行级安全判断），取不到就刷新首页
+    getTask(draft.taskId)
+      .then(({ task }) => open(task))
+      .catch(() => setHomeVersion((v) => v + 1));
+  };
+
+  /** 首页快捷入口点了技能：欢迎页的输入框选好这个技能，发送第一条消息时才新建任务 */
+  const pickShortcutSkill = (skill: SkillSummary) => {
+    setPrefill({
+      key: ++prefillSeq.current,
+      taskId: null,
+      mode: skill.modes.includes('craft') ? 'craft' : 'plan',
+      skillId: skill.id,
+    });
   };
 
   const openFollowUps = () => {
@@ -505,6 +547,7 @@ export function AppShell({ account }: AppShellProps = {}) {
     : draftClient;
 
   const overlayOpen = narrow && (drawerOpen || resultsOpen);
+  const isHome = centerView === 'chat' && activeTask === null && !pendingExpert;
 
   useEffect(() => {
     if (!overlayOpen) return;
@@ -539,6 +582,7 @@ export function AppShell({ account }: AppShellProps = {}) {
             onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
             onClose={() => setDrawerOpen(false)}
             {...(account ? { account } : {})}
+            home={{ active: isHome, onOpen: openHome }}
             tasks={{
               view,
               list: taskList,
@@ -642,6 +686,28 @@ export function AppShell({ account }: AppShellProps = {}) {
                 onOpenExperts={onOpenExperts}
                 onConsultation={onConsultation}
                 prefill={prefill}
+                {...(isHome
+                  ? {
+                      home: (
+                        <HomeSections
+                          features={features}
+                          companion={companionInbox}
+                          followUps={followUpList}
+                          visits={todayVisits}
+                          onRetry={() => setTwinSummaryVersion((v) => v + 1)}
+                          onChanged={onFollowUpsChanged}
+                          onOpenClient={openClientById}
+                          onViewAll={openFollowUps}
+                          onOpenDraft={openDraft}
+                          skills={skills}
+                          clients={clients ?? []}
+                          onUseSkill={pickShortcutSkill}
+                          onAskExpert={askExpert}
+                          refreshKey={homeVersion}
+                        />
+                      ),
+                    }
+                  : {})}
               />
             </div>
           </div>
@@ -663,6 +729,7 @@ export function AppShell({ account }: AppShellProps = {}) {
             consultationsVersion={consultationsVersion}
             expertsTabRequest={expertsTabRequest}
             clientTabRequest={clientTabRequest}
+            artifactRequest={artifactRequest}
             twinRefreshKey={twinPanelVersion}
             onTwinChanged={onTwinChanged}
           />

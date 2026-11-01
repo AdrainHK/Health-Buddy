@@ -8,6 +8,7 @@ import { AdminAccountsModule } from './admin-accounts/admin-accounts.module.js';
 import { BrandModule } from './brand/brand.module.js';
 import { PlansModule } from './plans/plans.module.js';
 import { OpsDashboardModule } from './ops-dashboard/ops-dashboard.module.js';
+import { HomeModule } from './home/home.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { ClientsModule } from './clients/clients.module.js';
 import {
@@ -68,6 +69,7 @@ export class AppModule {
         BrandModule,
         PlansModule,
         OpsDashboardModule,
+        HomeModule,
       ],
       controllers: [HealthController, SkillsController],
       providers: [

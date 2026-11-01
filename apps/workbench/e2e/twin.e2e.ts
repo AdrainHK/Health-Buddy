@@ -453,6 +453,11 @@ async function mockApi(page: Page) {
         // 套餐（M7 第 4 步）：试点版，全部功能开
         case key === 'GET /api/me/plan':
           return json(route, { plan: PILOT_PLAN });
+        case key === 'GET /api/home':
+          return json(route, {
+            drafts: { total: 0, items: [] },
+            usage: { skills: [], experts: [] },
+          });
         case key === 'GET /api/tasks':
           return json(route, { tasks: url.search ? [] : [task] });
         case key === 'GET /api/clients':

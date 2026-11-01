@@ -1,0 +1,120 @@
+/* 工作台首页（M8 规格 2.4）：分区单列排列，375px 宽度下不出现横向滚动 */
+.home {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-5);
+  width: 100%;
+  min-width: 0;
+  margin-top: var(--hb-space-6);
+}
+
+.section {
+  min-width: 0;
+}
+
+.sectionHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--hb-space-2);
+}
+
+.sectionHeader h2 {
+  margin: 0 0 var(--hb-space-2);
+}
+
+.viewAll {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--hb-brand);
+  font: inherit;
+  font-size: var(--hb-text-sm);
+  cursor: pointer;
+}
+
+.viewAll:hover {
+  text-decoration: underline;
+}
+
+.errorBox {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hb-space-2);
+}
+
+.draftList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.draftItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-1);
+  width: 100%;
+  min-width: 0;
+  padding: var(--hb-space-3);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-md);
+  background: var(--hb-surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.draftItem:hover {
+  border-color: var(--hb-border-strong);
+}
+
+.draftTitle {
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.draftMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hb-space-2);
+  color: var(--hb-text-3);
+  font-size: var(--hb-text-xs);
+  overflow-wrap: anywhere;
+}
+
+.critical {
+  color: var(--hb-danger);
+}
+
+.shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hb-space-2);
+  margin: 0 0 var(--hb-space-2);
+  padding: 0;
+  list-style: none;
+}
+
+.shortcut {
+  max-width: 100%;
+  padding: var(--hb-space-1) var(--hb-space-3);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-full);
+  background: var(--hb-surface);
+  color: inherit;
+  font: inherit;
+  font-size: var(--hb-text-sm);
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.shortcut:hover {
+  border-color: var(--hb-brand);
+  color: var(--hb-brand);
+}

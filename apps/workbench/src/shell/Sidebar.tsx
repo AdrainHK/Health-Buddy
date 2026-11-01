@@ -4,6 +4,7 @@ import { BrandMark } from '../brand/BrandMark';
 import { PRODUCT_NAME, type ClientSummary, type Task, type TwinLevel } from '@health-buddy/shared';
 import {
   Archive,
+  House,
   BellRing,
   BookOpen,
   ArchiveRestore,
@@ -63,6 +64,8 @@ export interface SidebarProps {
   onClose: () => void;
   account?: SidebarAccount;
   tasks?: SidebarTasks;
+  /** 首页入口（M8 规格 2.4 第 1 条）：放在左侧栏最上面 */
+  home?: { active: boolean; onOpen: () => void };
   /** 专家中心入口（M3 规格 2.1）：点击后中间区域显示专家库 */
   experts?: { active: boolean; onOpen: () => void };
   /** 今日跟进入口（M4 规格 2.1，Q12）：带未处理数量角标，点开后中间区域显示清单 */
@@ -91,6 +94,7 @@ export function Sidebar({
   onClose,
   account,
   tasks,
+  home,
   experts,
   followUps,
   library,
@@ -152,6 +156,14 @@ export function Sidebar({
       )}
 
       <nav className={styles.nav}>
+        {home && (
+          <NavItem
+            icon={<House size={18} />}
+            label={t('nav.home')}
+            onClick={home.onOpen}
+            current={home.active}
+          />
+        )}
         {followUps && (
           <NavItem
             icon={<BellRing size={18} />}
