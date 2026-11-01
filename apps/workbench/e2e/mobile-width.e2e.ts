@@ -16,7 +16,7 @@ import type {
 const PILOT_PLAN = {
   code: 'pilot',
   name: '试点版',
-  features: { experts: true, twin: true, care: true, companion: true },
+  features: { experts: true, twin: true, care: true, companion: true, content: true },
   monthlyQuotas: {
     llm_calls: null,
     expert_calls: null,
@@ -299,6 +299,7 @@ const artifactSummary: ArtifactSummary = {
 const ARTIFACT_TITLE = '合成客户甲（测试） 体检报告解读 2026-10-15 第1版';
 
 const artifactDetail: ArtifactDetailResponse = {
+  contentCheck: null,
   companion: null,
   artifact: {
     ...artifactSummary,

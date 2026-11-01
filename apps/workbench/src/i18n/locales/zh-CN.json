@@ -461,7 +461,9 @@
         "schedule_mismatch": "随访日期不能早于今天、不能超过 6 个月后，也不能重复",
         "unknown": "未通过确认检查，请刷新后重试",
         "record_incomplete": "随访记录还没有填随访日期或方式，或日期在今天之后",
-        "reply_invalid": "回复为空、超过 150 字，或写了只给健管师看的提示语，不能念给客户"
+        "reply_invalid": "回复为空、超过 150 字，或写了只给健管师看的提示语，不能念给客户",
+        "content_check_failed": "合规检查还有“禁止”类的问题，请修改后再确认",
+        "content_check_pending": "有“需要人工判断”的项目，请核对后勾选“已核对”再确认"
       },
       "stale": "内容已在别处修改，已刷新",
       "returnDialog": {
@@ -537,7 +539,8 @@
         "exported": "导出",
         "companion_synced": "同步给伴侣",
         "companion_withdrawn": "取消同步给伴侣",
-        "companion_reply_sent": "发送给福宝"
+        "companion_reply_sent": "发送给福宝",
+        "content_acked": "核对合规检查"
       },
       "noEvents": "还没有记录",
       "selectArtifact": "打开一个产物后，这里显示它的版本和记录",

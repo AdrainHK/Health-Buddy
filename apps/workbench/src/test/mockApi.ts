@@ -256,6 +256,7 @@ export function makeArtifactDetail(
     artifact,
     sourceReport: null,
     companion: null,
+    contentCheck: null,
     hints: { judgementHints: [], criticalValueMentions: [], riskTierMentions: [] },
     versions: [
       {

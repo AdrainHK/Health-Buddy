@@ -946,7 +946,8 @@
       "operator": "运营商",
       "user": "账号",
       "organization": "机构",
-      "plan": "套餐"
+      "plan": "套餐",
+      "content_rules": "科普合规规则"
     },
     "actions": {
       "created": "开通",
@@ -985,6 +986,45 @@
       "monthly_quotas": "每月额度",
       "code": "代码"
     }
+  },
+  "contentRules": {
+    "nav": "科普合规规则",
+    "title": "科普合规规则",
+    "disclaimer": "这里维护科普文章、讲座 PPT、社群稿的合规词表，只用于科普，不改动原有禁用词表。命中“禁止”的草稿不能确认；命中“需要人工判断”的，健管师勾选“已核对”后才能确认。每次保存生成一个新版本，之后的检查按新版本执行。词表和原因需经合规顾问审定。",
+    "version": "当前版本 v{{version}}（{{date}} 保存）",
+    "history": "历史版本：{{versions}}",
+    "addGroup": "新增一组",
+    "save": "保存为新版本",
+    "saved": "已保存为 v{{version}}",
+    "reload": "重新载入",
+    "loading": "正在加载…",
+    "loadFailed": "加载失败",
+    "retry": "重试",
+    "groups": "词表分组",
+    "builtinTitle": "内置检查（不能关闭）",
+    "builtin": {
+      "banned": "原有禁用词表：命中即“禁止”",
+      "invisible": "看不见的格式字符：命中即“禁止”",
+      "drug": "药名和药物类别：需要人工判断",
+      "citation": "具体百分比、剂量、“研究表明”、指南和书名号引用：需要人工判断"
+    },
+    "label": "名称",
+    "category": "类别",
+    "categories": {
+      "forbid": "禁止",
+      "review": "需要人工判断"
+    },
+    "reason": "原因（显示给健管师）",
+    "terms": "词语（每行一个，{{count}} / {{max}}）",
+    "negatable": "前面紧挨着“不能、不要、请勿、无法、并非”这类否定说法时不算命中（如“不能代替药物”）；双重否定照样算",
+    "remove": "删除这组",
+    "removeGroup": "删除“{{name}}”",
+    "errors": {
+      "invalid": "有空的名称、原因或词语，或词语超过 20 字、含看不见的字符，请检查后再保存",
+      "changed": "别人刚保存了新版本，请重新载入后再改",
+      "unknown": "保存失败，请稍后再试"
+    },
+    "confirmWeaken": "这次修改会删除或放宽“禁止”类的词表：{{names}}。放宽后这些说法不再拦截确认，确定保存吗？"
   },
   "accounts": {
     "nav": "账号",
@@ -1154,7 +1194,8 @@
       "experts": "专家中心",
       "twin": "数字孪生",
       "care": "方案与随访",
-      "companion": "AI 健康伴侣"
+      "companion": "AI 健康伴侣",
+      "content": "科普内容工厂"
     },
     "quotas": {
       "llm_calls": "大模型调用（次/月）",

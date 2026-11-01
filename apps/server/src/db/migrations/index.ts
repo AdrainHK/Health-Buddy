@@ -35,6 +35,7 @@ import * as m0033 from './0033-operator-accounts.js';
 import * as m0034 from './0034-operator-brands.js';
 import * as m0035 from './0035-plans.js';
 import * as m0036 from './0036-ops-dashboard.js';
+import * as m0037 from './0037-popsci-content.js';
 
 export interface Migration {
   name: string;
@@ -79,4 +80,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { name: '0034-operator-brands', up: m0034.up },
   { name: '0035-plans', up: m0035.up },
   { name: '0036-ops-dashboard', up: m0036.up },
+  { name: '0037-popsci-content', up: m0037.up },
 ];

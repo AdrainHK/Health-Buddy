@@ -8,6 +8,7 @@ import {
   endsWithDisclaimer,
   handoffReplyStructuredSchema,
   isCompanionDeliveryKind,
+  isPopsciKind,
   type ApproveArtifactRequest,
   type ApproveRejection,
   type Artifact,
@@ -37,6 +38,14 @@ import { approveCarePlan, approveVisitRecord, approveVisitSchedule } from '../db
 import { syncArtifactToCompanion, withdrawCompanionDelivery } from '../db/companion-functions.js';
 import { assertReplySendable } from '../companion/reply-check.js';
 import { renderPdf, renderPng } from './export-renderer.js';
+import {
+  contentCheckBlocked,
+  contentCheckReasons,
+  loadContentCheck,
+  runContentCheck,
+} from '../content/content-check.js';
+import { planFeatureEnabled } from '../db/plans.js';
+import { planFeatureDisabled } from '../plans/quota.service.js';
 import {
   carePlanApproveReasons,
   clientPlanTextReasons,
@@ -77,6 +86,9 @@ export class ArtifactsRepository {
       const row = await loadArtifact(trx, id, 'lock');
       if (!row) return undefined;
       if (row.detached) throw readOnly();
+      if (isPopsciKind(row.kind) && !(await planFeatureEnabled(trx, 'content'))) {
+        throw planFeatureDisabled('content');
+      }
       if (
         row.status !== 'draft' ||
         row.version !== input.version ||
@@ -111,6 +123,48 @@ export class ArtifactsRepository {
         .where('id', '=', id)
         .execute();
       await recordEvent(trx, ctx, row, 'edited');
+      // 科普：每次修改保存都重新检查（规格 2.3），内容变了数据库会清空“已核对”
+      if (isPopsciKind(row.kind)) {
+        await runContentCheck(trx, id);
+      }
+      const updated = await loadArtifact(trx, id, 'none');
+      return updated && buildDetail(trx, updated);
+    });
+  }
+
+  /**
+   * 科普：勾选“已核对”需要人工判断的项目（M8 规格 2.1 第 7 条）。只能核对最新一版草稿、
+   * 健管师预览的那一版内容（指纹一致）；还有“禁止”类命中时不能核对。记下核对人和时间。
+   */
+  ackContentCheck(
+    ctx: TenantContext,
+    id: string,
+    hash: string,
+  ): Promise<ArtifactDetailResponse | undefined> {
+    return this.write(ctx, async (trx) => {
+      const row = await loadArtifact(trx, id, 'lock');
+      if (!row || !isPopsciKind(row.kind)) return undefined;
+      if (row.detached) throw readOnly();
+      if (!(await planFeatureEnabled(trx, 'content'))) throw planFeatureDisabled('content');
+      if (
+        row.status !== 'draft' ||
+        contentHash(row.content, row.structured) !== hash ||
+        !(await isLatest(trx, row))
+      ) {
+        throw notLatestDraft();
+      }
+      // 按当前规则重新检查一次，核对的就是现在的结果
+      await runContentCheck(trx, row.id);
+      // 只看禁止类：需要人工判断的正是这里要核对的
+      if (contentCheckBlocked(await loadContentCheck(trx, id))) {
+        throw conflict({ reasons: ['content_check_failed'] satisfies RejectReason[] });
+      }
+      await trx
+        .updateTable('content_compliance_results')
+        .set({ acked_by: ctx.userId, acked_at: new Date() })
+        .where('artifact_id', '=', id)
+        .execute();
+      await recordEvent(trx, ctx, row, 'content_acked');
       const updated = await loadArtifact(trx, id, 'none');
       return updated && buildDetail(trx, updated);
     });
@@ -160,6 +214,12 @@ export class ArtifactsRepository {
         reasons.push(...handoffReplyApproveReasons(row.structured));
       }
       if (m5 && lockedClientId === null) throw readOnly();
+      // 科普（M8 规格 2.1 第 7 条、2.3）：按当前规则重新检查；禁止类没消除、需要人工判断的没核对都不能确认
+      if (isPopsciKind(row.kind)) {
+        if (!(await planFeatureEnabled(trx, 'content'))) throw planFeatureDisabled('content');
+        await runContentCheck(trx, row.id);
+        reasons.push(...contentCheckReasons(await loadContentCheck(trx, id)));
+      }
       // 没有通俗版的技能（/面谈提纲）跳过通俗版相关检查（规格 4.1 框架扩展）
       const clientFacing = isClientFacing(row);
       const text = row.content.clientFacing;
@@ -523,7 +583,14 @@ async function recordEvent(
   trx: TenantTransaction,
   ctx: TenantContext,
   row: Pick<ArtifactRow, 'id'>,
-  action: 'created' | 'edited' | 'approved' | 'copied' | 'exported' | 'companion_reply_sent',
+  action:
+    | 'created'
+    | 'edited'
+    | 'approved'
+    | 'copied'
+    | 'exported'
+    | 'companion_reply_sent'
+    | 'content_acked',
   reason: string | null = null,
   format: ExportFormat | null = null,
 ): Promise<void> {
@@ -540,6 +607,17 @@ async function recordEvent(
       format,
     })
     .execute();
+}
+
+/**
+ * 科普草稿的检查结果：每次读详情都按当前规则和当前内容重算一次（规则可能换了版本、确认被拒时
+ * 事务回滚没有留下结果）；命中项不变时数据库保留“已核对”。已审核的只读出当时的结果。
+ */
+async function currentContentCheck(trx: TenantTransaction, row: ArtifactRow) {
+  if (row.status === 'draft' && !row.detached) {
+    await runContentCheck(trx, row.id);
+  }
+  return loadContentCheck(trx, row.id);
 }
 
 async function buildDetail(
@@ -592,6 +670,7 @@ async function buildDetail(
     },
     sourceReport: await sourceReport(trx, row),
     companion,
+    contentCheck: isPopsciKind(row.kind) ? await currentContentCheck(trx, row) : null,
     hints: clientTextHints(row),
     versions: versions.map(toArtifactSummary),
     events: events.map((e): ArtifactEvent => ({
@@ -727,6 +806,8 @@ async function companionState(
 function isClientFacing(row: Pick<ArtifactRow, 'skill_id' | 'kind'>): boolean {
   // M5 的随访计划、话术、记录只有专业版（规格 2.7、2.8、2.9），不论技能是否已经注册
   if (professionalOnlyKind(row.kind)) return false;
+  // 科普不是给某位客户的通俗版，正文在结构化内容里，固定提示由后端在导出时拼接（M8 规格 2.1 第 8 条）
+  if (isPopsciKind(row.kind)) return false;
   return getSkill(row.skill_id)?.clientFacing ?? true;
 }
 

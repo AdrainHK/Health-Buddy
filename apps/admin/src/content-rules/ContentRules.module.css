@@ -1,0 +1,40 @@
+/* 科普合规规则页（M8 规格 2.3）：每组一张卡片，单列排列 */
+.builtin {
+  padding: var(--hb-space-3) var(--hb-space-4);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-md);
+  background: var(--hb-surface-2);
+}
+
+.heading {
+  margin: 0 0 var(--hb-space-2);
+  font-size: var(--hb-text-md);
+  font-weight: 600;
+}
+
+.builtinList {
+  margin: 0;
+  padding-left: var(--hb-space-5);
+  color: var(--hb-text-2);
+  font-size: var(--hb-text-sm);
+}
+
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hb-space-2);
+  min-width: 0;
+  padding: var(--hb-space-4);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-md);
+  background: var(--hb-surface);
+}

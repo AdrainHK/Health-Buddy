@@ -163,7 +163,7 @@ describe('运营商开通（M7 规格 2.1）', () => {
       id,
       code: name,
       name,
-      features: { experts: true, twin: true, care: true, companion: true },
+      features: { experts: true, twin: true, care: true, companion: true, content: true },
       monthlyQuotas: {
         llm_calls: null,
         expert_calls: null,

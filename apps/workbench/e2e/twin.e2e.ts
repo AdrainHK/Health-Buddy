@@ -19,7 +19,7 @@ import type {
 const PILOT_PLAN = {
   code: 'pilot',
   name: '试点版',
-  features: { experts: true, twin: true, care: true, companion: true },
+  features: { experts: true, twin: true, care: true, companion: true, content: true },
   monthlyQuotas: {
     llm_calls: null,
     expert_calls: null,
@@ -104,6 +104,7 @@ const planArtifact: ArtifactSummary = {
   sourceFileName: null,
 };
 const planArtifactDetail: ArtifactDetailResponse = {
+  contentCheck: null,
   companion: null,
   artifact: {
     ...planArtifact,

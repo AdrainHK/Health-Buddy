@@ -10,6 +10,9 @@ import {
   type ApproveRejection,
   type CarePlanStructured,
   type GoalParam,
+  POPSCI_KINDS,
+  isPopsciKind,
+  popsciContentSchema,
 } from '@health-buddy/shared';
 import {
   findClientDrugIssues,
@@ -47,6 +50,8 @@ const PROFESSIONAL_ONLY_KINDS = new Set([
   'visit_script',
   'visit_record',
   'handoff_reply',
+  // M8 科普：文章、PPT、社群稿的结构化内容（规格 3.1）
+  ...POPSCI_KINDS,
 ]);
 
 export function professionalOnlyKind(kind: string): boolean {
@@ -59,6 +64,8 @@ const EDITABLE_STRUCTURED = new Set([
   'visit_schedule',
   'visit_record',
   'handoff_reply',
+  // M8 科普：文章、PPT、社群稿的结构化内容（规格 3.1）
+  ...POPSCI_KINDS,
 ]);
 
 const EXPERT_NAMES = EXPERTS.map((e) => e.meta.name);
@@ -75,6 +82,12 @@ export async function validateEditedStructured(
   current: unknown = null,
 ): Promise<unknown> {
   if (!EDITABLE_STRUCTURED.has(kind)) throw badRequest();
+  // 科普：形状、长度上限，类型不能换（规格 3.1）；合规检查在保存后做
+  if (isPopsciKind(kind)) {
+    const parsed = popsciContentSchema.safeParse(structured);
+    if (!parsed.success || parsed.data.kind !== kind) throw badRequest();
+    return parsed.data;
+  }
   // /转交回复：只能改回复原文（≤ 150 字），对应的转交不能换
   if (kind === 'handoff_reply') {
     const parsed = handoffReplyStructuredSchema.safeParse(structured);
