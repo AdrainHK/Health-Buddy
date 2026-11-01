@@ -39,6 +39,7 @@ const FEATURE_SKILLS: Record<keyof PlanFeatures, readonly string[]> = {
   twin: ['twin-summary', 'twin-review'],
   companion: ['handoff-reply', 'companion-follow-up'],
   experts: [],
+  content: ['popsci-article', 'lecture-deck', 'community-post'],
 };
 
 export interface HomeSectionsProps {

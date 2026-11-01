@@ -104,6 +104,7 @@ const planArtifact: ArtifactSummary = {
   sourceFileName: null,
 };
 const planArtifactDetail: ArtifactDetailResponse = {
+  contentCheck: null,
   companion: null,
   artifact: {
     ...planArtifact,

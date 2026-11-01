@@ -299,6 +299,7 @@ const artifactSummary: ArtifactSummary = {
 const ARTIFACT_TITLE = '合成客户甲（测试） 体检报告解读 2026-10-15 第1版';
 
 const artifactDetail: ArtifactDetailResponse = {
+  contentCheck: null,
   companion: null,
   artifact: {
     ...artifactSummary,
