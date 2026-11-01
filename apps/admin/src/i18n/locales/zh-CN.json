@@ -1191,5 +1191,53 @@
       "network": "网络连接失败，请检查网络后重试",
       "unknown": "操作失败，请稍后再试"
     }
+  },
+  "ops": {
+    "nav": "运营看板",
+    "title": "运营看板",
+    "disclaimer": "只有汇总数字，没有客户姓名、档案和健康数值；健管师或客户少于 5 人的机构合并为“其他”。日期按 UTC 自然日。",
+    "disclaimerPlatform": "全平台的汇总数字，没有客户明细；估算成本按模型单价折算，只有平台能看到。日期按 UTC 自然日。",
+    "range": "{{from}} 至 {{to}}",
+    "rangeLabel": "时间范围",
+    "days": "最近 {{days}} 天",
+    "operator": "协会",
+    "allOperators": "全部协会",
+    "loading": "正在加载…",
+    "loadFailed": "加载失败",
+    "retry": "重试",
+    "metrics": {
+      "managers_opened": "已开通健管师",
+      "managers_active": "已激活健管师",
+      "managers_engaged": "本期活跃健管师",
+      "clients_total": "服务中的客户",
+      "clients_new": "本期新增客户",
+      "artifacts": "技能产物",
+      "expert_calls": "专家调用",
+      "care_plans": "新方案",
+      "visits_done": "已完成随访",
+      "companion_bound": "已绑定福宝",
+      "companion_active": "本期活跃福宝",
+      "llm_calls": "AI 调用"
+    },
+    "twinOpens": "孪生打开次数",
+    "seats": "席位",
+    "seatsValue": "{{used}} / {{limit}}",
+    "cost": "估算成本",
+    "costHidden": "估算成本是平台的经营数据，协会看板只显示调用次数。",
+    "operatorsTitle": "各协会",
+    "groupsTitle": "按机构",
+    "skillsTitle": "技能使用",
+    "columns": {
+      "operator": "协会",
+      "contractEnd": "合同到期",
+      "group": "机构"
+    },
+    "noContract": "未填写",
+    "expired": "（已到期）",
+    "expiringSoon": "（30 天内到期）",
+    "groupOther": "其他",
+    "groupNone": "不属于任何机构",
+    "hiddenSmall": "人数太少，不单独显示",
+    "smallGroupHint": "健管师或客户少于 5 人的机构合并为“其他”；合并后仍不足 5 人时不显示数字，合计照常计入。"
   }
 }
