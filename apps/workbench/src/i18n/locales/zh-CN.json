@@ -68,7 +68,7 @@
       "reviewList": "需要人工判断的项目",
       "ack": "已核对以上项目",
       "acking": "正在记录…",
-      "acked": "已于 {{time}} 核对"
+      "acked": "已由你于 {{time}} 核对（会记录在产物记录里）"
     }
   },
   "nav": {
@@ -485,7 +485,7 @@
         "structuredBlock": "结构化内容里有不合规的地方，改好并保存后才能确认",
         "allergenBlock": "请先勾选“已核对过敏原”",
         "contentForbidBlock": "合规检查有“禁止”类的问题，修改并保存后才能确认",
-        "contentPendingBlock": "有需要人工判断的项目，请逐条核对后点“已核对”"
+        "contentPendingBlock": "有需要人工判断的项目，请逐条核对后点“已核对以上项目”"
       },
       "critical": {
         "title": "危急指标",
@@ -526,7 +526,7 @@
         "record_incomplete": "随访记录还没有填随访日期或方式，或日期在今天之后",
         "reply_invalid": "回复为空、超过 150 字，或写了只给健管师看的提示语，不能念给客户",
         "content_check_failed": "合规检查还有“禁止”类的问题，请修改后再确认",
-        "content_check_pending": "有“需要人工判断”的项目，请核对后勾选“已核对”再确认"
+        "content_check_pending": "有“需要人工判断”的项目，请逐条核对后点“已核对以上项目”再确认"
       },
       "stale": "内容已在别处修改，已刷新",
       "returnDialog": {

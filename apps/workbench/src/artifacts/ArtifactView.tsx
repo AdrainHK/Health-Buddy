@@ -313,7 +313,9 @@ export function ArtifactView({
 
   // 科普的合规检查结果（M8 规格 2.3）：以后端为准，保存后重新检查
   const contentCheck = detail.contentCheck;
-  const contentForbidden = contentCheck?.hits.some((h) => h.category === 'forbid') ?? false;
+  // 科普产物还没有检查结果时（不应发生）按有问题处理，不能确认
+  const contentForbidden =
+    (popsci && !contentCheck) || (contentCheck?.hits.some((h) => h.category === 'forbid') ?? false);
   const contentPending =
     !!contentCheck &&
     contentCheck.ackedAt === null &&
@@ -444,6 +446,8 @@ export function ArtifactView({
             text: saved,
           });
           if (err.reasons.includes('critical_not_acknowledged')) setAcknowledged(false);
+          // 科普：后端按当前规则重算过，重新载入检查结果
+          if (err.reasons.some((r) => r.startsWith('content_check_'))) onReload();
           if (err.reasons.includes('allergens_not_acknowledged')) setAllergensChecked(false);
           if (
             savedStructured &&

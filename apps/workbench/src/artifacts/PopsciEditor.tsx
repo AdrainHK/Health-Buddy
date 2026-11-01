@@ -87,6 +87,7 @@ export function PopsciEditor({
           )}
           <Field
             multiline
+            optional
             label={t('popsci.fields.summary')}
             value={value.summary}
             max={300}
@@ -151,6 +152,7 @@ export function PopsciEditor({
                   )}
                   <Field
                     multiline
+                    optional
                     label={t('popsci.fields.notes', { n: i + 1 })}
                     value={s.notes}
                     max={600}
@@ -227,6 +229,7 @@ export function PopsciEditor({
             </Button>
           )}
           <Field
+            optional
             label={t('popsci.fields.interaction')}
             value={value.interaction}
             max={200}
@@ -251,6 +254,7 @@ function Field({
   max,
   disabled,
   multiline = false,
+  optional = false,
   onChange,
 }: {
   label: string;
@@ -258,16 +262,21 @@ function Field({
   max: number;
   disabled: boolean;
   multiline?: boolean;
+  /** 可以为空的字段（小结、讲稿、互动问题）：空着不标红 */
+  optional?: boolean;
   onChange: (value: string) => void;
 }) {
-  const over = value.length > max;
+  // 和 schema 一致：先去掉首尾空白再数字数
+  const length = value.trim().length;
+  const over = length > max;
+  const invalid = over || (!optional && length === 0);
   return (
     <label className={styles.field}>
       <span className={styles.label}>
         {label}
         <span className={over ? styles.over : styles.muted}>
           {' '}
-          {value.length}/{max}
+          {length}/{max}
         </span>
       </span>
       {multiline ? (
@@ -276,7 +285,7 @@ function Field({
           rows={4}
           value={value}
           disabled={disabled}
-          aria-invalid={over || !value.trim() ? true : undefined}
+          aria-invalid={invalid ? true : undefined}
           onChange={(e) => onChange(e.target.value)}
         />
       ) : (
@@ -284,7 +293,7 @@ function Field({
           className={styles.input}
           value={value}
           disabled={disabled}
-          aria-invalid={over || !value.trim() ? true : undefined}
+          aria-invalid={invalid ? true : undefined}
           onChange={(e) => onChange(e.target.value)}
         />
       )}

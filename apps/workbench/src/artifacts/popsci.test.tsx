@@ -147,4 +147,69 @@ describe('科普产物', () => {
     expect(screen.getByText('没有发现问题')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '确认' })).toBeEnabled();
   });
+
+  it('还没有检查结果时不能确认；有禁止类或未保存的修改时“已核对”不能点；草稿没有复制和导出', async () => {
+    mockApi({});
+    const user = userEvent.setup();
+    const { unmount } = render(
+      <ArtifactView
+        detail={makeArtifactDetail(
+          {
+            skillId: 'popsci-article',
+            clientId: null,
+            clientFacing: false,
+            content: { professional: '', clientFacing: '' },
+            structured: ARTICLE,
+          },
+          { contentCheck: null },
+        )}
+        readOnly={false}
+        onDetail={() => {}}
+        onReload={() => {}}
+        onOpen={() => {}}
+        onChanged={() => {}}
+        onReadOnly={() => {}}
+        onBack={() => {}}
+      />,
+    );
+    expect(screen.getByRole('button', { name: '确认' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /复制|导出/ })).not.toBeInTheDocument();
+    unmount();
+
+    const review = {
+      ruleId: 'disease_names',
+      category: 'review' as const,
+      term: '高血压',
+      reason: '请核对',
+      location: { field: 'title' as const, index: null, item: null },
+    };
+    const forbid = {
+      ...review,
+      ruleId: 'builtin_banned',
+      category: 'forbid' as const,
+      term: '治愈',
+    };
+    const { unmount: u2 } = render(
+      <ArtifactView
+        detail={popsciDetail(ARTICLE, check({ hits: [forbid, review] }))}
+        readOnly={false}
+        onDetail={() => {}}
+        onReload={() => {}}
+        onOpen={() => {}}
+        onChanged={() => {}}
+        onReadOnly={() => {}}
+        onBack={() => {}}
+      />,
+    );
+    expect(screen.getByRole('button', { name: '已核对以上项目' })).toBeDisabled();
+    u2();
+
+    renderView(popsciDetail(ARTICLE, check({ hits: [review] })));
+    expect(screen.getByRole('button', { name: '已核对以上项目' })).toBeEnabled();
+    await user.type(screen.getByRole('textbox', { name: /^标题/ }), '呀');
+    expect(screen.getByRole('button', { name: '已核对以上项目' })).toBeDisabled();
+    expect(
+      screen.getByText('下面是已保存内容的检查结果，保存修改后会重新检查'),
+    ).toBeInTheDocument();
+  });
 });

@@ -40,7 +40,7 @@ export type M5Structured =
 export function parseM5Structured(
   artifact: Pick<Artifact, 'skillId' | 'structured'>,
 ): M5Structured | null {
-  if (artifact.skillId in POPSCI_SKILL_KINDS) {
+  if (Object.hasOwn(POPSCI_SKILL_KINDS, artifact.skillId)) {
     const p = popsciContentSchema.safeParse(artifact.structured);
     return p.success ? { kind: 'popsci', value: p.data } : null;
   }
