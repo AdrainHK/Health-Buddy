@@ -20,6 +20,7 @@ import {
   updateArtifactRequestSchema,
   type ArtifactDetailResponse,
   type ClientTextResponse,
+  type ExportFormat,
 } from '@health-buddy/shared';
 import { z } from 'zod';
 import type { ResolvedSession } from '../auth/auth.repository.js';
@@ -29,6 +30,13 @@ import { requireManager } from '../common/manager-only.js';
 import { ArtifactsRepository } from './artifacts.repository.js';
 
 const idSchema = z.uuid();
+
+const EXPORT_MIME: Record<ExportFormat, string> = {
+  png: 'image/png',
+  pdf: 'application/pdf',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+};
 
 function parseId(id: string): string {
   if (!idSchema.safeParse(id).success) throw notFound();
@@ -107,7 +115,7 @@ export class ArtifactsController {
     return found(await this.artifacts.revise(session, parseId(id)));
   }
 
-  /** 导出通俗版图片或 PDF。会记一条导出记录，所以用 POST，并且不允许缓存。 */
+  /** 导出通俗版图片或 PDF；科普导出 Word、PDF、PPTX（M8）。会记一条导出记录，所以用 POST，并且不允许缓存。 */
   @Post(':id/export')
   @HttpCode(200)
   async export(
@@ -130,7 +138,7 @@ export class ArtifactsController {
     );
     res.setHeader('Cache-Control', 'no-store');
     return new StreamableFile(file, {
-      type: parsed.data.format === 'pdf' ? 'application/pdf' : 'image/png',
+      type: EXPORT_MIME[parsed.data.format],
       disposition: `attachment; filename="export.${parsed.data.format}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
       length: file.length,
     });

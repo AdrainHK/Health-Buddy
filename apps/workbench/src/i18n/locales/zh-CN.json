@@ -458,6 +458,7 @@
         "approved": "已确认",
         "return": "退回重写",
         "copy": "复制通俗版",
+        "copyAll": "复制全文",
         "copied": "已复制通俗版",
         "exportPng": "导出图片",
         "exportPdf": "导出 PDF",
@@ -485,6 +486,11 @@
         "structuredBlock": "结构化内容里有不合规的地方，改好并保存后才能确认",
         "allergenBlock": "请先勾选“已核对过敏原”",
         "contentForbidBlock": "合规检查有“禁止”类的问题，修改并保存后才能确认",
+        "exportFormat": {
+          "docx": "导出 Word",
+          "pdf": "导出 PDF",
+          "pptx": "导出 PPTX"
+        },
         "contentPendingBlock": "有需要人工判断的项目，请逐条核对后点“已核对以上项目”"
       },
       "critical": {
@@ -590,7 +596,9 @@
       "acknowledged": "已知悉危急指标",
       "format": {
         "png": "图片",
-        "pdf": "PDF"
+        "pdf": "PDF",
+        "docx": "Word",
+        "pptx": "PPTX"
       },
       "actions": {
         "created": "生成",

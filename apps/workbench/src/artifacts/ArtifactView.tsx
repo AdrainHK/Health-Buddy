@@ -11,6 +11,7 @@ import { Button, IconButton } from '@health-buddy/ui';
 import { ArrowLeft } from 'lucide-react';
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { POPSCI_COPYABLE, POPSCI_EXPORT_FORMATS } from '@health-buddy/shared';
 import {
   ApproveRejectedError,
   approveArtifact,
@@ -102,7 +103,18 @@ type Notice =
   | { kind: 'revised' };
 
 type Busy =
-  'save' | 'approve' | 'copy' | 'png' | 'pdf' | 'sync' | 'revise' | 'return' | 'ack' | null;
+  | 'save'
+  | 'approve'
+  | 'copy'
+  | 'png'
+  | 'pdf'
+  | 'docx'
+  | 'pptx'
+  | 'sync'
+  | 'revise'
+  | 'return'
+  | 'ack'
+  | null;
 
 interface ReturnProgress {
   steps: TaskStep[];
@@ -1033,6 +1045,27 @@ export function ArtifactView({
                     onWithdraw={withdrawFromCompanion}
                   />
                 )}
+              </>
+            )}
+            {savedStructured?.kind === 'popsci' && (
+              <>
+                {/* 科普（M8 规格 2.1 第 7 条，Q5）：文章复制、导出 Word 和 PDF；PPT 导出 PPTX；社群稿只复制 */}
+                {POPSCI_COPYABLE[savedStructured.value.kind] && (
+                  <Button variant="primary" disabled={readOnly || working} onClick={copy}>
+                    {t('results.artifacts.review.copyAll')}
+                  </Button>
+                )}
+                {POPSCI_EXPORT_FORMATS[savedStructured.value.kind].map((format) => (
+                  <Button
+                    key={format}
+                    disabled={readOnly || working}
+                    onClick={() => doExport(format)}
+                  >
+                    {busy === format
+                      ? t('results.artifacts.review.exporting')
+                      : t(`results.artifacts.review.exportFormat.${format}`)}
+                  </Button>
+                ))}
               </>
             )}
             {savedStructured?.kind === 'handoff_reply' && (

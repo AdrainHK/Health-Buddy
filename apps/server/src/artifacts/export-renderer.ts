@@ -28,7 +28,7 @@ export interface ExportDocument {
 
 let font: { path: string; postscript: string } | null | undefined;
 
-function findFont(): { path: string; postscript: string } | null {
+export function findFont(): { path: string; postscript: string } | null {
   if (font !== undefined) return font;
   const custom = process.env.EXPORT_FONT_PATH;
   const candidates = custom

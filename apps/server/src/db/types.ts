@@ -293,7 +293,7 @@ export interface ArtifactEventsTable extends ManagerScoped {
     | 'companion_reply_sent'
     | 'content_acked';
   reason: string | null;
-  format: 'png' | 'pdf' | null;
+  format: 'png' | 'pdf' | 'docx' | 'pptx' | null;
   created_at: Timestamp;
 }
 

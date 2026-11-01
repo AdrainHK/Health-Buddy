@@ -212,4 +212,57 @@ describe('科普产物', () => {
       screen.getByText('下面是已保存内容的检查结果，保存修改后会重新检查'),
     ).toBeInTheDocument();
   });
+
+  it('已审核：文章有复制、导出 Word 和 PDF；PPT 只有导出 PPTX；社群稿只有复制', () => {
+    mockApi({});
+    const approved = (structured: PopsciContent, skillId: string) =>
+      makeArtifactDetail(
+        {
+          skillId,
+          status: 'approved',
+          clientId: null,
+          clientFacing: false,
+          content: { professional: '', clientFacing: '' },
+          structured,
+        },
+        { contentCheck: check() },
+      );
+    const labels = () =>
+      ['复制全文', '导出 Word', '导出 PDF', '导出 PPTX'].filter((name) =>
+        screen.queryByRole('button', { name }),
+      );
+    const cases: [PopsciContent, string, string[]][] = [
+      [ARTICLE, 'popsci-article', ['复制全文', '导出 Word', '导出 PDF']],
+      [
+        {
+          kind: 'lecture_deck',
+          title: '冬季健康',
+          slides: [{ title: '保暖', bullets: ['戴帽子'], notes: '' }],
+        },
+        'lecture-deck',
+        ['导出 PPTX'],
+      ],
+      [
+        { kind: 'community_post', paragraphs: ['今天聊睡眠。'], interaction: '' },
+        'community-post',
+        ['复制全文'],
+      ],
+    ];
+    for (const [structured, skillId, expected] of cases) {
+      const { unmount } = render(
+        <ArtifactView
+          detail={approved(structured, skillId)}
+          readOnly={false}
+          onDetail={() => {}}
+          onReload={() => {}}
+          onOpen={() => {}}
+          onChanged={() => {}}
+          onReadOnly={() => {}}
+          onBack={() => {}}
+        />,
+      );
+      expect(labels(), skillId).toEqual(expected);
+      unmount();
+    }
+  });
 });

@@ -9,6 +9,14 @@ import {
   handoffReplyStructuredSchema,
   isCompanionDeliveryKind,
   isPopsciKind,
+  POPSCI_COPYABLE,
+  POPSCI_EXPORT_FORMATS,
+  checkPopsciContent,
+  hasForbiddenHits,
+  popsciContentSchema,
+  popsciPlainText,
+  type PopsciContent,
+  type PopsciSignature,
   type ApproveArtifactRequest,
   type ApproveRejection,
   type Artifact,
@@ -38,9 +46,11 @@ import { approveCarePlan, approveVisitRecord, approveVisitSchedule } from '../db
 import { syncArtifactToCompanion, withdrawCompanionDelivery } from '../db/companion-functions.js';
 import { assertReplySendable } from '../companion/reply-check.js';
 import { renderPdf, renderPng } from './export-renderer.js';
+import { renderPopsciDocx, renderPopsciPdf, renderPopsciPptx } from './popsci-export.js';
 import {
   contentCheckBlocked,
   contentCheckReasons,
+  currentContentRules,
   loadContentCheck,
   runContentCheck,
 } from '../content/content-check.js';
@@ -335,6 +345,13 @@ export class ArtifactsRepository {
       const row = await loadArtifact(trx, id, 'share');
       if (!row) return undefined;
       if (row.detached) throw readOnly();
+      // 科普（M8 规格 2.1 第 7 条）：文章和社群稿复制全文，末尾带固定提示和署名；PPT 不复制
+      if (isPopsciKind(row.kind)) {
+        if (!POPSCI_COPYABLE[row.kind]) throw conflict({ reasons: ['format_not_allowed'] });
+        const { content, signature } = await popsciDeliverable(trx, ctx, row);
+        await recordEvent(trx, ctx, row, 'copied');
+        return popsciPlainText(content, signature);
+      }
       // 没有通俗版的产物（/面谈提纲）不能复制给客户（规格 2.8、Q21）
       if (!isClientFacing(row)) throw notClientFacing();
       if (row.status !== 'approved') throw conflict();
@@ -441,6 +458,22 @@ export class ArtifactsRepository {
       const row = await loadArtifact(trx, id, 'share');
       if (!row) return undefined;
       if (row.detached) throw readOnly();
+      // 科普（M8 规格 2.1 第 7 条，Q5）：文章导出 Word、PDF，PPT 导出 PPTX，社群稿不导出
+      if (isPopsciKind(row.kind)) {
+        const allowed: readonly ExportFormat[] = POPSCI_EXPORT_FORMATS[row.kind];
+        if (!allowed.includes(format)) throw conflict({ reasons: ['format_not_allowed'] });
+        const { content, signature } = await popsciDeliverable(trx, ctx, row);
+        const input = { content, signature, date: shanghaiDate(new Date()) };
+        const file =
+          format === 'docx'
+            ? await renderPopsciDocx(input)
+            : format === 'pptx'
+              ? await renderPopsciPptx(input)
+              : await renderPopsciPdf(input);
+        await recordEvent(trx, ctx, row, 'exported', null, format);
+        return { file, filename: exportFileName(row, format, tz) };
+      }
+      if (format !== 'png' && format !== 'pdf') throw conflict({ reasons: ['format_not_allowed'] });
       if (!isClientFacing(row)) throw notClientFacing();
       if (row.status !== 'approved') throw conflict();
       const text = deliverableText(row);
@@ -705,6 +738,49 @@ function clientTextHints(row: ArtifactRow): ArtifactDetailResponse['hints'] {
  * 发给客户前再查一遍通俗版：已审核内容数据库层不能再改，这里是多一道保险。
  * 和确认时的检查一致：无禁用词、免责声明恰好一次且在末尾、不含危急指标数值。
  */
+/**
+ * 科普的交付内容（M8 规格 2.1 第 7、8 条，Q1）：只有已审核的能复制、导出；按当前规则再检查一次，
+ * 有“禁止”类命中就不交付（红线 5）。署名是健管师本人的显示名和所在协会名称（行级安全只读得到本人和本协会）。
+ */
+async function popsciDeliverable(
+  trx: TenantTransaction,
+  ctx: TenantContext,
+  row: ArtifactRow,
+): Promise<{ content: PopsciContent; signature: PopsciSignature }> {
+  if (row.status !== 'approved') throw conflict();
+  if (!(await planFeatureEnabled(trx, 'content'))) throw planFeatureDisabled('content');
+  const parsed = popsciContentSchema.safeParse(row.structured);
+  if (!parsed.success) throw conflict();
+  const { rules } = await currentContentRules(trx);
+  if (hasForbiddenHits(checkPopsciContent(parsed.data, rules))) {
+    throw conflict({ reasons: ['content_check_failed'] satisfies RejectReason[] });
+  }
+  const me = await trx
+    .selectFrom('users')
+    .select('display_name')
+    .where('id', '=', ctx.userId)
+    .executeTakeFirst();
+  const operator = ctx.operatorId
+    ? await trx
+        .selectFrom('operators')
+        .select('name')
+        .where('id', '=', ctx.operatorId)
+        .executeTakeFirst()
+    : undefined;
+  const signature: PopsciSignature = {
+    managerName: me?.display_name?.trim() ?? '',
+    operatorName: operator?.name?.trim() || null,
+  };
+  // 署名印在对外的文件上，同样不能有禁用词
+  if (
+    !signature.managerName ||
+    findBannedTerms(`${signature.managerName} ${signature.operatorName ?? ''}`).length
+  ) {
+    throw conflict({ reasons: ['signature_invalid'] });
+  }
+  return { content: parsed.data, signature };
+}
+
 function deliverableText(row: ArtifactRow): string {
   const text = row.content.clientFacing;
   if (
@@ -750,6 +826,10 @@ export const EXPORT_SUMMARIES: Record<string, string> = {
   'report-interpretation': '体检报告解读',
   // M5 规格 2.3：“健康方案 日期 第几版”，不含客户姓名
   'care-plan': '健康方案',
+  // M8 科普：文件名不含任何个人信息
+  'popsci-article': '科普文章',
+  'lecture-deck': '讲座PPT',
+  'community-post': '社群稿',
 };
 
 /** 导出文件上的日期按北京时间 */

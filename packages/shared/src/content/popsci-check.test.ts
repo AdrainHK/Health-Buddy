@@ -213,3 +213,27 @@ describe('科普合规检查', () => {
     ).toBe(false);
   });
 });
+
+describe('科普复制的纯文本（M8 规格 2.1 第 8 条，Q1）', () => {
+  it('正文之后是两句固定提示，最后一行是署名', async () => {
+    const { popsciPlainText } = await import('../api/popsci.js');
+    const text = popsciPlainText(
+      popsciContentSchema.parse({
+        kind: 'community_post',
+        paragraphs: ['今天聊聊睡眠。'],
+        interaction: '你几点睡？',
+      }),
+      { managerName: '合成健管师', operatorName: '合成协会' },
+    );
+    expect(text.split('\n')).toEqual([
+      '今天聊聊睡眠。',
+      '',
+      '你几点睡？',
+      '',
+      '仅供参考，非医疗诊断',
+      '如有不适请及时就医',
+      '',
+      '合成健管师 · 合成协会 · 由 Health Buddy 辅助生成',
+    ]);
+  });
+});
