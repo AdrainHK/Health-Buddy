@@ -67,6 +67,8 @@ export interface ResultsPanelProps {
   expertsTabRequest?: { key: number; consultationId: string | null } | null;
   /** 在左侧栏点了客户：切到“客户 · 孪生”；key 变了就重新切（M4 规格 2.2） */
   clientTabRequest?: { key: number } | null;
+  /** 要打开的产物（首页里点了待审核草稿，M8 规格 2.4）；key 变了就重新打开 */
+  artifactRequest?: { id: string; key: number } | null;
   /** 孪生里调整了状态、处理了跟进项、录入了数据：左侧栏的角标和状态圆点据此刷新 */
   onTwinChanged?: () => void;
   /** 在别处（中间的今日跟进清单）处理了跟进项时改变，孪生据此重新加载 */
@@ -93,6 +95,7 @@ export function ResultsPanel({
   consultationsVersion = 0,
   expertsTabRequest = null,
   clientTabRequest = null,
+  artifactRequest = null,
   onTwinChanged,
   twinRefreshKey = 0,
 }: ResultsPanelProps) {
@@ -260,6 +263,16 @@ export function ResultsPanel({
     },
     [setTab],
   );
+
+  // 首页里点了待审核草稿：产物列表加载后打开它（和刷新后恢复产物同一条路径），列表里没有就不打开
+  const artifactRequestKey = artifactRequest?.key ?? null;
+  const artifactRequestId = artifactRequest?.id ?? null;
+  useEffect(() => {
+    if (artifactRequestKey === null || artifactRequestId === null) return;
+    restoringArtifactRef.current = artifactRequestId;
+    setTab('artifacts');
+    setListVersion((v) => v + 1);
+  }, [artifactRequestKey, artifactRequestId, setTab]);
 
   // 产物列表：来自任务详情。换任务时回到列表；同一任务里刷新时打开最新的产物。
   useEffect(() => {

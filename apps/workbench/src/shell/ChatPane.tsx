@@ -68,7 +68,8 @@ const INTERPRETATION_SKILL_ID = 'report-interpretation';
  */
 export interface ComposerPrefill {
   key: number;
-  taskId: string;
+  /** 为空时填到欢迎页（首页）的输入框：首页快捷入口点了技能，发送第一条消息时才新建任务 */
+  taskId: string | null;
   mode: TaskMode;
   skillId?: string;
   twinRefs?: TwinRef[];
@@ -124,6 +125,8 @@ export interface ChatPaneProps {
   onConsultation?: () => void;
   /** 孪生里的操作带过来的输入（只对 taskId 这个任务生效） */
   prefill?: ComposerPrefill | null;
+  /** 工作台首页（M8 规格 2.4）：没有任务时显示在欢迎语和输入框下面 */
+  home?: ReactNode;
 }
 
 interface Draft {
@@ -254,6 +257,7 @@ export function ChatPane({
   onOpenExperts,
   onConsultation,
   prefill = null,
+  home,
 }: ChatPaneProps) {
   const { t } = useTranslation();
   const twinRefLabel = useTwinRefLabel();
@@ -1432,7 +1436,7 @@ export function ChatPane({
             </div>
           </>
         ) : (
-          <div className={styles.body}>
+          <div className={styles.body} data-home={!boundExpertId && home ? 'true' : undefined}>
             <div className={styles.welcome}>
               {boundExpertId ? (
                 <>
@@ -1449,6 +1453,7 @@ export function ChatPane({
                 </>
               )}
               {composer}
+              {!boundExpertId && home}
             </div>
           </div>
         ))}

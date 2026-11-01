@@ -1,5 +1,28 @@
 {
+  "home": {
+    "title": "首页",
+    "viewAll": "查看全部",
+    "sections": {
+      "companion": "伴侣预警和转交",
+      "followUps": "今日优先跟进",
+      "visits": "今日随访",
+      "drafts": "待审核草稿",
+      "shortcuts": "快捷入口"
+    },
+    "empty": {
+      "companion": "今天没有待处理的伴侣预警和转交",
+      "followUps": "今天没有待处理的跟进",
+      "visits": "今天没有待进行的随访",
+      "drafts": "今天没有待审核的草稿"
+    },
+    "draftsLoadFailed": "待审核草稿加载失败",
+    "draftsMore": "只列出最早的 {{count}} 份",
+    "draftCritical": "含危急指标",
+    "shortcutSkills": "常用技能",
+    "shortcutExperts": "常用专家"
+  },
   "nav": {
+    "home": "首页",
     "newTask": "新建任务",
     "tasks": "任务",
     "noTasks": "还没有任务",

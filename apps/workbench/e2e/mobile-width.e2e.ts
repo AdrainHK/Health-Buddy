@@ -369,6 +369,11 @@ async function mockApi(page: Page): Promise<string[]> {
         // 套餐（M7 第 4 步）：试点版，全部功能开
         case key === 'GET /api/me/plan':
           return json(route, { plan: PILOT_PLAN });
+        case key === 'GET /api/home':
+          return json(route, {
+            drafts: { total: 0, items: [] },
+            usage: { skills: [], experts: [] },
+          });
         case key === 'GET /api/tasks':
           return json(route, { tasks: [task] });
         case key === 'GET /api/tasks?archived=true':
@@ -585,4 +590,57 @@ test('刷新：375px 下刷新页面后仍能看到产物和记录（验收反�
   await expect(history.getByRole('button', { name: '查看第 1 版' })).toContainText(ARTIFACT_TITLE);
   await expect(history.getByText('系统 · 生成')).toBeVisible();
   await expectNoHorizontalScroll(page, 'history after reload');
+});
+
+test('首页：375px 下分区单列，没有横向滚动（M8 验收 12）', async ({ page }) => {
+  await mockApi(page);
+  // 后注册的路由先匹配：给首页一份标题很长的待审核草稿
+  await page.route(
+    (url) => url.pathname === '/api/home',
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          drafts: {
+            total: 1,
+            items: [
+              {
+                artifactId: ids.artifact,
+                taskId: ids.task,
+                taskTitle: '合成任务'.repeat(20),
+                clientId: ids.client,
+                skillId: 'report-interpretation',
+                version: 1,
+                status: 'draft',
+                hasCriticalFlags: true,
+                createdAt: '2026-10-18T08:00:00.000Z',
+              },
+            ],
+          },
+          usage: { skills: [], experts: [] },
+        }),
+      }),
+  );
+  await page.goto('/');
+  const home = page.getByTestId('home');
+  await expect(home.getByRole('list', { name: '待审核草稿' })).toBeVisible();
+  await expect(home.getByRole('heading', { name: /伴侣预警和转交/ })).toBeVisible();
+  // 结果区收起时在屏幕外，这里只看页面和首页本身
+  const sizes = await page.evaluate(() => ({
+    viewport: window.innerWidth,
+    doc: document.documentElement.scrollWidth,
+    body: document.body.scrollWidth,
+  }));
+  expect(sizes.doc).toBeLessThanOrEqual(sizes.viewport);
+  expect(sizes.body).toBeLessThanOrEqual(sizes.viewport);
+  const outside = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('[data-testid="home"] *')]
+      .filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.right > window.innerWidth + 1;
+      })
+      .map((el) => `${el.tagName.toLowerCase()} ${el.textContent?.slice(0, 20) ?? ''}`),
+  );
+  expect(outside).toEqual([]);
 });

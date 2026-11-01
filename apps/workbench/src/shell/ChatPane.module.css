@@ -38,6 +38,11 @@
   overflow-y: auto;
 }
 
+/* 首页内容较长：从上往下排，不再垂直居中（居中时上面的内容会被裁掉） */
+.body[data-home='true'] {
+  justify-content: flex-start;
+}
+
 .welcome {
   width: 100%;
   max-width: 720px;
