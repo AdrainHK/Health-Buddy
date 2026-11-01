@@ -233,6 +233,27 @@ describe('科普的复制和导出', () => {
       expect((await m.post(`/api/artifacts/${theirs}/copy`)).status).toBe(404);
     }
     expect(await formatsOf(theirs)).toEqual([]);
+    // 按类型的分支（PPT 不能复制、社群稿不能导出）也不会先于归属检查暴露产物是否存在（租户审查 S2）
+    const theirDeck = await insert(b1, DECK);
+    const theirPost = await insert(b1, POST);
+    const a = await loginAs(app, f.users.managerA1.email);
+    expect((await exportAs(a, theirDeck, 'pptx')).status).toBe(404);
+    expect((await a.post(`/api/artifacts/${theirDeck}/copy`)).status).toBe(404);
+    expect((await a.post(`/api/artifacts/${theirPost}/copy`)).status).toBe(404);
+    // 后台账号不能导出、复制健管师的科普（租户审查 S1）
+    const mineForAdmins = await insert(a1, ARTICLE);
+    for (const email of [
+      f.users.orgAdminA.email,
+      f.users.operatorAdminA.email,
+      f.users.platform.email,
+    ]) {
+      const admin = await loginAs(app, email);
+      expect([403, 404]).toContain((await exportAs(admin, mineForAdmins, 'docx')).status);
+      expect([403, 404]).toContain(
+        (await admin.post(`/api/artifacts/${mineForAdmins}/copy`)).status,
+      );
+    }
+    expect(await formatsOf(mineForAdmins)).toEqual([]);
 
     const plan = await owner
       .insertInto('plans')
@@ -268,5 +289,7 @@ describe('科普的复制和导出', () => {
     const mine = await insert(a1, ARTICLE);
     const res = await exportAs(m, mine, 'docx');
     expect(res.status).toBe(403);
+    expect((await m.post(`/api/artifacts/${mine}/copy`)).status).toBe(403);
+    expect(await formatsOf(mine)).toEqual([]);
   });
 });

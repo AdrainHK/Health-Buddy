@@ -32,10 +32,6 @@ export interface PopsciExportInput {
   date: string;
 }
 
-function titleOf(content: PopsciContent): string {
-  return content.kind === 'community_post' ? '' : content.title;
-}
-
 /** 文章导出 Word */
 export async function renderPopsciDocx({
   content,
@@ -167,7 +163,7 @@ export async function renderPopsciPptx({
   const cover = pptx.addSlide();
   cover.background = { color: 'FFFFFF' };
   bar(cover);
-  cover.addText(titleOf(content), {
+  cover.addText(content.title, {
     x: 0.6,
     y: 1.8,
     w: 8.8,
@@ -177,7 +173,7 @@ export async function renderPopsciPptx({
     bold: true,
     color: ACCENT,
   });
-  cover.addText([signature.managerName, signature.operatorName].filter(Boolean).join(' · '), {
+  cover.addText(popsciSignatureLine(signature), {
     x: 0.6,
     y: 3.2,
     w: 8.8,

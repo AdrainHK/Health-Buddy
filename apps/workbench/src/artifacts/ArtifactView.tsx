@@ -97,6 +97,7 @@ type Notice =
   | { kind: 'saved' }
   | { kind: 'approved' }
   | { kind: 'copied' }
+  | { kind: 'copiedAll' }
   | { kind: 'synced' }
   | { kind: 'withdrawn' }
   | { kind: 'exported'; filename: string }
@@ -508,7 +509,7 @@ export function ArtifactView({
         onChanged();
         return;
       }
-      setNotice({ kind: 'copied' });
+      setNotice({ kind: popsci ? 'copiedAll' : 'copied' });
       onChanged();
     });
 
@@ -629,9 +630,11 @@ export function ArtifactView({
     ? t('results.artifacts.statusNote.readOnlyTask')
     : artifact.status === 'draft'
       ? null
-      : artifact.status === 'approved' && !clientFacing
-        ? t('results.artifacts.statusNote.approvedProfessionalOnly')
-        : t(`results.artifacts.statusNote.${artifact.status}`);
+      : artifact.status === 'approved' && popsci
+        ? t('results.artifacts.statusNote.approvedPopsci')
+        : artifact.status === 'approved' && !clientFacing
+          ? t('results.artifacts.statusNote.approvedProfessionalOnly')
+          : t(`results.artifacts.statusNote.${artifact.status}`);
 
   return (
     <section className={styles.view} aria-labelledby="hb-artifact-title">

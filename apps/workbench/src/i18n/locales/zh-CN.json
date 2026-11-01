@@ -419,7 +419,8 @@
         "returned": "此版本已退回重写，只读。新版本见版本列表。",
         "voided": "客户已转出或删除，此草稿已作废，只读。",
         "readOnlyTask": "客户已转出或删除，任务只读，所有操作已禁用。",
-        "approvedProfessionalOnly": "已审核。面谈提纲只给健管师用，不提供复制和导出。如需修改，请基于此版生成新版本。"
+        "approvedProfessionalOnly": "已审核。面谈提纲只给健管师用，不提供复制和导出。如需修改，请基于此版生成新版本。",
+        "approvedPopsci": "已审核，可以复制或导出。复制和导出的内容末尾会自动带上固定提示和署名。如需修改，请基于此版生成新版本。"
       },
       "views": {
         "label": "产物版本",
@@ -460,6 +461,7 @@
         "copy": "复制通俗版",
         "copyAll": "复制全文",
         "copied": "已复制通俗版",
+        "copiedAll": "已复制全文",
         "exportPng": "导出图片",
         "exportPdf": "导出 PDF",
         "exporting": "正在导出…",
@@ -554,6 +556,9 @@
         "tooMany": "操作太频繁，请稍后再试",
         "readOnly": "客户已转出或删除，任务只读",
         "notClientFacing": "面谈提纲只给健管师用，不能复制或导出",
+        "formatNotAllowed": "这种内容不能用这个格式复制或导出",
+        "signatureInvalid": "导出内容需要署名：请确认账号姓名和所属协会名称已填写",
+        "contentCheckFailed": "按当前的合规规则，内容里有“禁止”类的说法，请基于此版修改后重新审核",
         "noCompanion": "客户还没有绑定伴侣设备，或已撤回同意，不能同步",
         "notLatest": "这份产物已有更新的审核版本，请同步最新的版本",
         "notCurrentPlan": "只能同步当前生效的方案",
@@ -606,7 +611,7 @@
         "approved": "确认",
         "returned": "退回重写",
         "voided": "作废",
-        "copied": "复制通俗版",
+        "copied": "复制",
         "exported": "导出",
         "companion_synced": "同步给伴侣",
         "companion_withdrawn": "取消同步给伴侣",
@@ -1451,7 +1456,7 @@
       "artifact": "产物 · {{kind}}：{{action}}",
       "artifactAction": {
         "approved": "确认",
-        "copied": "复制通俗版",
+        "copied": "复制",
         "exported": "导出"
       },
       "carePlan": "方案（{{sections}}）：{{action}}",

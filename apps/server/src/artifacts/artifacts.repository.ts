@@ -772,8 +772,10 @@ async function popsciDeliverable(
     operatorName: operator?.name?.trim() || null,
   };
   // 署名印在对外的文件上，同样不能有禁用词
+  // 有所属协会时署名必须带协会名称（Q1），读不到就不交付
   if (
     !signature.managerName ||
+    (ctx.operatorId && !signature.operatorName) ||
     findBannedTerms(`${signature.managerName} ${signature.operatorName ?? ''}`).length
   ) {
     throw conflict({ reasons: ['signature_invalid'] });
