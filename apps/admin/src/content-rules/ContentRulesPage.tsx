@@ -88,7 +88,9 @@ export function ContentRulesPage() {
     );
     if (
       weakened.length &&
-      !window.confirm(t('contentRules.confirmWeaken', { names: weakened.map((g) => g.label).join('、') }))
+      !window.confirm(
+        t('contentRules.confirmWeaken', { names: weakened.map((g) => g.label).join('、') }),
+      )
     ) {
       return;
     }
