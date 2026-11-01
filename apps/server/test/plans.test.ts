@@ -32,7 +32,7 @@ class CountingProvider implements Provider {
   }
 }
 
-const FEATURES_ALL = { experts: true, twin: true, care: true, companion: true };
+const FEATURES_ALL = { experts: true, twin: true, care: true, companion: true, content: true };
 const NO_QUOTAS = {
   llm_calls: null,
   expert_calls: null,

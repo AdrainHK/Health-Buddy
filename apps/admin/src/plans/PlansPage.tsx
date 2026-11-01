@@ -208,7 +208,7 @@ function PlanDialog({
   const [code, setCode] = useState(plan?.code ?? '');
   const [name, setName] = useState(plan?.name ?? '');
   const [features, setFeatures] = useState<PlanFeatures>(
-    plan?.features ?? { experts: true, twin: true, care: true, companion: true },
+    plan?.features ?? { experts: true, twin: true, care: true, companion: true, content: true },
   );
   const [quotas, setQuotas] = useState<Record<keyof PlanQuotas, string>>(() => {
     const q = plan?.monthlyQuotas;

@@ -8,7 +8,7 @@ const PILOT: Plan = {
   id: '55555555-5555-4555-8555-555555555551',
   code: 'pilot',
   name: '试点版',
-  features: { experts: true, twin: true, care: true, companion: true },
+  features: { experts: true, twin: true, care: true, companion: true, content: true },
   monthlyQuotas: {
     llm_calls: null,
     expert_calls: null,
@@ -78,7 +78,7 @@ describe('平台套餐页（M7 规格 2.5）', () => {
     expect(api.callsTo('POST', '/admin/plans')[0]?.body).toEqual({
       code: 'pro',
       name: '合成专业版',
-      features: { experts: true, twin: true, care: true, companion: false },
+      features: { experts: true, twin: true, care: true, companion: false, content: true },
       monthlyQuotas: {
         llm_calls: null,
         expert_calls: 100,

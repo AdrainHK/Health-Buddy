@@ -290,10 +290,31 @@ export interface ArtifactEventsTable extends ManagerScoped {
     | 'exported'
     | 'companion_synced'
     | 'companion_withdrawn'
-    | 'companion_reply_sent';
+    | 'companion_reply_sent'
+    | 'content_acked';
   reason: string | null;
   format: 'png' | 'pdf' | null;
   created_at: Timestamp;
+}
+
+/** 科普合规词表（迁移 0037），只追加；只能经 admin_save_content_rules 写入 */
+export interface ContentRulesTable {
+  id: Generated<string>;
+  version: number;
+  rules: ColumnType<unknown, never, never>;
+  created_by: string | null;
+  created_at: Timestamp;
+}
+
+/** 科普产物的合规检查结果（迁移 0037）；content_md5 由数据库按产物当前内容填写 */
+export interface ContentComplianceResultsTable extends ManagerScoped {
+  artifact_id: string;
+  rules_version: number;
+  content_md5: ColumnType<string, string | undefined, string | undefined>;
+  hits: ColumnType<unknown, string, string>;
+  checked_at: Timestamp;
+  acked_by: string | null;
+  acked_at: Date | null;
 }
 
 export interface ClientHealthHistoryTable extends ClientScoped {
@@ -706,7 +727,7 @@ export interface PlansTable {
   code: ColumnType<string, never, never>;
   name: ColumnType<string, never, never>;
   features: ColumnType<
-    { experts: boolean; twin: boolean; care: boolean; companion: boolean },
+    { experts: boolean; twin: boolean; care: boolean; companion: boolean; content: boolean },
     never,
     never
   >;
@@ -750,7 +771,11 @@ export interface AdminAuditLogTable {
   operator_id: ColumnType<string | null, never, never>;
   actor_id: ColumnType<string | null, never, never>;
   actor_role: ColumnType<Role | null, never, never>;
-  object_type: ColumnType<'operator' | 'organization' | 'user' | 'plan', never, never>;
+  object_type: ColumnType<
+    'operator' | 'organization' | 'user' | 'plan' | 'content_rules',
+    never,
+    never
+  >;
   object_id: ColumnType<string, never, never>;
   action: ColumnType<string, never, never>;
   before: ColumnType<Record<string, unknown> | null, never, never>;
@@ -791,6 +816,8 @@ export interface Database {
   task_plans: TaskPlansTable;
   artifacts: ArtifactsTable;
   artifact_events: ArtifactEventsTable;
+  content_rules: ContentRulesTable;
+  content_compliance_results: ContentComplianceResultsTable;
   critical_thresholds: CriticalThresholdsTable;
   critical_threshold_events: CriticalThresholdEventsTable;
   expert_consultations: ExpertConsultationsTable;

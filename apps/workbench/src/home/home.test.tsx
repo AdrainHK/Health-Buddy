@@ -172,7 +172,7 @@ describe('工作台首页', () => {
             plan: {
               code: 'basic',
               name: '基础版',
-              features: { experts: true, twin: true, care: false, companion: false },
+              features: { experts: true, twin: true, care: false, companion: false, content: true },
               monthlyQuotas: {
                 llm_calls: null,
                 expert_calls: null,

@@ -7,7 +7,7 @@ import { CLIENTS, SKILL, json, mockApi } from '../test/mockApi';
 const PLAN: MyPlan = {
   code: 'basic',
   name: '合成基础版',
-  features: { experts: false, twin: true, care: false, companion: true },
+  features: { experts: false, twin: true, care: false, companion: true, content: true },
   monthlyQuotas: { llm_calls: 500, expert_calls: null, report_pages: 100, companion_devices: null },
   contractEnd: '2026-12-31',
   usage: { llm_calls: 12, expert_calls: 3, report_pages: 0, companion_devices: 1 },

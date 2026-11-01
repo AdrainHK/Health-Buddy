@@ -18,7 +18,7 @@ const plan = (id: string, name: string) => ({
   id,
   code: name,
   name,
-  features: { experts: true, twin: true, care: true, companion: true },
+  features: { experts: true, twin: true, care: true, companion: true, content: true },
   monthlyQuotas: {
     llm_calls: null,
     expert_calls: null,

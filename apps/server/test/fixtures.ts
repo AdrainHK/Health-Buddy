@@ -66,7 +66,7 @@ export async function seedFixtures(db: Owner): Promise<Fixtures> {
   );
   // 试点版套餐由迁移写入（M7），级联清空（plans.updated_by 引用 users）后补回来
   await sql`insert into plans (code, name, features, monthly_quotas) values ('pilot', '试点版',
-    '{"experts": true, "twin": true, "care": true, "companion": true}',
+    '{"experts": true, "twin": true, "care": true, "companion": true, "content": true}',
     '{"llm_calls": null, "expert_calls": null, "report_pages": null, "companion_devices": null}')
     on conflict do nothing`.execute(db);
   // 阈值由迁移写入（全平台一套），清空后补回来

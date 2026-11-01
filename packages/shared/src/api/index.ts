@@ -13,6 +13,8 @@ export * from './twin.js';
 export * from './twin-rules.js';
 export * from './follow-ups.js';
 export * from './home.js';
+export * from './popsci.js';
+export * from './content-rules.js';
 export * from './monitoring.js';
 export * from './twin-stats.js';
 export * from './care-plans.js';

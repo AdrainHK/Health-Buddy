@@ -3,6 +3,7 @@ import { CRITICAL_COMPARATORS, CRITICAL_LEVELS } from '../health/critical.js';
 import { timeZoneSchema } from './follow-ups.js';
 import { riskTierSuggestionSchema } from './risk-tiers.js';
 import { planOptionsSchema } from './care-plans.js';
+import { contentCheckResultSchema } from './popsci.js';
 
 /** 产物状态（规格 3.6）。voided 只由系统在客户转出或删除时设置（Q11）。 */
 export const artifactStatusSchema = z.enum(['draft', 'approved', 'returned', 'voided']);
@@ -102,6 +103,8 @@ export const ARTIFACT_ACTIONS = [
   'companion_withdrawn',
   /** /转交回复 审核后发送给福宝（M6 规格 2.4） */
   'companion_reply_sent',
+  /** 科普：勾选了“已核对”需要人工判断的项目（M8 规格 2.1 第 7 条） */
+  'content_acked',
 ] as const;
 
 /** 修改、审核、复制和导出记录。只记谁在什么时候做了什么，不记内容。 */
@@ -160,6 +163,8 @@ export const artifactDetailResponseSchema = z.object({
     })
     .nullable()
     .default(null),
+  /** 科普产物的合规检查结果（M8 规格 2.3）；其他产物为空 */
+  contentCheck: contentCheckResultSchema.nullable().default(null),
 });
 export type ArtifactDetailResponse = z.infer<typeof artifactDetailResponseSchema>;
 
@@ -275,6 +280,11 @@ export const approveRejectionSchema = z.object({
       // M6 规格 2.9：/转交回复
       /** 回复为空、超过 150 字，或有只给健管师看的提示语，不能念给客户 */
       'reply_invalid',
+      // M8 规格 2.1 第 7 条、2.3：科普
+      /** 合规检查还有“禁止”类命中 */
+      'content_check_failed',
+      /** “需要人工判断”的项目还没勾选“已核对” */
+      'content_check_pending',
     ]),
   ),
   bannedTerms: z.array(z.object({ term: z.string(), index: z.number().int() })).optional(),

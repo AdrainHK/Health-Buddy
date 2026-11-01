@@ -14,6 +14,7 @@ import {
 import type { Response } from 'express';
 import {
   approveArtifactRequestSchema,
+  complianceAckRequestSchema,
   exportArtifactRequestSchema,
   sendHandoffReplyRequestSchema,
   updateArtifactRequestSchema,
@@ -78,6 +79,23 @@ export class ArtifactsController {
     const parsed = approveArtifactRequestSchema.safeParse(body);
     if (!parsed.success) throw badRequest();
     return found(await this.artifacts.approve(session, artifactId, parsed.data));
+  }
+
+  /** 科普：勾选“已核对”需要人工判断的项目（M8 规格 2.1 第 7 条）。别人的、不是科普的 → 404 */
+  @Post(':id/compliance-ack')
+  @HttpCode(200)
+  async complianceAck(
+    @CurrentSession() session: ResolvedSession,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ): Promise<ArtifactDetailResponse> {
+    requireManager(session);
+    const artifactId = parseId(id);
+    const parsed = complianceAckRequestSchema.safeParse(body);
+    if (!parsed.success) throw badRequest();
+    return found(
+      await this.artifacts.ackContentCheck(session, artifactId, parsed.data.contentHash),
+    );
   }
 
   @Post(':id/revise')

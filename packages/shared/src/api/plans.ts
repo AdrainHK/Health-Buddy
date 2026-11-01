@@ -7,8 +7,8 @@ import { findBannedTerms } from '../compliance/index.js';
  * 额度为 null 表示不另设上限，只受 M1–M6 的技术性上限。
  */
 
-/** 按模块开关的功能：专家中心、数字孪生、方案与随访、AI 健康伴侣 */
-export const PLAN_FEATURES = ['experts', 'twin', 'care', 'companion'] as const;
+/** 按模块开关的功能：专家中心、数字孪生、方案与随访、AI 健康伴侣、科普内容工厂（M8 Q2） */
+export const PLAN_FEATURES = ['experts', 'twin', 'care', 'companion', 'content'] as const;
 export type PlanFeature = (typeof PLAN_FEATURES)[number];
 
 /** 额度项：前三项按北京时间的自然月计；伴侣设备数是同时绑定的上限 */
@@ -31,7 +31,13 @@ export const planCodeSchema = z
   .regex(/^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/);
 
 export const planFeaturesSchema = z
-  .object({ experts: z.boolean(), twin: z.boolean(), care: z.boolean(), companion: z.boolean() })
+  .object({
+    experts: z.boolean(),
+    twin: z.boolean(),
+    care: z.boolean(),
+    companion: z.boolean(),
+    content: z.boolean(),
+  })
   .strict();
 export type PlanFeatures = z.infer<typeof planFeaturesSchema>;
 
