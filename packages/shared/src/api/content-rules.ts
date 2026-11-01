@@ -23,8 +23,8 @@ export const contentRuleGroupSchema = z.object({
     .min(1)
     .max(CONTENT_RULE_TERMS_MAX),
   /**
-   * 前面紧挨着否定词（不、别、勿、没、无、非、未、莫）时不算命中，
-   * 例如“不能代替药物”“不要擅自停药”“不能保证”。
+   * 词前面紧挨着否定说法（不能、不要、请勿、无法、并非……，中间最多隔几个修饰词，不跨标点）时不算命中，
+   * 例如“不能代替药物”“不能保证有效”；双重否定（不是不、没有不）照样算。见 content/popsci-check.ts。
    */
   negatable: z.boolean(),
 });

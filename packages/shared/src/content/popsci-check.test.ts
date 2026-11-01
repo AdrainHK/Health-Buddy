@@ -61,10 +61,69 @@ describe('科普合规检查', () => {
     expect(hits.map((h) => h.ruleId)).toContain('builtin_invisible');
   });
 
-  it('前面有否定词时不算：“不能代替药物”“不能保证”“不要说自己可以停药”', () => {
-    expect(hasForbiddenHits(check(article('生活方式调整不能代替药物治疗。')))).toBe(false);
-    expect(hasForbiddenHits(check(article('谁也不能保证一定有效果。')))).toBe(false);
-    expect(hasForbiddenHits(check(article('血压平稳了就可以停药。')))).toBe(true);
+  it('前面紧挨着否定说法时不算：“不能代替药物”“请勿停药”“千万不要擅自停药”', () => {
+    for (const body of [
+      '生活方式调整不能代替药物治疗。',
+      '生活方式并不能完全代替药物。',
+      '谁也不能保证有效。',
+      '千万不要随意代替药物。',
+    ]) {
+      expect(hasForbiddenHits(check(article(body))), body).toBe(false);
+    }
+    // “请勿停药”“不要擅自停药”是正常提醒：只要求核对，不禁止
+    expect(hasForbiddenHits(check(article('请勿擅自停药。')))).toBe(false);
+  });
+
+  it('合规审查 B1：否定字只是挨得近、隔着标点或双重否定时照样拦下', () => {
+    for (const body of [
+      '绝不骗你，保证有效',
+      '无论如何保证见效',
+      '没想到立竿见影',
+      '不少人可以停药',
+      '没问题，可以停药',
+      '不满意无效退款',
+      '不仅最有效还便宜',
+      '不是不可以停药',
+      '没有不可以停药的',
+      '血压平稳了就可以停药。',
+      '不要说自己可以停药，其实可以停药。',
+    ]) {
+      expect(hasForbiddenHits(check(article(body))), body).toBe(true);
+    }
+  });
+
+  it('合规审查 B2、S2：单字的绝对化用语和停药说法要核对；短语形式禁止', () => {
+    for (const body of ['最好在医生指导下运动', '第一页先讲保暖', '保证睡眠', '根除幽门螺杆菌']) {
+      const hits = check(article(body));
+      expect(hasForbiddenHits(hits), body).toBe(false);
+      expect(
+        hits.map((h) => h.ruleId),
+        body,
+      ).toContain('wording_review');
+    }
+    for (const body of [
+      '这是最好的方法',
+      '第一品牌',
+      '唯一的办法',
+      '效果最佳',
+      '直接停药',
+      '代替降压药',
+    ]) {
+      expect(hasForbiddenHits(check(article(body))), body).toBe(true);
+    }
+  });
+
+  it('合规审查 S1：表情符号里的变体选择符和连接符、回车换行不算看不见的字符', () => {
+    expect(check(article('多晒太阳☀️，心情好❤️\r\n早点睡👨‍👩‍👧'))).toEqual([]);
+    expect(check(article('根\uFE0F本'))).toEqual([
+      expect.objectContaining({ ruleId: 'builtin_invisible' }),
+    ]);
+  });
+
+  it('合规审查 S3：引用说法拆开写、其他引用说法和剂量照样标出', () => {
+    const hits = check(article('研 究表明多喝水好。世界卫生组织建议每天两片，或 400 IU。'));
+    const terms = hits.filter((h) => h.ruleId === 'builtin_citation').map((h) => h.term);
+    expect(terms).toEqual(expect.arrayContaining(['研究表明', '世界卫生组织', '两片', '400IU']));
   });
 
   it('验收 5：疾病名称、药名、具体数字和引用是“需要人工判断”', () => {
@@ -78,7 +137,7 @@ describe('科普合规检查', () => {
       expect.arrayContaining(['disease_names', 'builtin_drug', 'builtin_citation']),
     );
     const terms = hits.filter((h) => h.ruleId === 'builtin_citation').map((h) => h.term);
-    expect(terms).toEqual(expect.arrayContaining(['研究表明', '5%', '2 克']));
+    expect(terms).toEqual(expect.arrayContaining(['研究表明', '5%', '2克']));
   });
 
   it('免责声明里的“诊断”不算违规', () => {
@@ -94,12 +153,15 @@ describe('科普合规检查', () => {
         { title: '要点', bullets: ['注意保暖', '效果最好的办法'], notes: '' },
       ],
     });
-    expect(check(deck)).toEqual([
-      expect.objectContaining({
-        ruleId: 'absolute_terms',
-        location: { field: 'bullet', index: 1, item: 1 },
-      }),
-    ]);
+    expect(check(deck)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          ruleId: 'absolute_terms',
+          category: 'forbid',
+          location: { field: 'bullet', index: 1, item: 1 },
+        }),
+      ]),
+    );
     const post = popsciContentSchema.parse({
       kind: 'community_post',
       paragraphs: ['今天聊聊睡眠。', '这款保健品很好。'],

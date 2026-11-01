@@ -80,6 +80,18 @@ export function ContentRulesPage() {
       setError('invalid');
       return;
     }
+    // 删除或放宽“禁止”类的组时先确认（合规审查 S5）；保存本身会留操作记录
+    const weakened = state.data.rules.filter(
+      (g) =>
+        g.category === 'forbid' &&
+        !parsed.data.some((n) => n.id === g.id && n.category === 'forbid'),
+    );
+    if (
+      weakened.length &&
+      !window.confirm(t('contentRules.confirmWeaken', { names: weakened.map((g) => g.label).join('、') }))
+    ) {
+      return;
+    }
     setSaving(true);
     try {
       const data = await saveContentRules(state.data.version, parsed.data);

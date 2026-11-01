@@ -401,4 +401,109 @@ describe('科普合规检查和审核', () => {
       ),
     ).rejects.toThrow();
   });
+
+  it('数据库层：别人的产物不能写检查结果；核对人只能是本人；新建的结果一律未核对；读不到别人的结果', async () => {
+    const db = app.get<Db>(DB);
+    const mine = await insertPopsci(a1, '高血压人群少吃盐。');
+    const theirs = await insertPopsci(b1, '高血压人群少吃盐。');
+    const ctxA = {
+      userId: f.users.managerA1.id,
+      role: 'manager' as const,
+      operatorId: f.operatorA,
+      orgId: f.orgA,
+    };
+    const row = (artifactId: string, scope: Scope) => ({
+      artifact_id: artifactId,
+      operator_id: scope.operatorId,
+      org_id: scope.orgId,
+      manager_id: scope.managerId,
+      rules_version: 1,
+      hits: '[]',
+    });
+    for (const values of [row(theirs, b1), row(theirs, a1)]) {
+      await expect(
+        withTenant(db, ctxA, (trx) =>
+          trx.insertInto('content_compliance_results').values(values).execute(),
+        ),
+      ).rejects.toThrow();
+    }
+    // 自己的产物：带着“已核对”插入也会被清空
+    await withTenant(db, ctxA, (trx) =>
+      trx
+        .insertInto('content_compliance_results')
+        .values({ ...row(mine, a1), acked_by: f.users.managerA1.id, acked_at: new Date() })
+        .execute(),
+    );
+    const inserted = await owner
+      .selectFrom('content_compliance_results')
+      .select(['acked_by', 'acked_at'])
+      .where('artifact_id', '=', mine)
+      .executeTakeFirstOrThrow();
+    expect(inserted).toEqual({ acked_by: null, acked_at: null });
+    // 核对人写成别人被拒绝
+    await expect(
+      withTenant(db, ctxA, (trx) =>
+        trx
+          .updateTable('content_compliance_results')
+          .set({ acked_by: f.users.managerA2.id, acked_at: new Date() })
+          .where('artifact_id', '=', mine)
+          .execute(),
+      ),
+    ).rejects.toThrow();
+    // B 的结果对 A 和后台账号都不可见
+    const b = await loginAs(app, f.users.managerB1.email);
+    await detail(b, theirs);
+    for (const ctx of [
+      ctxA,
+      {
+        userId: f.users.operatorAdminB.id,
+        role: 'operator_admin' as const,
+        operatorId: f.operatorB,
+        orgId: null,
+      },
+      {
+        userId: f.users.platform.id,
+        role: 'platform_admin' as const,
+        operatorId: null,
+        orgId: null,
+      },
+    ]) {
+      const rows = await withTenant(db, ctx, (trx) =>
+        trx.selectFrom('content_compliance_results').select('artifact_id').execute(),
+      );
+      expect(rows.map((r) => r.artifact_id)).not.toContain(theirs);
+    }
+  });
+
+  it('客户转出后任务只读：核对和确认返回 409 read_only', async () => {
+    const m = await loginAs(app, f.users.managerA1.email);
+    const id = await insertPopsci(a1, '高血压人群少吃盐。');
+    const { artifact } = await detail(m, id);
+    await owner
+      .updateTable('tasks')
+      .set({ detached_reason: 'client_deleted', archived_at: new Date() })
+      .where('id', '=', artifact.taskId)
+      .execute();
+    const ackRes = await m
+      .post(`/api/artifacts/${id}/compliance-ack`)
+      .send({ contentHash: artifact.contentHash });
+    expect(ackRes.status).toBe(409);
+    expect(ackRes.body.reasons).toEqual(['read_only']);
+  });
+
+  it('数据库层：缺字段、重复 id、词语不是字符串的规则被保存函数拒绝', async () => {
+    const db = app.get<Db>(DB);
+    const g = POPSCI_DEFAULT_RULES[0]!;
+    const { id: _id, ...noId } = g;
+    for (const rules of [[noId], [g, g], [{ ...g, terms: [1] }], [{ ...g, label: '' }]]) {
+      await expect(
+        withTenant(
+          db,
+          { userId: f.users.platform.id, role: 'platform_admin', operatorId: null, orgId: null },
+          (trx) =>
+            sql`select admin_save_content_rules(1, ${JSON.stringify(rules)}::jsonb)`.execute(trx),
+        ),
+      ).rejects.toMatchObject({ code: '22023' });
+    }
+  });
 });

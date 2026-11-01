@@ -28,17 +28,25 @@ export async function currentContentRules(
   return { version: row.version, rules: contentRulesSchema.parse(row.rules) };
 }
 
-/** 检查并保存；structured 不合规（不是科普内容）时按全部禁止处理，不能确认 */
+/**
+ * 检查并保存。内容从数据库里按共享锁读（不用调用方手里的旧值），结果和内容指纹对得上，
+ * 并发修改要等这里提交（租户审查 S2）。structured 不是科普内容时按禁止处理，不能确认。
+ */
 export async function runContentCheck(
   trx: TenantTransaction,
-  artifact: { id: string; structured: unknown },
+  artifactId: string,
 ): Promise<ContentCheckHit[]> {
-  // 租户字段跟产物一致（按行级安全读得到的才是本人的产物）
-  const scope = await trx
+  const artifact = await trx
     .selectFrom('artifacts')
-    .select(['operator_id', 'org_id', 'manager_id'])
-    .where('id', '=', artifact.id)
+    .select(['id', 'structured', 'operator_id', 'org_id', 'manager_id'])
+    .where('id', '=', artifactId)
+    .forShare()
     .executeTakeFirstOrThrow();
+  const scope = {
+    operator_id: artifact.operator_id,
+    org_id: artifact.org_id,
+    manager_id: artifact.manager_id,
+  };
   const { version, rules } = await currentContentRules(trx);
   const parsed = popsciContentSchema.safeParse(artifact.structured);
   const hits: ContentCheckHit[] = parsed.success
@@ -85,6 +93,11 @@ export async function loadContentCheck(
     ackedBy: row.acked_by,
     ackedAt: row.acked_at?.toISOString() ?? null,
   };
+}
+
+/** 有没有“禁止”类命中（核对前用；没有结果按有处理） */
+export function contentCheckBlocked(check: Pick<ContentCheckResult, 'hits'> | null): boolean {
+  return !check || hasForbiddenHits(check.hits);
 }
 
 /** 确认前的合规原因：禁止类没消除 → content_check_failed；需要人工判断的没核对 → content_check_pending */

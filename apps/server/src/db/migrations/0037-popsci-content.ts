@@ -10,7 +10,8 @@ import { APP_DB_ROLE } from '../../config.js';
  * - content_compliance_results：每份科普产物一行，记录按哪一版规则、对哪一版内容（md5）检查、
  *   命中了什么、谁勾选了“已核对”。只给健管师本人（同 artifacts）。
  * - 产物从草稿改为已审核时，数据库再把一次关：要有对应当前内容的检查结果，没有“禁止”类命中，
- *   有“需要人工判断”的项目时已经核对（后端是第一道，这里是第二道）。
+ *   有“需要人工判断”的项目时已经核对（后端是第一道，这里是第二道）。数据库只保证“结果对应当前内容、
+ *   核对人是本人”；命中项是否真实由后端保证（每次确认、核对前都在锁住产物后按当前规则重算，租户审查 S1）。
  * - 科普产物不属于任何客户：client_id 必须为空。
  * - 套餐新增功能项 content（Q2，推荐 A）：现有套餐一律补 true，保持现在的行为。
  */
@@ -79,14 +80,25 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       if v_latest is distinct from p_base then
         raise exception 'content rules changed' using errcode = 'HB004';
       end if;
-      if jsonb_typeof(p_rules) <> 'array' or jsonb_array_length(p_rules) not between 1 and 30
+      -- 形状再校验一次（接口层已用 zod 校验）。条件写成“不是 true 就拒绝”，缺字段（null）也拒绝；
+      -- 词语必须是非空字符串，组 id 不能重复（租户审查 S3）
+      if jsonb_typeof(p_rules) is distinct from 'array'
+        or jsonb_array_length(p_rules) not between 1 and 30
         or exists (select 1 from jsonb_array_elements(p_rules) g
-          where jsonb_typeof(g) <> 'object'
-            or not (g ->> 'id') ~ '^[a-z][a-z0-9_]{1,31}$' or (g ->> 'id') like 'builtin\_%'
-            or (g ->> 'category') not in ('forbid', 'review')
-            or jsonb_typeof(g -> 'terms') <> 'array'
-            or jsonb_array_length(g -> 'terms') not between 1 and 200
-            or jsonb_typeof(g -> 'negatable') <> 'boolean')
+          where (jsonb_typeof(g) = 'object'
+            and coalesce((g ->> 'id') ~ '^[a-z][a-z0-9_]{1,31}$', false)
+            and (g ->> 'id') not like 'builtin\_%'
+            and coalesce((g ->> 'category') in ('forbid', 'review'), false)
+            and coalesce(length(trim(g ->> 'label')) between 1 and 30, false)
+            and coalesce(length(trim(g ->> 'reason')) between 1 and 80, false)
+            and jsonb_typeof(g -> 'terms') = 'array'
+            and jsonb_array_length(g -> 'terms') between 1 and 200
+            and jsonb_typeof(g -> 'negatable') = 'boolean'
+            and not exists (select 1 from jsonb_array_elements(g -> 'terms') t
+              where jsonb_typeof(t) is distinct from 'string'
+                or length(trim(t #>> '{}')) not between 1 and 20)) is not true)
+        or (select count(distinct g ->> 'id') from jsonb_array_elements(p_rules) g)
+          <> jsonb_array_length(p_rules)
       then
         raise exception 'invalid content rules' using errcode = 'invalid_parameter_value';
       end if;
@@ -138,6 +150,11 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     begin
       select md5(coalesce(a.structured::text, '')) into new.content_md5
         from artifacts a where a.id = new.artifact_id;
+      -- 新建的结果一律未核对：核对只能经更新写入（租户审查 S4）
+      if tg_op = 'INSERT' then
+        new.acked_by := null;
+        new.acked_at := null;
+      end if;
       if tg_op = 'UPDATE' and (new.content_md5 is distinct from old.content_md5
           or new.hits is distinct from old.hits)
       then

@@ -19,16 +19,23 @@ export const POPSCI_DEFAULT_RULES: ContentRules = [
     label: '疗效承诺',
     reason: '科普不能承诺疗效',
     terms: [
-      '保证',
+      '保证有效',
+      '保证治好',
+      '保证见效',
+      '保证康复',
+      '保证不复发',
       '100%有效',
+      '百分百有效',
       '百分之百有效',
       '立竿见影',
-      '根除',
+      '根除疾病',
+      '彻底根除',
       '彻底告别',
       '永不复发',
       '一次见效',
       '药到病除',
       '无效退款',
+      '万能',
     ],
     negatable: true,
   },
@@ -42,13 +49,23 @@ export const POPSCI_DEFAULT_RULES: ContentRules = [
       '顶级',
       '唯一有效',
       '唯一疗法',
+      '唯一的办法',
       '全国第一',
       '排名第一',
+      '第一品牌',
+      'NO.1',
+      'TOP1',
       '效果最好',
       '疗效最好',
-      '最有效',
+      '最好的方法',
+      '最好的药',
+      '效果最佳',
       '最佳疗效',
+      '最有效',
       '最先进',
+      '最安全',
+      '最权威',
+      '最科学',
     ],
     negatable: true,
   },
@@ -57,8 +74,35 @@ export const POPSCI_DEFAULT_RULES: ContentRules = [
     category: 'forbid',
     label: '替代医疗',
     reason: '不能建议停药或用其他方法代替药物治疗',
-    terms: ['可以停药', '可以不吃药', '不用吃药', '不必吃药', '代替药物', '替代药物', '取代药物'],
+    terms: [
+      '可以停药',
+      '就能停药',
+      '直接停药',
+      '可以不吃药',
+      '不用吃药',
+      '不必吃药',
+      '无需服药',
+      '摆脱药物',
+      '代替药物',
+      '替代药物',
+      '取代药物',
+      '代替降压药',
+      '代替降糖药',
+      '替代降压药',
+      '替代降糖药',
+    ],
     negatable: true,
+  },
+  {
+    // 规格 2.3 候选里的单字词（最好、第一、唯一、停药、保证、根除等）在正常科普里很常见
+    // （“最好在医生指导下”“第一页”“不要擅自停药”“保证睡眠”“根除幽门螺杆菌”），
+    // 直接禁止会误拦；短语形式放在上面的禁止类，单字词在这里要健管师核对（合规审查 B2、S2）
+    id: 'wording_review',
+    category: 'review',
+    label: '需要核对的说法',
+    reason: '可能是绝对化用语、疗效承诺或停药建议，请核对上下文',
+    terms: ['最好', '最佳', '第一', '唯一', '首选', '保证', '根除', '停药', '减药', '代替', '替代'],
+    negatable: false,
   },
   {
     id: 'products',
@@ -94,17 +138,94 @@ export const POPSCI_DEFAULT_RULES: ContentRules = [
   },
 ];
 
-const NEGATIONS = /[不别勿没无非未莫]/;
-const NEGATION_WINDOW = 4;
-const INVISIBLE = /[\p{Cf}\p{Cc}͏︀-️]/u;
+/**
+ * 否定说法（合规审查 B1）：只有词前面紧挨着这些说法时才不算命中，例如“不能代替药物”“请勿停药”。
+ * 中间最多隔着几个修饰词（能、会、要、随意、擅自……），不跨标点；“不是不”“没有不”“不得不”
+ * “不可能不”这类双重否定照样算命中。
+ */
+const NEGATION_PHRASES = [
+  '千万不要',
+  '不可以',
+  '不一定',
+  '不能',
+  '不会',
+  '不要',
+  '不可',
+  '不得',
+  '不应',
+  '不宜',
+  '不必',
+  '不用',
+  '无法',
+  '无需',
+  '并非',
+  '不是',
+  '没有',
+  '切勿',
+  '请勿',
+  '未必',
+  '不',
+  '勿',
+  '别',
+] as const;
+const DOUBLE_NEGATIONS = ['不是不', '没有不', '不得不', '不可能不', '并非不', '不能不'] as const;
+const NEGATION_FILLERS = [
+  '完全',
+  '随意',
+  '擅自',
+  '自行',
+  '随便',
+  '轻易',
+  '一定',
+  '马上',
+  '立即',
+  '能',
+  '会',
+  '要',
+  '就',
+] as const;
+const CLAUSE_BREAK = /[，,。！!？?；;：:、（）()【】「」“”"'…—]/;
 
-/** 数字和引用（Q7）：模型可能编造来源，标为“需要人工判断” */
-const CITATION_PATTERNS: readonly RegExp[] = [
-  /\d+(?:\.\d+)?\s*[%％]/g,
+function negatedBefore(norm: string, i: number): boolean {
+  let prefix = norm.slice(Math.max(0, i - 10), i);
+  // 不跨标点
+  const cut = Math.max(...[...prefix].map((ch, k) => (CLAUSE_BREAK.test(ch) ? k : -1)));
+  if (cut >= 0) prefix = prefix.slice(cut + 1);
+  for (let guard = 0; guard < 3; guard++) {
+    const filler = NEGATION_FILLERS.find((f) => prefix.endsWith(f));
+    if (!filler) break;
+    // 修饰词本身就是否定说法的一部分时（“不能”的“能”）先看否定说法
+    if (NEGATION_PHRASES.some((p) => prefix.endsWith(p))) break;
+    prefix = prefix.slice(0, -filler.length);
+  }
+  if (DOUBLE_NEGATIONS.some((d) => prefix.endsWith(d))) return false;
+  return NEGATION_PHRASES.some((p) => prefix.endsWith(p));
+}
+
+/**
+ * 看不见的格式字符。表情符号里的变体选择符（U+FE0F）和零宽连接符（U+200D）紧跟在表情后面时不算
+ * （社群稿常用 ❤️、☀️，合规审查 S1）；换行、回车、制表符不算。
+ */
+const INVISIBLE = /[\p{Cf}\p{Cc}\u034F\uFE00-\uFE0F]/u;
+const EMOJI_JOINERS = /([\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}])[\uFE0F\u200D]+/gu;
+
+function hasInvisible(text: string): boolean {
+  return INVISIBLE.test(text.replace(/[\r\n\t]/g, '').replace(EMOJI_JOINERS, '$1'));
+}
+
+/**
+ * 数字和引用（Q7）：模型可能编造来源，标为“需要人工判断”。
+ * 文字类在去掉空白后的规范化文本上匹配（“研 究表明”同样算），数字类在去掉空白的原文上匹配。
+ */
+const CITATION_TEXT_PATTERNS: readonly RegExp[] = [
   /百分之[零一二三四五六七八九十百\d]+/g,
-  /(?:研究|调查|数据|统计|实验)(?:表明|显示|发现|证实|证明)/g,
-  /指南|专家共识|《[^》]{1,30}》/g,
-  /\d+(?:\.\d+)?\s*(?:毫克|微克|毫升|千卡|大卡|mmol|mmHg|mg|ml|kcal|克|片|粒)/gi,
+  /(?:研究|调查|数据|统计|实验|专家)(?:表明|显示|发现|证实|证明|指出|认为)/g,
+  /有研究|临床试验|meta分析|世界卫生组织|WHO|据报道|专家共识|指南|《[^》]{1,30}》/gi,
+  /[两二三四五六七八九十]+(?:片|粒|袋|勺)/g,
+];
+const CITATION_NUMBER_PATTERNS: readonly RegExp[] = [
+  /\d+(?:\.\d+)?[%％]/g,
+  /\d+(?:\.\d+)?(?:毫克|微克|毫升|千卡|大卡|mmol|mmHg|mg|μg|ug|ml|kcal|IU|克|片|粒)/gi,
 ];
 
 interface Field {
@@ -158,7 +279,7 @@ function findTerm(norm: string, term: string, negatable: boolean): boolean {
   for (;;) {
     const i = norm.indexOf(t, from);
     if (i === -1) return false;
-    if (!negatable || !NEGATIONS.test(norm.slice(Math.max(0, i - NEGATION_WINDOW), i))) return true;
+    if (!negatable || !negatedBefore(norm, i)) return true;
     from = i + t.length;
   }
 }
@@ -171,7 +292,7 @@ export function checkPopsciContent(content: PopsciContent, rules: ContentRules):
   const hits: ContentCheckHit[] = [];
   for (const { location, text } of popsciTextFields(content)) {
     if (!text) continue;
-    if (INVISIBLE.test(text.replace(/[\n\t]/g, ''))) {
+    if (hasInvisible(text)) {
       hits.push({
         ruleId: 'builtin_invisible',
         category: 'forbid',
@@ -220,10 +341,13 @@ export function checkPopsciContent(content: PopsciContent, rules: ContentRules):
         });
       }
     }
-    const nfkc = text.normalize('NFKC');
+    const compact = text.normalize('NFKC').replace(/\s+/g, '');
     const seen = new Set<string>();
-    for (const pattern of CITATION_PATTERNS) {
-      for (const m of nfkc.matchAll(pattern)) {
+    for (const [pattern, source] of [
+      ...CITATION_TEXT_PATTERNS.map((p) => [p, norm] as const),
+      ...CITATION_NUMBER_PATTERNS.map((p) => [p, compact] as const),
+    ]) {
+      for (const m of source.matchAll(pattern)) {
         const term = m[0].slice(0, 30);
         if (seen.has(term)) continue;
         seen.add(term);

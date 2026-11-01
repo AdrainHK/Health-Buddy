@@ -39,6 +39,7 @@ import { syncArtifactToCompanion, withdrawCompanionDelivery } from '../db/compan
 import { assertReplySendable } from '../companion/reply-check.js';
 import { renderPdf, renderPng } from './export-renderer.js';
 import {
+  contentCheckBlocked,
   contentCheckReasons,
   loadContentCheck,
   runContentCheck,
@@ -124,7 +125,7 @@ export class ArtifactsRepository {
       await recordEvent(trx, ctx, row, 'edited');
       // 科普：每次修改保存都重新检查（规格 2.3），内容变了数据库会清空“已核对”
       if (isPopsciKind(row.kind)) {
-        await runContentCheck(trx, { id, structured: structured ?? row.structured });
+        await runContentCheck(trx, id);
       }
       const updated = await loadArtifact(trx, id, 'none');
       return updated && buildDetail(trx, updated);
@@ -153,11 +154,11 @@ export class ArtifactsRepository {
         throw notLatestDraft();
       }
       // 按当前规则重新检查一次，核对的就是现在的结果
-      await runContentCheck(trx, row);
-      const check = await loadContentCheck(trx, id);
+      await runContentCheck(trx, row.id);
       // 只看禁止类：需要人工判断的正是这里要核对的
-      const reasons = contentCheckReasons(check && { hits: check.hits, ackedAt: check.checkedAt });
-      if (reasons.length) throw conflict({ reasons });
+      if (contentCheckBlocked(await loadContentCheck(trx, id))) {
+        throw conflict({ reasons: ['content_check_failed'] satisfies RejectReason[] });
+      }
       await trx
         .updateTable('content_compliance_results')
         .set({ acked_by: ctx.userId, acked_at: new Date() })
@@ -216,7 +217,7 @@ export class ArtifactsRepository {
       // 科普（M8 规格 2.1 第 7 条、2.3）：按当前规则重新检查；禁止类没消除、需要人工判断的没核对都不能确认
       if (isPopsciKind(row.kind)) {
         if (!(await planFeatureEnabled(trx, 'content'))) throw planFeatureDisabled('content');
-        await runContentCheck(trx, row);
+        await runContentCheck(trx, row.id);
         reasons.push(...contentCheckReasons(await loadContentCheck(trx, id)));
       }
       // 没有通俗版的技能（/面谈提纲）跳过通俗版相关检查（规格 4.1 框架扩展）
@@ -614,7 +615,7 @@ async function recordEvent(
  */
 async function currentContentCheck(trx: TenantTransaction, row: ArtifactRow) {
   if (row.status === 'draft' && !row.detached) {
-    await runContentCheck(trx, row);
+    await runContentCheck(trx, row.id);
   }
   return loadContentCheck(trx, row.id);
 }
