@@ -212,7 +212,7 @@ describe('工作台首页', () => {
       }),
     );
     render(<AppShell />);
-    expect(await screen.findByText('今天没有待处理的伴侣预警和转交')).toBeInTheDocument();
-    expect(await screen.findByText('今天没有待审核的草稿')).toBeInTheDocument();
+    expect(await screen.findByText('没有待处理的伴侣预警和转交')).toBeInTheDocument();
+    expect(await screen.findByText('没有待审核的草稿')).toBeInTheDocument();
   });
 });

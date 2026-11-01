@@ -78,34 +78,82 @@ describe('工作台首页', () => {
     expect(JSON.stringify(body)).not.toContain('收缩压');
   });
 
-  it('快捷入口：本人最近 30 天用过的技能和专家按次数排；30 天前和别人的不算', async () => {
-    const task = await insertTask(owner, a1);
-    const message = (scope: Scope, taskId: string, skillId: string, createdAt?: Date) =>
-      owner
-        .insertInto('task_messages')
+  it('快捷入口：本人最近 30 天用过的技能和专家按次数排；30 天前的、同机构和别的协会的都不算（租户审查 S1、S2）', async () => {
+    const message = async (scope: Scope, taskId: string, skillId: string, createdAt?: Date) =>
+      (
+        await owner
+          .insertInto('task_messages')
+          .values({
+            operator_id: scope.operatorId,
+            org_id: scope.orgId,
+            manager_id: scope.managerId,
+            task_id: taskId,
+            role: 'manager',
+            mode: 'craft',
+            content: '合成要求',
+            skill_id: skillId,
+            status: 'complete',
+            ...(createdAt ? { created_at: createdAt } : {}),
+          } as never)
+          .returning('id')
+          .executeTakeFirstOrThrow()
+      ).id as string;
+    const expertCall = async (scope: Scope, taskId: string, expertId: string, startedAt?: Date) => {
+      const sc = {
+        operator_id: scope.operatorId,
+        org_id: scope.orgId,
+        manager_id: scope.managerId,
+      };
+      const messageId = await message(scope, taskId, 'report-interpretation', startedAt);
+      const c = await owner
+        .insertInto('expert_consultations')
         .values({
-          operator_id: scope.operatorId,
-          org_id: scope.orgId,
-          manager_id: scope.managerId,
+          ...sc,
           task_id: taskId,
-          role: 'manager',
-          mode: 'craft',
-          content: '合成要求',
-          skill_id: skillId,
-          status: 'complete',
-          ...(createdAt ? { created_at: createdAt } : {}),
+          message_id: messageId,
+          trigger: 'mention',
+          routing: JSON.stringify({ selected: [], excluded: [], overCap: [], ruleOnly: false }),
+          status: 'done',
+        } as never)
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      await owner
+        .insertInto('expert_calls')
+        .values({
+          ...sc,
+          consultation_id: (c as { id: string }).id,
+          expert_id: expertId,
+          expert_version: '0.1.0',
+          sources_version: '0123456789ab',
+          selected_reason: 'manager',
+          status: 'done',
+          ...(startedAt ? { started_at: startedAt } : {}),
         } as never)
         .execute();
+    };
+    const old = new Date(Date.now() - 40 * 24 * 3600 * 1000);
+    const task = await insertTask(owner, a1);
     await message(a1, task, 'care-plan');
     await message(a1, task, 'visit-script');
     await message(a1, task, 'visit-script');
-    await message(a1, task, 'twin-summary', new Date(Date.now() - 40 * 24 * 3600 * 1000));
+    await message(a1, task, 'twin-summary', old);
+    await expertCall(a1, task, 'nutrition');
+    await expertCall(a1, task, 'sleep', old);
     const taskA2 = await insertTask(owner, a2);
-    for (let i = 0; i < 3; i++) await message(a2, taskA2, 'report-interpretation');
+    const taskB1 = await insertTask(owner, b1);
+    for (let i = 0; i < 3; i++) {
+      await message(a2, taskA2, 'lecture-deck');
+      await message(b1, taskB1, 'community-post');
+      await expertCall(a2, taskA2, 'cardio');
+      await expertCall(b1, taskB1, 'psychology');
+    }
 
     const body = await home(f.users.managerA1.email);
-    expect(body.usage.skills).toEqual(['visit-script', 'care-plan']);
-    expect(body.usage.experts).toEqual([]);
+    expect(body.usage.skills).toEqual(['visit-script', 'care-plan', 'report-interpretation']);
+    expect(body.usage.experts).toEqual(['nutrition']);
+    const other = await home(f.users.managerB1.email);
+    expect(other.usage.skills).toEqual(['report-interpretation', 'community-post']);
+    expect(other.usage.experts).toEqual(['psychology']);
   });
 
   it('验收 13：健管师只看到自己的草稿，同机构和别的协会的都看不到', async () => {

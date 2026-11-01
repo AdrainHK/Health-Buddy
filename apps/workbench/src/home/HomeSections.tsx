@@ -188,6 +188,14 @@ function LoadStatus({
   onRetry: () => void;
 }) {
   const { t } = useTranslation();
+  // 之前加载过、这次刷新失败：旧内容照常显示，另外提示可能已过时（合规审查 S1，避免漏看新预警）
+  if (hasData && status === 'error')
+    return (
+      <div role="alert" className={styles.errorBox}>
+        <p className={twin.error}>{t('home.refreshFailed')}</p>
+        <Button onClick={onRetry}>{t('followUps.retry')}</Button>
+      </div>
+    );
   if (hasData) return null;
   if (status === 'loading')
     return (

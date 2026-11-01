@@ -10,12 +10,13 @@
       "shortcuts": "快捷入口"
     },
     "empty": {
-      "companion": "今天没有待处理的伴侣预警和转交",
+      "companion": "没有待处理的伴侣预警和转交",
       "followUps": "今天没有待处理的跟进",
       "visits": "今天没有待进行的随访",
-      "drafts": "今天没有待审核的草稿"
+      "drafts": "没有待审核的草稿"
     },
     "draftsLoadFailed": "待审核草稿加载失败",
+    "refreshFailed": "刷新失败，下面可能不是最新的",
     "draftsMore": "只列出最早的 {{count}} 份",
     "draftCritical": "含危急指标",
     "shortcutSkills": "常用技能",
