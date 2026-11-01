@@ -337,7 +337,9 @@ describe('产物接口', () => {
     expect(pdf.headers['content-type']).toBe('application/pdf');
     expect((pdf.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
 
-    await exportAs(agent, id, 'docx').expect(400);
+    await exportAs(agent, id, 'gif').expect(400);
+    // Word、PPTX 只给科普用（M8）：通俗版产物返回 409
+    await exportAs(agent, id, 'docx').expect(409);
     await agent.post(`/api/artifacts/${id}/export`).send({}).expect(400);
     const events = await owner
       .selectFrom('artifact_events')
