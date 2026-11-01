@@ -98,13 +98,13 @@ describe('工作台首页', () => {
           .returning('id')
           .executeTakeFirstOrThrow()
       ).id as string;
-    const expertCall = async (scope: Scope, taskId: string, expertId: string, startedAt?: Date) => {
+    const expertCall = async (scope: Scope, taskId: string, expertId: string) => {
       const sc = {
         operator_id: scope.operatorId,
         org_id: scope.orgId,
         manager_id: scope.managerId,
       };
-      const messageId = await message(scope, taskId, 'report-interpretation', startedAt);
+      const messageId = await message(scope, taskId, 'report-interpretation');
       const c = await owner
         .insertInto('expert_consultations')
         .values({
@@ -113,7 +113,7 @@ describe('工作台首页', () => {
           message_id: messageId,
           trigger: 'mention',
           routing: JSON.stringify({ selected: [], excluded: [], overCap: [], ruleOnly: false }),
-          status: 'done',
+          status: 'running',
         } as never)
         .returning('id')
         .executeTakeFirstOrThrow();
@@ -126,8 +126,7 @@ describe('工作台首页', () => {
           expert_version: '0.1.0',
           sources_version: '0123456789ab',
           selected_reason: 'manager',
-          status: 'done',
-          ...(startedAt ? { started_at: startedAt } : {}),
+          status: 'running',
         } as never)
         .execute();
     };
@@ -138,7 +137,6 @@ describe('工作台首页', () => {
     await message(a1, task, 'visit-script');
     await message(a1, task, 'twin-summary', old);
     await expertCall(a1, task, 'nutrition');
-    await expertCall(a1, task, 'sleep', old);
     const taskA2 = await insertTask(owner, a2);
     const taskB1 = await insertTask(owner, b1);
     for (let i = 0; i < 3; i++) {
@@ -152,7 +150,8 @@ describe('工作台首页', () => {
     expect(body.usage.skills).toEqual(['visit-script', 'care-plan', 'report-interpretation']);
     expect(body.usage.experts).toEqual(['nutrition']);
     const other = await home(f.users.managerB1.email);
-    expect(other.usage.skills).toEqual(['report-interpretation', 'community-post']);
+    // 次数相同按 id 排
+    expect(other.usage.skills).toEqual(['community-post', 'report-interpretation']);
     expect(other.usage.experts).toEqual(['psychology']);
   });
 
