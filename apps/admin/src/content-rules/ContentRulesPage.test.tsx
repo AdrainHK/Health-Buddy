@@ -66,7 +66,7 @@ describe('科普合规规则页', () => {
     await user.click(screen.getByRole('button', { name: '保存为新版本' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('有空的名称、原因或词语');
     expect(api.callsTo('PUT', '/admin/content-rules')).toHaveLength(0);
-    await user.click(screen.getByRole('button', { name: '删除“custom_6”' }));
+    await user.click(screen.getByRole('button', { name: '删除“custom_7”' }));
     await user.click(screen.getByRole('button', { name: '保存为新版本' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('别人刚保存了新版本');
     await user.click(screen.getByRole('button', { name: '重新载入' }));
