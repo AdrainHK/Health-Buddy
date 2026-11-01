@@ -96,8 +96,12 @@ export function addMetrics(a: OpsMetrics, b: OpsMetrics): OpsMetrics {
 }
 
 /**
- * 小样本保护（Q15 A）：健管师数（已开通）或客户数少于 5 的机构合并为“其他”；
- * 合并后“其他”的健管师仍少于 5 人时，这一组的数字不显示（hidden）。合计不受影响。
+ * 小样本保护（Q15 A）：已激活的健管师或客户少于 5 的机构合并为“其他”。
+ * 下面几种情况数字不显示（hidden），防止推出单个机构或个人：
+ * - “其他”合并后健管师或客户仍少于 5；
+ * - “其他”只合并了一个机构（协会管理员知道机构名单，缺了谁就是谁）；
+ * - 有一组被隐藏时，合计减可见各行就能算出它：再把可见组里最小的一组一起隐藏（二次隐藏，合规审查 B2）。
+ * 合计照常显示（Q15 A）。
  */
 export function protectSmallGroups(
   groups: {
@@ -108,10 +112,11 @@ export function protectSmallGroups(
     costUsd: number | null;
   }[],
 ): OpsGroup[] {
+  // 按已激活的健管师算：待激活的邀请协会管理员自己就能开，不能用来撑过门槛（租户审查 S1）
   const small = (m: OpsMetrics) =>
-    m.managers_opened < SMALL_GROUP_MIN || m.clients_total < SMALL_GROUP_MIN;
+    m.managers_active < SMALL_GROUP_MIN || m.clients_total < SMALL_GROUP_MIN;
   const kept: OpsGroup[] = [];
-  let other: { metrics: OpsMetrics; costUsd: number | null } | null = null;
+  let other: { metrics: OpsMetrics; costUsd: number | null; members: number } | null = null;
   for (const g of groups) {
     if (!small(g.metrics)) {
       kept.push({ ...g, hidden: false });
@@ -121,19 +126,38 @@ export function protectSmallGroups(
       ? {
           metrics: addMetrics(other.metrics, g.metrics),
           costUsd: other.costUsd === null || g.costUsd === null ? null : other.costUsd + g.costUsd,
+          members: other.members + 1,
         }
-      : { metrics: g.metrics, costUsd: g.costUsd };
+      : { metrics: g.metrics, costUsd: g.costUsd, members: 1 };
   }
+  const hideRow = (g: OpsGroup): OpsGroup => ({
+    ...g,
+    hidden: true,
+    metrics: emptyMetrics(),
+    costUsd: null,
+  });
   if (other) {
-    const hidden = other.metrics.managers_opened < SMALL_GROUP_MIN;
-    kept.push({
+    const hidden = other.members < 2 || small(other.metrics);
+    const row: OpsGroup = {
       kind: 'other',
       orgId: null,
       name: null,
-      hidden,
-      metrics: hidden ? emptyMetrics() : other.metrics,
-      costUsd: hidden ? null : other.costUsd,
-    });
+      hidden: false,
+      metrics: other.metrics,
+      costUsd: other.costUsd,
+    };
+    if (!hidden) kept.push(row);
+    else {
+      // 二次隐藏：可见组里健管师最少的一组也不显示数字，合计减可见行得不出被隐藏的组
+      if (kept.length > 0) {
+        let min = 0;
+        kept.forEach((g, i) => {
+          if (g.metrics.managers_active < kept[min]!.metrics.managers_active) min = i;
+        });
+        kept[min] = hideRow(kept[min]!);
+      }
+      kept.push(hideRow(row));
+    }
   }
   return kept;
 }

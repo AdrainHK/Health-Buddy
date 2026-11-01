@@ -104,15 +104,41 @@ describe('运营看板', () => {
       expect.objectContaining({ kind: 'other', hidden: true, name: null }),
     ]);
 
-    // 机构 A 补到 5 位健管师、6 位客户：单独显示；机构 A2 只有 1 人，合并为“其他”且不显示
+    // 机构 A 补到 5 位已激活健管师、6 位客户；机构 A2 只有 1 人，“其他”只含一个机构，不显示；
+    // 这时合计减机构 A 就能算出 A2，所以机构 A 也一起隐藏（二次隐藏，合规、租户审查 B1、B2）
     await growOrgA(3, 3);
     const grown = await board(f.users.operatorAdminA.email);
-    const orgA = grown.groups.find((g: { orgId: string | null }) => g.orgId === f.orgA);
-    expect(orgA).toMatchObject({ kind: 'org', name: '测试机构A', hidden: false });
-    expect(orgA.metrics).toMatchObject({ managers_opened: 5, clients_total: 6, llm_calls: 2 });
-    expect(grown.groups.find((g: { kind: string }) => g.kind === 'other')).toMatchObject({
-      hidden: true,
-    });
+    expect(grown.groups.every((g: { hidden: boolean }) => g.hidden)).toBe(true);
+    expect(JSON.stringify(grown.groups)).not.toContain('"llm_calls":2');
+    // 待激活的邀请不能撑过门槛：给 A2 补 4 个待激活健管师、4 位客户，A2 仍不单独显示
+    for (let i = 0; i < 4; i++) {
+      await owner
+        .insertInto('users')
+        .values({
+          email: `ops-p${i}@test.example`,
+          password_hash: null,
+          display_name: `合成待激活${i}`,
+          role: 'manager',
+          operator_id: f.operatorA,
+          org_id: f.orgA2,
+          status: 'pending',
+        } as never)
+        .execute();
+      await owner
+        .insertInto('clients')
+        .values({
+          operator_id: f.operatorA,
+          org_id: f.orgA2,
+          manager_id: f.users.managerA3.id,
+          display_name: `合成客户A2-${i}`,
+          is_synthetic: true,
+        } as never)
+        .execute();
+    }
+    const padded = await board(f.users.operatorAdminA.email);
+    expect(
+      padded.groups.find((g: { orgId: string | null }) => g.orgId === f.orgA2),
+    ).toBeUndefined();
   });
 
   it('验收 12：响应里没有客户 id、姓名、健管师的账号信息和任何文字', async () => {
@@ -146,9 +172,17 @@ describe('运营看板', () => {
     const own = await board(f.users.operatorAdminA.email);
     const spoof = await board(f.users.operatorAdminA.email, `?operatorId=${f.operatorB}`);
     expect(spoof.totals).toEqual(own.totals);
+    for (const body of [own, spoof]) {
+      const text = JSON.stringify(body);
+      expect(text).not.toContain(f.operatorB);
+      expect(text).not.toContain(f.orgB);
+      expect(text).not.toContain('测试机构B');
+    }
     expect(spoof.operators).toBeNull();
 
-    const orgAdmin = await board(f.users.orgAdminA2.email);
+    const orgAdmin = await board(f.users.orgAdminA2.email, `?operatorId=${f.operatorB}`);
+    expect(orgAdmin.groups).toEqual([]);
+    expect(JSON.stringify(orgAdmin)).not.toContain(f.orgA);
     expect(orgAdmin.totals.metrics).toMatchObject({
       managers_opened: 1,
       clients_total: 1,

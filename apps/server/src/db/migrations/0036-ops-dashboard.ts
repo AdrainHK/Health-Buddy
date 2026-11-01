@@ -36,13 +36,16 @@ export async function up(db: Kysely<unknown>): Promise<void> {
         v_operator := p_operator;
       elsif v_role = 'operator_admin' then
         v_operator := admin_require_operator();
-      elsif v_role = 'org_admin' and app_org_id() is not null and exists (
-        select 1 from users u join operators o on o.id = u.operator_id
-        where u.id = app_user_id() and u.role = 'org_admin' and u.status = 'active'
-          and u.org_id = app_org_id() and o.status = 'active')
-      then
-        v_operator := app_operator_id();
-        v_org := app_org_id();
+      elsif v_role = 'org_admin' and app_org_id() is not null and app_operator_id() is not null then
+        -- 协会、机构都从账号本身取，并要求和会话一致（租户审查 S2）
+        select u.operator_id, u.org_id into v_operator, v_org
+          from users u join operators o on o.id = u.operator_id
+          where u.id = app_user_id() and u.role = 'org_admin' and u.status = 'active'
+            and u.org_id = app_org_id() and u.operator_id = app_operator_id()
+            and o.status = 'active';
+        if v_org is null then
+          raise exception 'ops dashboard not allowed' using errcode = '42501';
+        end if;
       else
         raise exception 'ops dashboard not allowed' using errcode = '42501';
       end if;

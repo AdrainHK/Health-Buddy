@@ -68,17 +68,19 @@ export class OpsDashboardRepository {
 
       // 单个协会（运营商、机构管理员，或平台筛选了协会）：按机构分组；平台看全部：按协会一行
       const single = !platform || Boolean(operatorId);
-      const groups = single
-        ? protectSmallGroups(
-            data.groups.map((g) => ({
-              kind: g.org_id ? ('org' as const) : ('none' as const),
-              orgId: g.org_id,
-              name: g.org_id ? (orgNames.get(g.org_id) ?? null) : null,
-              metrics: metricsOf(g),
-              costUsd: cost(g),
-            })),
-          )
-        : [];
+      // 机构管理员只看本机构：卡片就是本机构的数，不再分组（合规审查 S2）
+      const groups =
+        single && ctx.role !== 'org_admin'
+          ? protectSmallGroups(
+              data.groups.map((g) => ({
+                kind: g.org_id ? ('org' as const) : ('none' as const),
+                orgId: g.org_id,
+                name: g.org_id ? (orgNames.get(g.org_id) ?? null) : null,
+                metrics: metricsOf(g),
+                costUsd: cost(g),
+              })),
+            )
+          : [];
 
       const operatorScope = platform ? operatorId : ctx.operatorId!;
       let seats: OpsDashboardResponse['seats'] = null;

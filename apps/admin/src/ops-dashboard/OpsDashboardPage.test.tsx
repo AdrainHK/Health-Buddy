@@ -58,7 +58,7 @@ describe('运营看板（M7 规格 2.6）', () => {
     expect(cards).toHaveTextContent('席位12 / 20');
     expect(cards).not.toHaveTextContent('估算成本');
     const other = screen.getByRole('rowheader', { name: '其他' }).closest('tr')!;
-    expect(other).toHaveTextContent('人数太少，不单独显示');
+    expect(other).toHaveTextContent('人数太少，不显示数字');
     expect(screen.getByRole('rowheader', { name: '合成一号机构' }).closest('tr')).toHaveTextContent(
       '300',
     );
