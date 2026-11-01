@@ -494,7 +494,8 @@ describe('科普合规检查和审核', () => {
   it('数据库层：缺字段、重复 id、词语不是字符串的规则被保存函数拒绝', async () => {
     const db = app.get<Db>(DB);
     const g = POPSCI_DEFAULT_RULES[0]!;
-    const { id: _id, ...noId } = g;
+    const noId: Record<string, unknown> = { ...g };
+    delete noId.id;
     for (const rules of [[noId], [g, g], [{ ...g, terms: [1] }], [{ ...g, label: '' }]]) {
       await expect(
         withTenant(
