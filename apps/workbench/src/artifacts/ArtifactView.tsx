@@ -22,6 +22,7 @@ import {
   returnArtifact,
   reviseArtifact,
   updateArtifact,
+  ackContentCheck,
 } from '../api/artifacts';
 import { isAbortError } from '../api/http';
 import { displayDateTime } from '../twin/errors';
@@ -42,7 +43,13 @@ import {
   type StructuredProblem,
   useLibraryData,
 } from '../care/StructuredEditors';
-import { type M5Structured, parseM5Structured, sameStructured } from '../care/m5Artifact';
+import {
+  type M5Structured,
+  parseM5Structured,
+  popsciProblems,
+  sameStructured,
+} from '../care/m5Artifact';
+import { ContentCheckPanel, PopsciEditor } from './PopsciEditor';
 import {
   HandoffReplyEditor,
   HandoffReplySend,
@@ -94,7 +101,8 @@ type Notice =
   | { kind: 'exported'; filename: string }
   | { kind: 'revised' };
 
-type Busy = 'save' | 'approve' | 'copy' | 'png' | 'pdf' | 'sync' | 'revise' | 'return' | null;
+type Busy =
+  'save' | 'approve' | 'copy' | 'png' | 'pdf' | 'sync' | 'revise' | 'return' | 'ack' | null;
 
 interface ReturnProgress {
   steps: TaskStep[];
@@ -159,16 +167,20 @@ export function ArtifactView({
   const saved = clientFacing ? artifact.content.clientFacing : artifact.content.professional;
   /** M5 产物已保存的结构化内容；其他产物为 null */
   const savedStructured = useMemo(() => parseM5Structured(artifact), [artifact]);
-  const views: readonly View[] = [
-    ...(clientFacing ? VIEWS : (['professional'] as const)),
-    ...(savedStructured ? (['structured'] as const) : []),
-  ];
+  /** 科普（M8）：正文就是结构化内容，只有这一个视图 */
+  const popsci = savedStructured?.kind === 'popsci';
+  const views: readonly View[] = popsci
+    ? ['structured']
+    : [
+        ...(clientFacing ? VIEWS : (['professional'] as const)),
+        ...(savedStructured ? (['structured'] as const) : []),
+      ];
 
   // /转交回复：先看念给客户的回复（结构化内容）
   const [view, setView] = useState<View>(
     clientFacing
       ? 'clientFacing'
-      : savedStructured?.kind === 'handoff_reply'
+      : savedStructured?.kind === 'handoff_reply' || savedStructured?.kind === 'popsci'
         ? 'structured'
         : 'professional',
   );
@@ -252,7 +264,9 @@ export function ArtifactView({
         ? scheduleProblems(structured.value)
         : structured.kind === 'handoff_reply'
           ? handoffReplyProblems(structured.value)
-          : recordProblems(structured.value);
+          : structured.kind === 'popsci'
+            ? popsciProblems(structured.value)
+            : recordProblems(structured.value);
   const unsavedEdits = editable && dirty;
 
   useEffect(() => {
@@ -297,6 +311,16 @@ export function ArtifactView({
   const hasRiskTier = marks.some((m) => m.kind === 'riskTier');
   const hasJudgement = marks.some((m) => m.kind === 'judgement');
 
+  // 科普的合规检查结果（M8 规格 2.3）：以后端为准，保存后重新检查
+  const contentCheck = detail.contentCheck;
+  // 科普产物还没有检查结果时（不应发生）按有问题处理，不能确认
+  const contentForbidden =
+    (popsci && !contentCheck) || (contentCheck?.hits.some((h) => h.category === 'forbid') ?? false);
+  const contentPending =
+    !!contentCheck &&
+    contentCheck.ackedAt === null &&
+    contentCheck.hits.some((h) => h.category === 'review');
+
   const approveBlock:
     | 'newerBlock'
     | 'unsaved'
@@ -306,6 +330,8 @@ export function ArtifactView({
     | 'criticalBlock'
     | 'structuredBlock'
     | 'allergenBlock'
+    | 'contentForbidBlock'
+    | 'contentPendingBlock'
     | null = !editable
     ? null
     : newerLoaded
@@ -324,7 +350,11 @@ export function ArtifactView({
                   ? 'criticalBlock'
                   : hasAllergenConflict && !allergensChecked
                     ? 'allergenBlock'
-                    : null;
+                    : contentForbidden
+                      ? 'contentForbidBlock'
+                      : contentPending
+                        ? 'contentPendingBlock'
+                        : null;
 
   const showNewerArtifact =
     newerArtifactId !== null &&
@@ -416,6 +446,8 @@ export function ArtifactView({
             text: saved,
           });
           if (err.reasons.includes('critical_not_acknowledged')) setAcknowledged(false);
+          // 科普：后端按当前规则重算过，重新载入检查结果
+          if (err.reasons.some((r) => r.startsWith('content_check_'))) onReload();
           if (err.reasons.includes('allergens_not_acknowledged')) setAllergensChecked(false);
           if (
             savedStructured &&
@@ -445,6 +477,13 @@ export function ArtifactView({
         }
         throw err;
       }
+    });
+
+  const ack = () =>
+    run('ack', async () => {
+      const next = await ackContentCheck(artifact.id, artifact.contentHash);
+      onDetail(next);
+      onChanged();
     });
 
   const copy = () =>
@@ -645,6 +684,12 @@ export function ArtifactView({
               value={structured.value}
               disabled={!editable || working}
               onChange={(value) => setStructured({ kind: 'visit_schedule', value })}
+            />
+          ) : structured.kind === 'popsci' ? (
+            <PopsciEditor
+              value={structured.value}
+              disabled={!editable || working}
+              onChange={(value) => setStructured({ kind: 'popsci', value })}
             />
           ) : structured.kind === 'handoff_reply' ? (
             <HandoffReplyEditor
@@ -902,6 +947,16 @@ export function ArtifactView({
               </Button>
             </div>
           </div>
+        )}
+
+        {contentCheck && (
+          <ContentCheckPanel
+            check={contentCheck}
+            dirty={structuredDirty}
+            disabled={!editable || working}
+            busy={busy === 'ack'}
+            onAck={ack}
+          />
         )}
 
         {isDraft && !returnOpen && (

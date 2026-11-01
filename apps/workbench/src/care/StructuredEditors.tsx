@@ -49,7 +49,8 @@ export type StructuredProblem =
   | 'recordIncomplete'
   | 'recordFuture'
   | 'replyEmpty'
-  | 'replyTooLong';
+  | 'replyTooLong'
+  | 'popsciInvalid';
 
 export interface LibraryData {
   status: 'loading' | 'ready' | 'error';

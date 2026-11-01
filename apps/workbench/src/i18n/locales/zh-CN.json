@@ -22,6 +22,55 @@
     "shortcutSkills": "常用技能",
     "shortcutExperts": "常用专家"
   },
+  "popsci": {
+    "fields": {
+      "title": "标题",
+      "heading": "第 {{n}} 节小标题",
+      "body": "第 {{n}} 节正文",
+      "summary": "结尾小结（可空）",
+      "slideTitle": "第 {{n}} 页标题",
+      "bullet": "第 {{n}} 页要点 {{k}}",
+      "notes": "第 {{n}} 页讲稿（可空）",
+      "paragraph": "第 {{n}} 段",
+      "interaction": "互动问题（可空）"
+    },
+    "section": "第 {{n}} 节",
+    "slide": "第 {{n}} 页",
+    "addSection": "加一节",
+    "addSlide": "加一页",
+    "addBullet": "加一条要点",
+    "addParagraph": "加一段",
+    "remove": "删除",
+    "removeSection": "删除第 {{n}} 节",
+    "removeSlide": "删除第 {{n}} 页",
+    "removeBullet": "删除第 {{n}} 页要点 {{k}}",
+    "removeParagraph": "删除第 {{n}} 段",
+    "footerLabel": "固定提示",
+    "footerNote": "这两句由系统固定加在末尾，不能修改。导出时还会署健管师姓名、协会名称和“由 Health Buddy 辅助生成”。",
+    "locations": {
+      "title": "标题",
+      "heading": "第 {{n}} 节小标题",
+      "body": "第 {{n}} 节正文",
+      "summary": "结尾小结",
+      "slideTitle": "第 {{n}} 页标题",
+      "bullet": "第 {{n}} 页要点 {{k}}",
+      "notes": "第 {{n}} 页讲稿",
+      "paragraph": "第 {{n}} 段",
+      "interaction": "互动问题"
+    },
+    "check": {
+      "title": "合规检查",
+      "passed": "没有发现问题",
+      "dirty": "下面是已保存内容的检查结果，保存修改后会重新检查",
+      "forbid": "禁止（{{count}} 项）：必须改掉才能确认",
+      "forbidList": "禁止类问题",
+      "review": "需要人工判断（{{count}} 项）：请逐条核对",
+      "reviewList": "需要人工判断的项目",
+      "ack": "已核对以上项目",
+      "acking": "正在记录…",
+      "acked": "已由你于 {{time}} 核对（会记录在产物记录里）"
+    }
+  },
   "nav": {
     "home": "首页",
     "newTask": "新建任务",
@@ -249,6 +298,18 @@
     "generateHandoffReply": "正在起草转交回复"
   },
   "skills": {
+    "popsci-article": {
+      "name": "科普文章",
+      "description": "按主题写一篇面向公众的健康科普文章草稿，末尾固定加提示；经合规检查和健管师审核后才能复制或导出"
+    },
+    "lecture-deck": {
+      "name": "讲座PPT",
+      "description": "按主题生成讲座幻灯片的每页标题、要点和讲稿草稿；经合规检查和健管师审核后才能导出"
+    },
+    "community-post": {
+      "name": "社群稿",
+      "description": "按主题写一段微信群分享短文和一个互动问题；经合规检查和健管师审核后才能复制"
+    },
     "client-recent-summary": {
       "name": "客户近况小结",
       "description": "根据最近 30 天的监测数据和最近一份体检报告，生成专业版小结和通俗版"
@@ -422,7 +483,9 @@
         "newerBlock": "请先选择载入最新内容或保留你的修改",
         "riskTierBlock": "通俗版含风险分层字样，删去并保存后才能确认",
         "structuredBlock": "结构化内容里有不合规的地方，改好并保存后才能确认",
-        "allergenBlock": "请先勾选“已核对过敏原”"
+        "allergenBlock": "请先勾选“已核对过敏原”",
+        "contentForbidBlock": "合规检查有“禁止”类的问题，修改并保存后才能确认",
+        "contentPendingBlock": "有需要人工判断的项目，请逐条核对后点“已核对以上项目”"
       },
       "critical": {
         "title": "危急指标",
@@ -463,7 +526,7 @@
         "record_incomplete": "随访记录还没有填随访日期或方式，或日期在今天之后",
         "reply_invalid": "回复为空、超过 150 字，或写了只给健管师看的提示语，不能念给客户",
         "content_check_failed": "合规检查还有“禁止”类的问题，请修改后再确认",
-        "content_check_pending": "有“需要人工判断”的项目，请核对后勾选“已核对”再确认"
+        "content_check_pending": "有“需要人工判断”的项目，请逐条核对后点“已核对以上项目”再确认"
       },
       "stale": "内容已在别处修改，已刷新",
       "returnDialog": {
@@ -1786,7 +1849,8 @@
         "care_plan": "食谱、动作和目标",
         "visit_schedule": "随访日程表",
         "visit_record": "日期和方式",
-        "handoff_reply": "念给客户的回复"
+        "handoff_reply": "念给客户的回复",
+        "popsci": "正文"
       },
       "planNote": "示例食谱、动作和行为目标只能从方案库里选。替换或删除条目后，请核对通俗版里对应的段落。",
       "libraryFailed": "方案库加载失败，暂时不能替换条目",
@@ -1820,6 +1884,7 @@
       "addRow": "加一行",
       "visitDate": "随访日期",
       "problems": {
+        "popsciInvalid": "有空的标题、小标题或段落，或字数超过上限，请补全或删减后再保存",
         "goalUnavailable": "有目标模板已停用，请删除或换一个",
         "goalRange": "有目标参数超出了模板允许的范围",
         "itemUnavailable": "有食谱或动作已不在库中，请替换",

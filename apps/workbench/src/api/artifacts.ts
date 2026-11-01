@@ -58,6 +58,14 @@ export async function approveArtifact(
   throw new ApiError(generic.success ? generic.data.error : 'conflict', 409);
 }
 
+/** 科普：勾选“已核对”需要人工判断的项目（M8 规格 2.1 第 7 条），带预览时的内容指纹 */
+export function ackContentCheck(id: string, contentHash: string): Promise<ArtifactDetailResponse> {
+  return apiRequest(`/artifacts/${id}/compliance-ack`, artifactDetailResponseSchema, {
+    method: 'POST',
+    body: { contentHash },
+  });
+}
+
 /** 基于已审核版本新建草稿，返回新草稿的详情 */
 /** 已审核的方案、报告解读同步给伴侣“福宝”（M6 规格 2.8）；同步过的再点一次不重复 */
 export function syncArtifactToCompanion(id: string): Promise<ArtifactDetailResponse> {
