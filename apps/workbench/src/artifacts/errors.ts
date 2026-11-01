@@ -5,6 +5,9 @@ export type ArtifactErrorKey =
   | 'tooMany'
   | 'readOnly'
   | 'notClientFacing'
+  | 'formatNotAllowed'
+  | 'signatureInvalid'
+  | 'contentCheckFailed'
   | 'noCompanion'
   | 'notLatest'
   | 'notCurrentPlan'
@@ -31,6 +34,14 @@ export function classifyArtifactError(err: unknown): ArtifactErrorKind {
     // 只有专业版的产物（/面谈提纲）不能复制、导出
     if (err.reasons.includes('not_client_facing')) return { kind: 'error', key: 'notClientFacing' };
     // 同步给伴侣：客户没有绑定设备或已撤回同意（M6 规格 2.8）
+    // 科普（M8）：这种产物不能用这个格式；署名不全；按当前规则有“禁止”类问题
+    if (err.reasons.includes('format_not_allowed'))
+      return { kind: 'error', key: 'formatNotAllowed' };
+    if (err.reasons.includes('signature_invalid'))
+      return { kind: 'error', key: 'signatureInvalid' };
+    if (err.reasons.includes('content_check_failed')) {
+      return { kind: 'error', key: 'contentCheckFailed' };
+    }
     if (err.reasons.includes('no_companion')) return { kind: 'error', key: 'noCompanion' };
     if (err.reasons.includes('not_latest')) return { kind: 'error', key: 'notLatest' };
     if (err.reasons.includes('not_current_plan')) return { kind: 'error', key: 'notCurrentPlan' };

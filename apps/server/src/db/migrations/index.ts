@@ -36,6 +36,7 @@ import * as m0034 from './0034-operator-brands.js';
 import * as m0035 from './0035-plans.js';
 import * as m0036 from './0036-ops-dashboard.js';
 import * as m0037 from './0037-popsci-content.js';
+import * as m0038 from './0038-export-formats.js';
 
 export interface Migration {
   name: string;
@@ -81,4 +82,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { name: '0035-plans', up: m0035.up },
   { name: '0036-ops-dashboard', up: m0036.up },
   { name: '0037-popsci-content', up: m0037.up },
+  { name: '0038-export-formats', up: m0038.up },
 ];

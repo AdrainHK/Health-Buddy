@@ -132,3 +132,47 @@ export type ContentCheckResult = z.infer<typeof contentCheckResultSchema>;
 /** 勾选“已核对”：带上预览时的内容指纹，保证核对的是看到的这一版 */
 export const complianceAckRequestSchema = z.object({ contentHash: z.string().min(1).max(128) });
 export type ComplianceAckRequest = z.infer<typeof complianceAckRequestSchema>;
+
+/**
+ * 已审核的科普能导出和复制什么（规格 2.1 第 7 条，Q5）：文章导出 Word 和 PDF、可以复制全文；
+ * 讲座 PPT 导出 PPTX；社群稿只复制文字。后端按这张表校验，前端按它显示按钮。
+ */
+export const POPSCI_EXPORT_FORMATS: Record<PopsciKind, readonly ('docx' | 'pdf' | 'pptx')[]> = {
+  popsci_article: ['docx', 'pdf'],
+  lecture_deck: ['pptx'],
+  community_post: [],
+};
+export const POPSCI_COPYABLE: Record<PopsciKind, boolean> = {
+  popsci_article: true,
+  lecture_deck: false,
+  community_post: true,
+};
+
+/** 导出和复制时的署名（Q1）：健管师姓名、协会名称，加“由 Health Buddy 辅助生成” */
+export interface PopsciSignature {
+  managerName: string;
+  operatorName: string | null;
+}
+
+export function popsciSignatureLine(sig: PopsciSignature): string {
+  return [sig.managerName, sig.operatorName, POPSCI_GENERATED_BY].filter(Boolean).join(' · ');
+}
+
+/** 复制用的纯文本：正文 + 两句固定提示 + 署名（规格 2.1 第 8 条，Q1） */
+export function popsciPlainText(content: PopsciContent, sig: PopsciSignature): string {
+  const body: string[] = [];
+  if (content.kind === 'popsci_article') {
+    body.push(content.title, '');
+    for (const s of content.sections) body.push(s.heading, s.body, '');
+    if (content.summary) body.push(content.summary, '');
+  } else if (content.kind === 'lecture_deck') {
+    body.push(content.title, '');
+    content.slides.forEach((s, i) => {
+      body.push(`${i + 1}. ${s.title}`, ...s.bullets.map((b) => `· ${b}`), '');
+    });
+  } else {
+    for (const p of content.paragraphs) body.push(p, '');
+    if (content.interaction) body.push(content.interaction, '');
+  }
+  return [...body, ...POPSCI_FOOTER, '', popsciSignatureLine(sig)].join('\n');
+}

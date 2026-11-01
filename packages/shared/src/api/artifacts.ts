@@ -114,7 +114,7 @@ export const artifactEventSchema = z.object({
   actorId: z.uuid().nullable(),
   action: z.enum(ARTIFACT_ACTIONS),
   reason: z.string().nullable(),
-  format: z.enum(['png', 'pdf']).nullable(),
+  format: z.enum(['png', 'pdf', 'docx', 'pptx']).nullable(),
   createdAt: z.iso.datetime(),
 });
 export type ArtifactEvent = z.infer<typeof artifactEventSchema>;
@@ -225,7 +225,8 @@ export const returnArtifactRequestSchema = z.object({
 });
 export type ReturnArtifactRequest = z.infer<typeof returnArtifactRequestSchema>;
 
-export const exportFormatSchema = z.enum(['png', 'pdf']);
+/** png、pdf：通俗版（M1）；docx、pptx：科普（M8 规格 2.1 第 7 条，可导出的格式见 POPSCI_EXPORT_FORMATS） */
+export const exportFormatSchema = z.enum(['png', 'pdf', 'docx', 'pptx']);
 export type ExportFormat = z.infer<typeof exportFormatSchema>;
 
 /** POST /api/artifacts/:id/export：会写导出记录，所以用 POST；响应是文件 */
