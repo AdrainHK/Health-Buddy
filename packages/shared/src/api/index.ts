@@ -26,4 +26,5 @@ export * from './operators.js';
 export * from './accounts.js';
 export * from './brand.js';
 export * from './plans.js';
+export * from './ops-dashboard.js';
 export * from './audit-log.js';

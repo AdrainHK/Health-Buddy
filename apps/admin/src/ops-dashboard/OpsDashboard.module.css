@@ -1,0 +1,53 @@
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--hb-space-3);
+}
+
+.card {
+  display: grid;
+  gap: var(--hb-space-1);
+  padding: var(--hb-space-3);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius-md);
+  background: var(--hb-surface);
+}
+
+.cardLabel {
+  color: var(--hb-text-2);
+  font-size: var(--hb-text-sm);
+}
+
+.cardValue {
+  font-size: var(--hb-text-xl);
+  font-weight: 600;
+}
+
+.ranges {
+  display: flex;
+  gap: var(--hb-space-1);
+}
+
+.sectionTitle {
+  margin: var(--hb-space-4) 0 var(--hb-space-2);
+  font-size: var(--hb-text-lg);
+  font-weight: 600;
+}
+
+.barRow {
+  display: grid;
+  grid-template-columns: minmax(80px, 160px) 1fr auto;
+  align-items: center;
+  gap: var(--hb-space-2);
+}
+
+.bar {
+  height: 8px;
+  border-radius: var(--hb-radius-sm);
+  background: var(--hb-brand);
+}
+
+.barTrack {
+  background: var(--hb-surface-2);
+  border-radius: var(--hb-radius-sm);
+}

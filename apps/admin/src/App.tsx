@@ -10,6 +10,7 @@ import {
   CalendarClock,
   Cpu,
   HeartPulse,
+  LayoutDashboard,
   History,
   MessageSquareText,
   Package,
@@ -32,6 +33,7 @@ import { ExpertsPage } from './experts/ExpertsPage';
 import { AdminShell, type AdminSection } from './shell/AdminShell';
 import { ManagerNotice } from './shell/ManagerNotice';
 import { OperatorsPage } from './operators/OperatorsPage';
+import { OpsDashboardPage } from './ops-dashboard/OpsDashboardPage';
 import { PlanLibraryPage } from './plan-library/PlanLibraryPage';
 import { PlansPage } from './plans/PlansPage';
 import { ThresholdsPage } from './thresholds/ThresholdsPage';
@@ -53,6 +55,7 @@ type SectionId =
   | 'plans'
   | 'accounts'
   | 'brand'
+  | 'ops'
   | 'audit-log';
 
 /**
@@ -79,13 +82,14 @@ function sectionsFor(role: CurrentUser['role']): SectionId[] {
       'device-batches',
       'operators',
       'plans',
+      'ops',
       'audit-log',
     ];
   }
   if (role === 'operator_admin') {
-    return [...shared, 'expert-stats', 'twin-stats', 'accounts', 'brand', 'audit-log'];
+    return [...shared, 'expert-stats', 'twin-stats', 'accounts', 'brand', 'ops', 'audit-log'];
   }
-  if (role === 'org_admin') return [...shared, 'accounts'];
+  if (role === 'org_admin') return [...shared, 'accounts', 'ops'];
   return shared;
 }
 
@@ -103,6 +107,7 @@ const ICONS: Record<SectionId, ReactNode> = {
   plans: <Package size={16} aria-hidden />,
   accounts: <Users size={16} aria-hidden />,
   brand: <Palette size={16} aria-hidden />,
+  ops: <LayoutDashboard size={16} aria-hidden />,
   'audit-log': <History size={16} aria-hidden />,
 };
 
@@ -175,6 +180,7 @@ function Console({ user, onLogout }: { user: CurrentUser; onLogout: () => void }
     plans: t('plans.nav'),
     accounts: t('accounts.nav'),
     brand: t('brand.nav'),
+    ops: t('ops.nav'),
     'audit-log': t('auditLog.nav'),
   };
   const sections: AdminSection[] = allowed.map((id) => ({
@@ -197,6 +203,7 @@ function Console({ user, onLogout }: { user: CurrentUser; onLogout: () => void }
       {current === 'plans' && <PlansPage />}
       {current === 'accounts' && <AccountsPage user={user} />}
       {current === 'brand' && <BrandPage />}
+      {current === 'ops' && <OpsDashboardPage user={user} />}
       {current === 'audit-log' && <AuditLogPage user={user} />}
     </AdminShell>
   );
